@@ -1,0 +1,32 @@
+# Fictional design inputs. All generation runs offline; no model/API keys needed.
+profile = "regional-bank"
+name = "Cedar Regional Bank - Connected Coverage"
+namespace = "cedar-complete"
+seed = 42
+as_of = "2026-09-09"
+reservation_user = "admin" # Existing disposable-lab user; Diode matches, never creates accounts.
+address_pool = "10.0.0.0/8"
+data_centers = 2
+headquarters = 1
+headquarters_staff = 180 # Office pods drive floors, local access rooms, and WAN demand.
+reserve_fraction = 0.2
+wan_tiers_mbps = [50, 100, 200, 500, 1000] # Carrier floors and inherited contracts apply.
+max_objects = 500000
+patching = "panels" # NetBox 4.7 needs the explicit local compatibility patch; see lab/README.md.
+
+[branches]
+small = 4
+medium = 2
+large = 1
+
+# A weighted pool applies to new branches. Explicit examples ensure all designs
+# are present in this walkthrough; growth retains each existing assignment.
+[design_mix]
+modern = 60
+inherited = 25
+refreshed = 15
+
+[site_designs]
+br-s0001 = "modern"
+br-s0002 = "inherited" # Acquisition/refresh scenario target.
+br-s0003 = "refreshed"

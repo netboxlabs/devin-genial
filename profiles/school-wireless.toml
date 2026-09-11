@@ -1,0 +1,25 @@
+# Device concurrency includes personal and teaching devices, not just people.
+profile = "school-district"
+namespace = "maple-wireless"
+name = "Maple School District access expansion"
+seed = 42
+as_of = "2026-09-09"
+patching = "panels"
+ipv6_pool = "2001:db8::/32"
+
+[[schools]]
+key = "oak"
+classrooms = 8
+students_per_classroom = 24
+wired_seats_per_classroom = 4
+administrative_staff = 12
+lab_seats = 16
+wan_peak_mbps = 200
+
+[schools.wireless.classroom-001]
+managed = 40
+guest = 8
+
+[schools.wireless.admin-01]
+managed = 12
+guest = 24

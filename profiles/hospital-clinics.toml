@@ -1,0 +1,41 @@
+# Synthetic care-unit planning: beds and installed desks are not patient volume
+# or staff headcount. Reference medical endpoints have no clinical certification.
+profile = "hospital-clinics"
+namespace = "lakeshore-health"
+name = "Lakeshore Health System"
+seed = 42
+as_of = "2026-09-09"
+address_pool = "10.128.0.0/12"
+reserve_fraction = 0.2
+patching = "direct"
+demo = "baseline"
+
+[[hospitals]]
+key = "central"
+administrative_desks = 24
+imaging_rooms = 2
+wan_peak_mbps = 600
+
+[[hospitals.wards]]
+key = "medical-a"
+beds = 12
+clinical_desks = 4
+
+[[hospitals.wards]]
+key = "medical-b"
+beds = 16
+clinical_desks = 6
+
+[[clinics]]
+key = "west"
+exam_rooms = 8
+administrative_desks = 4
+imaging_rooms = 1
+wan_peak_mbps = 100
+
+[[clinics]]
+key = "north"
+exam_rooms = 12
+administrative_desks = 8
+imaging_rooms = 0
+wan_peak_mbps = 200

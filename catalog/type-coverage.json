@@ -1,0 +1,1181 @@
+{
+  "schema_version": 1,
+  "versions": {
+    "sdk": "1.14.0",
+    "plugin": "1.17.0",
+    "netbox": "4.7.0"
+  },
+  "sources": {
+    "sdk": "https://github.com/netboxlabs/diode-sdk-python/tree/v1.14.0",
+    "plugin_models": "https://github.com/netboxlabs/diode-netbox-plugin/blob/v1.17.0/netbox_diode_plugin/api/supported_models.py",
+    "plugin_fields": "https://github.com/netboxlabs/diode-netbox-plugin/blob/v1.17.0/netbox_diode_plugin/api/plugin_utils.py",
+    "plugin_matching": "https://github.com/netboxlabs/diode-netbox-plugin/blob/v1.17.0/netbox_diode_plugin/api/matcher.py",
+    "native": "https://github.com/netbox-community/netbox/tree/v4.7.0/netbox"
+  },
+  "types": [
+    {
+      "kind": "asn",
+      "native_model": "ipam.asn",
+      "category": "estate_candidate",
+      "notes": "ASN matches the numeric ASN globally. Namespaces do not scope it; use deliberate shared RIR/ASN reference data or qualified noncolliding allocation.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L258"
+    },
+    {
+      "kind": "asn_range",
+      "native_model": "ipam.asnrange",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L291"
+    },
+    {
+      "kind": "aggregate",
+      "native_model": "ipam.aggregate",
+      "category": "estate_candidate",
+      "notes": "Diode matches prefix when RIR is null, or prefix plus RIR when supplied. NetBox4.7 nevertheless forbids overlapping aggregates globally across RIRs and tenants. Local preflight permits only an exact owned existing match and rejects foreign overlap.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L326"
+    },
+    {
+      "kind": "cable",
+      "native_model": "dcim.cable",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L357"
+    },
+    {
+      "kind": "cable_path",
+      "native_model": "dcim.cablepath",
+      "category": "computed",
+      "notes": "NetBox computes cable paths from actual cable terminations; the advertised plugin surface has only three derived flags and no natural matcher. Do not seed standalone paths.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L402"
+    },
+    {
+      "kind": "cable_termination",
+      "native_model": "dcim.cabletermination",
+      "category": "computed",
+      "notes": "Native cable endpoint rows are created by cable serializers; SDK Entity exists but plugin does not expose this model independently.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L414"
+    },
+    {
+      "kind": "circuit",
+      "native_model": "circuits.circuit",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L442"
+    },
+    {
+      "kind": "circuit_group",
+      "native_model": "circuits.circuitgroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L489"
+    },
+    {
+      "kind": "circuit_group_assignment",
+      "native_model": "circuits.circuitgroupassignment",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L518"
+    },
+    {
+      "kind": "circuit_termination",
+      "native_model": "circuits.circuittermination",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L534"
+    },
+    {
+      "kind": "circuit_type",
+      "native_model": "circuits.circuittype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L577"
+    },
+    {
+      "kind": "cluster",
+      "native_model": "virtualization.cluster",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L606"
+    },
+    {
+      "kind": "cluster_group",
+      "native_model": "virtualization.clustergroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L647"
+    },
+    {
+      "kind": "cluster_type",
+      "native_model": "virtualization.clustertype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L674"
+    },
+    {
+      "kind": "console_port",
+      "native_model": "dcim.consoleport",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L701"
+    },
+    {
+      "kind": "console_server_port",
+      "native_model": "dcim.consoleserverport",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L736"
+    },
+    {
+      "kind": "contact",
+      "native_model": "tenancy.contact",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L771"
+    },
+    {
+      "kind": "contact_assignment",
+      "native_model": "tenancy.contactassignment",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L810"
+    },
+    {
+      "kind": "contact_group",
+      "native_model": "tenancy.contactgroup",
+      "category": "estate_candidate",
+      "notes": "Plugin1.17 root groups require the auto-slug fallback: omit the name-derived slug on wire, retaining canonical intent for readback. An explicit root slug bypasses matching and can create duplicates. Child groups use parent/name. Native fallback chooses the first match; strict readback must reject ambiguity.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1043"
+    },
+    {
+      "kind": "contact_role",
+      "native_model": "tenancy.contactrole",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1072"
+    },
+    {
+      "kind": "device",
+      "native_model": "dcim.device",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1343"
+    },
+    {
+      "kind": "device_bay",
+      "native_model": "dcim.devicebay",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1416"
+    },
+    {
+      "kind": "device_role",
+      "native_model": "dcim.devicerole",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1447"
+    },
+    {
+      "kind": "device_type",
+      "native_model": "dcim.devicetype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1480"
+    },
+    {
+      "kind": "fhrp_group",
+      "native_model": "ipam.fhrpgroup",
+      "category": "estate_candidate",
+      "notes": "Matcher is group_id alone, without protocol/name/site/tenant. Reused IDs can merge unrelated groups, including across namespaces. Preserve an explicit collision policy.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1531"
+    },
+    {
+      "kind": "fhrp_group_assignment",
+      "native_model": "ipam.fhrpgroupassignment",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1564"
+    },
+    {
+      "kind": "front_port",
+      "native_model": "dcim.frontport",
+      "category": "estate_candidate",
+      "notes": "SDK carries legacy rear_port/rear_port_position. Native4.7 uses rear_ports mapping; existing disclosed local source-guarded bridge is required. SDK presence is not official4.7 mapping support.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L1784"
+    },
+    {
+      "kind": "ike_policy",
+      "native_model": "vpn.ikepolicy",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2039"
+    },
+    {
+      "kind": "ike_proposal",
+      "native_model": "vpn.ikeproposal",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2072"
+    },
+    {
+      "kind": "ip_address",
+      "native_model": "ipam.ipaddress",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2107"
+    },
+    {
+      "kind": "ip_range",
+      "native_model": "ipam.iprange",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2150"
+    },
+    {
+      "kind": "ip_sec_policy",
+      "native_model": "vpn.ipsecpolicy",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2189"
+    },
+    {
+      "kind": "ip_sec_profile",
+      "native_model": "vpn.ipsecprofile",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2218"
+    },
+    {
+      "kind": "ip_sec_proposal",
+      "native_model": "vpn.ipsecproposal",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2249"
+    },
+    {
+      "kind": "interface",
+      "native_model": "dcim.interface",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2282"
+    },
+    {
+      "kind": "inventory_item",
+      "native_model": "dcim.inventoryitem",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2371"
+    },
+    {
+      "kind": "inventory_item_role",
+      "native_model": "dcim.inventoryitemrole",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2432"
+    },
+    {
+      "kind": "l2vpn",
+      "native_model": "vpn.l2vpn",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2461"
+    },
+    {
+      "kind": "l2vpn_termination",
+      "native_model": "vpn.l2vpntermination",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2500"
+    },
+    {
+      "kind": "location",
+      "native_model": "dcim.location",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2729"
+    },
+    {
+      "kind": "mac_address",
+      "native_model": "dcim.macaddress",
+      "category": "estate_candidate",
+      "notes": "Keep assigned-object typed reference. Interface.primary_mac_address is a separate reciprocal cycle; defer it if requested.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2766"
+    },
+    {
+      "kind": "manufacturer",
+      "native_model": "dcim.manufacturer",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2795"
+    },
+    {
+      "kind": "module",
+      "native_model": "dcim.module",
+      "category": "estate_candidate",
+      "notes": "Author module.module_bay to install a module; the bay installed_module relation is reverse. Serializer-only adopt_components/replicate_components are explicitly rejected by this plugin gate; rely only on supported fields/default behavior and test actual effects.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2822"
+    },
+    {
+      "kind": "module_bay",
+      "native_model": "dcim.modulebay",
+      "category": "estate_candidate",
+      "notes": "device+name logical matcher can precede device+module+name constraint. Use names unique per device, including nested bays. Omit reverse installed_module from canonical assertions when Module.module_bay supplies installation.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2861"
+    },
+    {
+      "kind": "module_type",
+      "native_model": "dcim.moduletype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2898"
+    },
+    {
+      "kind": "platform",
+      "native_model": "dcim.platform",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2943"
+    },
+    {
+      "kind": "power_feed",
+      "native_model": "dcim.powerfeed",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L2974"
+    },
+    {
+      "kind": "power_outlet",
+      "native_model": "dcim.poweroutlet",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3021"
+    },
+    {
+      "kind": "power_panel",
+      "native_model": "dcim.powerpanel",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3062"
+    },
+    {
+      "kind": "power_port",
+      "native_model": "dcim.powerport",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3091"
+    },
+    {
+      "kind": "prefix",
+      "native_model": "ipam.prefix",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3128"
+    },
+    {
+      "kind": "provider",
+      "native_model": "circuits.provider",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3175"
+    },
+    {
+      "kind": "provider_account",
+      "native_model": "circuits.provideraccount",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3206"
+    },
+    {
+      "kind": "provider_network",
+      "native_model": "circuits.providernetwork",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3235"
+    },
+    {
+      "kind": "rir",
+      "native_model": "ipam.rir",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3264"
+    },
+    {
+      "kind": "rack",
+      "native_model": "dcim.rack",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3293"
+    },
+    {
+      "kind": "rack_reservation",
+      "native_model": "dcim.rackreservation",
+      "category": "estate_candidate",
+      "notes": "Matcher uses overlap of units within rack, not exact unit-set equality. Rack/user/units/description required. User is an external existing-username reference, never generated.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3370"
+    },
+    {
+      "kind": "rack_role",
+      "native_model": "dcim.rackrole",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3403"
+    },
+    {
+      "kind": "rack_type",
+      "native_model": "dcim.racktype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3432"
+    },
+    {
+      "kind": "rear_port",
+      "native_model": "dcim.rearport",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3491"
+    },
+    {
+      "kind": "region",
+      "native_model": "dcim.region",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3528"
+    },
+    {
+      "kind": "role",
+      "native_model": "ipam.role",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3557"
+    },
+    {
+      "kind": "route_target",
+      "native_model": "ipam.routetarget",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3586"
+    },
+    {
+      "kind": "service",
+      "native_model": "ipam.service",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3613"
+    },
+    {
+      "kind": "site",
+      "native_model": "dcim.site",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3656"
+    },
+    {
+      "kind": "site_group",
+      "native_model": "dcim.sitegroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3705"
+    },
+    {
+      "kind": "tag",
+      "native_model": "extras.tag",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3734"
+    },
+    {
+      "kind": "tenant",
+      "native_model": "tenancy.tenant",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3752"
+    },
+    {
+      "kind": "tenant_group",
+      "native_model": "tenancy.tenantgroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3781"
+    },
+    {
+      "kind": "tunnel",
+      "native_model": "vpn.tunnel",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3810"
+    },
+    {
+      "kind": "tunnel_group",
+      "native_model": "vpn.tunnelgroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3847"
+    },
+    {
+      "kind": "tunnel_termination",
+      "native_model": "vpn.tunneltermination",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L3874"
+    },
+    {
+      "kind": "vlan",
+      "native_model": "ipam.vlan",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4107"
+    },
+    {
+      "kind": "vlan_group",
+      "native_model": "ipam.vlangroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4148"
+    },
+    {
+      "kind": "vlan_translation_policy",
+      "native_model": "ipam.vlantranslationpolicy",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4195"
+    },
+    {
+      "kind": "vlan_translation_rule",
+      "native_model": "ipam.vlantranslationrule",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4209"
+    },
+    {
+      "kind": "vm_interface",
+      "native_model": "virtualization.vminterface",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4223"
+    },
+    {
+      "kind": "vrf",
+      "native_model": "ipam.vrf",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4272"
+    },
+    {
+      "kind": "virtual_chassis",
+      "native_model": "dcim.virtualchassis",
+      "category": "estate_candidate",
+      "notes": "Logical name matcher uses asserted discriminators/member context; unique master also matches. Namespace chassis names. Native master assignment introduces device/chassis cycles; omit optional master initially or defer it.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4307"
+    },
+    {
+      "kind": "virtual_circuit",
+      "native_model": "circuits.virtualcircuit",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4336"
+    },
+    {
+      "kind": "virtual_circuit_termination",
+      "native_model": "circuits.virtualcircuittermination",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4371"
+    },
+    {
+      "kind": "virtual_circuit_type",
+      "native_model": "circuits.virtualcircuittype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4396"
+    },
+    {
+      "kind": "virtual_device_context",
+      "native_model": "dcim.virtualdevicecontext",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4425"
+    },
+    {
+      "kind": "virtual_disk",
+      "native_model": "virtualization.virtualdisk",
+      "category": "estate_candidate",
+      "notes": "Native VM.disk is derived from virtual disk sums; avoid asserting contradictory aggregate and component capacities.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4462"
+    },
+    {
+      "kind": "virtual_machine",
+      "native_model": "virtualization.virtualmachine",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4489"
+    },
+    {
+      "kind": "wireless_lan",
+      "native_model": "wireless.wirelesslan",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4544"
+    },
+    {
+      "kind": "wireless_lan_group",
+      "native_model": "wireless.wirelesslangroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4591"
+    },
+    {
+      "kind": "wireless_link",
+      "native_model": "wireless.wirelesslink",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4620"
+    },
+    {
+      "kind": "custom_field",
+      "native_model": "extras.customfield",
+      "category": "estate_candidate",
+      "notes": "object_types is a list of app.model strings; definition names are global. Custom values use the SDK typed CustomFieldValue wrapper, not raw values. Definitions must precede dependent objects.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4663"
+    },
+    {
+      "kind": "custom_field_choice_set",
+      "native_model": "extras.customfieldchoiceset",
+      "category": "estate_candidate",
+      "notes": "SDK extra_choices is a flattened string sequence transformed into 2-tuples; choice_colors is JSON text. Inspect format transformations before emission.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4719"
+    },
+    {
+      "kind": "journal_entry",
+      "native_model": "extras.journalentry",
+      "category": "estate_candidate",
+      "notes": "Identity includes assigned object and exact comments. Editing comments creates a different logical journal identity. created_by is optional; omit to avoid user binding.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4739"
+    },
+    {
+      "kind": "module_type_profile",
+      "native_model": "dcim.moduletypeprofile",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4972"
+    },
+    {
+      "kind": "custom_link",
+      "native_model": "extras.customlink",
+      "category": "estate_candidate",
+      "notes": "Object type strings select applicable models; link_text/link_url are Jinja2 templates. Names globally unique. Use fictional harmless local links and no executable scripts.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L4999"
+    },
+    {
+      "kind": "owner",
+      "native_model": "users.owner",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5025"
+    },
+    {
+      "kind": "owner_group",
+      "native_model": "users.ownergroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5039"
+    },
+    {
+      "kind": "device_config",
+      "native_model": null,
+      "category": "unsupported",
+      "notes": "SDK Entity exists, but no matching NetBox4.7 native model or plugin model is present.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5049"
+    },
+    {
+      "kind": "cable_bundle",
+      "native_model": "dcim.cablebundle",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5061"
+    },
+    {
+      "kind": "rack_group",
+      "native_model": "dcim.rackgroup",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5086"
+    },
+    {
+      "kind": "script_module",
+      "native_model": "core.managedfile",
+      "category": "excluded_runtime",
+      "notes": "Maps to core.managedfile; plugin introspection has zero effective writable fields. Executable scripts/files are outside estate expectations.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5113"
+    },
+    {
+      "kind": "virtual_machine_type",
+      "native_model": "virtualization.virtualmachinetype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5121"
+    },
+    {
+      "kind": "user",
+      "native_model": "users.user",
+      "category": "external_match_only",
+      "notes": "Plugin explicitly prohibits user creation/update. Only existing usernames can be referenced; RackReservation requires this binding.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5154"
+    },
+    {
+      "kind": "cooling_feed",
+      "native_model": "dcim.coolingfeed",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5162"
+    },
+    {
+      "kind": "cooling_intake",
+      "native_model": "dcim.coolingintake",
+      "category": "estate_candidate",
+      "notes": "Cooling port references differ from electrical ports. Verify source/feed/outflow/intake relationships and native constraints; no assumption that Cable generic terminations supports them.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5201"
+    },
+    {
+      "kind": "cooling_outflow",
+      "native_model": "dcim.coolingoutflow",
+      "category": "estate_candidate",
+      "notes": "Cooling port references differ from electrical ports. Native clean/serializer constraints must be tested before declaring physical flow connected.",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5242"
+    },
+    {
+      "kind": "cooling_source",
+      "native_model": "dcim.coolingsource",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5279"
+    },
+    {
+      "kind": "module_bay_type",
+      "native_model": "dcim.modulebaytype",
+      "category": "estate_candidate",
+      "notes": "",
+      "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5316"
+    }
+  ],
+  "native_without_sdk": [
+    {
+      "native_model": "auth.permission",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "auth.group",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "contenttypes.contenttype",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "sessions.session",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "social_django.usersocialauth",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "social_django.nonce",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "social_django.association",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "social_django.code",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "social_django.partial",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "thumbnail.kvstore",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "taggit.tag",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "taggit.taggeditem",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.objecttype",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.objectchange",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.configrevision",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.datasource",
+      "category": "unsupported_associated_configuration",
+      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.datafile",
+      "category": "unsupported_associated_configuration",
+      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.autosyncrecord",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "core.job",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "account.usertoken",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.portmapping",
+      "category": "derived_mapping",
+      "reason": "Native port mapping produced through native FrontPort serializer; existing local legacy-field bridge covers the current one-position physical paths, not a standalone SDK entity.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.consoleporttemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.consoleserverporttemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.powerporttemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.poweroutlettemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.coolingintaketemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.coolingoutflowtemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.interfacetemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.porttemplatemapping",
+      "category": "unsupported_template",
+      "reason": "Native device/module type template mapping; no SDK top-level entity and no plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.frontporttemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.rearporttemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.modulebaytemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.devicebaytemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "dcim.inventoryitemtemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "ipam.servicetemplate",
+      "category": "unsupported_template",
+      "reason": "Native infrastructure/template type without SDK Entity or running plugin model; cannot claim direct Diode seed coverage.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.taggeditem",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.configcontextprofile",
+      "category": "unsupported_associated_configuration",
+      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.configcontext",
+      "category": "unsupported_associated_configuration",
+      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.configtemplate",
+      "category": "unsupported_associated_configuration",
+      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.dashboard",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.eventrule",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.webhook",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.exporttemplate",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.savedfilter",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.tableconfig",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.imageattachment",
+      "category": "unsupported_associated_configuration",
+      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.bookmark",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.notification",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.notificationgroup",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.subscription",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.script",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.scriptmodule",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "extras.cachedvalue",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "users.objectpermission",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "users.userconfig",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "users.token",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "users.group",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "django_rq.dashboard",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "netbox_diode_plugin.setting",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "netbox_diode_plugin.clientcredentials",
+      "category": "excluded_runtime_admin",
+      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    }
+  ]
+}

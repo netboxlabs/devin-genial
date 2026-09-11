@@ -1,0 +1,38 @@
+profile = "provider-backbone"
+namespace = "lakes-fiber"
+name = "Great Lakes Fiber"
+seed = 42
+as_of = "2026-09-09"
+address_pool = "10.0.0.0/8"
+reserve_fraction = 0.2
+patching = "direct"
+demo = "baseline"
+topology = "incremental-mesh"
+noc_pop_a = "chicago-west"
+noc_pop_b = "detroit-south"
+noc_peak_mbps = 100
+
+[[pops]]
+key = "chicago-west"
+metro = "chicago"
+
+[[pops]]
+key = "detroit-south"
+metro = "detroit"
+
+[[pops]]
+key = "cleveland-east"
+metro = "cleveland"
+
+[[customers]]
+key = "harbor-logistics"
+service = "private-l3"
+hub_pop = "chicago-west"
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+lan_endpoints = 4
+sites = [
+  { pop = "chicago-west", count = 1 },
+  { pop = "detroit-south", count = 1 },
+  { pop = "cleveland-east", count = 1 },
+]

@@ -1,0 +1,5 @@
+# Full passive paths for offline exploration or the explicitly patched local NetBox4.7 target.
+# v0.7 has no whole-estate NetBox4.4 claim; unpatched Diode cannot map these ports on4.5+.
+namespace = "cedar-panels"
+name = "Cedar Regional Bank — Patch Panel Estate"
+patching = "panels"

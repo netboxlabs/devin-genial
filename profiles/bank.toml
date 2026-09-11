@@ -1,0 +1,31 @@
+# Fictional design inputs. All generation runs offline; no model/API keys needed.
+profile = "regional-bank"
+name = "Cedar Regional Bank"
+namespace = "cedar-v7"
+seed = 42
+as_of = "2026-09-01"
+address_pool = "10.0.0.0/8"
+data_centers = 2
+headquarters = 1
+headquarters_staff = 180 # 24-192; office demand determines occupied floors and local equipment.
+reserve_fraction = 0.2
+wan_tiers_mbps = [50, 100, 200, 500, 1000] # Fictional purchased bandwidth; physical handoff stays 1 Gb/s.
+max_objects = 500000
+patching = "direct" # Continuous channels; current Diode cannot map panels on NetBox 4.5+.
+
+[branches]
+small = 4
+medium = 2
+large = 1
+
+# A weighted pool applies to new branches. Explicit examples ensure all designs
+# are present in this walkthrough; growth retains each existing assignment.
+[design_mix]
+modern = 60
+inherited = 25
+refreshed = 15
+
+[site_designs]
+br-s0001 = "modern"
+br-s0002 = "inherited" # Acquisition/refresh scenario target.
+br-s0003 = "refreshed"
