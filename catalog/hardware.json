@@ -1,0 +1,2321 @@
+{
+  "version": "0.10",
+  "sources": {
+    "access-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9200L-24P-4X.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "c05fd1c5e7ea1dddf734ee0a5cbd5b405f954b2bd890f8bea11ac387cc04d3f8",
+      "license": "CC0-1.0"
+    },
+    "leaf-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Arista/DCS-7050SX3-48C8-F.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "1532b8a7de63f45c568c3b30dae0d6b9a78aefa07366c4764d49c2cace7c0b73",
+      "license": "CC0-1.0"
+    },
+    "edge-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Fortinet/FG-100F.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "35b4b01003ad2040929d96710e0ce3ac323d75842af866ed5d3602f6cefeeb4d",
+      "license": "CC0-1.0"
+    },
+    "access-psu": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Cisco/PWR-C5-600WAC.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "bbb284f377d816bd638b5b8a7b1231428f6b79c13313ebf23a07c004a701107a",
+      "license": "CC0-1.0"
+    },
+    "leaf-psu": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Arista/PWR-511-AC-RED.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "d95da3bc8fb47246744c574cbe34b2322e391fe3e433415f4e8e9be5bdf22a25",
+      "license": "CC0-1.0"
+    },
+    "cisco-psu-compatibility": {
+      "url": "https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9200/hardware/install/b-c9200-hig/product_overview.html",
+      "checked": "2026-09-10",
+      "purpose": "C9200L-24P-4X supports PWR-C5-600WAC primary and secondary supplies; reference configuration populates both. PoE ports and Table 4: 30 W per downlink; 370 W available PoE with one PWR-C5-600WAC, 740 W with two. Delivered PoE budget is distinct from PSU output rating."
+    },
+    "arista-psu-compatibility": {
+      "url": "https://www.arista.com/en/qsg-7050-series-1ru-gen3/7050-series-1ru-gen3-overview",
+      "checked": "2026-09-08",
+      "purpose": "Table 4 lists PWR-511-AC support for DCS-7050SX3-48C8; reference configuration populates both PSU positions."
+    },
+    "reference-design-v1": {
+      "url": "README.md",
+      "purpose": "Original fictional example hardware authored for this project; dimensions, ports and PSU population are explicit design assumptions, not vendor specifications."
+    },
+    "core-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Arista/DCS-7060CX-32S-F.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "44ac1c2d789b83308d5ece8a857b24ca352fa1812d6c96b960570f6ec86b2d50",
+      "license": "CC0-1.0"
+    },
+    "core-psu": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Arista/PWR-500AC-F.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "563ebb230a47231477f3d513e6375938c1f8c821bb7eb8a4e4de918bf0f0beae",
+      "license": "CC0-1.0"
+    },
+    "core-psu-compatibility": {
+      "url": "https://www.arista.com/en/qsg-7060-series-1ru-gen3/7060-series-1ru-gen3-overview",
+      "checked": "2026-09-08",
+      "purpose": "Table 4 lists PWR-500AC support for DCS-7060CX-32S; reference configuration populates both PSU positions."
+    },
+    "inherited-access-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3300-24P.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "e819dfcb8a98987791d718d6623b67c4be40db66711c815f766d7cda7fce4dd0",
+      "license": "CC0-1.0"
+    },
+    "juniper-ex3300-port-modes": {
+      "url": "https://www.juniper.net/assets/br/pt/local/pdf/datasheets/1000389-en.pdf",
+      "checked": "2026-09-08",
+      "purpose": "Pages 1-2 describe four shared 1G/10G uplink cages and the network-port option for the last two default Virtual Chassis ports; this catalog selects all four at 10G as standalone network ports."
+    },
+    "juniper-ex3300-power": {
+      "url": "https://www.juniper.net/documentation/us/en/software/junos/high-availability/topics/topic-map/redundant-power-system-understanding.html",
+      "checked": "2026-09-08",
+      "purpose": "EX3300 has one internal fixed power supply. This installed configuration does not include the optional external redundant power system."
+    },
+    "provider-edge-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/MX204.yaml",
+      "sha256": "6d0768f3768f6d033f3fe4893e18837a57c206a4fe21c0b3a63516bebb403a5b",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "license": "CC0-1.0"
+    },
+    "provider-edge-psu": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JPSU-650W-AC-AO.yaml",
+      "sha256": "9c109c45a7f8c8dd18dba9a29f58d9fdf30641e60e8461061ce5a0874131a4ba",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "license": "CC0-1.0"
+    },
+    "mx204-port-modes": {
+      "url": "https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-mx-routers.html",
+      "sha256": "8a3272822b7be1fde7e91ae317e0a18b8529430feb311344ce2fbfec588dc959",
+      "checked": "2026-09-10",
+      "purpose": "Reviewed port-level configuration uses 100/100/100/0 Gbps plus eight 10G ports. Customer attachments configure 1G on the 10G cages; fourth 100G port remains disabled."
+    },
+    "mx204-ac-power": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/mx204/topics/topic-map/mx204-ac-power-system.html",
+      "sha256": "42183365cd6941a3979f4735ebbda3dbb8008dab25a08035a0bc2541f060d640",
+      "checked": "2026-09-10",
+      "purpose": "Two installed AC PSU modules; 650 W PSU output rating is distinct from AC system input. Generator load allowance is explicitly authored."
+    },
+    "juniper-inband-management": {
+      "url": "https://www.juniper.net/documentation/us/en/software/junos/junos-getting-started/topics/concept/interfaces-understanding-management-ethernet-interfaces.html",
+      "sha256": "c30b695c4beed567a57f82e2589c6982fa5cb626069f3d0821982a881d2b260b",
+      "checked": "2026-09-10",
+      "purpose": "Dedicated management interface is not used as a data-plane transit path; this profile addresses lo0 inband and leaves fxp0 present, unaddressed and uncabled."
+    },
+    "juniper-ex3300-poe": {
+      "url": "https://www.juniper.net/documentation/us/en/software/junos/poe/topics/concept/poe-overview.html",
+      "sha256": "e923031aedcbb1735d0e194ca03dfe21d946fe2d914cac29188e4fadbccfad85",
+      "checked": "2026-09-10",
+      "purpose": "Tables 2, 3 and 7: Type 2 reserves 30 W at the PSE for up to 25.5 W at the PD; EX3300-24P has 24 PoE ports and a 405 W PoE budget. The 550 W supply rating is separate; no external redundant power system is installed."
+    },
+    "reference-poe-v1": {
+      "url": "README.md#poe-planning-policy",
+      "purpose": "Authored reference operating and allocation policy: two 5 GHz AP radios; Type 2 PD maximum input 25500 mW and PSE reservation 30000 mW; one-supply-loss planning for the installed dual-supply Cisco, none for the fixed-supply Juniper; upstream AC planning allowance multiplier 1.25. These are design assumptions, not measured consumption, vendor efficiency or interoperability certification."
+    },
+    "cisco-optics-host-json": {
+      "url": "https://tmgmatrix.cisco.com/public/api/networkdevice/search",
+      "checked": "2026-09-10",
+      "representation": "archived-primary-json",
+      "purpose": "Public TMG response for C9200L-24P-4X lists SFP-10G-LR: 10GBASE-LR, SFP+, duplex SMF LC/UPC, 10 km, minimum IOS XE 16.9.2. POST request parameters are preserved in poe-optics-bindings.json.",
+      "archive_path": "build/goal-connected-depth/design/vendor/cisco-c9200-search.json",
+      "sha256": "c0fe89f2879389c2c1a75c9f79b66388e2016aa0d429a01afd42d28463cbd45a"
+    },
+    "cisco-optics-host-notes": {
+      "url": "https://tmgmatrix.cisco.com/public/api/networkdevice/notes",
+      "checked": "2026-09-10",
+      "representation": "archived-primary-json",
+      "purpose": "The exact C9200L-24P-4X/SFP-10G-LR lookup restricts support to fixed onboard uplinks; no module or fixed-copper substitution.",
+      "archive_path": "build/goal-connected-depth/design/vendor/cisco-c9200-lr-notes.json",
+      "sha256": "fce0ffbebd8b036e3bff8e0186c3becd15365e4506be99f0cc25be324a29ca6b"
+    },
+    "cisco-sfp-10g-power": {
+      "url": "https://www.cisco.com/c/en/us/products/collateral/interfaces-modules/transceiver-modules/data_sheet_c78-455693.html",
+      "checked": "2026-09-10",
+      "representation": "indexed-primary-text",
+      "purpose": "Table 8: SFP-10G-LR maximum electrical power 1 W per module. Parsed primary page was readable; direct download returned 403.",
+      "evidence_path": "build/goal-connected-depth/design/phase5-power-bindings.json"
+    },
+    "juniper-ex3300-optics": {
+      "url": "https://www.juniper.net/assets/br/pt/local/pdf/datasheets/1000389-en.pdf",
+      "checked": "2026-09-10",
+      "representation": "parsed-primary-pdf",
+      "purpose": "Printed page 11 ordering table lists EX-SFP-10GE-LR for EX3300: 1310 nm, 10GBASE-LR, 10 km SMF. Catalog selects the four existing standalone 10G uplink cages."
+    },
+    "juniper-mx204-optics-host": {
+      "url": "https://apps.juniper.net/hct/product/MX204/100001",
+      "checked": "2026-09-10",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact MX204 HCT lists EX-SFP-10GE-LR on native SFP+ from Junos 17.4R1; SFP-1GE-LX on native SFP from 18.1R1; JNP-QSFP-100G-LR4 from 18.2R1. Selected port modes are separately bounded by mx204-port-modes; no QSA or breakout is modeled."
+    },
+    "juniper-ex-sfp-10ge-lr": {
+      "url": "https://apps.juniper.net/hct/model/EX-SFP-10GE-LR",
+      "checked": "2026-09-10",
+      "representation": "primary-response-hash-and-field-extraction",
+      "purpose": "Exact model HCT: duplex LC PC/UPC, 10 km selected SMF reach, maximum electrical module power 1000 mW. Original response bytes were hashed but not archived; the maximum field extraction is preserved separately.",
+      "response_sha256": "cc902a6743eb1250adbb20fe8303894c3ee9fd5a3ee32bb5c8f9318b39b72780",
+      "evidence_path": "build/goal-connected-depth/design/phase5-power-bindings.json"
+    },
+    "juniper-sfp-1ge-lx": {
+      "url": "https://apps.juniper.net/hct/model/SFP-1GE-LX",
+      "checked": "2026-09-10",
+      "representation": "primary-response-hash-and-field-extraction",
+      "purpose": "Exact model HCT: duplex LC PC/UPC, 10 km selected SMF reach, maximum electrical module power 1000 mW. Original response bytes were hashed but not archived; the maximum field extraction is preserved separately.",
+      "response_sha256": "0fa8e7907599c3bf4aa006d8f4fea70e4569e3c0dbfb93843d23f52ac7a3d307",
+      "evidence_path": "build/goal-connected-depth/design/phase5-power-bindings.json"
+    },
+    "juniper-jnp-qsfp-100g-lr4": {
+      "url": "https://apps.juniper.net/hct/model/JNP-QSFP-100G-LR4",
+      "checked": "2026-09-10",
+      "representation": "primary-response-hash-and-field-extraction",
+      "purpose": "Exact model HCT: duplex LC PC/UPC, 10 km selected SMF reach, maximum electrical module power 3500 mW. Original response bytes were hashed but not archived; the maximum field extraction is preserved separately.",
+      "response_sha256": "1edb443e08de55a091b5a34ed1ab022aba4ca7df2e520ba2bde67d8d35374e62",
+      "evidence_path": "build/goal-connected-depth/design/phase5-power-bindings.json"
+    },
+    "arista-transceiver-guide": {
+      "url": "https://www.arista.com/assets/data/pdf/Transceiver-Guide.pdf",
+      "checked": "2026-09-10",
+      "representation": "archived-primary-pdf",
+      "purpose": "Overview gives platform applicability unless restricted; actual cage form factor remains mandatory. Tables 6/10/14 distinguish SFP-10G-LR and QSFP-100G-LR4 from single-lambda LR; selected LR/LR4 are duplex SMF, 10 km. LR4/AOC minimum EOS 4.15.2 also requires the chassis minimum release.",
+      "archive_path": "build/goal-connected-depth/design/phase5-sources/arista-transceiver-guide.pdf",
+      "sha256": "de4d6d06586d52e0cf16e7371f3e901483ae418c3b53499edf539bc8fb414bd3"
+    },
+    "arista-transceiver-datasheet": {
+      "url": "https://www.arista.com/assets/data/pdf/Datasheets/Transceiver-Data-Sheet.pdf",
+      "checked": "2026-09-10",
+      "representation": "archived-primary-pdf",
+      "purpose": "Physical specifications and exact AOC-Q-Q-100G-3M ordering entry (printed page 22): one 3 m preterminated optical assembly with QSFP28 ends. No explicit SFP-10G-LR electrical maximum was established by this review.",
+      "archive_path": "build/goal-connected-depth/design/phase5-sources/arista-transceiver-datasheet.pdf",
+      "sha256": "603e6d607001a8b6e06b15ebdb853ef45c45e97eee02a0e57d5652b7d093dbd5"
+    },
+    "arista-7050-optics-host-indexed": {
+      "url": "https://www.arista.com/en/hcl-dmf/hcl-supported-transceivers-and-cables-for-arista-7050x3-and-7260x3-series-switches",
+      "checked": "2026-09-10",
+      "representation": "indexed-primary-extract",
+      "purpose": "Parsed primary HCL explicitly lists SFP-10G-LR, QSFP-100G-LR4 and AOC-Q-Q-100G-3M against 7050SX3-48C8/48C8C. The HCL is DMF-scoped: its FEC defaults do not establish EOS defaults. Raw HTTP returned challenge HTML, not the HCL, so no original HCL hash is asserted.",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/indexed-primary-extracts.json"
+    },
+    "arista-100g-qa": {
+      "url": "https://www.arista.com/assets/data/pdf/Datasheets/Arista-100G_Optics_FAQ.pdf",
+      "checked": "2026-09-10",
+      "representation": "archived-primary-pdf",
+      "purpose": "Printed page 5 maximum-power table gives QSFP-100G-LR4 4.5 W and AOC 3.5 W. AOC end-versus-assembly scope is not explicit: reserving 3.5 W at each captive end (7 W total) is an authored conservative interpretation.",
+      "archive_path": "build/goal-connected-depth/design/phase5-sources/arista-100g-qa.pdf",
+      "sha256": "60b171829cf113493d87abe258c319705a910cd2ce4282dddc5f27ec8cb977ba"
+    },
+    "fortinet-100f-optics-host-indexed": {
+      "url": "https://www.fortinet.com/content/dam/fortinet/assets/data-sheets/ja_jp/FGT100F_DS.pdf",
+      "checked": "2026-09-10",
+      "representation": "indexed-primary-extract",
+      "purpose": "Indexed printed page 8 ordering table for FG-100F/101F includes FN-TRAN-SFP+LR. Direct Japanese/English PDFs returned 404; original revision/hash and software minimum remain unknown. This supports the exact family accessory choice, not arbitrary FortiOS or multivendor certification.",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/indexed-primary-extracts.json"
+    },
+    "fortinet-transceivers": {
+      "url": "https://www.fortinet.com/content/dam/fortinet/assets/data-sheets/Fortinet_Transceivers.pdf",
+      "checked": "2026-09-10",
+      "representation": "archived-primary-pdf",
+      "purpose": "Printed page 5 FN-TRAN-SFP+LR: SFP+, 10GBASE-LR, 1310 nm duplex LC SMF, 10 km; published power dissipation 850 mW is not explicitly a maximum. The 1000 mW reservation is authored. Generic optic data alone does not establish host compatibility.",
+      "archive_path": "build/goal-connected-depth/design/phase5-sources/fortinet-transceivers.pdf",
+      "sha256": "afe07a03b9a463fbccbd3b81e1891e69058c5a12bf4e6c0a3e4798314927a07b"
+    },
+    "reference-optics-v1": {
+      "url": "README.md#installed-optics-policy",
+      "checked": "2026-09-10",
+      "representation": "authored-policy",
+      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+    }
+  },
+  "models": {
+    "access": {
+      "manufacturer": "Cisco",
+      "model": "Catalyst 9200L-24P-4X",
+      "slug": "cisco-c9200l-24p-4x",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet1/0/1",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/2",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/3",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/4",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/5",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/6",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/7",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/8",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/9",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/10",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/11",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/12",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/13",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/14",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/15",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/16",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/17",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/18",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/19",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/20",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/21",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/22",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/23",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "GigabitEthernet1/0/24",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "TenGigabitEthernet1/1/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "TenGigabitEthernet1/1/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "TenGigabitEthernet1/1/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "TenGigabitEthernet1/1/4",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "StackPort1/1",
+          "type": "cisco-stackwise"
+        },
+        {
+          "name": "StackPort1/2",
+          "type": "cisco-stackwise"
+        },
+        {
+          "name": "GigabitEthernet0/0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PS-1",
+          "type": "iec-60320-c16"
+        },
+        {
+          "name": "PS-2",
+          "type": "iec-60320-c16"
+        }
+      ],
+      "source_ids": [
+        "access-chassis",
+        "access-psu",
+        "cisco-psu-compatibility",
+        "reference-poe-v1"
+      ],
+      "description": "Verified chassis/interface inventory with an explicit two-PWR-C5-600WAC installed PSU configuration. Power ports are materialized from module templates, not fixed chassis ports.",
+      "configured_modules": [
+        {
+          "bay": "PS-1",
+          "position": "1",
+          "model": "PWR-C5-600WAC",
+          "power_port": "PS-1"
+        },
+        {
+          "bay": "PS-2",
+          "position": "2",
+          "model": "PWR-C5-600WAC",
+          "power_port": "PS-2"
+        }
+      ],
+      "access_ports": [
+        "GigabitEthernet1/0/1",
+        "GigabitEthernet1/0/2",
+        "GigabitEthernet1/0/3",
+        "GigabitEthernet1/0/4",
+        "GigabitEthernet1/0/5",
+        "GigabitEthernet1/0/6",
+        "GigabitEthernet1/0/7",
+        "GigabitEthernet1/0/8",
+        "GigabitEthernet1/0/9",
+        "GigabitEthernet1/0/10",
+        "GigabitEthernet1/0/11",
+        "GigabitEthernet1/0/12",
+        "GigabitEthernet1/0/13",
+        "GigabitEthernet1/0/14",
+        "GigabitEthernet1/0/15",
+        "GigabitEthernet1/0/16",
+        "GigabitEthernet1/0/17",
+        "GigabitEthernet1/0/18",
+        "GigabitEthernet1/0/19",
+        "GigabitEthernet1/0/20",
+        "GigabitEthernet1/0/21",
+        "GigabitEthernet1/0/22",
+        "GigabitEthernet1/0/23",
+        "GigabitEthernet1/0/24"
+      ],
+      "uplink_ports": [
+        "TenGigabitEthernet1/1/1",
+        "TenGigabitEthernet1/1/2",
+        "TenGigabitEthernet1/1/3",
+        "TenGigabitEthernet1/1/4"
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        },
+        {
+          "name": "usb",
+          "type": "usb-mini-b"
+        }
+      ],
+      "poe_pse": {
+        "type": "type2-ieee802.3at",
+        "per_port_max_mw": 30000,
+        "supply_model": "PWR-C5-600WAC",
+        "budget_by_active_supplies_mw": {
+          "0": 0,
+          "1": 370000,
+          "2": 740000
+        },
+        "budget_source": "cisco-psu-compatibility",
+        "planning_supply_losses": 1,
+        "upstream_ac_allowance_multiplier": "1.25",
+        "policy_source": "reference-poe-v1"
+      }
+    },
+    "inherited-access": {
+      "manufacturer": "Juniper",
+      "model": "EX3300-24P",
+      "slug": "juniper-ex3300-24p",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "ge-0/0/0",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/1",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/2",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/3",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/4",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/5",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/6",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/7",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/8",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/9",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/10",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/11",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/12",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/13",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/14",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/15",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/16",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/17",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/18",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/19",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/20",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/21",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/22",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/23",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "xe-0/1/0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "me0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSU0",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "access_ports": [
+        "ge-0/0/0",
+        "ge-0/0/1",
+        "ge-0/0/2",
+        "ge-0/0/3",
+        "ge-0/0/4",
+        "ge-0/0/5",
+        "ge-0/0/6",
+        "ge-0/0/7",
+        "ge-0/0/8",
+        "ge-0/0/9",
+        "ge-0/0/10",
+        "ge-0/0/11",
+        "ge-0/0/12",
+        "ge-0/0/13",
+        "ge-0/0/14",
+        "ge-0/0/15",
+        "ge-0/0/16",
+        "ge-0/0/17",
+        "ge-0/0/18",
+        "ge-0/0/19",
+        "ge-0/0/20",
+        "ge-0/0/21",
+        "ge-0/0/22",
+        "ge-0/0/23"
+      ],
+      "uplink_ports": [
+        "xe-0/1/0",
+        "xe-0/1/1",
+        "xe-0/1/2",
+        "xe-0/1/3"
+      ],
+      "source_ids": [
+        "inherited-access-chassis",
+        "juniper-ex3300-port-modes",
+        "juniper-ex3300-power",
+        "juniper-ex3300-poe",
+        "reference-poe-v1"
+      ],
+      "description": "Verified EX3300-24P inventory with one fixed internal AC supply. All four shared-mode uplink cages are explicitly configured as 10G network ports, including ports 2 and 3 normally assigned to Virtual Chassis. Alternative ge-0/1/* personalities are omitted to avoid duplicating physical ports. Inherited describes fictional procurement provenance, not vendor lifecycle status; no external redundant power system is modeled.",
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "poe_pse": {
+        "type": "type2-ieee802.3at",
+        "per_port_max_mw": 30000,
+        "fixed_supply_port": "PSU0",
+        "budget_by_active_supplies_mw": {
+          "0": 0,
+          "1": 405000
+        },
+        "budget_source": "juniper-ex3300-poe",
+        "planning_supply_losses": 0,
+        "upstream_ac_allowance_multiplier": "1.25",
+        "policy_source": "reference-poe-v1"
+      }
+    },
+    "leaf": {
+      "manufacturer": "Arista",
+      "model": "DCS-7050SX3-48C8-F",
+      "slug": "arista-dcs-7050sx3-48c8-f",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "Ethernet1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet4",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet5",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet6",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet7",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet8",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet9",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet10",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet11",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet12",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet13",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet14",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet15",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet16",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet17",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet18",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet19",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet20",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet21",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet22",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet23",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet24",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet25",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet26",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet27",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet28",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet29",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet30",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet31",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet32",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet33",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet34",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet35",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet36",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet37",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet38",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet39",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet40",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet41",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet42",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet43",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet44",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet45",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet46",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet47",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet48",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet49/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet50/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet51/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet52/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet53/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet54/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet55/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet56/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Management1",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "leaf-chassis",
+        "leaf-psu",
+        "arista-psu-compatibility"
+      ],
+      "description": "Verified chassis/interface inventory with two PWR-511-AC-RED supplies in positions 0 and 1. Power ports materialize the upstream {module} template; the same model may serve leaf or spine roles.",
+      "configured_modules": [
+        {
+          "bay": "PSU 0",
+          "position": "0",
+          "model": "PWR-511-AC-RED",
+          "power_port": "0"
+        },
+        {
+          "bay": "PSU 1",
+          "position": "1",
+          "model": "PWR-511-AC-RED",
+          "power_port": "1"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ]
+    },
+    "core": {
+      "manufacturer": "Arista",
+      "model": "DCS-7060CX-32S-F",
+      "slug": "arista-dcs-7060cx-32s-f",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "Management1",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "Ethernet1/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet2/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet3/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet4/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet5/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet6/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet7/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet8/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet9/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet10/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet11/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet12/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet13/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet14/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet15/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet16/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet17/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet18/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet19/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet20/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet21/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet22/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet23/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet24/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet25/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet26/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet27/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet28/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet29/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet30/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet31/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet32/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "Ethernet33",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Ethernet34",
+          "type": "10gbase-x-sfpp"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "core-chassis",
+        "core-psu",
+        "core-psu-compatibility"
+      ],
+      "description": "Verified chassis/interface inventory with two PWR-500AC-F supplies in positions 0 and 1. Power ports materialize the upstream {module} template. 32 native 100G ports; breakout modes are not modeled.",
+      "configured_modules": [
+        {
+          "bay": "PS1",
+          "position": "0",
+          "model": "PWR-500AC-F",
+          "power_port": "0"
+        },
+        {
+          "bay": "PS2",
+          "position": "1",
+          "model": "PWR-500AC-F",
+          "power_port": "1"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ]
+    },
+    "edge": {
+      "manufacturer": "Fortinet",
+      "model": "FortiGate 100F",
+      "slug": "fortinet-fg-100f",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "dmz",
+          "type": "1000base-t"
+        },
+        {
+          "name": "mgmt",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "wan1",
+          "type": "1000base-t"
+        },
+        {
+          "name": "wan2",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ha1",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ha2",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port1",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port2",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port3",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port4",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port5",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port6",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port7",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port8",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port9",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port10",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port11",
+          "type": "1000base-t"
+        },
+        {
+          "name": "port12",
+          "type": "1000base-t"
+        },
+        {
+          "name": "x1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "x2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "port13",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port14",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port15",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port16",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port17",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port18",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port19",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "port20",
+          "type": "1000base-x-sfp"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PS1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PS2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "edge-chassis"
+      ],
+      "description": "Verified source inventory. Shared-media port17-port20 use the source optical personality; no additional copper interfaces are invented for the same ports.",
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ]
+    },
+    "server": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference 1U dual-10G server",
+      "slug": "devin-reference-server-1u",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "eth1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "mgmt0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSU1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PSU2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "description": "Reference design: 1U, two 10G data interfaces, one 1G management interface, and two C14 AC supplies."
+    },
+    "patch-panel": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference 1U passive patch panel",
+      "slug": "devin-reference-patch-panel-1u",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [],
+      "power_ports": [],
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "description": "Reference design: passive 1U panel. Builder emits explicitly paired front/rear termination ports; there are no Ethernet interfaces or power inlets.",
+      "passive_ports": 24
+    },
+    "pdu": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference 0U 12-outlet PDU",
+      "slug": "devin-reference-pdu-0u-12",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [],
+      "power_ports": [
+        {
+          "name": "Input",
+          "type": "iec-60320-c20"
+        }
+      ],
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "description": "Reference design: vertical 0U PDU, one C20 inlet, 12 C13 outlets, no management Ethernet interface.",
+      "power_outlets": [
+        {
+          "name": "Outlet1",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet2",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet3",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet4",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet5",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet6",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet7",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet8",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet9",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet10",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet11",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet12",
+          "type": "iec-60320-c13"
+        }
+      ]
+    },
+    "endpoint": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference endpoint",
+      "slug": "devin-reference-endpoint",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "type": "1000base-t"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "Input",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "description": "Reference design: non-rack-mounted endpoint, one 1G Ethernet interface, one C14 AC inlet. This models an example appliance, not a vendor product."
+    },
+    "atm": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference ATM",
+      "slug": "devin-reference-atm",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "type": "1000base-t"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "Input",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "description": "Reference design: non-rack-mounted ATM, one 1G Ethernet interface, one C14 AC inlet. This models an example appliance, not a vendor product."
+    },
+    "ap": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference PoE access point",
+      "slug": "devin-reference-ap",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "type": "1000base-t",
+          "poe_mode": "pd",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "wlan0",
+          "type": "ieee802.11ax"
+        },
+        {
+          "name": "wlan1",
+          "type": "ieee802.11ax"
+        }
+      ],
+      "power_ports": [],
+      "source_ids": [
+        "reference-design-v1",
+        "reference-poe-v1"
+      ],
+      "description": "Reference design: PoE 1G access point with two 5 GHz 802.11ax radios. wlan0 serves WLANs; wlan1 serves a second WLAN or the bank routed diagnostic link. Authored Type 2 envelope: 25.5 W maximum PD input, 30 W PSE reservation; no measured RF, consumption or vendor certification claim.",
+      "power_source": "poe",
+      "poe_pd": {
+        "interface": "eth0",
+        "required_type": "type2-ieee802.3at",
+        "max_input_mw": 25500,
+        "pse_reservation_mw": 30000,
+        "policy_source": "reference-poe-v1"
+      },
+      "radio_bands": {
+        "wlan0": "5g",
+        "wlan1": "5g"
+      }
+    },
+    "wall-outlet": {
+      "manufacturer": "Devin Reference Designs",
+      "model": "Reference single-port wall outlet",
+      "slug": "devin-reference-wall-outlet-1",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [],
+      "power_ports": [],
+      "passive_ports": 1,
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "description": "Reference one-position 8P8C wall outlet with rear horizontal termination and front endpoint patch connection."
+    },
+    "console-server": {
+      "manufacturer": "Devin Reference Designs",
+      "is_full_depth": true,
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "model": "Reference 48-port console server",
+      "slug": "devin-reference-console-server",
+      "u_height": 1,
+      "interfaces": [
+        {
+          "name": "mgmt0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSU1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PSU2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_server_ports": [
+        {
+          "name": "Console01",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console02",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console03",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console04",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console05",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console06",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console07",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console08",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console09",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console10",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console11",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console12",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console13",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console14",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console15",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console16",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console17",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console18",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console19",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console20",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console21",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console22",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console23",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console24",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console25",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console26",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console27",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console28",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console29",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console30",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console31",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console32",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console33",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console34",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console35",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console36",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console37",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console38",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console39",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console40",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console41",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console42",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console43",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console44",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console45",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console46",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console47",
+          "type": "rj-45",
+          "speed": 115200
+        },
+        {
+          "name": "Console48",
+          "type": "rj-45",
+          "speed": 115200
+        }
+      ],
+      "description": "Reference 1U dual-supply serial access server with 48 RJ45 asynchronous ports; management Ethernet is separate."
+    },
+    "liquid-chassis": {
+      "manufacturer": "Devin Reference Designs",
+      "is_full_depth": true,
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "model": "Reference liquid-cooled blade enclosure",
+      "slug": "devin-reference-liquid-chassis",
+      "u_height": 2,
+      "subdevice_role": "parent",
+      "cooling_method": "hybrid",
+      "interfaces": [
+        {
+          "name": "mgmt0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSU1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PSU2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "description": "Reference 2U one-blade enclosure: internal power and coolant distribution, independent management controller; 400W planning allowance includes the child blade."
+    },
+    "liquid-blade": {
+      "manufacturer": "Devin Reference Designs",
+      "is_full_depth": true,
+      "source_ids": [
+        "reference-design-v1"
+      ],
+      "model": "Reference liquid-cooled analytics blade",
+      "slug": "devin-reference-liquid-blade",
+      "u_height": 0,
+      "subdevice_role": "child",
+      "cooling_method": "liquid",
+      "interfaces": [
+        {
+          "name": "mgmt0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [],
+      "description": "Reference child blade powered through its enclosure. Dedicated management, coolant intake and one diagnostic device context; no physical production application links are claimed."
+    },
+    "provider-edge": {
+      "manufacturer": "Juniper",
+      "model": "MX204",
+      "slug": "juniper-mx204",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "fxp0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "et-0/0/0",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/2",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/3",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "xe-0/1/0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/4",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/5",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/6",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/1/7",
+          "type": "10gbase-x-sfpp"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PEM 0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PEM 1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "configured_modules": [
+        {
+          "bay": "Power Supply 0",
+          "position": "PEM 0",
+          "model": "JPSU-650W-AC-AO",
+          "power_port": "PEM 0"
+        },
+        {
+          "bay": "Power Supply 1",
+          "position": "PEM 1",
+          "model": "JPSU-650W-AC-AO",
+          "power_port": "PEM 1"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "provider-edge-chassis",
+        "provider-edge-psu",
+        "mx204-port-modes",
+        "mx204-ac-power",
+        "juniper-inband-management"
+      ],
+      "description": "Pinned MX204 chassis and interface inventory; two explicitly installed JPSU-650W-AC-AO modules. Generator selects three 100G ports plus eight 10G ports, disables the fourth 100G port, and uses lo0 for inband management. Fan population and certified transceiver choices are not modeled."
+    }
+  },
+  "optics": {
+    "local_min_m": 3,
+    "local_max_m": 100,
+    "upstream_ac_allowance_multiplier": "1.25",
+    "parts": {
+      "cisco-10g-lr": {
+        "manufacturer": "Cisco",
+        "model": "SFP-10G-LR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "cisco-optics-host-json",
+          "cisco-optics-host-notes",
+          "cisco-sfp-10g-power"
+        ],
+        "compatible_interfaces": {
+          "access": [
+            "TenGigabitEthernet1/1/1",
+            "TenGigabitEthernet1/1/2",
+            "TenGigabitEthernet1/1/3",
+            "TenGigabitEthernet1/1/4"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "juniper-10g-lr": {
+        "manufacturer": "Juniper",
+        "model": "EX-SFP-10GE-LR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "juniper-ex3300-optics",
+          "juniper-mx204-optics-host",
+          "juniper-ex-sfp-10ge-lr",
+          "mx204-port-modes"
+        ],
+        "compatible_interfaces": {
+          "inherited-access": [
+            "xe-0/1/0",
+            "xe-0/1/1",
+            "xe-0/1/2",
+            "xe-0/1/3"
+          ],
+          "provider-edge": [
+            "xe-0/1/0",
+            "xe-0/1/1",
+            "xe-0/1/2",
+            "xe-0/1/3",
+            "xe-0/1/4",
+            "xe-0/1/5",
+            "xe-0/1/6",
+            "xe-0/1/7"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "arista-10g-lr": {
+        "manufacturer": "Arista",
+        "model": "SFP-10G-LR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 2000,
+        "power_basis": "authored conservative reservation; explicit vendor maximum not established",
+        "source_ids": [
+          "arista-transceiver-guide",
+          "arista-7050-optics-host-indexed",
+          "arista-transceiver-datasheet",
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "leaf": [
+            "Ethernet1",
+            "Ethernet2",
+            "Ethernet3",
+            "Ethernet4",
+            "Ethernet5",
+            "Ethernet6",
+            "Ethernet7",
+            "Ethernet8",
+            "Ethernet9",
+            "Ethernet10",
+            "Ethernet11",
+            "Ethernet12",
+            "Ethernet13",
+            "Ethernet14",
+            "Ethernet15",
+            "Ethernet16",
+            "Ethernet17",
+            "Ethernet18",
+            "Ethernet19",
+            "Ethernet20",
+            "Ethernet21",
+            "Ethernet22",
+            "Ethernet23",
+            "Ethernet24",
+            "Ethernet25",
+            "Ethernet26",
+            "Ethernet27",
+            "Ethernet28",
+            "Ethernet29",
+            "Ethernet30",
+            "Ethernet31",
+            "Ethernet32",
+            "Ethernet33",
+            "Ethernet34",
+            "Ethernet35",
+            "Ethernet36",
+            "Ethernet37",
+            "Ethernet38",
+            "Ethernet39",
+            "Ethernet40",
+            "Ethernet41",
+            "Ethernet42",
+            "Ethernet43",
+            "Ethernet44",
+            "Ethernet45",
+            "Ethernet46",
+            "Ethernet47",
+            "Ethernet48"
+          ]
+        }
+      },
+      "arista-100g-lr4": {
+        "manufacturer": "Arista",
+        "model": "QSFP-100G-LR4",
+        "form_factor": "qsfp28",
+        "protocol": "100GBASE-LR4",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 100000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 4500,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "arista-transceiver-guide",
+          "arista-7050-optics-host-indexed",
+          "arista-100g-qa"
+        ],
+        "compatible_interfaces": {
+          "leaf": [
+            "Ethernet49/1",
+            "Ethernet50/1",
+            "Ethernet51/1",
+            "Ethernet52/1",
+            "Ethernet53/1",
+            "Ethernet54/1",
+            "Ethernet55/1",
+            "Ethernet56/1"
+          ],
+          "core": [
+            "Ethernet1/1",
+            "Ethernet2/1",
+            "Ethernet3/1",
+            "Ethernet4/1",
+            "Ethernet5/1",
+            "Ethernet6/1",
+            "Ethernet7/1",
+            "Ethernet8/1",
+            "Ethernet9/1",
+            "Ethernet10/1",
+            "Ethernet11/1",
+            "Ethernet12/1",
+            "Ethernet13/1",
+            "Ethernet14/1",
+            "Ethernet15/1",
+            "Ethernet16/1",
+            "Ethernet17/1",
+            "Ethernet18/1",
+            "Ethernet19/1",
+            "Ethernet20/1",
+            "Ethernet21/1",
+            "Ethernet22/1",
+            "Ethernet23/1",
+            "Ethernet24/1",
+            "Ethernet25/1",
+            "Ethernet26/1",
+            "Ethernet27/1",
+            "Ethernet28/1",
+            "Ethernet29/1",
+            "Ethernet30/1",
+            "Ethernet31/1",
+            "Ethernet32/1"
+          ]
+        },
+        "vendor_max_power_mw": 4500
+      },
+      "fortinet-10g-lr": {
+        "manufacturer": "Fortinet",
+        "model": "FN-TRAN-SFP+LR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1000,
+        "power_basis": "authored round-up from published 850mW dissipation; worst-case maximum not established",
+        "source_ids": [
+          "fortinet-100f-optics-host-indexed",
+          "fortinet-transceivers",
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "edge": [
+            "x1",
+            "x2"
+          ]
+        }
+      },
+      "juniper-1g-lx": {
+        "manufacturer": "Juniper",
+        "model": "SFP-1GE-LX",
+        "form_factor": "sfp",
+        "protocol": "1000BASE-LX",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 1000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "juniper-mx204-optics-host",
+          "juniper-sfp-1ge-lx",
+          "mx204-port-modes"
+        ],
+        "compatible_interfaces": {
+          "provider-edge": [
+            "xe-0/1/0",
+            "xe-0/1/1",
+            "xe-0/1/2",
+            "xe-0/1/3",
+            "xe-0/1/4",
+            "xe-0/1/5",
+            "xe-0/1/6",
+            "xe-0/1/7"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "juniper-100g-lr4": {
+        "manufacturer": "Juniper",
+        "model": "JNP-QSFP-100G-LR4",
+        "form_factor": "qsfp28",
+        "protocol": "100GBASE-LR4",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 100000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 3500,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "juniper-mx204-optics-host",
+          "juniper-jnp-qsfp-100g-lr4",
+          "mx204-port-modes"
+        ],
+        "compatible_interfaces": {
+          "provider-edge": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2"
+          ]
+        },
+        "vendor_max_power_mw": 3500
+      },
+      "reference-10g-lr": {
+        "manufacturer": "Devin Reference Designs",
+        "model": "Reference 10G-LR transceiver",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 100,
+        "power_reservation_mw": 2000,
+        "power_basis": "authored reference component envelope",
+        "source_ids": [
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "server": [
+            "eth0",
+            "eth1"
+          ]
+        }
+      },
+      "arista-100g-aoc-3m": {
+        "manufacturer": "Arista",
+        "model": "AOC-Q-Q-100G-3M",
+        "form_factor": "qsfp28",
+        "protocol": "100G-AOC",
+        "medium": "aoc",
+        "connector": "captive",
+        "rate_kbps": 100000000,
+        "reach_m": 3,
+        "power_reservation_mw": 3500,
+        "power_basis": "authored per-captive-end allocation of published 3.5W; source does not explicitly distinguish whole assembly from individual end",
+        "source_ids": [
+          "arista-7050-optics-host-indexed",
+          "arista-transceiver-datasheet",
+          "arista-transceiver-guide",
+          "arista-100g-qa",
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "leaf": [
+            "Ethernet49/1",
+            "Ethernet50/1",
+            "Ethernet51/1",
+            "Ethernet52/1",
+            "Ethernet53/1",
+            "Ethernet54/1",
+            "Ethernet55/1",
+            "Ethernet56/1"
+          ]
+        },
+        "assembly": true,
+        "assembly_length_m": 3
+      }
+    }
+  }
+}

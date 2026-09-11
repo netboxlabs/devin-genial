@@ -1,0 +1,44 @@
+# Fictional workload demand; resources and failure domains are explicit inputs.
+profile = "enterprise-data-center"
+name = "Summit Enterprise Infrastructure"
+namespace = "summit-dc"
+seed = 42
+as_of = "2026-09-09"
+address_pool = "10.64.0.0/12"
+data_centers = 2
+wan_peak_mbps = 1200
+reserve_fraction = 0.2
+demo = "baseline"
+
+[[workloads]]
+key = "inventory-api"
+groups = 3
+replicas = 2
+failure_domain = "rack"
+network = "applications"
+vcpus = 4
+memory_mb = 8192
+disk_mb = 100000
+criticality = "tier-1"
+listeners = [{ key = "", name = "inventory-api", protocol = "tcp", ports = [443] }, { key = "metrics", name = "inventory-metrics", protocol = "tcp", ports = [9090] }]
+
+[[workloads]]
+key = "orders-db"
+groups = 2
+replicas = 2
+failure_domain = "rack"
+network = "database"
+vcpus = 8
+memory_mb = 32768
+disk_mb = 500000
+listeners = [{ key = "", name = "orders-db", protocol = "tcp", ports = [5432] }]
+
+[[workloads]]
+key = "build-artifacts"
+groups = 2
+replicas = 2
+failure_domain = "host"
+network = "backup"
+vcpus = 4
+memory_mb = 8192
+disk_mb = 1000000

@@ -1,0 +1,61 @@
+# Fictional customer: regional distributor preparing for peak order volume.
+# These are declared demonstration sizing assumptions, not measured demand.
+# Every DC receives this workload demand. Cross-site replication is not modeled.
+profile = "enterprise-data-center"
+name = "Harbor Supply"
+namespace = "harbor-supply"
+seed = 73
+as_of = "2026-09-09"
+address_pool = "10.96.0.0/12"
+data_centers = 2
+wan_peak_mbps = 2400
+reserve_fraction = 0.2
+demo = "loss-of-power-diversity"
+
+[[workloads]]
+key = "inventory-api"
+groups = 12
+replicas = 2
+failure_domain = "rack"
+network = "applications"
+vcpus = 4
+memory_mb = 8192
+disk_mb = 100000
+criticality = "tier-1"
+listeners = [{ key = "", name = "inventory-api", protocol = "tcp", ports = [443] }, { key = "metrics", name = "inventory-metrics", protocol = "tcp", ports = [9090] }]
+
+[[workloads]]
+key = "orders-db"
+groups = 6
+replicas = 2
+failure_domain = "rack"
+network = "database"
+vcpus = 8
+memory_mb = 32768
+disk_mb = 500000
+criticality = "tier-1"
+listeners = [{ key = "", name = "orders-db", protocol = "tcp", ports = [5432] }]
+
+[[workloads]]
+key = "warehouse-events"
+groups = 4
+replicas = 3
+failure_domain = "rack"
+network = "applications"
+vcpus = 4
+memory_mb = 8192
+disk_mb = 200000
+criticality = "tier-1"
+listeners = [{ key = "", name = "warehouse-events", protocol = "tcp", ports = [5671] }]
+
+[[workloads]]
+key = "release-artifacts"
+groups = 2
+replicas = 2
+failure_domain = "host"
+network = "backup"
+vcpus = 4
+memory_mb = 8192
+disk_mb = 1000000
+criticality = "tier-2"
+listeners = [{ key = "", name = "release-artifacts", protocol = "tcp", ports = [443] }]

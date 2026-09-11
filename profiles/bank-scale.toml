@@ -1,0 +1,22 @@
+# A separate, reproducible scale estate; use bank.toml for the walkthrough.
+profile = "regional-bank"
+name = "Cedar Regional Bank — Scale Estate"
+namespace = "cedar-scale"
+seed = 42
+as_of = "2026-09-01"
+address_pool = "10.0.0.0/8"
+data_centers = 2
+headquarters = 1
+reserve_fraction = 0.2
+max_objects = 500000
+patching = "direct"
+
+[branches]
+small = 250
+medium = 0
+large = 0
+
+[design_mix]
+modern = 60
+inherited = 25
+refreshed = 15

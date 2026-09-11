@@ -1,0 +1,29 @@
+# People, classrooms and installed seats are distinct demands. All premises,
+# resource sizing, traffic and wireless concurrency assumptions are synthetic.
+profile = "school-district"
+namespace = "maple-district"
+name = "Maple School District"
+seed = 42
+as_of = "2026-09-09"
+address_pool = "10.128.0.0/12"
+reserve_fraction = 0.2
+patching = "direct"
+demo = "baseline"
+
+[[schools]]
+key = "oak"
+classrooms = 4
+students_per_classroom = 24
+wired_seats_per_classroom = 4
+administrative_staff = 8
+lab_seats = 12
+wan_peak_mbps = 100
+
+[[schools]]
+key = "ridge"
+classrooms = 12
+students_per_classroom = 28
+wired_seats_per_classroom = 6
+administrative_staff = 18
+lab_seats = 24
+wan_peak_mbps = 300

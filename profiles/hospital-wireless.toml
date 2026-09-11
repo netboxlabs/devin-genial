@@ -1,0 +1,38 @@
+# Planned concurrent mobile devices and visitors; no patient-volume assumption.
+profile = "hospital-clinics"
+namespace = "lakeshore-wireless"
+name = "Lakeshore ward and clinic access"
+seed = 42
+as_of = "2026-09-09"
+patching = "panels"
+ipv6_pool = "2001:db8::/32"
+
+[[hospitals]]
+key = "central"
+administrative_desks = 12
+imaging_rooms = 1
+wan_peak_mbps = 300
+
+[[hospitals.wards]]
+key = "medical-a"
+beds = 12
+clinical_desks = 4
+
+[hospitals.wireless.ward-medical-a]
+managed = 36
+guest = 16
+
+[hospitals.wireless.reception]
+managed = 8
+guest = 40
+
+[[clinics]]
+key = "west"
+exam_rooms = 8
+administrative_desks = 4
+imaging_rooms = 1
+wan_peak_mbps = 100
+
+[clinics.wireless.reception]
+managed = 8
+guest = 24
