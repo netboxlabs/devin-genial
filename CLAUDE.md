@@ -69,6 +69,22 @@ standard library; the pinned Diode SDK is an optional export-verification tool.
 The Justfile is the human CLI. Run `just check` before committing.
 The target-aware loader is `just load ARTIFACT TARGET [BRANCH]`;
 the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
+TurboBulk jobs default to at most 2,000 rows. Keep deterministic batch purposes,
+receipt-bound request settings, one ID-resolution read per completed model, and
+cable hooks only on the final cable-termination batch. A fourth `just load`
+argument changes the bound for measured qualification runs.
+Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
+the parent device in the original TurboBulk row. Require the corresponding REST
+filters during preflight and prove exact component IDs by kind and placement at
+final readback, including null location/rack placements. Do not add a repair
+upsert: reviewable history must remain one create ChangeDiff per canonical object.
+Those commands retain review and merge history. `just load-disposable ARTIFACT
+TARGET BRANCH` is the explicit scale-only path: it requires a fresh empty branch
+which cannot be reviewed, merged, or reverted and must be deleted after use. It
+also requires a TurboBulk-only artifact with no REST create or completion writes;
+the explain and load preflights reject other artifacts before target writes.
+Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
+the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 `just reset TARGET BRANCH` replaces only an exact disposable Branching branch and
 archives its bound private load receipts.
 Keep transport orchestration behind that recipe rather than adding an installed CLI.

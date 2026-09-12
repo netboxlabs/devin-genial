@@ -35,10 +35,20 @@ class FakeClient:
     def request(self, path, **_kwargs):
         if path == "/api/status/":
             plugins = {"netbox_branching": "1.1.2"} if self.api.plugin else {}
+            if self.api.turbobulk_plugin:
+                plugins["netbox_turbobulk"] = "0.3.0"
             return 200, {"netbox-version": "4.6.8", "plugins": plugins}
         raise AssertionError(path)
 
     def all(self, _path):
+        if _path.startswith("/api/core/jobs/"):
+            self.api.job_reads += 1
+            if self.api.job_snapshots:
+                index = min(self.api.job_reads - 1, len(self.api.job_snapshots) - 1)
+                return list(self.api.job_snapshots[index])
+            if self.api.jobs_on_read == self.api.job_reads:
+                return list(self.api.late_jobs)
+            return list(self.api.jobs)
         return list(self.api.branches)
 
 
@@ -46,15 +56,23 @@ class FakeAPI:
     def __init__(self, rows, *, plugin=True, created_status="ready"):
         self.branches = list(rows)
         self.plugin = plugin
+        self.turbobulk_plugin = False
         self.created_status = created_status
         self.next_id = 100
         self.delete_error_after_accept = False
         self.delete_error_before_accept = False
+        self.rename_error_after_accept = False
         self.create_error_after_accept = False
         self.delete_rejection = None
         self.create_rejection = None
         self.create_allowed = True
         self.delete_allowed = True
+        self.jobs = []
+        self.job_snapshots = []
+        self.late_jobs = []
+        self.jobs_on_read = None
+        self.queue_original_job_on_delete = False
+        self.job_reads = 0
         self.calls = []
 
     def request(self, _client, path, *, method="GET", body=None, allowed=(), include_headers=False):
@@ -76,10 +94,21 @@ class FakeAPI:
                 self.delete_error_before_accept = False
                 raise OSError("connection closed")
             self.branches = [row for row in self.branches if row["id"] != branch_id]
+            if self.queue_original_job_on_delete:
+                self.jobs.append({"id": 99, "name": "Bulk Load", "status": "pending",
+                                  "data": {"branch": NAME}})
             if self.delete_error_after_accept:
                 self.delete_error_after_accept = False
                 raise OSError("connection closed")
             return 204, None
+        if method == "PATCH":
+            branch_id = int(path.rstrip("/").split("/")[-1])
+            row = next(row for row in self.branches if row["id"] == branch_id)
+            row["name"] = body["name"]
+            if self.rename_error_after_accept:
+                self.rename_error_after_accept = False
+                raise OSError("connection closed")
+            return 200, row
         if method == "POST":
             if self.create_rejection:
                 raise subject.HTTPRejected(method, path, self.create_rejection, "denied")
@@ -144,6 +173,110 @@ class ResetTests(unittest.TestCase):
         self.assertTrue(unrelated.exists())
         receipt_path = next(self.reset_root.glob("*.json"))
         self.assertEqual(stat.S_IMODE(receipt_path.stat().st_mode), 0o600)
+
+    def test_pending_job_with_null_data_drains_after_quarantine(self):
+        pending = {"id": 41, "name": "Bulk Load", "status": {"value": "pending"}, "data": None}
+        self.api.job_snapshots = [[pending], [pending], []]
+
+        result = self.run_reset(timeout=1)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["initial_active_jobs"][0]["status"], "pending")
+        self.assertEqual(self.api.branches[0]["name"], result["new_branch_name"])
+        self.assertNotEqual(result["new_branch_name"], NAME)
+
+    def test_running_job_with_missing_metadata_times_out_with_old_branch_quarantined(self):
+        for data in (None, {}, {"branch": None}, {"branch": ""}):
+            with self.subTest(data=data):
+                self.api.jobs = [{"id": 42, "name": "Bulk Delete", "status": "running",
+                                  "data": data}]
+                with self.assertRaisesRegex(LoadError, "did not quiesce"):
+                    self.run_reset(timeout=0)
+                receipt = json.loads(next(self.reset_root.glob("*.json")).read_text())
+                self.assertEqual(receipt["stage"], "quarantined")
+                self.assertEqual(self.api.branches[0]["name"], receipt["quarantine_name"])
+                self.assertFalse(any(call[0] == "DELETE" for call in self.api.calls))
+                self.api.branches = [branch(7)]
+                for path in self.reset_root.glob("*.json"):
+                    path.unlink()
+
+    def test_job_drain_timeout_resumes_quarantined_branch(self):
+        pending = {"id": 43, "name": "Bulk Export", "status": "pending", "data": None}
+        self.api.jobs = [pending]
+        with self.assertRaisesRegex(LoadError, "did not quiesce"):
+            self.run_reset(timeout=0)
+        receipt = json.loads(next(self.reset_root.glob("*.json")).read_text())
+        self.assertEqual(self.api.branches[0]["name"], receipt["quarantine_name"])
+
+        self.api.jobs = []
+        result = self.run_reset(timeout=1)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(self.api.branches[0]["name"], result["new_branch_name"])
+        self.assertEqual(len([call for call in self.api.calls if call[0] == "PATCH"]), 1)
+
+    def test_turbobulk_installation_rotates_to_unique_replacement_name(self):
+        self.api.turbobulk_plugin = True
+        result = self.run_reset()
+        self.assertTrue(result["success"])
+        self.assertEqual(self.api.branches[0]["name"], result["new_branch_name"])
+        self.assertNotEqual(result["new_branch_name"], NAME)
+        self.assertNotEqual(result["quarantine_name"], NAME)
+
+    def test_late_original_name_job_cannot_target_unique_replacement(self):
+        self.api.turbobulk_plugin = True
+        self.api.queue_original_job_on_delete = True
+
+        result = self.run_reset()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(self.api.jobs[0]["data"]["branch"], NAME)
+        self.assertNotEqual(result["new_branch_name"], NAME)
+        self.assertEqual(self.api.branches[0]["name"], result["new_branch_name"])
+        self.assertFalse(any(row["name"] == NAME for row in self.api.branches))
+
+    def test_rename_response_loss_recovers_by_old_id(self):
+        self.api.rename_error_after_accept = True
+        with self.assertRaisesRegex(LoadError, "rename outcome is ambiguous"):
+            self.run_reset()
+        receipt = json.loads(next(self.reset_root.glob("*.json")).read_text())
+        self.assertEqual(self.api.branches[0]["name"], receipt["quarantine_name"])
+
+        result = self.run_reset()
+        self.assertTrue(result["success"])
+        self.assertEqual(self.api.branches[0]["name"], result["new_branch_name"])
+        self.assertEqual(len([call for call in self.api.calls if call[0] == "PATCH"]), 1)
+
+    def test_unrelated_and_terminal_jobs_do_not_block_reset(self):
+        self.api.jobs = [
+            {"id": 1, "name": "Bulk Load", "status": "running", "data": {"branch": "Other"}},
+            {"id": 2, "name": "Unrelated Job", "status": "running", "data": {"branch": NAME}},
+            *({"id": number, "name": "Bulk Load", "status": status, "data": {"branch": NAME}}
+              for number, status in enumerate(("completed", "errored", "failed", "scheduled"), 3)),
+        ]
+        result = self.run_reset()
+        self.assertTrue(result["success"])
+
+    def test_job_appearing_after_initial_check_blocks_immediately_before_delete(self):
+        self.api.jobs_on_read = 3
+        self.api.late_jobs = [{"id": 51, "name": "Bulk Load", "status": "running",
+                               "data": {"branch": NAME}}]
+        with self.assertRaisesRegex(LoadError, "work reappeared"):
+            self.run_reset()
+        self.assertTrue(self.reset_root.exists())
+        self.assertFalse(any(call[0] == "DELETE" for call in self.api.calls))
+
+    def test_active_job_blocks_ambiguous_delete_resume(self):
+        self.api.delete_error_before_accept = True
+        with self.assertRaisesRegex(LoadError, "DELETE outcome is ambiguous"):
+            self.run_reset()
+        self.api.jobs = [{"id": 52, "name": "Bulk Load", "status": "pending",
+                          "data": {"branch": NAME}}]
+
+        with self.assertRaisesRegex(LoadError, "work reappeared"):
+            self.run_reset()
+
+        self.assertEqual(len([call for call in self.api.calls if call[0] == "DELETE"]), 1)
 
     def test_delete_response_loss_resumes_by_observing_old_id_absent(self):
         self.api.delete_error_after_accept = True
@@ -298,6 +431,8 @@ class ResetTests(unittest.TestCase):
         self.assertEqual(code, 0)
         result = json.loads(output.getvalue())
         self.assertEqual(result["receipt"], str(receipt_path))
+        self.assertEqual(result["new_branch_name"], self.api.branches[0]["name"])
+        self.assertNotEqual(result["new_branch_name"], NAME)
         self.assertEqual(result["new_schema_id"], "branch_100")
 
 

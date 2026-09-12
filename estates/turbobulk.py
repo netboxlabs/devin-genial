@@ -5,7 +5,7 @@ TurboBulk receives database-shaped rows; bounded REST updates close relationship
 which are cyclic or absent from the installed TurboBulk schema.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import gzip
@@ -40,8 +40,78 @@ class JobTimeout(LoadError):
         )
 
 
-RECEIPT_VERSION = 1
-COMPILER_VERSION = "v02-turbobulk-5"
+RECEIPT_VERSION = 2
+COMPILER_VERSION = "v02-turbobulk-10"
+DEFAULT_JOB_ROWS = 2_000
+DEVICE_COMPONENT_KINDS = {
+    "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
+}
+
+DELIVERY_POLICIES = ("reviewable", "disposable-baseline")
+POST_HOOKS = {
+    "fix_denormalized": True,
+    "rebuild_search_index": True,
+    "fix_counters": True,
+    "fix_cable_links": True,
+    "rebuild_cable_paths": True,
+}
+
+
+def delivery_contract(policy):
+    if policy not in DELIVERY_POLICIES:
+        raise LoadError(f"unsupported delivery policy {policy!r}")
+    reviewable = policy == "reviewable"
+    return {
+        "policy": policy,
+        "warning": (None if reviewable else
+                    "This branch cannot be reviewed, merged, or reverted; delete it after use."),
+        "branch_capabilities": {
+            "reviewable": reviewable,
+            "mergeable": reviewable,
+            "revertible_after_merge": reviewable,
+        },
+        "request_settings": {
+            "validation_mode": "full",
+            "create_changelogs": reviewable,
+            "apply_save_hooks": False,
+            "dispatch_events": False,
+            "post_hooks": dict(POST_HOOKS),
+        },
+    }
+
+
+def _batch_request_settings(base, *, last_batch, cable_final=False):
+    """Run table-wide hooks once per model and cable hooks only after all terminations."""
+    settings = {**base, "post_hooks": {name: False for name in POST_HOOKS}}
+    if last_batch:
+        for name in ("fix_denormalized", "rebuild_search_index", "fix_counters"):
+            settings["post_hooks"][name] = base["post_hooks"][name]
+    if cable_final:
+        for name in ("fix_cable_links", "rebuild_cable_paths"):
+            settings["post_hooks"][name] = base["post_hooks"][name]
+    return settings
+
+
+def rest_mutation_requirements(objects):
+    """Return canonical intent that cannot be completed by TurboBulk alone."""
+    creates = sorted({obj["kind"] for obj in objects.values()} & REST_CREATE_KINDS)
+    patches = sorted({(obj["kind"], field) for obj in objects.values()
+                      for field in set(obj["refs"]) & DEFERRED})
+    return {"create_kinds": creates,
+            "patch_fields": [f"{kind}.{field}" for kind, field in patches]}
+
+
+def disposable_rest_blocker(objects):
+    required = rest_mutation_requirements(objects)
+    parts = []
+    if required["create_kinds"]:
+        parts.append("REST create: " + ", ".join(required["create_kinds"]))
+    if required["patch_fields"]:
+        parts.append("REST completion PATCH: " + ", ".join(required["patch_fields"]))
+    if not parts:
+        return None
+    return ("disposable-baseline requires a TurboBulk-only artifact because REST writes would create "
+            "partial branch history; " + "; ".join(parts))
 
 
 SPECS = {
@@ -326,6 +396,19 @@ def _ref_id(obj, name, ids):
     return ids[obj["refs"][name]]
 
 
+def _component_cache_ids(obj, objects, ids):
+    """Materialize ComponentModel caches from the component's parent device."""
+    device = objects[obj["refs"]["device"]]
+    site_key = device["refs"].get("site")
+    location_key = device["refs"].get("location")
+    rack_key = device["refs"].get("rack")
+    return {
+        "_site_id": ids[site_key] if site_key is not None else None,
+        "_location_id": ids[location_key] if location_key is not None else None,
+        "_rack_id": ids[rack_key] if rack_key is not None else None,
+    }
+
+
 def _matches(obj, row, ids, objects=None):
     kind, attrs = obj["kind"], obj["attrs"]
     if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
@@ -421,6 +504,135 @@ def _matches(obj, row, ids, objects=None):
     raise LoadError(f"no target identity matcher for {kind}")
 
 
+def _candidate_bucket_key(obj, ids, objects=None):
+    """Return a coarse natural identity whose bucket is verified by ``_matches``."""
+    kind, attrs, refs = obj["kind"], obj["attrs"], obj["refs"]
+    if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
+                "device_role", "site", "device_type", "contact_group", "contact_role",
+                "platform", "rack_role", "rir", "site_group", "region"}:
+        return "slug", attrs["slug"]
+    if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
+                "virtual_machine"}:
+        return "name", attrs["name"]
+    if kind == "aggregate":
+        return "prefix-rir", attrs["prefix"], _ref_id(obj, "rir", ids)
+    if kind == "provider_network":
+        return "name-provider", attrs["name"], _ref_id(obj, "provider", ids)
+    if kind == "circuit":
+        return "cid-provider", attrs["cid"], _ref_id(obj, "provider", ids)
+    if kind == "provider_account":
+        return "account-provider", attrs["account"], _ref_id(obj, "provider", ids)
+    if kind in {"location", "power_panel"}:
+        return "name-site", attrs["name"], _ref_id(obj, "site", ids)
+    if kind in {"rack", "device"}:
+        return (("asset-tag", attrs["asset_tag"]) if attrs.get("asset_tag") else
+                ("name-site", attrs["name"], _ref_id(obj, "site", ids)))
+    if kind == "vlan":
+        return "vid-site", attrs["vid"], _ref_id(obj, "site", ids)
+    if kind == "prefix":
+        return "prefix-vrf", attrs["prefix"], _ref_id(obj, "vrf", ids)
+    if kind == "circuit_termination":
+        return "side-circuit", attrs["term_side"], _ref_id(obj, "circuit", ids)
+    if kind in {"console_port", "console_server_port", "module_bay", "power_port",
+                "power_outlet", "interface"}:
+        return "name-device", attrs["name"], _ref_id(obj, "device", ids)
+    if kind == "module":
+        return "module-bay", _ref_id(obj, "module_bay", ids)
+    if kind in {"module_bay_type", "module_type"}:
+        name = "model" if kind == "module_type" else "name"
+        return "name-manufacturer", attrs[name], _ref_id(obj, "manufacturer", ids)
+    if kind == "ip_address":
+        return "address-vrf", attrs["address"], _ref_id(obj, "vrf", ids)
+    if kind == "power_feed":
+        return "name-panel", attrs["name"], _ref_id(obj, "power_panel", ids)
+    if kind in {"vm_interface", "virtual_disk"}:
+        return "name-vm", attrs["name"], _ref_id(obj, "virtual_machine", ids)
+    if kind == "service":
+        return ("name-parent", attrs["name"], _ref_id(obj, "virtual_machine", ids),
+                API_CONTENT_TYPES["virtual_machine"])
+    if kind == "vlan_group":
+        return "name-scope", attrs["name"], _ref_id(obj, "scope_site", ids), API_CONTENT_TYPES["site"]
+    if kind == "contact_assignment":
+        target_kind = objects[refs["object"]]["kind"]
+        return ("assignment", _ref_id(obj, "object", ids), API_CONTENT_TYPES[target_kind],
+                _ref_id(obj, "contact", ids), _ref_id(obj, "role", ids))
+    if kind in {"journal_entry", "mac_address"}:
+        target_kind = objects[refs["assigned_object"]]["kind"]
+        field = "comments" if kind == "journal_entry" else "mac_address"
+        return ("assigned", attrs[field], _ref_id(obj, "assigned_object", ids),
+                API_CONTENT_TYPES[target_kind])
+    if kind == "cable":
+        return "label", attrs["label"]
+    raise LoadError(f"no target identity index for {kind}")
+
+
+def _row_bucket_keys(kind, row):
+    nested = _nested_id
+    if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
+                "device_role", "site", "device_type", "contact_group", "contact_role",
+                "platform", "rack_role", "rir", "site_group", "region"}:
+        return [("slug", row.get("slug"))]
+    if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
+                "virtual_machine"}:
+        return [("name", row.get("name"))]
+    if kind == "aggregate":
+        return [("prefix-rir", row.get("prefix"), nested(row.get("rir")))]
+    if kind == "provider_network":
+        return [("name-provider", row.get("name"), nested(row.get("provider")))]
+    if kind == "circuit":
+        return [("cid-provider", row.get("cid"), nested(row.get("provider")))]
+    if kind == "provider_account":
+        return [("account-provider", row.get("account"), nested(row.get("provider")))]
+    if kind in {"location", "power_panel"}:
+        return [("name-site", row.get("name"), nested(row.get("site")))]
+    if kind in {"rack", "device"}:
+        keys = [("name-site", row.get("name"), nested(row.get("site")))]
+        if row.get("asset_tag"):
+            keys.append(("asset-tag", row["asset_tag"]))
+        return keys
+    if kind == "vlan":
+        return [("vid-site", row.get("vid"), nested(row.get("site")))]
+    if kind == "prefix":
+        return [("prefix-vrf", row.get("prefix"), nested(row.get("vrf")))]
+    if kind == "circuit_termination":
+        side = row.get("term_side")
+        side = side.get("value") if isinstance(side, dict) else side
+        return [("side-circuit", side, nested(row.get("circuit")))]
+    if kind in {"console_port", "console_server_port", "module_bay", "power_port",
+                "power_outlet", "interface"}:
+        return [("name-device", row.get("name"), nested(row.get("device")))]
+    if kind == "module":
+        return [("module-bay", nested(row.get("module_bay")))]
+    if kind in {"module_bay_type", "module_type"}:
+        name = "model" if kind == "module_type" else "name"
+        return [("name-manufacturer", row.get(name), nested(row.get("manufacturer")))]
+    if kind == "ip_address":
+        return [("address-vrf", row.get("address"), nested(row.get("vrf")))]
+    if kind == "power_feed":
+        return [("name-panel", row.get("name"), nested(row.get("power_panel")))]
+    if kind in {"vm_interface", "virtual_disk"}:
+        return [("name-vm", row.get("name"), nested(row.get("virtual_machine")))]
+    if kind == "service":
+        parent = row.get("parent_object_id", nested(row.get("parent")))
+        return [("name-parent", row.get("name"), parent,
+                 _content_type_name(row.get("parent_object_type")))]
+    if kind == "vlan_group":
+        return [("name-scope", row.get("name"), row.get("scope_id"),
+                 _content_type_name(row.get("scope_type")))]
+    if kind == "contact_assignment":
+        target = nested(row.get("object", row.get("object_id")))
+        return [("assignment", target, _content_type_name(row.get("object_type")),
+                 nested(row.get("contact")), nested(row.get("role")))]
+    if kind in {"journal_entry", "mac_address"}:
+        field = "comments" if kind == "journal_entry" else "mac_address"
+        target = nested(row.get("assigned_object", row.get("assigned_object_id")))
+        return [("assigned", row.get(field), target,
+                 _content_type_name(row.get("assigned_object_type")))]
+    if kind == "cable":
+        return [("label", row.get("label"))]
+    raise LoadError(f"no target identity index for {kind}")
+
+
 def _content_types(client, required=None):
     result = {}
     for kind in sorted(required or CONTENT_TYPES):
@@ -476,6 +688,8 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     for name, column in DIRECT_REFS.items():
         if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine"):
             row[column] = ids[obj["refs"][name]]
+    if obj["kind"] in DEVICE_COMPONENT_KINDS:
+        row.update(_component_cache_ids(obj, objects, ids))
     if "scope_site" in obj["refs"]:
         row["scope_type_id"], row["scope_id"] = content_types["site"], ids[obj["refs"]["scope_site"]]
     for field in ("termination", "assigned_object", "object"):
@@ -507,6 +721,8 @@ def _rendered_columns(obj, service_shape="protocol_ports"):
             columns.add(target)
     columns.update(column for name, column in DIRECT_REFS.items()
                    if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine"))
+    if obj["kind"] in DEVICE_COMPONENT_KINDS:
+        columns.update(("_site_id", "_location_id", "_rack_id"))
     if "scope_site" in obj["refs"]:
         columns.update(("scope_type_id", "scope_id"))
     for field in ("termination", "assigned_object", "object"):
@@ -556,14 +772,139 @@ def _poll(client, job_id, timeout):
         interval = min(interval * 1.5, 5.0)
 
 
-def _job_result(job, expected):
+def _job_result(job, expected, request_settings, mode):
     data = job.get("data") or {}
     affected = (data.get("rows_inserted") or 0) + (data.get("rows_updated") or 0)
-    failed_hooks = {name: value for name, value in (data.get("post_hooks") or {}).items()
-                    if value.get("success") is False}
-    if job["status"] != "completed" or data.get("errors") or affected != expected or failed_hooks:
-        raise LoadError(f"TurboBulk job {job.get('job_id', '<unknown>')} did not produce {expected} valid rows")
+    issues = []
+    if job.get("status") != "completed":
+        issues.append(f"status is {job.get('status')!r}")
+    if job.get("error") or data.get("error") or data.get("errors"):
+        issues.append("job reported errors")
+    if affected != expected:
+        issues.append(f"affected {affected} rows instead of {expected}")
+
+    requested_hooks = request_settings["post_hooks"]
+    observed_hooks = data.get("post_hooks")
+    if not isinstance(observed_hooks, dict):
+        issues.append("post-hook results are missing")
+    elif set(observed_hooks) != set(requested_hooks):
+        missing = sorted(set(requested_hooks) - set(observed_hooks))
+        extra = sorted(set(observed_hooks) - set(requested_hooks))
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("unexpected " + ", ".join(extra))
+        issues.append("post-hook result keys differ from request (" + "; ".join(detail) + ")")
+    else:
+        for name, enabled in requested_hooks.items():
+            result = observed_hooks[name]
+            if not isinstance(result, dict):
+                issues.append(f"post-hook {name} returned a malformed result")
+            elif result.get("error"):
+                issues.append(f"post-hook {name} reported an error: {result['error']}")
+            elif enabled:
+                succeeded = result.get("success") is True
+                not_applicable = (result.get("skipped") is True and
+                                  result.get("reason") == "not applicable")
+                if not (succeeded or not_applicable):
+                    issues.append(f"post-hook {name} neither succeeded nor was explicitly not applicable")
+            elif result.get("skipped") is not True:
+                issues.append(f"disabled post-hook {name} was not explicitly skipped")
+
+    changelogs = data.get("changelogs_created")
+    if mode == "insert" and request_settings["create_changelogs"] is True:
+        if changelogs != expected:
+            issues.append(f"created {changelogs!r} changelogs instead of {expected}")
+    elif request_settings["create_changelogs"] is False and changelogs != 0:
+        issues.append(f"created {changelogs!r} changelogs although changelogs were disabled")
+
+    if issues:
+        raise LoadError(
+            f"TurboBulk job {job.get('job_id', '<unknown>')} violated its recorded request: "
+            + "; ".join(issues)
+        )
     return data
+
+
+def _change_diff_count(client, branch_id, *, object_type_id=None, action=None):
+    query = {"branch_id": branch_id, "limit": 1}
+    if object_type_id is not None:
+        query["object_type_id"] = object_type_id
+    if action is not None:
+        query["action"] = action
+    path = "/api/plugins/branching/changes/?" + urllib.parse.urlencode(query)
+    _, page = client.request(path, branch=False)
+    count = page.get("count") if isinstance(page, dict) else None
+    if type(count) is not int or count < 0:
+        raise LoadError("Branching changes API did not return a valid count")
+    return count
+
+
+def _expected_change_diff_counts(objects):
+    expected = Counter(SPECS[obj["kind"]][0] or "dcim.modulebaytype"
+                       for obj in objects.values())
+    expected["dcim.cabletermination"] += 2 * sum(
+        obj["kind"] == "cable" for obj in objects.values())
+    return +expected
+
+
+def _review_history_preflight(client, branch_row, objects):
+    count = _change_diff_count(client, branch_row["id"])
+    if count:
+        raise LoadError(
+            f"reviewable delivery requires a fresh branch with no ChangeDiffs; found {count}"
+        )
+    object_types = {}
+    for label in sorted(_expected_change_diff_counts(objects)):
+        app_label, model = label.split(".", 1)
+        path = "/api/core/object-types/?" + urllib.parse.urlencode(
+            {"app_label": app_label, "model": model, "limit": 2})
+        _, page = client.request(path, branch=False)
+        rows = page.get("results", page) if isinstance(page, dict) else page
+        if not isinstance(rows, list) or len(rows) != 1 or type(rows[0].get("id")) is not int:
+            raise LoadError(f"reviewable history preflight expected one object type for {label}")
+        object_type_id = rows[0]["id"]
+        if _change_diff_count(client, branch_row["id"], object_type_id=object_type_id):
+            raise LoadError(f"reviewable delivery requires zero initial ChangeDiffs for {label}")
+        object_types[label] = object_type_id
+    return {"verified_at": _now(), "branch_id": branch_row["id"], "initial_count": 0,
+            "endpoint": "/api/plugins/branching/changes/", "object_types": object_types}
+
+
+def _verify_review_history(client, branch_row, objects, preflight):
+    expected = _expected_change_diff_counts(objects)
+    object_types = preflight.get("object_types") if isinstance(preflight, dict) else None
+    if not isinstance(object_types, dict) or set(object_types) != set(expected):
+        raise LoadError("receipt does not bind the required ChangeDiff object types")
+    models = {}
+    failures = []
+    for label, expected_count in sorted(expected.items()):
+        object_type_id = object_types[label]
+        if type(object_type_id) is not int:
+            failures.append(f"{label}: invalid bound object type")
+            continue
+        observed = _change_diff_count(
+            client, branch_row["id"], object_type_id=object_type_id)
+        creates = _change_diff_count(
+            client, branch_row["id"], object_type_id=object_type_id, action="create")
+        models[label] = {"object_type_id": object_type_id, "expected": expected_count,
+                         "observed": observed, "creates": creates}
+        if observed != expected_count or creates != expected_count:
+            failures.append(
+                f"{label}: expected {expected_count} create ChangeDiffs, found "
+                f"{observed} total and {creates} creates"
+            )
+    total = _change_diff_count(client, branch_row["id"])
+    if total != sum(expected.values()):
+        failures.append(
+            f"branch total: expected {sum(expected.values())} ChangeDiffs, found {total}"
+        )
+    if failures:
+        raise LoadError("reviewable branch history is incomplete or unattributed: " + "; ".join(failures))
+    return {"verified_at": _now(), "branch_id": branch_row["id"],
+            "expected": sum(expected.values()), "observed": total,
+            "models": models}
 
 
 def _record_observed(entry, job):
@@ -585,22 +926,31 @@ def _record_terminal(entry, job, wall_seconds=None):
     _record_observed(entry, job)
     if wall_seconds is not None:
         entry["wall_seconds"] = wall_seconds
-    return _job_result(job, entry["rows_expected"])
+    result = _job_result(job, entry["rows_expected"], entry["request_settings"], entry["mode"])
+    entry["request_verified"] = True
+    return result
 
 
-def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_path, timeout, mode="insert"):
+def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_path, timeout,
+            mode="insert", request_settings=None):
+    request_settings = request_settings or delivery_contract("reviewable")["request_settings"]
     compile_started = time.monotonic()
     payload = gzip.compress(b"".join((json.dumps(row, separators=(",", ":")) + "\n").encode()
                                      for row in rows), mtime=0)
     compile_seconds = round(time.monotonic() - compile_started, 6)
-    boundary, body = _multipart({"model": model, "mode": mode, "validation_mode": "full",
-                                 "branch": branch_name, "create_changelogs": "true",
-                                 "apply_save_hooks": "false"}, model + ".jsonl.gz", payload)
-    entry = {"purpose": purpose, "model": model, "canonical_keys": keys,
+    fields = {"model": model, "mode": mode, "branch": branch_name,
+              "validation_mode": request_settings["validation_mode"],
+              "create_changelogs": str(request_settings["create_changelogs"]).lower(),
+              "apply_save_hooks": str(request_settings["apply_save_hooks"]).lower(),
+              "dispatch_events": str(request_settings["dispatch_events"]).lower()}
+    fields.update({f"post_hooks.{name}": str(enabled).lower()
+                   for name, enabled in request_settings["post_hooks"].items()})
+    boundary, body = _multipart(fields, model + ".jsonl.gz", payload)
+    entry = {"purpose": purpose, "model": model, "mode": mode, "canonical_keys": keys,
              "rows_expected": len(rows), "compressed_bytes": len(payload),
              "payload_sha256": hashlib.sha256(payload).hexdigest(),
              "compile_seconds": compile_seconds, "status": "submitting",
-             "intent_recorded_at": _now()}
+             "intent_recorded_at": _now(), "request_settings": request_settings}
     receipt["jobs"].append(entry)
     _write_receipt(receipt_path, receipt)
     started = time.monotonic()
@@ -619,6 +969,110 @@ def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_pa
     return entry
 
 
+def _batches(values, size):
+    return [values[offset:offset + size] for offset in range(0, len(values), size)]
+
+
+def _batch_purpose(purpose, number, count):
+    return purpose if count == 1 else f"{purpose}:batch-{number}-of-{count}"
+
+
+def _job_request_schedule(phases, objects, max_job_rows, base_settings):
+    """Return exact hook settings after considering every occurrence of each model."""
+    grouped_phases = []
+    last_phase = {}
+    for phase_number, keys in enumerate(phases, 1):
+        grouped = defaultdict(list)
+        for key in keys:
+            grouped[objects[key]["kind"]].append(objects[key])
+        grouped_phases.append((phase_number, grouped))
+        for kind in grouped:
+            last_phase[kind] = phase_number
+
+    schedule = {}
+    for phase_number, grouped in grouped_phases:
+        for kind, candidates in grouped.items():
+            if kind in REST_CREATE_KINDS:
+                continue
+            purpose = f"phase-{phase_number}:{kind}"
+            count = (len(candidates) + max_job_rows - 1) // max_job_rows
+            for number in range(1, count + 1):
+                schedule[_batch_purpose(purpose, number, count)] = _batch_request_settings(
+                    base_settings,
+                    last_batch=phase_number == last_phase[kind] and number == count)
+            if kind == "cable":
+                termination_purpose = purpose + ":terminations"
+                termination_count = (2 * len(candidates) + max_job_rows - 1) // max_job_rows
+                for number in range(1, termination_count + 1):
+                    schedule[_batch_purpose(termination_purpose, number, termination_count)] = (
+                        _batch_request_settings(
+                            base_settings,
+                            last_batch=(phase_number == last_phase[kind]
+                                        and number == termination_count),
+                            cable_final=(phase_number == last_phase[kind]
+                                         and number == termination_count)))
+    return schedule
+
+
+def _require_job_settings(entry, expected):
+    if entry.get("request_settings") != expected:
+        raise LoadError(
+            f"receipt job {entry.get('purpose', '<unknown>')} has different request settings; "
+            "choose a new receipt and fresh branch"
+        )
+
+
+def _load_model_batches(client, branch_name, kind, candidates, objects, ids, content_types,
+                        service_shape, purpose, receipt, receipt_path, timeout, max_job_rows,
+                        base_settings, final_model_group=True):
+    """Submit deterministic model batches and checkpoint IDs after each one."""
+    batches = _batches(candidates, max_job_rows)
+    for number, batch in enumerate(batches, 1):
+        batch_purpose = _batch_purpose(purpose, number, len(batches))
+        settings = _batch_request_settings(
+            base_settings, last_batch=final_model_group and number == len(batches))
+        prior = next((job for job in receipt["jobs"] if job["purpose"] == batch_purpose), None)
+        if prior:
+            _require_job_settings(prior, settings)
+            if prior.get("request_verified") is not True:
+                job = _poll(client, _bound_job_id(prior), timeout)
+                _record_terminal(prior, job)
+                _write_receipt(receipt_path, receipt)
+        elif not all(obj["key"] in ids for obj in batch):
+            pending = [obj for obj in batch if obj["key"] not in ids]
+            rows = ([obj["attrs"] for obj in pending] if kind == "cable" else
+                    [_render(obj, objects, ids, content_types, service_shape) for obj in pending])
+            _submit(client, branch_name, SPECS[kind][0], rows, batch_purpose,
+                    [obj["key"] for obj in pending], receipt, receipt_path, timeout,
+                    request_settings=settings)
+    _refresh(client, kind, candidates, ids, objects=objects)
+    receipt["resolved_ids"] = ids
+    _write_receipt(receipt_path, receipt)
+
+
+def _load_termination_batches(client, branch_name, terminations, purpose, receipt,
+                              receipt_path, timeout, max_job_rows, base_settings,
+                              final_cable_group=True):
+    """Submit deterministic termination batches, running cable-wide hooks only once."""
+    batches = _batches(terminations, max_job_rows)
+    for number, batch in enumerate(batches, 1):
+        batch_purpose = _batch_purpose(purpose, number, len(batches))
+        settings = _batch_request_settings(
+            base_settings,
+            last_batch=final_cable_group and number == len(batches),
+            cable_final=final_cable_group and number == len(batches))
+        prior = next((job for job in receipt["jobs"] if job["purpose"] == batch_purpose), None)
+        if prior:
+            _require_job_settings(prior, settings)
+            if prior.get("request_verified") is not True:
+                job = _poll(client, _bound_job_id(prior), timeout)
+                _record_terminal(prior, job)
+                _write_receipt(receipt_path, receipt)
+            continue
+        _submit(client, branch_name, "dcim.cabletermination", batch, batch_purpose, [],
+                receipt, receipt_path, timeout, request_settings=settings)
+
+
 def _bound_job_id(entry):
     if not entry.get("job_id"):
         raise LoadError(
@@ -631,13 +1085,18 @@ def _bound_job_id(entry):
 def _refresh(client, kind, candidates, ids, *, allow_missing=False, objects=None):
     rows = client.all(SPECS[kind][1])
     by_id = {row["id"]: row for row in rows}
+    by_identity = defaultdict(list)
+    for row in rows:
+        for identity in _row_bucket_keys(kind, row):
+            by_identity[identity].append(row)
     for obj in candidates:
         if obj["key"] in ids:
             row = by_id.get(ids[obj["key"]])
             if row is None or not _matches(obj, row, ids, objects):
                 raise LoadError(f"checkpoint identity {obj['key']} no longer matches target ID {ids[obj['key']]}; use a fresh branch")
             continue
-        found = [row for row in rows if _matches(obj, row, ids, objects)]
+        bucket = by_identity[_candidate_bucket_key(obj, ids, objects)]
+        found = [row for row in bucket if _matches(obj, row, ids, objects)]
         if len(found) > 1:
             raise LoadError(f"{obj['key']}: target identity is ambiguous ({len(found)} rows)")
         if found:
@@ -657,6 +1116,7 @@ def _schema_preflight(client, objects):
         raise LoadError("TurboBulk compiler has no translation for canonical references: " + detail)
     rest_schemas = _rest_schema_preflight(client, objects)
     rest_patch_schemas = _rest_patch_preflight(client, objects)
+    component_filters = _component_filter_preflight(client, objects)
     _, available = client.request("/api/plugins/turbobulk/models/", branch=False)
     models = {row["full_name"] for row in available if not row.get("export_only")}
     required = {SPECS[obj["kind"]][0] for obj in objects.values()
@@ -698,7 +1158,41 @@ def _schema_preflight(client, objects):
         raise LoadError("installed TurboBulk schemas would drop required columns: " + detail)
     return {"models": sorted(required), "schema_fields": {model: len(fields) for model, fields in schemas.items()},
             "rest_create_fields": rest_schemas, "rest_patch_fields": rest_patch_schemas,
+            "component_cache_filters": component_filters,
             "service_shape": service_shape}
+
+
+def _component_filter_preflight(client, objects):
+    """Require the REST filters used to prove ComponentModel cache fields."""
+    kinds = sorted({obj["kind"] for obj in objects.values()} & DEVICE_COMPONENT_KINDS)
+    if not kinds:
+        return {}
+    _, schema = client.request("/api/schema/?format=json", branch=False)
+
+    def resolve(parameter):
+        reference = parameter.get("$ref") if isinstance(parameter, dict) else None
+        if not reference or not reference.startswith("#/"):
+            return parameter
+        value = schema
+        for part in reference[2:].split("/"):
+            value = value[part.replace("~1", "/").replace("~0", "~")]
+        return value
+
+    required = {"site_id", "location_id", "rack_id"}
+    result = {}
+    for kind in kinds:
+        endpoint = SPECS[kind][1]
+        operation = (schema.get("paths") or {}).get(endpoint, {}).get("get") or {}
+        available = {resolved.get("name") for parameter in operation.get("parameters", [])
+                     if isinstance((resolved := resolve(parameter)), dict)
+                     and resolved.get("in") == "query"}
+        if absent := required - available:
+            raise LoadError(
+                f"REST schema {endpoint} lacks component-cache readback filters: "
+                + ", ".join(sorted(absent))
+            )
+        result[kind] = sorted(required)
+    return result
 
 
 def _rest_schema_preflight(client, objects):
@@ -846,6 +1340,41 @@ def _verify_paths(client, plan, objects, ids, workers=8):
     return result
 
 
+def _verify_component_caches(client, objects, ids):
+    """Prove component placement caches through NetBox's cache-backed filters."""
+    expected = defaultdict(set)
+    for obj in objects.values():
+        if obj["kind"] not in DEVICE_COMPONENT_KINDS:
+            continue
+        cache = _component_cache_ids(obj, objects, ids)
+        placement = tuple(cache[field] for field in ("_site_id", "_location_id", "_rack_id"))
+        expected[(obj["kind"], placement)].add(ids[obj["key"]])
+
+    failures = []
+    started = time.monotonic()
+    for (kind, placement), target_ids in sorted(expected.items()):
+        parameters = [("brief", "1")]
+        for field, value in zip(("site_id", "location_id", "rack_id"), placement):
+            parameters.append((field, "null" if value is None else str(value)))
+        rows = client.all(SPECS[kind][1] + "?" + urllib.parse.urlencode(parameters))
+        observed_ids = {row["id"] for row in rows}
+        if observed_ids != target_ids:
+            failures.append({
+                "kind": kind,
+                "site_id": placement[0],
+                "location_id": placement[1],
+                "rack_id": placement[2],
+                "missing_ids": sorted(target_ids - observed_ids)[:20],
+                "unexpected_ids": sorted(observed_ids - target_ids)[:20],
+            })
+    return {
+        "components_expected": sum(len(value) for value in expected.values()),
+        "placement_queries": len(expected),
+        "failures": failures[:20],
+        "wall_seconds": round(time.monotonic() - started, 6),
+    }
+
+
 def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
     current = {kind: {row["id"]: row for row in client.all(SPECS[kind][1])}
                for kind in sorted({obj["kind"] for obj in plan["objects"]
@@ -889,14 +1418,27 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
     return sum(row["rows"] for row in receipt["rest_batches"])
 
 
-def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
-    """Load one frozen artifact into a disposable branch and strictly read it back."""
+def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
+         delivery_policy="reviewable", max_job_rows=DEFAULT_JOB_ROWS):
+    """Load one frozen artifact into a branch and strictly read it back."""
     started_at = _now()
     overall = time.monotonic()
     plan_path, raw, plan, objects, offline = _artifact(plan_path)
+    if not isinstance(max_job_rows, int) or isinstance(max_job_rows, bool) or max_job_rows < 1:
+        raise LoadError("TurboBulk maximum job rows must be a positive integer")
     unsupported = sorted({obj["kind"] for obj in objects.values()} - SPECS.keys())
     if unsupported:
         raise LoadError("TurboBulk compiler does not yet cover canonical kinds: " + ", ".join(unsupported))
+    delivery = delivery_contract(delivery_policy)
+    if delivery_policy == "disposable-baseline":
+        blocker = disposable_rest_blocker(objects)
+        if blocker:
+            raise LoadError(blocker)
+    phases = list(_phases(objects))
+    job_schedule = _job_request_schedule(
+        phases, objects, max_job_rows, delivery["request_settings"])
+    last_phase = {objects[key]["kind"]: phase_number
+                  for phase_number, keys in enumerate(phases, 1) for key in keys}
     receipt_path = Path(receipt_path)
     client = Client(url, token)
     _, status = client.request("/api/status/", branch=False)
@@ -908,14 +1450,58 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
     binding = {"receipt_version": RECEIPT_VERSION, "compiler_version": COMPILER_VERSION,
                "artifact": str(plan_path), "plan_sha256": raw_sha, "canonical_sha256": digest(plan),
                "target": client.base, "branch": branch, "branch_id": client.branch_id,
-               "transport": "turbobulk+rest", "target_contract": target_contract}
+               "transport": "turbobulk+rest", "target_contract": target_contract,
+               "delivery_policy": delivery_policy,
+               "delivery_warning": delivery["warning"],
+               "branch_capabilities": delivery["branch_capabilities"],
+               "turbobulk_request_settings": delivery["request_settings"],
+               "turbobulk_max_job_rows": max_job_rows}
 
     receipt = None
+    history_preflight = None
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text())
         for key, value in binding.items():
             if receipt.get(key) != value:
                 raise LoadError(f"receipt {receipt_path} has different {key}; choose a new receipt and fresh branch")
+        for entry in receipt.get("jobs", []):
+            if entry.get("mode") != "insert":
+                raise LoadError(
+                    f"receipt job {entry.get('purpose', '<unknown>')} has a different submission mode; "
+                    "choose a new receipt and fresh branch"
+                )
+            expected_settings = job_schedule.get(entry.get("purpose"))
+            if expected_settings is None:
+                raise LoadError(
+                    f"receipt job {entry.get('purpose', '<unknown>')} is outside the current batch schedule; "
+                    "choose a new receipt and fresh branch"
+                )
+            _require_job_settings(entry, expected_settings)
+
+    if delivery_policy == "reviewable":
+        if receipt is None:
+            history_preflight = _review_history_preflight(client, branch_row, objects)
+        else:
+            history_preflight = receipt.get("review_history_preflight")
+            if (not isinstance(history_preflight, dict)
+                    or history_preflight.get("branch_id") != branch_row["id"]
+                    or history_preflight.get("initial_count") != 0
+                    or set(history_preflight.get("object_types", {}))
+                    != set(_expected_change_diff_counts(objects))
+                    or any(type(value) is not int
+                           for value in history_preflight.get("object_types", {}).values())):
+                raise LoadError(
+                    "receipt does not prove an empty initial ChangeDiff history; "
+                    "choose a new receipt and fresh branch"
+                )
+
+    if delivery_policy == "disposable-baseline" and receipt is None:
+        _, changes = client.request("/api/core/object-changes/?limit=1", branch=True)
+        if changes.get("count", len(changes.get("results", []))):
+            raise LoadError(
+                "disposable-baseline requires a fresh empty branch with no recorded changes; "
+                "it cannot be reviewed, merged, or reverted"
+            )
 
     # NetBox 4.6 lacks module bay types entirely. Prove any REST-only model is
     # writable before inventory reads or target writes so exactness fails clearly.
@@ -928,6 +1514,14 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
     existing = verify_plan(plan, inventory, strict_inventory=True)
     preflight_readback_seconds = round(time.monotonic() - readback_started, 6)
     if existing["success"]:
+        for entry in receipt.get("jobs", []) if receipt else []:
+            if entry.get("request_verified") is True:
+                continue
+            job = _poll(client, _bound_job_id(entry), timeout)
+            try:
+                _record_terminal(entry, job)
+            finally:
+                _write_receipt(receipt_path, receipt)
         current_ids = _numeric_ids(existing["ids"])
         checkpoint_ids = _numeric_ids(receipt.get("resolved_ids", {})) if receipt else {}
         changed_ids = sorted(key for key, value in checkpoint_ids.items()
@@ -937,9 +1531,18 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         paths = _verify_paths(client, plan, objects, current_ids)
         if paths["failures"]:
             raise LoadError(f"computed-path readback failed for {len(paths['failures'])} of {paths['cables_expected']} cables")
+        component_caches = _verify_component_caches(client, objects, current_ids)
+        if component_caches["failures"]:
+            raise LoadError(
+                f"component-cache readback failed for {len(component_caches['failures'])} placements"
+            )
+        review_history = (_verify_review_history(client, branch_row, objects, history_preflight)
+                          if delivery_policy == "reviewable" else None)
         observation = {"observed_at": _now(), "wall_seconds": round(time.monotonic() - overall, 6),
                        "readback_seconds": preflight_readback_seconds,
-                       "verification": existing, "computed_paths": paths}
+                       "verification": existing, "computed_paths": paths,
+                       "component_caches": component_caches,
+                       "review_history": review_history}
         if receipt is not None:
             recovered = not receipt.get("success")
             receipt.setdefault("attempts", []).append({"started_at": started_at,
@@ -951,6 +1554,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
             receipt["last_verified_at"] = observation["observed_at"]
             receipt["verification"] = existing
             receipt["computed_paths"] = paths
+            receipt["component_caches"] = component_caches
+            receipt["review_history"] = review_history
             receipt["resolved_ids"] = current_ids
             receipt["success"] = True
             if recovered:
@@ -967,8 +1572,11 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
                        "result": "already-matched", "target_status": status, "offline_checks": offline,
                        "preflight": {"strict_existing_readback": existing,
                                      "readback_seconds": preflight_readback_seconds},
-                       "computed_paths": paths, "jobs": [], "rest_batches": [],
+                       "computed_paths": paths, "component_caches": component_caches,
+                       "jobs": [], "rest_batches": [],
                        "rest_creates": [],
+                       "review_history_preflight": history_preflight,
+                       "review_history": review_history,
                        "attempts": [{"started_at": started_at, "completed_at": observation["observed_at"],
                                      "wall_seconds": observation["wall_seconds"],
                                      "result": "already-matched", "success": True}],
@@ -980,6 +1588,23 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         if receipt.get("success"):
             raise LoadError("successful receipt no longer matches strict readback; target changed")
         ids = {key: int(value) for key, value in receipt.get("resolved_ids", {}).items()}
+        observed_ids = _numeric_ids(existing.get("ids", {}))
+        bound_keys = {key for job in receipt.get("jobs", []) if job.get("job_id")
+                      for key in job.get("canonical_keys", [])}
+        uncheckpointed = sorted(set(observed_ids) - set(ids) - bound_keys)
+        if uncheckpointed:
+            raise LoadError(
+                f"found {len(uncheckpointed)} uncheckpointed identities; "
+                "discard this branch and start with a new branch and receipt"
+            )
+        changed_ids = sorted(key for key in set(observed_ids) & set(ids)
+                             if observed_ids[key] != ids[key])
+        if changed_ids:
+            raise LoadError(
+                f"{len(changed_ids)} checkpoint target IDs changed; use a fresh branch and receipt"
+            )
+        ids.update({key: value for key, value in observed_ids.items()
+                    if key in bound_keys})
         receipt.setdefault("jobs", [])
         receipt.setdefault("rest_batches", [])
         receipt.setdefault("rest_creates", [])
@@ -993,6 +1618,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         receipt = {**binding, "started_at": started_at, "success": False, "target_status": status,
                    "offline_checks": offline, "jobs": [], "rest_batches": [], "resolved_ids": {},
                    "rest_creates": [],
+                   "review_history_preflight": history_preflight,
                    "attempts": [{"started_at": started_at, "success": False}]}
     receipt["preflight"] = {"strict_existing_readback": existing,
                             "readback_seconds": preflight_readback_seconds,
@@ -1004,57 +1630,34 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         _write_receipt(receipt_path, receipt)
         service_shape = receipt["preflight"]["transport"].get("service_shape") or "protocol_ports"
         content_types = _content_types(client, _required_content_types(objects))
-        for phase_number, keys in enumerate(_phases(objects), 1):
+        for phase_number, keys in enumerate(phases, 1):
             grouped = defaultdict(list)
             for key in keys:
                 grouped[objects[key]["kind"]].append(objects[key])
             for kind in sorted(grouped):
                 candidates = grouped[kind]
-                completed = [obj for obj in candidates if obj["key"] in ids]
-                if completed:
-                    _refresh(client, kind, completed, ids, objects=objects)
-                pending = [obj for obj in candidates if obj["key"] not in ids]
                 purpose = f"phase-{phase_number}:{kind}"
-                if pending:
-                    if kind in REST_CREATE_KINDS:
-                        _create_rest(client, kind, pending, ids, receipt, receipt_path, objects)
-                        pending = []
-                if pending:
-                    prior = next((job for job in receipt["jobs"] if job["purpose"] == purpose), None)
-                    if prior:
-                        job = _poll(client, _bound_job_id(prior), timeout)
-                        _record_terminal(prior, job)
-                        _write_receipt(receipt_path, receipt)
-                        _refresh(client, kind, pending, ids, objects=objects)
-                    else:
-                        # Existing identities without a bound receipt could belong to someone else.
-                        before = dict(ids)
-                        _refresh(client, kind, pending, ids, allow_missing=True, objects=objects)
-                        adopted = sorted(set(ids) - set(before))
-                        if adopted:
-                            raise LoadError(f"found {len(adopted)} uncheckpointed {kind} identities; discard this branch and start with a new branch and receipt")
-                        rows = ([obj["attrs"] for obj in pending] if kind == "cable" else
-                                [_render(obj, objects, ids, content_types, service_shape) for obj in pending])
-                        _submit(client, branch, SPECS[kind][0], rows, purpose,
-                                [obj["key"] for obj in pending], receipt, receipt_path, timeout)
-                        _refresh(client, kind, pending, ids, objects=objects)
+                pending = [obj for obj in candidates if obj["key"] not in ids]
+                if pending and kind in REST_CREATE_KINDS:
+                    _create_rest(client, kind, pending, ids, receipt, receipt_path, objects)
+                elif candidates:
+                    _load_model_batches(
+                        client, branch, kind, candidates, objects, ids, content_types,
+                        service_shape, purpose, receipt, receipt_path, timeout, max_job_rows,
+                        delivery["request_settings"], phase_number == last_phase[kind])
                 if kind == "cable":
                     termination_purpose = purpose + ":terminations"
-                    prior_terminations = next((job for job in receipt["jobs"]
-                                               if job["purpose"] == termination_purpose), None)
-                    if prior_terminations:
-                        job = _poll(client, _bound_job_id(prior_terminations), timeout)
-                        _record_terminal(prior_terminations, job)
-                    else:
-                        terminations = []
-                        for obj in candidates:
-                            for side, field in (("A", "a"), ("B", "b")):
-                                target = objects[obj["refs"][field]]
-                                terminations.append({"cable_id": ids[obj["key"]], "cable_end": side,
-                                                     "termination_type_id": content_types[target["kind"]],
-                                                     "termination_id": ids[target["key"]]})
-                        _submit(client, branch, "dcim.cabletermination", terminations,
-                                termination_purpose, [], receipt, receipt_path, timeout)
+                    terminations = []
+                    for obj in candidates:
+                        for side, field in (("A", "a"), ("B", "b")):
+                            target = objects[obj["refs"][field]]
+                            terminations.append({"cable_id": ids[obj["key"]], "cable_end": side,
+                                                 "termination_type_id": content_types[target["kind"]],
+                                                 "termination_id": ids[target["key"]]})
+                    _load_termination_batches(
+                        client, branch, terminations, termination_purpose, receipt, receipt_path,
+                        timeout, max_job_rows, delivery["request_settings"],
+                        phase_number == last_phase[kind])
                 receipt["resolved_ids"] = ids
                 _write_receipt(receipt_path, receipt)
 
@@ -1069,6 +1672,14 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         receipt["computed_paths"] = _verify_paths(client, plan, objects, ids)
         if receipt["computed_paths"]["failures"]:
             raise LoadError(f"computed-path readback failed for {len(receipt['computed_paths']['failures'])} of {receipt['computed_paths']['cables_expected']} cables")
+        receipt["component_caches"] = _verify_component_caches(client, objects, ids)
+        if receipt["component_caches"]["failures"]:
+            raise LoadError(
+                f"component-cache readback failed for {len(receipt['component_caches']['failures'])} placements"
+            )
+        receipt["review_history"] = (_verify_review_history(
+            client, branch_row, objects, history_preflight)
+                                     if delivery_policy == "reviewable" else None)
         receipt.pop("error", None)
         receipt.pop("failed_at", None)
         receipt.update(success=True, result="loaded", completed_at=_now(),
@@ -1100,13 +1711,20 @@ def main(argv=None):
     parser.add_argument("--branch", required=True, help="ready disposable NetBox branch name")
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--max-job-rows", type=int, default=DEFAULT_JOB_ROWS,
+                        help=f"maximum rows per TurboBulk job (default: {DEFAULT_JOB_ROWS})")
+    parser.add_argument("--delivery-policy", choices=DELIVERY_POLICIES, default="reviewable")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not args.target or not token:
         parser.error("--target/NETBOX_URL and NETBOX_TOKEN are required")
     try:
+        if args.delivery_policy == "disposable-baseline":
+            print("DISPOSABLE BASELINE: this branch cannot be reviewed, merged, or reverted; delete it after use.",
+                  file=os.sys.stderr, flush=True)
         result = load(args.artifact, url=args.target, token=token, branch=args.branch,
-                      receipt_path=args.receipt, timeout=args.timeout)
+                      receipt_path=args.receipt, timeout=args.timeout,
+                      delivery_policy=args.delivery_policy, max_job_rows=args.max_job_rows)
         print(json.dumps({"success": True, "result": result["result"], "transport": result["transport"],
                           "objects": result["verification"]["matched_objects"],
                           "receipt": str(args.receipt)}, sort_keys=True))

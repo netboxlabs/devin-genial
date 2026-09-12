@@ -53,9 +53,10 @@ The [TurboBulk API](https://netboxlabs.com/docs/turbobulk/api-reference/) accept
 JSONL or Parquet for one database model at a time. It bypasses normal per-object
 REST creation, which makes large table loads attractive, but moves more work into
 Genial. The loader must inspect target schemas, supply target defaults, translate
-foreign keys to IDs, split cables from their terminations, run dependency barriers,
-inspect post hooks, and finish relationships the advertised model schema cannot
-write. Each model job is transactional; the full estate is not one transaction.
+foreign keys to IDs, split cables from their terminations, bound each job, run
+dependency barriers, inspect post hooks, and finish relationships the advertised
+model schema cannot write. Each job is transactional; the full estate is not one
+transaction.
 A disposable [NetBox branch](https://netboxlabs.com/docs/turbobulk/branching/) is
 the practical whole-run rollback boundary.
 
@@ -83,10 +84,48 @@ This is preliminary target and transport discovery. The selected adapter perform
 its complete package/schema preflight again before submission; that deeper check
 can still reject the run without target writes.
 
+`just load` defaults to a reviewable delivery. TurboBulk creates ObjectChanges
+and ChangeDiffs so Branching has the records required for review, merge, conflict
+detection, and post-merge revert. This remains the normal demo path. The loader
+requires a dedicated branch with zero initial ChangeDiffs, then verifies the exact
+branch total and per-model create-ChangeDiff counts, including cable terminations, after final
+graph readback. Branching's public ChangeDiff API has no TurboBulk job identifier,
+so attribution comes from that empty-branch boundary, the exclusive-use receipt,
+and exact final total/model counts rather than a claimed per-job link.
+
+For an explicit load-only scale experiment, use
+`just load-disposable ARTIFACT TARGET BRANCH`. It requires a fresh empty branch
+and sets `create_changelogs=false`. The data remains usable inside that branch,
+but the baseline cannot be reviewed, merged, or reverted; delete the branch after
+the experiment. It also requires an artifact TurboBulk can express without any
+REST create or completion PATCH. Both explain and load reject other artifacts
+before target writes. The current rich and scale artifacts require completion
+PATCHes and are therefore ineligible. This policy is never selected from object count. Both
+policies keep full validation and set event dispatch off explicitly for branch-scoped
+loads. Genial declares all five post-hooks on every request, with intermediate
+batches explicitly disabled. The final batch for a model runs denormalization,
+search, and counters; cable-link and cable-path hooks wait for the final
+cable-termination batch. Terminal verification requires every hook result to match
+that exact request; reviewable insert jobs must report one changelog per row. The
+policy, branch capabilities, 2,000-row job bound, and exact per-job TurboBulk
+settings are immutable receipt bindings.
+Receipts created before this contract do not prove their request settings and
+cannot be resumed; reset the branch and start with the newly selected policy.
+
+The denormalization hook for a device cannot repair components that are inserted
+in a later phase. Genial therefore compiles each component's cached site,
+location, and rack IDs from its parent device into the original row. OpenAPI
+preflight requires all three cache-backed filters for every emitted component
+endpoint. Final verification queries each distinct component-kind and placement
+once, including null location and rack placement, and compares the exact returned
+IDs. The number of these readback requests is bounded by the distinct placements;
+the strategy creates no extra jobs or ChangeDiffs.
+
 The command chooses a stable private receipt path from the artifact, target and
 branch, prints it before loading, and reuses it when the same operation resumes.
 Advanced troubleshooting can invoke `python3 -m estates.load --help` to override
-the receipt, transport or timeout without expanding the ordinary SE command.
+the receipt, transport, timeout, or TurboBulk row bound. The ordinary `just load`
+command uses 2,000; a fourth argument changes it only for a measured experiment.
 
 The frozen `build/bank-v2` artifact is preserved local qualification evidence;
 it is not shipped in a fresh clone. `TARGET` is the non-secret NetBox root origin;
@@ -97,7 +136,8 @@ separate ingestion endpoint and never substitutes for the NetBox target argument
 The loader resolves the branch schema ID from its human name and writes a private
 checkpoint/receipt after every job and REST batch. Repeating the command is a
 verified no-op when strict readback already matches the artifact. Interrupted
-runs resume only from a receipt bound to the same artifact, target, and branch.
+runs resume only from a receipt bound to the same artifact, target, branch, and
+delivery policy.
 After target binding and initial readback, the current receipt format retains
 each invocation's outcome and wall time, so future successful resumes do not
 erase the failed attempt that preceded them. The historical recovery receipt
@@ -142,8 +182,10 @@ The command performs these steps internally:
    Fail before writes if any intent would be silently dropped.
 3. Select TurboBulk plus bounded REST completion for the currently qualified
    model set, or Diode when its complete target contract is satisfied.
-4. Execute dependency barriers. After each job, verify counts, hook results, and
-   canonical-key-to-target-ID mappings, then save a checkpoint.
+4. Split each model deterministically into jobs of at most 2,000 rows. After each
+   job, verify row counts, changelogs, and its exact hook results, then save the job
+   checkpoint. Resolve the model's canonical keys to target IDs once all its jobs
+   finish, then release dependent models.
 5. Close cycles such as device and VM primary IPs. Expand every cable into two
    typed terminations and rebuild cable paths. Complete many-to-many relations in
    bounded bulk REST requests.

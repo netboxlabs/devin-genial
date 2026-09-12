@@ -66,17 +66,56 @@ Inspect a target without writing:
 ```sh
 cp .env.example .env
 # Put the raw nbt_... value in NETBOX_TOKEN; do not include "Bearer".
-just load-explain build/my-bank https://netbox.example "Disposable branch"
+just load-explain build/my-bank https://netbox.example "Generator Review"
 ```
 
 The target is the NetBox root URL, without `/api/`, a plugin path, credentials,
 query parameters or fragments. In `.env`, enable `TURBOBULK_WRITES=1` or fill
 the documented Diode attestation for the transport that target actually uses.
 The result gives a preliminary transport choice and known compatibility blockers.
-Run `just load build/my-bank https://netbox.example "Disposable branch"` to perform the adapter's full
+Run `just load build/my-bank https://netbox.example "Generator Review"` to perform the adapter's full
 read-only schema/package preflight, then load it and write the default private
 receipt under `build/`. That second preflight can find additional blockers and
 still stops before target writes.
+
+`just load` uses the reviewable policy. TurboBulk retains ObjectChanges and
+ChangeDiffs needed to review and merge the branch and to revert it after merge.
+It requires a dedicated branch with zero initial ChangeDiffs. After strict graph
+readback, the loader verifies the exact total and create-ChangeDiff counts by
+model, including cable terminations, and records that evidence in the receipt.
+For a load-only scale test on a newly reset, empty branch, use the explicit
+disposable command:
+
+```sh
+just load-explain-disposable build/my-bank https://netbox.example "Scale baseline"
+just load-disposable build/my-bank https://netbox.example "Scale baseline"
+```
+
+That branch cannot be reviewed, merged, or reverted. The command says so before
+writes; use the data in place and delete the branch afterward. This mode accepts
+only artifacts that TurboBulk can write completely: if any object or relationship
+needs REST creation or completion, `load-explain-disposable` reports it and the
+loader refuses before target writes. The current rich and scale artifacts need
+REST completion, so they must use the reviewable policy until NetBox provides a
+way to make those REST writes non-reviewable under the same branch contract. Both
+policies keep full validation and schedule every required TurboBulk post-hook at
+its safe dependency boundary. Genial limits each job to 2,000 rows, skips
+table-wide hooks on intermediate batches, runs denormalization, search, and
+counters on the last batch for each model, and runs cable-link and cable-path
+work only after the final cable-termination batch. A completed job is accepted
+only when it reports the exact enabled or explicitly skipped hook results and,
+for reviewable inserts, one changelog per inserted row. The policy, row bound,
+and exact per-job settings are bound to the receipt, so changing them requires a
+new receipt and fresh branch. Keep the default unless a measured qualification
+run justifies the optional fourth `turbobulk_job_rows` argument to `just load`.
+Device-component placement caches are compiled into the original insert from
+the parent device, because the device denormalization hook runs before later
+interfaces, ports, outlets, and bays exist. Before writes, the target OpenAPI
+schema must expose the three cache-backed placement filters on every emitted
+component kind. Final readback then compares exact component IDs with one query
+per distinct component-kind and site/location/rack placement, including explicit
+null location and rack placement. This adds bounded readback requests without
+adding repair rows, jobs, ObjectChanges, or ChangeDiffs.
 These setup steps should take less than ten minutes; target processing time is
 separate and is recorded in the private receipt.
 
@@ -88,11 +127,16 @@ just reset https://netbox.example "Disposable branch"
 ```
 
 This permanently deletes only an exact named `ready` branch after a read-only
-create-permission and delete-capability preflight, recreates it, and archives its
-matching local load receipts as qualification history. It refuses a blank or
-`main` scope and fails closed if an interrupted delete leaves a renamed branch.
-If Diode routes to the branch schema ID, copy the new ID printed by reset into
-`DIODE_BRANCH` and refresh the configuration attestation before loading.
+create-permission and rename/delete-capability preflight. It refuses to delete while a
+pending TurboBulk job exists, or while a running job targets that exact branch or
+lacks branch metadata. It first moves the old branch to a receipt-bound quarantine
+name, waits for those jobs to drain, then deletes it, creates a uniquely named
+replacement, and archives its matching local load receipts as qualification history. It refuses
+a blank or `main` scope. If draining times out, the receipt preserves the
+quarantine name and the same command resumes by the old immutable branch ID.
+Use the printed replacement name for the next load and future reset. If Diode routes
+to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
+configuration attestation before loading.
 The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
 compiles the current 53-kind enterprise data center contract. The configured
 NetBox 4.6.8 tenant cannot represent the 4.7-only module-bay compatibility model,

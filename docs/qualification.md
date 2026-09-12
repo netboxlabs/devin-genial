@@ -331,6 +331,28 @@ service-side cleanup or replacement rather than repeated polling. Version-specif
 failures and the implementation path are recorded in the
 [transport study](transports.md#what-the-first-cloud-run-taught-us).
 
+The first live 128,932-object scale attempt began on September 12, 2026 from the
+frozen `build/scale-v2` regional-bank artifact. Small dependency jobs completed,
+then the 4,706-row `dcim.device` job committed all 4,706 rows, passed full
+validation, created all 4,706 requested changelogs, and stopped reporting
+progress before recording any post-hook result or terminal timestamp. The
+client preserved its receipt and stopped after its 900-second observation bound.
+At 36 minutes the server still reported the job as `running` with the same
+counters. A separate, non-mutating TurboBulk export probe completed in 0.460
+seconds, establishing that the worker service as a whole could still execute
+new work. Another TurboBulk job on the tenant had remained `running` with zero
+rows since 17:40 UTC, beyond the plugin's documented timeout and orphan-reaper
+window. These observations are consistent with stranded work-horse records, but
+there is no terminal server error proving an OOM.
+
+At the operator's direction the disposable `Generator Benchmark` branch was
+deleted by its immutable branch ID. Cloud returned HTTP 204; subsequent reads
+found neither that ID nor that name. Its 128,932-object run therefore remains an
+aborted partial qualification, not a throughput result. The failed receipt is
+preserved under `build/load-receipts/history/discarded/`. The next scale attempt
+must bound Genial's own per-job row count below the observed 4,706-row failure
+and avoid repeating whole-model search and cable-path hooks after every batch.
+
 The validator checks reference closure, hardware inventory, rack occupancy,
 port occupancy and media/speed compatibility, passive cable paths, redundant
 attachments, addressing, VLAN continuity to access uplinks and gateway SVIs,

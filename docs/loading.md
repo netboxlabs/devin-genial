@@ -14,14 +14,50 @@ The ordinary target workflow is:
 ```sh
 cp .env.example .env
 # Add the raw NETBOX_TOKEN and the documented write-mode settings to .env.
-just load-explain build/my-estate https://netbox.example "Disposable branch"
-just load build/my-estate https://netbox.example "Disposable branch"
+just load-explain build/my-estate https://netbox.example "Generator Review"
+just load build/my-estate https://netbox.example "Generator Review"
 ```
 
 The target argument is the NetBox root origin. The optional branch is required
 when Branching is installed; a target without Branching requires the explicit
 `ALLOW_MAIN_WRITES=1` guard. The loader prints its stable private checkpoint
 receipt before writes so the same command can resume safely.
+
+The default `just load` policy retains the TurboBulk changelogs and branch diffs
+needed for review, merge, and post-merge revert. It requires zero ChangeDiffs on
+the branch before the first write. Final success requires an exact total and exact
+create-ChangeDiff counts for every artifact model plus cable terminations after strict graph
+readback; the receipt records the initial-zero and final count evidence. For an
+initial-load performance test, a separate command makes the tradeoff explicit:
+
+```sh
+just load-explain-disposable build/my-estate https://netbox.example "Scale baseline"
+just load-disposable build/my-estate https://netbox.example "Scale baseline"
+```
+
+`load-disposable` requires a fresh empty branch and disables changelog creation.
+The resulting baseline can be demonstrated only inside that branch: it cannot be
+reviewed, merged, or reverted. Delete the branch after use. It is available only
+for artifacts requiring no REST creation or completion PATCH; the explain command
+lists those blockers, and the load command repeats that check before target writes.
+The current rich and scale artifacts therefore remain on the reviewable path.
+It still requests full validation and schedules every required post-hook. TurboBulk
+jobs are limited to 2,000 rows. Intermediate batches explicitly skip all table-wide
+hooks; the last batch for each model runs denormalization, search indexing, and
+counters; cable-link repair and cable-path rebuilding run only after the last
+cable-termination batch. The loader requires an exact result for every enabled or
+skipped hook and requires reviewable insert jobs to report one changelog per row.
+Receipts bind the selected policy, row bound, payloads, and per-job request settings
+and reject a resume under different settings.
+
+Device components need one extra invariant. TurboBulk's device denormalization
+hook can run before later component phases, so Genial writes `_site_id`,
+`_location_id`, and `_rack_id` into each component's original insert from its
+parent device. Preflight requires `site_id`, `location_id`, and `rack_id` filters
+on every emitted component REST endpoint. Strict readback groups expected IDs by
+component kind and placement and makes one query per group, including `null`
+location and rack values. This proves the caches without another mutation, so
+reviewable ChangeDiff counts remain exactly one create per canonical object.
 
 ## Reset a disposable branch
 
@@ -30,20 +66,33 @@ just reset https://netbox.example "Disposable branch"
 ```
 
 Reset is deliberately branch-scoped and destructive. It requires the exact branch
-to be `ready`, verifies read-only API metadata for create permission and DELETE
-capability,
-records intent, deletes that branch by its checkpointed ID and removes its schema,
+to be `ready`, verifies read-only API metadata for create permission and PATCH/DELETE
+capability, and checks `/api/core/jobs/`. Pending TurboBulk jobs have no reliable
+branch metadata yet, so any pending Bulk Load, Bulk Delete or Bulk Export job
+blocks. A running job blocks when it names the exact branch or lacks branch
+metadata. Reset first renames the ready branch to a unique quarantine name by its
+immutable ID. It then waits for visible jobs to reach a terminal status; completed,
+errored and failed jobs do not block. TurboBulk 0.3.0 accepts a branch string before
+its worker resolves that name, so an original-name job can still enter the queue
+after the final jobs scan. Reset therefore never reuses the original name: after
+the final scan it deletes the quarantined branch by ID and removes its schema,
 archives matching local load receipts under `build/load-receipts/history/`, creates
-a replacement with the same name, and waits for it to become ready. It refuses
+a receipt-bound uniquely named replacement, and waits for it to become ready. It refuses
 blank and `main`. The reset receipt under `build/reset-receipts/` allows safe
 inspection or continuation after interruption. A definite HTTP rejection is
 reported separately from an ambiguous connection failure; after an ambiguous
 delete, reset checks the checkpointed ID and refuses a renamed survivor. The API
-does not expose a read-only DELETE-permission check, so the actual DELETE may
-still return a definite permission rejection before anything is recreated.
-Because the replacement has a new schema ID, update `DIODE_BRANCH` and reconfirm
-the external Diode routing evidence before a Diode load. TurboBulk continues to
-use the human branch name.
+metadata establishes that the routes expose PATCH and DELETE; it does not guarantee
+that the destructive request will be authorized, so the actual DELETE may still
+return a definite permission rejection before anything is recreated.
+Branching 1.1.2 exposes no status transition for this purpose, so the reversible
+rename is the coordination boundary. If job draining times out, the old branch
+stays under the quarantine name recorded in the receipt; rerunning the same
+command recovers the rename by old branch ID and continues waiting before delete.
+Use the printed replacement name for the next load and as the input to the next
+reset. Because the replacement also has a new schema ID, update `DIODE_BRANCH` and
+reconfirm the external Diode routing evidence before a Diode load. Pass the printed
+replacement name to TurboBulk loads.
 
 ## Artifacts and Diode
 
@@ -199,6 +248,18 @@ integer target IDs, so an adapter must load in dependency order, resolve IDs aft
 each completed job, and translate generic relationships into object and content
 type IDs. Cables require separate cable and termination rows; see the
 [official cable example](https://github.com/netboxlabs/netbox-turbobulk-public/blob/a8ec11ca55894f37524de40d2dfaf42efd9748cd/examples/05_cable_connections.py).
+
+Genial submits at most 2,000 rows per TurboBulk job. The client boundary protects
+a model group even when it is smaller than the plugin's server-side chunk setting.
+Every deterministic batch has its own purpose, key set, payload hash, job ID,
+timings, and hook request in the receipt. A resume polls an acknowledged job to a
+verified terminal result and skips already verified jobs. Target IDs are resolved
+once after the model's batches, avoiding a whole-table REST scan after every batch,
+then become the dependency checkpoint for later models. Table-wide hooks do not run
+on intermediate batches, and cable-link and path rebuilding wait until every
+generated termination is present. For an evidence-driven experiment, the optional
+fourth argument changes the bound: `just load ARTIFACT TARGET BRANCH 1000`. A
+different bound requires a fresh branch and receipt.
 
 TurboBulk supports branch-targeted jobs, making a disposable branch the rollback
 boundary for a multi-model estate. It does not make every model idempotent:

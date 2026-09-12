@@ -4,13 +4,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from estates.generate import generate
-from estates.model import recipe_from_file
+from estates.model import canonical, digest, recipe_from_file
 from estates.turbobulk import (LoadError, REST_CREATE_KINDS, SPECS, SUPPORTED_REFS,
                                _bound_job_id, _complete_rest, _create_rest, _index,
                                _matches, _render, _rendered_columns, _required_content_types,
-                               _schema_preflight, _submit)
+                               _schema_preflight, _submit, delivery_contract, load)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,14 @@ class SchemaClient:
 
     def request(self, path, method="GET", **_kwargs):
         self.calls.append((method, path))
+        if path == "/api/schema/?format=json":
+            parameters = [{"name": name, "in": "query"}
+                          for name in ("site_id", "location_id", "rack_id")]
+            return 200, {"paths": {
+                SPECS[kind][1]: {"get": {"parameters": parameters}}
+                for kind in ("console_port", "console_server_port", "interface", "module_bay",
+                             "power_outlet", "power_port")
+            }}
         if path == SPECS["module_bay_type"][1]:
             if not self.rest:
                 raise LoadError("HTTP 404")
@@ -123,6 +132,21 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         with self.assertRaisesRegex(LoadError, "cannot write: groups"):
             _schema_preflight(client, self.objects)
 
+    def test_rich_artifact_disposable_policy_refuses_before_target_access(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_bytes(canonical(self.plan) + b"\n")
+            (root / "checks.json").write_text(json.dumps(
+                {"status": "passed", "plan_sha256": digest(self.plan)}))
+            with patch("estates.turbobulk.Client") as client:
+                with self.assertRaisesRegex(
+                        LoadError, "REST create: module_bay_type.*REST completion PATCH"):
+                    load(root, url="https://netbox.example", token="fixture", branch="Demo",
+                         receipt_path=root / "receipt.json",
+                         delivery_policy="disposable-baseline")
+            client.assert_not_called()
+            self.assertFalse((root / "receipt.json").exists())
+
     def test_rest_create_recovers_only_when_durable_intent_matches_target(self):
         manufacturer = {"key": "manufacturer:acme", "kind": "manufacturer",
                         "attrs": {"name": "Acme", "slug": "acme"}, "refs": {}}
@@ -177,6 +201,36 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
             self.assertNotIn("job_id", durable)
             with self.assertRaisesRegex(LoadError, "ambiguous.*Inspect or clean up"):
                 _bound_job_id(durable)
+
+    def test_disposable_submit_sends_and_records_exact_request_policy(self):
+        settings = delivery_contract("disposable-baseline")["request_settings"]
+        terminal = {"job_id": "job-1", "status": "completed", "data": {
+            "rows_inserted": 1, "rows_updated": 0, "changelogs_created": 0, "errors": [],
+            "post_hooks": {name: {"success": True} for name in settings["post_hooks"]}}}
+
+        class Client:
+            body = None
+
+            def request(self, _path, **kwargs):
+                self.body = kwargs["body"]
+                return 202, {"job_id": "job-1"}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"jobs": []}
+            target = Client()
+            with patch("estates.turbobulk._poll", return_value=terminal):
+                _submit(target, "Demo", "extras.tag", [{"name": "Demo"}], "phase-1:tag",
+                        ["tag:demo"], receipt, receipt_path, 1, request_settings=settings)
+            body = target.body.decode(errors="ignore")
+            for field, value in (("create_changelogs", "false"),
+                                 ("dispatch_events", "false"),
+                                 ("validation_mode", "full")):
+                self.assertIn(f'name="{field}"\r\n\r\n{value}\r\n', body)
+            for hook in settings["post_hooks"]:
+                self.assertIn(f'name="post_hooks.{hook}"\r\n\r\ntrue\r\n', body)
+            self.assertEqual(receipt["jobs"][0]["request_settings"], settings)
+            self.assertEqual(receipt["jobs"][0]["mode"], "insert")
 
     def test_rest_completion_covers_new_scalar_and_many_to_many_refs(self):
         mac = {"key": "mac:1", "kind": "mac_address", "attrs": {}, "refs": {}}

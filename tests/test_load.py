@@ -31,7 +31,8 @@ class LoaderSelectionTests(unittest.TestCase):
             {"status": "passed", "plan_sha256": digest(plan)}))
         return plan
 
-    def selection(self, root, status, manifest, environment, transport="auto"):
+    def selection(self, root, status, manifest, environment, transport="auto",
+                  delivery_policy="reviewable"):
         branch = {"id": 1, "name": "Demo", "schema_id": "branch_schema",
                   "status": {"value": "ready"}}
         with ExitStack() as stack:
@@ -40,7 +41,8 @@ class LoaderSelectionTests(unittest.TestCase):
             stack.enter_context(patch("estates.load._diode_manifest", return_value=((root / "diode", manifest), [])))
             stack.enter_context(patch("estates.load._probe_endpoints", return_value=[]))
             stack.enter_context(patch("estates.load._schema_preflight", return_value={"models": []}))
-            return inspect(root, url=Target.base, token=Target.token, branch="Demo", transport=transport)
+            return inspect(root, url=Target.base, token=Target.token, branch="Demo",
+                           transport=transport, delivery_policy=delivery_policy)
 
     def test_auto_uses_explicitly_enabled_turbobulk_for_covered_graph(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -51,6 +53,44 @@ class LoaderSelectionTests(unittest.TestCase):
                 "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
             decision = self.selection(root, status, {}, {"TURBOBULK_WRITES": "1"})
             self.assertEqual(decision["selected"], "turbobulk")
+
+    def test_disposable_policy_cannot_fall_back_to_diode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.artifact(root, [{"key": "tag:demo", "kind": "tag",
+                                  "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}}])
+            status = {"netbox-version": "4.7.0", "plugins": {
+                "netbox_diode_plugin": "1.17.0", "netbox_branching": "1.1.2"}}
+            manifest = {"source_checked_target": {"netbox": "4.7.0",
+                                                   "diode_netbox_plugin": "1.17.0"}}
+            env = {"DIODE_TARGET": "grpc://diode.example", "DIODE_CLIENT_ID": "id",
+                   "DIODE_CLIENT_SECRET": "secret", "DIODE_MODE": "direct",
+                   "DIODE_BRANCH": "branch_schema", "DIODE_WRITES": "1",
+                   "DIODE_CONFIG_SOURCE": "settings", "DIODE_CONFIG_CONFIRMED_AT": "fresh"}
+            with patch("estates.load._confirmed_at", return_value=True):
+                decision = self.selection(root, status, manifest, env,
+                                          delivery_policy="disposable-baseline")
+            self.assertIsNone(decision["selected"])
+            self.assertIn("only by the TurboBulk adapter",
+                          " ".join(decision["candidates"]["diode"]["reasons"]))
+
+    def test_disposable_explain_reports_rest_completion_blocker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.artifact(root, [
+                {"key": "tag:demo", "kind": "tag",
+                 "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}},
+                {"key": "site:demo", "kind": "site",
+                 "attrs": {"name": "Demo", "slug": "demo"},
+                 "refs": {"tags": ["tag:demo"]}},
+            ])
+            status = {"netbox-version": "4.7.0", "plugins": {
+                "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
+            decision = self.selection(root, status, {}, {"TURBOBULK_WRITES": "1"},
+                                      delivery_policy="disposable-baseline")
+            self.assertIsNone(decision["selected"])
+            self.assertIn("REST completion PATCH: site.tags",
+                          " ".join(decision["candidates"]["turbobulk"]["reasons"]))
 
     def test_explain_rejects_turbobulk_schema_gap_before_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -81,6 +121,8 @@ class LoaderSelectionTests(unittest.TestCase):
             self.assertEqual(first, default_receipt(root, "https://netbox.example/", "Demo Branch"))
             self.assertNotEqual(first, default_receipt(root, "https://other.example", "Demo Branch"))
             self.assertNotEqual(first, default_receipt(root, "https://netbox.example", "Other"))
+            self.assertNotEqual(first, default_receipt(
+                root, "https://netbox.example", "Demo Branch", "disposable-baseline"))
             self.assertEqual(first.parent, Path("build/load-receipts"))
             self.assertTrue(first.name.startswith("My-estate-Demo-Branch-"))
             self.assertNotIn("netbox.example", str(first))
@@ -100,6 +142,23 @@ class LoaderSelectionTests(unittest.TestCase):
             self.assertEqual(run.call_args.kwargs["url"], "https://netbox.example")
             self.assertEqual(run.call_args.kwargs["branch"], "Demo")
             self.assertEqual(run.call_args.kwargs["receipt_path"], receipt)
+            self.assertEqual(run.call_args.kwargs["delivery_policy"], "reviewable")
+
+    def test_disposable_cli_is_explicit_and_cannot_fall_back_to_diode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.artifact(root, [{"key": "tag:demo", "kind": "tag",
+                                  "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}}])
+            receipt = root / "receipt.json"
+            with patch.dict(os.environ, {"NETBOX_TOKEN": "raw-token"}, clear=True), \
+                    patch("estates.load.default_receipt", return_value=receipt), \
+                    patch("estates.load.load", return_value={
+                        "success": True, "result": "loaded", "transport": "turbobulk+rest"}) as run, \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(main([str(root), "https://netbox.example", "--branch", "Demo",
+                                       "--delivery-policy", "disposable-baseline"]), 0)
+            self.assertIn("cannot be reviewed, merged, or reverted", stderr.getvalue())
+            self.assertEqual(run.call_args.kwargs["delivery_policy"], "disposable-baseline")
 
     def test_main_reports_bad_artifact_without_traceback(self):
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -146,6 +205,13 @@ class LoaderSelectionTests(unittest.TestCase):
             self.assertEqual(result["decision"]["selected"], None)
             turbo.assert_not_called()
             diode.assert_not_called()
+
+    def test_selected_turbobulk_receives_operator_job_bound(self):
+        with patch("estates.load.inspect", return_value={"selected": "turbobulk"}), \
+                patch("estates.load.load_turbobulk", return_value={"success": True}) as turbo:
+            load("artifact", url="https://netbox.example", token="token", branch="Demo",
+                 receipt_path=Path("receipt.json"), turbobulk_job_rows=750)
+        self.assertEqual(turbo.call_args.kwargs["max_job_rows"], 750)
 
     def test_phase_plan_removes_only_deferred_cycle_fields(self):
         plan = {"objects": [{"key": "device:one", "kind": "device", "attrs": {"name": "one"},

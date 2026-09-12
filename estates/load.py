@@ -18,9 +18,9 @@ import time
 
 from .diode import _PRIMARY_IPS, _deferred_fields, _phases
 from .model import digest
-from .turbobulk import (Client, LoadError, SPECS, _artifact, _branch,
+from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, Client, LoadError, SPECS, _artifact, _branch,
                         _numeric_ids, _schema_preflight, _verify_paths, _write_receipt,
-                        load as load_turbobulk)
+                        disposable_rest_blocker, load as load_turbobulk)
 from lab.verify import ENDPOINTS, fetch_inventory, verify_plan
 
 
@@ -154,8 +154,10 @@ def _probe_endpoints(client, kinds):
     return missing
 
 
-def inspect(artifact, *, url, token, branch, transport="auto"):
+def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="reviewable"):
     """Read target capabilities and return one deterministic transport decision."""
+    if delivery_policy not in DELIVERY_POLICIES:
+        raise LoadError(f"unsupported delivery policy {delivery_policy!r}")
     plan_path, raw, plan, objects, _ = _artifact(artifact)
     client, status, branch_row = _target(url, token, branch)
     kinds = {obj["kind"] for obj in objects.values()}
@@ -170,6 +172,10 @@ def inspect(artifact, *, url, token, branch, transport="auto"):
     unsupported = sorted(kinds - SPECS.keys())
     if unsupported:
         tb_reasons.append("compiler does not cover: " + ", ".join(unsupported))
+    if delivery_policy == "disposable-baseline":
+        blocker = disposable_rest_blocker(objects)
+        if blocker:
+            tb_reasons.append(blocker)
     if not branch:
         tb_reasons.append("the qualified TurboBulk adapter requires a disposable branch")
     if branch and not branch_row:
@@ -184,6 +190,8 @@ def inspect(artifact, *, url, token, branch, transport="auto"):
                                 "transport": "turbobulk+rest", "preflight": tb_preflight}
 
     package, diode_reasons = _diode_manifest(plan_path, plan)
+    if delivery_policy == "disposable-baseline":
+        diode_reasons.append("disposable-baseline is implemented only by the TurboBulk adapter")
     if not plugins.get("netbox_diode_plugin"):
         diode_reasons.append("Diode NetBox plugin is absent")
     diode_evidence, config_reasons = _diode_config(client, branch, plugins)
@@ -222,6 +230,14 @@ def inspect(artifact, *, url, token, branch, transport="auto"):
         "objects": len(objects),
         "kinds": sorted(kinds),
         "target": client.base,
+        "delivery_policy": delivery_policy,
+        "delivery_warning": (None if delivery_policy == "reviewable" else
+                             "This branch cannot be reviewed, merged, or reverted; delete it after use."),
+        "branch_capabilities": {
+            "reviewable": delivery_policy == "reviewable",
+            "mergeable": delivery_policy == "reviewable",
+            "revertible_after_merge": delivery_policy == "reviewable",
+        },
         "target_contract": {"netbox": status.get("netbox-version"), "plugins": plugins},
         "branch": None if branch_row is None else {
             key: branch_row.get(key) for key in ("id", "name", "schema_id", "status")},
@@ -420,7 +436,8 @@ def _continue_diode(plan, objects, directory, manifest, client, receipt, receipt
     return receipt
 
 
-def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=900):
+def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=900,
+               delivery_policy="reviewable"):
     """Replay verified Diode phases with REST visibility barriers and checkpoints."""
     started = time.monotonic()
     plan_path, raw, plan, objects, offline = _artifact(artifact)
@@ -442,6 +459,8 @@ def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=
         "diode_target": evidence["target"], "diode_client_id_sha256": evidence["client_id_sha256"],
         "diode_scope": evidence["expected_branch"], "mode": evidence["expected_mode"],
         "configuration_source": evidence["source"], "transport": "diode+rest-readback",
+        "delivery_policy": delivery_policy,
+        "delivery_warning": None,
         "target_contract": {"netbox": status.get("netbox-version"), "plugins": status.get("plugins", {})},
     }
     receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else None
@@ -492,8 +511,10 @@ def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=
         raise
 
 
-def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeout=900, explain=False):
-    decision = inspect(artifact, url=url, token=token, branch=branch, transport=transport)
+def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeout=900,
+         explain=False, delivery_policy="reviewable", turbobulk_job_rows=DEFAULT_JOB_ROWS):
+    decision = inspect(artifact, url=url, token=token, branch=branch, transport=transport,
+                       delivery_policy=delivery_policy)
     if explain:
         return {"success": True, "result": "explained", "decision": decision}
     if decision["selected"] is None:
@@ -503,20 +524,24 @@ def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeou
         raise LoadError("no faithful loader is available for this artifact and target; " + details)
     if decision["selected"] == "turbobulk":
         return load_turbobulk(artifact, url=url, token=token, branch=branch,
-                              receipt_path=receipt_path, timeout=timeout)
+                              receipt_path=receipt_path, timeout=timeout,
+                              delivery_policy=delivery_policy,
+                              max_job_rows=turbobulk_job_rows)
     if decision["selected"] == "diode":
         return load_diode(artifact, url=url, token=token, branch=branch,
-                          receipt_path=receipt_path, decision=decision, timeout=timeout)
+                          receipt_path=receipt_path, decision=decision, timeout=timeout,
+                          delivery_policy=delivery_policy)
     raise LoadError("selected REST transport is not implemented")
 
 
-def default_receipt(artifact, target, branch):
+def default_receipt(artifact, target, branch, delivery_policy="reviewable"):
     """Return a stable private receipt path for one artifact/target/scope."""
     plan_path, _, plan, _, _ = _artifact(artifact)
     origin = target.rstrip("/")
     scope = branch or "main"
     binding = json.dumps({"canonical_sha256": digest(plan), "target": origin,
-                          "branch": scope}, sort_keys=True, separators=(",", ":"))
+                          "branch": scope, "delivery_policy": delivery_policy},
+                         sort_keys=True, separators=(",", ":"))
     suffix = hashlib.sha256(binding.encode()).hexdigest()[:12]
     artifact_name = plan_path.parent.name if plan_path.name == "plan.json" else plan_path.stem
     slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", artifact_name).strip("-.") or "estate"
@@ -533,7 +558,10 @@ def main(argv=None):
     parser.add_argument("--receipt", type=Path,
                         help="private checkpoint receipt (default is stable per artifact, target and branch)")
     parser.add_argument("--transport", choices=("auto", "turbobulk", "diode", "rest"), default="auto")
+    parser.add_argument("--delivery-policy", choices=DELIVERY_POLICIES, default="reviewable")
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--turbobulk-job-rows", type=int, default=DEFAULT_JOB_ROWS,
+                        help=f"maximum rows per TurboBulk job (default: {DEFAULT_JOB_ROWS})")
     parser.add_argument("--explain", action="store_true", help="inspect and explain without writing")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
@@ -541,12 +569,18 @@ def main(argv=None):
         parser.error("target/NETBOX_URL and NETBOX_TOKEN are required")
     receipt = args.receipt
     try:
-        receipt = receipt or default_receipt(args.artifact, args.target, args.branch)
+        receipt = receipt or default_receipt(args.artifact, args.target, args.branch,
+                                             args.delivery_policy)
         if not args.explain:
             print(f"Receipt: {receipt}", file=os.sys.stderr, flush=True)
+            if args.delivery_policy == "disposable-baseline":
+                print("DISPOSABLE BASELINE: this branch cannot be reviewed, merged, or reverted; delete it after use.",
+                      file=os.sys.stderr, flush=True)
         result = load(args.artifact, url=args.target, token=token, branch=args.branch,
                       receipt_path=receipt, transport=args.transport,
-                      timeout=args.timeout, explain=args.explain)
+                      timeout=args.timeout, explain=args.explain,
+                      delivery_policy=args.delivery_policy,
+                      turbobulk_job_rows=args.turbobulk_job_rows)
         if args.explain:
             print(json.dumps(result["decision"], indent=2, sort_keys=True))
         else:

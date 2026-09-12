@@ -27,14 +27,22 @@ sdk-check directory='build/bank-v9/diode':
     python3 -m estates sdk-check {{quote(directory)}}
 
 # Inspect the target, choose a faithful transport, load, and strictly verify
-load artifact target branch='':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}}
+load artifact target branch='' turbobulk_job_rows='2000':
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
+
+# Faster baseline for a fresh throwaway branch; it cannot be reviewed, merged, or reverted
+load-disposable artifact target branch turbobulk_job_rows='2000':
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
 
 # Explain the transport choice and compatibility blockers without writing
 load-explain artifact target branch='':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --explain
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --explain
 
-# Permanently replace one named disposable branch and archive its load receipts
+# Explain disposable-baseline selection without writing
+load-explain-disposable artifact target branch:
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --explain
+
+# Permanently replace one named disposable branch with a uniquely named branch
 reset target branch:
     @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.reset {{quote(target)}} {{quote(branch)}}
 
