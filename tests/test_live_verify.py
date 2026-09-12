@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from lab.verify import ENDPOINTS, fetch_inventory, main, verify_plan
 
@@ -45,6 +45,19 @@ def fixture():
 
 
 class LiveReadbackTests(unittest.TestCase):
+    @patch("lab.verify.time.sleep")
+    @patch("lab.verify.urllib.request.build_opener")
+    def test_inventory_retries_transient_read_disconnect(self, build_opener, sleep):
+        page = io.BytesIO(json.dumps({"count": 0, "next": None, "results": []}).encode())
+        opener = Mock()
+        opener.open.side_effect = [ConnectionResetError(), page]
+        build_opener.return_value = opener
+
+        self.assertEqual(fetch_inventory("https://netbox.example", "token", ["site"]),
+                         {"site": []})
+        self.assertEqual(opener.open.call_count, 2)
+        sleep.assert_called_once_with(0.5)
+
     def test_bootstrap_cli_checks_all_endpoints_and_produces_usable_allowlist(self):
         inventory = {kind: [] for kind in ENDPOINTS}
         inventory.update(user=[{"id": 8, "username": "admin"}, {"id": 3, "username": "diode"}],

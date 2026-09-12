@@ -2,12 +2,13 @@
 
 import hashlib
 from copy import deepcopy
+import io
 import json
 from pathlib import Path
 import tempfile
 import unittest
 import urllib.parse
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, Mock, patch
 
 from estates.model import canonical, digest
 from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, RECEIPT_VERSION, Client,
@@ -31,6 +32,12 @@ class FakeClient:
             return 200, [{"full_name": name, "export_only": False} for name in self.models]
         model = path.removeprefix("/api/plugins/turbobulk/models/").removesuffix("/")
         return 200, {"fields": [{"name": name} for name in self.schemas[model]]}
+
+
+def response(value):
+    result = io.BytesIO(json.dumps(value).encode())
+    result.status = 200
+    return result
 
 
 class TurboBulkLoaderTests(unittest.TestCase):
@@ -242,6 +249,21 @@ class TurboBulkLoaderTests(unittest.TestCase):
                          "Bearer nbt_key.secret")
         with self.assertRaises(LoadError):
             Client("https://user:secret@netbox.example", "token")
+
+    @patch("estates.turbobulk.time.sleep")
+    def test_client_retries_reads_but_never_writes(self, sleep):
+        client = Client("https://netbox.example", "token")
+        client.opener = Mock()
+        client.opener.open.side_effect = [ConnectionResetError(), response({"ok": True})]
+        self.assertEqual(client.request("/api/status/"), (200, {"ok": True}))
+        self.assertEqual(client.opener.open.call_count, 2)
+        sleep.assert_called_once_with(0.5)
+
+        client.opener.reset_mock()
+        client.opener.open.side_effect = ConnectionResetError()
+        with self.assertRaisesRegex(LoadError, "without retry"):
+            client.request("/api/write/", method="POST", body=b"{}")
+        client.opener.open.assert_called_once()
         client = Client("https://netbox.example", "token")
         redirect = next(handler for handler in client.opener.handlers if isinstance(handler, _NoRedirect))
         self.assertIsNone(redirect.redirect_request(None, None, 302, "moved", {}, "https://untrusted.example"))

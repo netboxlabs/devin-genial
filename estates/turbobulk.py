@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import gzip
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -43,6 +44,7 @@ class JobTimeout(LoadError):
 RECEIPT_VERSION = 2
 COMPILER_VERSION = "v02-turbobulk-10"
 DEFAULT_JOB_ROWS = 2_000
+READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
     "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
 }
@@ -321,6 +323,21 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _read_json(opener, request, timeout):
+    """Retry transient failures only for caller-authorized read requests."""
+    for attempt in range(READ_ATTEMPTS):
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                return response.status, json.load(response)
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException, json.JSONDecodeError, EOFError):
+            if attempt + 1 == READ_ATTEMPTS:
+                raise
+            time.sleep(0.5 * 2 ** attempt)
+
+
 class Client:
     def __init__(self, url, token, branch_id=None):
         parsed = urllib.parse.urlsplit(url)
@@ -350,11 +367,18 @@ class Client:
             request_headers.update(headers)
         request = urllib.request.Request(self.base + path, data=body, headers=request_headers, method=method)
         try:
+            if method == "GET" and body is None:
+                return _read_json(self.opener, request, 120)
             with self.opener.open(request, timeout=120) as response:
                 return response.status, json.load(response)
         except urllib.error.HTTPError as exc:
             detail = exc.read(2000).decode(errors="replace")
             raise LoadError(f"{method} {path} returned HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException, json.JSONDecodeError, EOFError) as exc:
+            detail = (f"after {READ_ATTEMPTS} read attempts" if method == "GET" and body is None
+                      else "without retry because the request could write")
+            raise LoadError(f"{method} {path} failed {detail}: {exc}") from exc
 
     def all(self, path):
         rows = []
@@ -367,10 +391,14 @@ class Client:
             seen.add(next_url)
             request = urllib.request.Request(next_url, headers=self.headers)
             try:
-                with self.opener.open(request, timeout=120) as response:
-                    page = json.load(response)
+                _, page = _read_json(self.opener, request, 120)
             except urllib.error.HTTPError as exc:
                 raise LoadError(f"GET {path} returned HTTP {exc.code}") from exc
+            except (urllib.error.URLError, TimeoutError, ConnectionError,
+                    http.client.HTTPException, json.JSONDecodeError, EOFError) as exc:
+                raise LoadError(
+                    f"GET {path} failed after {READ_ATTEMPTS} read attempts: {exc}"
+                ) from exc
             rows.extend(page["results"])
             next_url = page.get("next")
         return rows

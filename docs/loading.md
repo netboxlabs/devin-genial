@@ -22,6 +22,9 @@ The target argument is the NetBox root origin. The optional branch is required
 when Branching is installed; a target without Branching requires the explicit
 `ALLOW_MAIN_WRITES=1` guard. The loader prints its stable private checkpoint
 receipt before writes so the same command can resume safely.
+Read-only target discovery, pagination, and job polling retry transient connection
+failures with bounded backoff. Write requests are never retried after an ambiguous
+transport failure; their recorded intent must be inspected or resumed instead.
 
 The default `just load` policy retains the TurboBulk changelogs and branch diffs
 needed for review, merge, and post-merge revert. It requires zero ChangeDiffs on
@@ -260,6 +263,10 @@ on intermediate batches, and cable-link and path rebuilding wait until every
 generated termination is present. For an evidence-driven experiment, the optional
 fourth argument changes the bound: `just load ARTIFACT TARGET BRANCH 1000`. A
 different bound requires a fresh branch and receipt.
+
+Read-only API requests retry transient disconnects four times with bounded
+backoff. Mutating requests are never retried automatically; their durable intent
+and returned job ID remain the resume boundary.
 
 TurboBulk supports branch-targeted jobs, making a disposable branch the rollback
 boundary for a multi-model estate. It does not make every model idempotent:

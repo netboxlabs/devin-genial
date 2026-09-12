@@ -14,12 +14,31 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
+import time
+
+
+READ_ATTEMPTS = 4
+
+
+def _read_json(opener, request, timeout):
+    for attempt in range(READ_ATTEMPTS):
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                return json.load(response)
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException, json.JSONDecodeError, EOFError):
+            if attempt + 1 == READ_ATTEMPTS:
+                raise
+            time.sleep(0.5 * 2 ** attempt)
 
 
 ENDPOINTS = {
@@ -459,11 +478,11 @@ def fetch_inventory(url, token, kinds, branch=None):
                 headers["X-NetBox-Branch"] = branch
             request = urllib.request.Request(next_url, headers=headers)
             try:
-                with opener.open(request, timeout=60) as response:
-                    page = json.load(response)
+                page = _read_json(opener, request, 60)
             except urllib.error.HTTPError as exc:
                 raise RuntimeError(f"{kind}: NetBox GET failed with HTTP {exc.code}") from None
-            except (urllib.error.URLError, TimeoutError):
+            except (urllib.error.URLError, TimeoutError, ConnectionError,
+                    http.client.HTTPException, json.JSONDecodeError, EOFError):
                 raise RuntimeError(f"{kind}: NetBox GET connection failed") from None
             if not isinstance(page, dict) or not isinstance(page.get("results"), list):
                 raise ValueError(f"{kind}: expected paginated NetBox REST response")
