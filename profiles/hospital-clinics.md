@@ -16,8 +16,8 @@ budgets, patch panels and IPv6 for the wireless qualification example.
 The generated guide explains actual care-unit, access, service and power
 relationships. Generation is offline; a generated artifact alone does not prove
 live NetBox acceptance. Use the shared Diode and local qualification workflow
-documented in the project README for a live target.
-The optional top-level [`ipv6_pool`](../README.md#optional-ipv6) field uses the
+in the [loading guide](../docs/loading.md) for a live target.
+The optional top-level [`ipv6_pool`](../docs/modeling.md#optional-ipv6) field uses the
 same dual-stack policy as the other four profiles: /48 facilities and /64 LANs,
 with existing interface, primary and service references. Absence means IPv4-only;
 enabling or changing it needs a new baseline. The hospital-wireless example passed

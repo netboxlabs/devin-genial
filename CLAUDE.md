@@ -5,6 +5,11 @@ exported through Diode. Regional bank, enterprise DC, school district,
 hospital/clinic and provider backbone have generation profiles. No LLM calls belong
 in generation, allocation, validation, or export.
 
+The product goal is a believable whole estate. Demo stories are views into that
+connected estate; a library of isolated industry slices does not replace it.
+Keep industry semantics and cross-site dependencies intact as demand grows.
+Generation scale and successful target ingestion are separate qualification gates.
+
 Version 0.9 implements shared enrichment, equipment history, dual-stack,
 PoE/wireless, optics and a provider maintenance story. All five final representative
 baselines passed initial/repeat Diode, strict readback and rendered UI inspection.
@@ -71,7 +76,12 @@ for the separately recorded pinned-target live qualification.
 ## Navigation
 
 - [GOAL.md](GOAL.md): preserved objective, design/build/review milestones and final evidence index.
-- [README.md](README.md): operation, Diode handoff, implemented scope and limits.
+- [README.md](README.md): human quick start and complete documentation map.
+- [docs/usage.md](docs/usage.md): generation, profiles and supported growth.
+- [docs/modeling.md](docs/modeling.md): construction rules and connected detail.
+- [docs/scenarios.md](docs/scenarios.md): change/defect walkthroughs and boundaries.
+- [docs/loading.md](docs/loading.md): artifacts and Diode handoff.
+- [docs/qualification.md](docs/qualification.md): scale, limits and preserved history.
 - [CONTRACT.md](CONTRACT.md): canonical graph, ledgers, units and module interfaces.
 - [COVERAGE.md](COVERAGE.md): hospital/provider omissions and ranked next work;
   a reviewed backlog, not implemented scope.
@@ -89,11 +99,11 @@ for the separately recorded pinned-target live qualification.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
 - `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
-  [README policy](README.md#installed-optics-policy), offline/SDK evidence in
+  [optics policy](docs/modeling.md#installed-optics-policy), offline/SDK evidence in
   GOAL.md; pinned local qualification in `lab/README.md`.
 - `estates/ipv6.py` and `validate_ipv6.py`: shared dual-stack allocation and
   independent finished-graph obligations; operation in
-  [README.md](README.md#optional-ipv6), pinned live receipts in `lab/README.md`.
+  [IPv6 guide](docs/modeling.md#optional-ipv6), pinned live receipts in `lab/README.md`.
 - `estates/operations_context.py`: shared scoped contacts and immutable dated notes;
   `validate_operations.py` independently checks their actual scope and claims.
 - `catalog/type-coverage.json`: pinned SDK/native audit; builds derive `coverage.json`.

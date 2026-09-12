@@ -36,7 +36,7 @@ support, device → installed optic → port/bay/source, equipment lifecycle not
 and provider transport/account → customer private-L3 membership.
 The provider maintenance execution result is recorded separately below.
 The 239,058-object scale run is offline evidence only; see the
-[comparison and scope](../README.md#current-offline-scale-evidence).
+[comparison and scope](../docs/qualification.md#current-offline-scale-evidence).
 
 Current provider starting views (IDs expire on the next reset):
 

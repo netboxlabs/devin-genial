@@ -80,7 +80,7 @@ counts remain explicit. Removing zones, reducing demand, changing classroom
 design, renewing WAN purchases or changing shared immutable settings requires a
 new baseline. Guest can be enabled during growth without renaming WLAN groups
 or moving earlier ports. The optional top-level
-[`ipv6_pool`](../README.md#optional-ipv6) adds prefixes and existing gateway/
+[`ipv6_pool`](../docs/modeling.md#optional-ipv6) adds prefixes and existing gateway/
 interface addresses under the shared baseline policy.
 
 The final school-wireless artifact passed [pinned local initial/repeat and

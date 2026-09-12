@@ -499,7 +499,8 @@ canonical identity while building thin, scoped SDK references. Exported timestam
 are explicit synthetic observation time from recipe `as_of`; report that replay
 preserves them and that replay acceptance does not establish reconciliation.
 
-See [README.md](README.md) for supported scope and generation commands.
+See [modeling](docs/modeling.md) for supported scope and
+[usage](docs/usage.md) for generation commands.
 
 
 Aggregate prefixes must be globally disjoint in one generated plan. RIR identity

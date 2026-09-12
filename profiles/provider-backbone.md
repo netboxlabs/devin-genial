@@ -31,7 +31,7 @@ exactly from its recipe and ledgers before ordinary growth can use it.
 | `noc_pop_a`, `noc_pop_b` | Two distinct PoPs for the NOC's physical handoffs; set these explicitly as in the example |
 | `noc_peak_mbps` | 1–800 Mbps, subject to the local 1G handoff's reserve; excluded from backbone offered-load accounting |
 | `address_pool` | Aligned RFC1918 /8 through /12; first /16 NOC, last /16 infrastructure, middle /24 site reservations |
-| `ipv6_pool` | Optional common dual-stack pool; [operation and current qualification](../README.md#optional-ipv6). Absent means IPv4-only; toggling or changing it needs a new baseline |
+| `ipv6_pool` | Optional common dual-stack pool; [operation and current qualification](../docs/modeling.md#optional-ipv6). Absent means IPv4-only; toggling or changing it needs a new baseline |
 | `reserve_fraction` | 0.1–0.4, exact decimal headroom; combined demands can fail even when every field is within its individual bounds |
 | `asn_base` | Optional private 1024-ASN block aligned from 4200000000; default is namespace-derived. Global target conflict preflight is still required |
 | `demo` | `baseline`, shared `loss-of-power-diversity`, or provider-only `provider-span-maintenance`; planning builds a healthy baseline, generation dispatches narrative intent |

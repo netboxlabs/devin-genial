@@ -24,7 +24,7 @@ DWDM, observed RF/associations, measured consumption or executed replacements.
 Native module deletion can cascade to its interface. The historical tables are
 not current omission claims; their counts remain intact for reproducibility.
 
-Version 0.9 implements the focused [provider span-maintenance story](README.md#provider-span-maintenance).
+Version 0.9 implements the focused [provider span-maintenance story](docs/scenarios.md#provider-span-maintenance).
 One used leased Circuit changes from active to offline, with actual customer
 premise/hub attribution, alternate PE paths, directed offered load/headroom and
 support contacts. The three-PoP sample stays lightly loaded; its lost margin is

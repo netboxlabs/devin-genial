@@ -42,7 +42,7 @@ It also has a maintenance advantage: rebuilding demo data is part of NetBox's
 [release checklist](https://netboxlabs.com/docs/netbox/development/release-checklist/).
 Our local tests and prepared CI workflow do not establish equivalent product
 release coverage. The v0.2 default bank subsequently passed local Diode ingestion
-and strict NetBox readback on September 9; the [README](README.md#checks-and-present-limits)
+and strict NetBox readback on September 9; the [qualification reference](docs/qualification.md#checks-and-present-limits)
 records the exact coverage and target versions. That does not establish a release
 matrix or equal curated model breadth.
 
@@ -56,7 +56,7 @@ and host-device placement are unpopulated on all 180 VM rows.
 
 These are useful foundations for repeatable capacity and application stories.
 In v0.1, lifecycle cohorts were labels. The v0.2 [design and scenario
-walkthrough](README.md#procedural-design-without-ai) adds different access hardware,
+walkthrough](docs/modeling.md#procedural-design-without-ai) adds different access hardware,
 uplink/supply counts, inherited names and addressing, and independently checked
 acquisition/refresh candidates. These address one specific curation gap; they do
 not establish broad industry variation, live migration, or equivalent community
@@ -67,7 +67,7 @@ lifecycle-history system in this comparison.
 
 The default generator abstracts passive patching into continuous channels.
 Panel mode retains real front/rear paths locally, but SDK1.14/plugin1.17 lack
-the mapping fields introduced in NetBox4.5. The [README](README.md#start) records
+the mapping fields introduced in NetBox4.5. The [panel compatibility notes](docs/modeling.md#physical-detail-iteration) records
 that concrete limitation. A current-version conversion of the community's mapped
 ports through the same Diode path would encounter the same missing capability.
 
@@ -107,7 +107,7 @@ confirmed a complete ATM-to-switch trace through its outlet and cabinet panel,
 with three cables totaling 39 meters, plus service-to-IP navigation in both
 directions. This qualifies those modeled relationships, not overall parity with
 the community estate or an official current-version Diode path.
-See the [current checks and live evidence](README.md#checks-and-present-limits).
+See the [current checks and live evidence](docs/qualification.md#checks-and-present-limits).
 Modules, console wiring, hardware images/weights, richer circuit operations, and
 broader topology/service narratives remain worthwhile community reference gaps.
 
@@ -127,7 +127,7 @@ survived. Only 12 existing interfaces gained connection descriptions and VLAN
 assignments. This is now measured incremental generation and ingestion, alongside
 the earlier offline scale checks. It still uses the disclosed local mapping patch
 and does not establish general migration, failover behavior or a release matrix.
-The [README evidence](README.md#checks-and-present-limits) records exact receipts.
+The [README evidence](docs/qualification.md#checks-and-present-limits) records exact receipts.
 
 ## September 9 building-driven headquarters
 
@@ -146,7 +146,7 @@ services, procurement libraries, routing protocols or general lifecycle executio
 The 12,219-object mixed bank passed initial Diode ingestion and identical replay
 on the patched local target. Strict readback retained every ID and all 1,245
 front/rear mappings, and separate readbacks preserved the four older estates.
-The [README](README.md#building-driven-headquarters) describes the rules and
+The [modeling guide](docs/modeling.md#building-driven-headquarters) describes the rules and
 records offline versus live qualification separately.
 
 ## September 9 demand-sized WAN procurement
@@ -190,5 +190,5 @@ coverage is tied to one audited stack; component templates, ServiceTemplate and
 configuration contexts/templates have no top-level message in the pinned SDK.
 Computed CablePath/CableTermination records arise from native processing, and
 the panel path still requires the disclosed local compatibility bridge.
-See [local qualification](lab/README.md#observed-qualification) for live evidence;
+See [local qualification](lab/README.md#current-v09-qualification) for live evidence;
 SDK acceptance and offline graph checks alone do not establish it.
