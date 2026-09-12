@@ -35,11 +35,20 @@ request sizes, and the validation rules embedded in the pinned descriptors.
 It reports the known target limitations from the manifest. It does not contact
 Diode or NetBox; a passing SDK check does not resolve the panel mapping gap.
 
-For a target already configured with Diode, use the SDK's existing
-[dry-run replay helper](https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/scripts/dryrun_replay.py).
-Supply `DIODE_CLIENT_ID` and `DIODE_CLIENT_SECRET` through your existing credential
-environment, and `DIODE_TARGET` for that target. A plain NetBox URL/token alone
-is not this helper's authentication contract.
+For a target already configured with Diode, `just load` invokes the SDK's existing
+[dry-run replay helper](https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/scripts/dryrun_replay.py)
+inside the pinned devenv profile. Supply `DIODE_CLIENT_ID`,
+`DIODE_CLIENT_SECRET`, and `DIODE_TARGET` through the ignored `.env`.
+
+The ingestion API does **not** choose or report the NetBox branch, and it does
+not control Assurance versus auto-apply. Those are externally managed tenant
+settings. Before a remote write, verify the effective setting in its authoritative
+UI or operations record, then set `DIODE_MODE=direct`, `DIODE_BRANCH` to the
+branch schema ID, `DIODE_CONFIG_SOURCE` to that record, and
+`DIODE_CONFIG_CONFIRMED_AT` to a timezone-aware timestamp from the last 24 hours.
+Finally set `DIODE_WRITES=1`. These values are a fresh operator attestation; the
+loader records and binds them but cannot introspect them. Use `main` only for a
+target without Branching and explicitly set `ALLOW_MAIN_WRITES=1`.
 
 ```sh
 python3 -m netboxlabs.diode.scripts.dryrun_replay \
@@ -47,11 +56,15 @@ python3 -m netboxlabs.diode.scripts.dryrun_replay \
   build/bank-v9/diode/phase-001-*.json
 ```
 
-Replay one manifest phase at a time, checking **successful reconciliation**
-before proceeding to the next. The helper reports ingest responses; it does not
-wait for all NetBox changes to complete. Primary IP assignments are a final phase
-because their interfaces and addresses must already exist. Saved phase files can
-be resubmitted by the SDK helper, but target recovery is a separate concern.
+The loader currently executes only externally confirmed direct auto-apply. It
+replays one manifest request at a time, checkpoints SDK acceptance, and requires
+exact REST visibility before proceeding to the next dependency phase. Assurance
+review remains a documented manual workflow until its effective mode and
+application state can be verified safely. Primary IP assignments are a final phase
+because their interfaces and addresses must already exist. If the process stops
+before SDK acceptance is checkpointed, the loader checks visibility once and
+requires a fresh branch when acceptance remains ambiguous. It never blindly
+resubmits that phase.
 The pinned local `lab-load` harness rejects historical failed ingestion logs;
 its [recovery procedure](../lab/README.md#recover-a-failed-local-ingestion) uses a
 corrected artifact, disposable reset, and new bootstrap receipt before a full load.
@@ -99,12 +112,17 @@ same command and receipt resumed without duplicate jobs and reached exact strict
 readback. A separate clean attempt stopped at the 900-second bound when its first
 one-row TurboBulk job remained `running` with zero rows processed. A clean
 end-to-end timing and expansion to the current rich graph remain unqualified.
-Cloud Diode completion also remains unqualified. The
+The target-aware selector and checkpointed remote Diode adapter are implemented,
+but Cloud Diode completion remains unqualified. The
 first Diode probe established that the tenant execution mode is a prerequisite
 for meaningful timing. The [Cloud setup guide](https://netboxlabs.com/docs/discovery/getting-started/#netbox-cloud-setup)
 documents managed Diode, enablement and client credentials. Confirm access on the
 chosen disposable tenant and copy its actual Diode target from its settings.
 Use Diode credentials for ingestion and a read-only NetBox API token for readback.
+The selector currently requires the target NetBox and Diode plugin versions to
+match the versions recorded in the artifact's source-checked manifest. Endpoint
+probes also reject missing model families before writes. This is deliberately
+conservative until version-specific projections have their own validation.
 
 1. **Compatibility:** record the target NetBox/Diode/plugin versions and check
    the exported model families and matching behavior. Test passive port mappings

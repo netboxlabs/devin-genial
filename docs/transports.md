@@ -67,11 +67,21 @@ on every supported edition.
 
 ## One command, several internal steps
 
-The current qualification prototype uses the existing Justfile:
+The supported operator interface is the existing Justfile:
 
 ```sh
 just load build/bank-v2 "Generator Benchmark" build/cloud-load.json
 ```
+
+Use the shorter read-only explanation recipe before a write:
+
+```sh
+just load-explain build/bank-v2 "Generator Benchmark"
+```
+
+This is preliminary target and transport discovery. The selected adapter performs
+its complete package/schema preflight again before submission; that deeper check
+can still reject the run without target writes.
 
 The frozen `build/bank-v2` artifact is preserved local qualification evidence;
 it is not shipped in a fresh clone. The command reads `NETBOX_URL` and
@@ -91,11 +101,22 @@ For a new receipt, every inventory represented by the artifact must be empty;
 otherwise the command stops before writes. Treat the branch as exclusively owned
 by that receipt until loading and verification finish.
 
-This prototype covers the 29 canonical kinds in the frozen v0.2 bank
-qualification. It deliberately fails before writes when an artifact contains an
-unsupported kind or the installed TurboBulk schema would drop a required column.
-Extending that compiler to the current rich graph, then selecting Diode or REST
-when TurboBulk is unavailable, remains loader work.
+Transport selection is deterministic. TurboBulk is eligible only when the plugin
+is present, `TURBOBULK_WRITES=1`, a disposable branch was named, and the entire
+artifact fits the qualified compiler. Diode is eligible only with complete
+credentials, explicit write enablement, externally confirmed direct auto-apply
+and branch scope from the last 24 hours, matching source-checked target versions,
+and working REST endpoints for every emitted kind. The Diode ingestion API does
+not control or introspect its downstream NetBox branch or Assurance mode, so the
+loader records that operator confirmation as an external boundary. It does not
+execute Assurance-review mode. REST creation is not implemented yet, so the
+selector reports that gap rather than silently omitting unsupported objects.
+
+The TurboBulk adapter covers the 29 canonical kinds in the frozen v0.2 bank
+qualification. The remote Diode adapter can execute the richer generated package,
+checkpoint each dependency phase, wait for target visibility, and strictly read
+back the final graph. Its live remote run remains unqualified. Expanding rich
+TurboBulk mappings and implementing REST creation remain loader work.
 
 The command performs these steps internally:
 
@@ -105,7 +126,7 @@ The command performs these steps internally:
    contract with an explicit translation.
    Fail before writes if any intent would be silently dropped.
 3. Select TurboBulk plus bounded REST completion for the currently qualified
-   model set. The later selector will choose Diode or REST when appropriate.
+   model set, or Diode when its complete target contract is satisfied.
 4. Execute dependency barriers. After each job, verify counts, hook results, and
    canonical-key-to-target-ID mappings, then save a checkpoint.
 5. Close cycles such as device and VM primary IPs. Expand every cable into two
@@ -211,7 +232,8 @@ Remaining work is to:
   already idempotent completion comparison after interruption;
 - retain clean-run evidence for compilation, upload, queue, job, REST completion,
   readback, and cable-trace timings after the stuck-job issue is resolved; and
-- add automatic Diode and REST selection when TurboBulk is absent, disabled, or incomplete.
+- qualify the implemented remote Diode direct/recovery path on a matching target;
+- implement canonical REST creation for targets without a qualified plugin path.
 
 Qualification should next resolve or operationally handle the stuck TurboBulk
 job and prove a clean 8,432-object run, then a current rich

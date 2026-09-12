@@ -58,11 +58,24 @@ phased Diode export. Follow the [Diode loading guide](docs/loading.md) for a
 configured target, or the [local lab guide](lab/README.md) to use the disposable
 NetBox/Diode environment. Generation itself does not write to NetBox.
 
-Cloud TurboBulk work is still a qualification path rather than the fresh-clone
-quick start. Its operator interface is the existing Justfile: `just load` runs
-preflight, loading, recovery checkpoints, REST completion, strict readback, and
-cable-path checks. See the [transport model](docs/transports.md#one-command-several-internal-steps)
-for current model coverage, safety boundaries, and evidence.
+The Justfile is also the loading interface. Inspect a target without writing:
+
+```sh
+just load-explain build/my-bank "Disposable branch"
+```
+
+The result gives a preliminary transport choice and known compatibility blockers.
+Run `just load build/my-bank "Disposable branch"` to perform the adapter's full
+read-only schema/package preflight, then load it and write the default private
+receipt under `build/`. That second preflight can find additional blockers and
+still stops before target writes.
+The current TurboBulk adapter is qualified for its frozen 29-kind contract. The
+remote Diode adapter is implemented for externally confirmed direct auto-apply,
+with request checkpoints and strict REST visibility barriers, but still needs a
+live qualification run. Assurance review is not executable because the ingestion
+API cannot enforce that tenant mode. REST creation and
+rich TurboBulk coverage remain work in progress. See the [transport model](docs/transports.md#one-command-several-internal-steps)
+for configuration, safety boundaries, and evidence.
 
 Existing [scenario guides](docs/scenarios.md) cover branch acquisition and refresh,
 a power-diversity defect, and provider span maintenance. Each derives its subjects

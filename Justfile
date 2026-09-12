@@ -26,9 +26,13 @@ report plan='build/bank-v9/plan.json':
 sdk-check directory='build/bank-v9/diode':
     python3 -m estates sdk-check {{quote(directory)}}
 
-# Qualification only: load the frozen v0.2 model set into an empty disposable branch
-load artifact branch receipt='build/load-receipt.json':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.turbobulk {{quote(artifact)}} --branch {{quote(branch)}} --receipt {{quote(receipt)}}
+# Inspect the target, choose a faithful transport, load, and strictly verify
+load artifact branch='' receipt='build/load-receipt.json' transport='auto' explain='false':
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --receipt {{quote(receipt)}} --transport {{quote(transport)}} {{if explain == 'true' { '--explain' } else { '' }}}
+
+# Explain the transport choice and compatibility blockers without writing
+load-explain artifact branch='' transport='auto':
+    @just load {{quote(artifact)}} {{quote(branch)}} build/load-explain-unused.json {{quote(transport)}} true
 
 # Review an inherited branch's acquisition and refresh; no target writes
 scenario plan='build/bank-v9/plan.json' site='br-s0002' output='build/acquisition-refresh':
