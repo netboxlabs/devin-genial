@@ -1,4 +1,4 @@
-# devin-generator
+# Genial
 
 An offline, deterministic generator of believable connected estates for NetBox,
 exported through Diode. Regional bank, enterprise DC, school district,
@@ -67,6 +67,8 @@ those receipt paths are local evidence, not files shipped in a clone.
 Use the standalone devenv shell (`direnv allow`). The runtime is Python 3.11+
 standard library; the pinned Diode SDK is an optional export-verification tool.
 The Justfile is the human CLI. Run `just check` before committing.
+The Cloud qualification loader is `just load ARTIFACT BRANCH [RECEIPT]`; keep
+transport orchestration behind that recipe rather than adding an installed CLI.
 Use `devenv --profile diode shell` to install/run the pinned SDK checks.
 CI runs the full suite on Python 3.11/3.14, then generates and SDK-checks each
 implemented composition, its scenario, and optional dual-stack across all five
@@ -275,6 +277,9 @@ for the separately recorded pinned-target live qualification.
 - Local qualification uses the native SDK replay helper, bounded reconciliation
   barriers, and separate REST readback. Keep this harness scoped to the pinned
   disposable target; never infer Cloud/Enterprise compatibility from its result.
+- For Cloud qualification, record Assurance review versus direct auto-apply mode.
+  Treat an ingest acknowledgement as acceptance only; require deviation evidence
+  or REST readback before classifying downstream behavior.
 - Keep runtime credentials under ignored private `build/local-target/`; do not
   print resolved Compose configuration or credential-bearing environments.
 - Keep source data licensed and attributed. Do not copy internal Atlas/Lumon code.

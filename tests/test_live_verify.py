@@ -232,6 +232,14 @@ class LiveReadbackTests(unittest.TestCase):
         del inventory["vm_interface"][0]["untagged_vlan"]
         self.assertIn("missing_api_field", {f["code"] for f in verify_plan(plan, inventory)["mismatches"]})
 
+    def test_netbox_46_service_fields_are_checked_without_port_mappings(self):
+        plan, inventory = fixture()
+        inventory["service"][0].pop("port_mappings")
+        inventory["service"][0].update(protocol={"value": "udp", "label": "UDP"}, ports=[53])
+        self.assertTrue(verify_plan(plan, inventory, strict_inventory=True)["success"])
+        inventory["service"][0]["ports"] = [54]
+        self.assertIn("attribute_mismatch", {f["code"] for f in verify_plan(plan, inventory)["mismatches"]})
+
     def test_ambiguous_natural_identity_and_replay_growth_ids(self):
         plan, inventory = fixture()
         first = verify_plan(plan, inventory)
@@ -350,10 +358,12 @@ class LiveReadbackTests(unittest.TestCase):
                  {"count": 2, "results": [{"id": 2}], "next": None}]
         opener = FakeOpener(pages)
         with patch("lab.verify.urllib.request.build_opener", return_value=opener):
-            result = fetch_inventory("http://localhost:8000", "fixture-secret", ["site"])
+            result = fetch_inventory("http://localhost:8000", "fixture-secret", ["site"], "branch-schema")
         self.assertEqual([row["id"] for row in result["site"]], [1, 2])
         self.assertEqual([r.get_method() for r in opener.requests], ["GET", "GET"])
         self.assertEqual(opener.requests[0].get_header("Authorization"), "Token fixture-secret")
+        self.assertEqual(opener.requests[0].get_header("X-netbox-branch"), "branch-schema")
+        self.assertIn("ordering=id", opener.requests[0].full_url)
         self.assertNotIn("fixture-secret", json.dumps(result))
         opener = FakeOpener([dict(pages[0], next="https://untrusted.example/api/")])
         with patch("lab.verify.urllib.request.build_opener", return_value=opener):

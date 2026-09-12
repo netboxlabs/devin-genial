@@ -1,7 +1,7 @@
-"""Read-only NetBox 4.7 readback of generated intent; never an ingestion receipt.
+"""Read-only NetBox REST readback of generated intent; never an ingestion receipt.
 
 Identity source: diode-netbox-plugin v1.17.0/docs/matching-criteria-documentation.md.
-REST shapes: netbox v4.7.0 serializers for IPAM, virtualization, DCIM, circuits.
+REST shapes: finite NetBox 4.6/4.7 serializers for IPAM, virtualization, DCIM, circuits.
 The finite mappings below cover generator output. Missing API fields fail rather
 than being treated as equivalent to a dropped value. The local panel bridge is
 read back through native rear_ports tuples; private PortMapping row IDs have no
@@ -354,15 +354,13 @@ def verify_plan(plan, inventory, previous_receipt=None, strict_inventory=False, 
                        "rear_port_position": mapping[0]["rear_port_position"]}
         for field, expected in obj["attrs"].items():
             expected = _expected_attribute(obj, field, expected)
-            if obj["kind"] == "service" and field in {"ports", "protocol"}:
+            if (obj["kind"] == "service" and field in {"ports", "protocol"}
+                    and "port_mappings" in row):
                 # NetBox 4.7 stores the legacy SDK pair as combined port mappings.
-                if "port_mappings" not in row:
-                    issue(key, field, "missing_api_field", expected)
-                else:
-                    expected_mappings = sorted(f"{obj['attrs']['protocol']}/{p}" for p in obj["attrs"]["ports"])
-                    if sorted(row["port_mappings"]) != expected_mappings:
-                        issue(key, "port_mappings", "attribute_mismatch", expected_mappings, row["port_mappings"])
-                    coverage["attributes_checked"] += 1
+                expected_mappings = sorted(f"{obj['attrs']['protocol']}/{p}" for p in obj["attrs"]["ports"])
+                if sorted(row["port_mappings"]) != expected_mappings:
+                    issue(key, "port_mappings", "attribute_mismatch", expected_mappings, row["port_mappings"])
+                coverage["attributes_checked"] += 1
                 continue
             if field not in row:
                 issue(key, field, "missing_api_field", expected)
@@ -414,7 +412,7 @@ def verify_plan(plan, inventory, previous_receipt=None, strict_inventory=False, 
     allowed_unmatched = {kind: sorted(set(values) & allowed_existing.get(kind, set()))
                          for kind, values in unmatched.items()
                          if set(values) & allowed_existing.get(kind, set())}
-    return {"success": not findings, "target_contract": "NetBox 4.7.0 REST / Diode plugin 1.17.0",
+    return {"success": not findings, "target_contract": "Genial finite NetBox REST normalization",
             "canonical_objects": len(objects), "matched_objects": len(ids),
             "mismatch_count": len(findings), "mismatches": findings, "coverage": dict(coverage),
             "ids": ids, "target_ids": target_ids, "unmatched_target_ids": unmatched,
@@ -434,7 +432,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def fetch_inventory(url, token, kinds):
+def fetch_inventory(url, token, kinds, branch=None):
     """Fetch full paginated inventories; never follow credential-bearing redirects."""
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -448,7 +446,7 @@ def fetch_inventory(url, token, kinds):
     for kind in sorted(set(kinds)):
         if kind not in ENDPOINTS:
             continue  # verify_plan reports unsupported kinds explicitly.
-        next_url = base + ENDPOINTS[kind] + "/?limit=1000"
+        next_url = base + ENDPOINTS[kind] + "/?limit=1000&ordering=id"
         seen, records, count = set(), [], None
         while next_url:
             target = urllib.parse.urlsplit(next_url)
@@ -456,8 +454,10 @@ def fetch_inventory(url, token, kinds):
                 raise ValueError(f"{kind}: unsafe or repeated pagination URL")
             seen.add(next_url)
             prefix = "Bearer " if token.startswith("nbt_") else "Token "
-            request = urllib.request.Request(next_url, headers={"Authorization": prefix + token,
-                                                               "Accept": "application/json"})
+            headers = {"Authorization": prefix + token, "Accept": "application/json"}
+            if branch:
+                headers["X-NetBox-Branch"] = branch
+            request = urllib.request.Request(next_url, headers=headers)
             try:
                 with opener.open(request, timeout=60) as response:
                     page = json.load(response)
@@ -515,6 +515,7 @@ def main(argv=None):
                         help="capture only the pinned local target's nine bootstrap identities; rejects estate records across all supported endpoints")
     parser.add_argument("--url", default=os.environ.get("NETBOX_URL"))
     parser.add_argument("--token-file", type=Path, help="private file containing only the NetBox token; otherwise NETBOX_TOKEN")
+    parser.add_argument("--branch", help="NetBox Branching schema ID for branch-aware readback")
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--previous-receipt", type=Path)
     parser.add_argument("--allow-existing-receipt", type=Path,
@@ -541,12 +542,12 @@ def main(argv=None):
         plan = json.loads(plan_bytes)
         started_at = datetime.now(timezone.utc).isoformat()
         inventory = fetch_inventory(args.url, token, ENDPOINTS if args.bootstrap
-                                    else (obj["kind"] for obj in plan["objects"]))
+                                    else (obj["kind"] for obj in plan["objects"]), args.branch)
         observed_at = datetime.now(timezone.utc).isoformat()
         result = verify_plan(plan, inventory, previous, args.bootstrap or args.strict_inventory, allowed)
         result.update(plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
                       target_url=args.url.rstrip("/"), readback_started_at=started_at,
-                      observed_at=observed_at)
+                      observed_at=observed_at, branch=args.branch)
         if args.bootstrap:
             result["purpose"] = "pinned-local-bootstrap"
             result["limits"][1] = "All supported readback endpoints were inventoried; only the nine expected bootstrap identities are permitted."

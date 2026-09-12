@@ -1,8 +1,9 @@
-# devin-generator
+# Genial
 
-Generate a believable, connected NetBox estate from a small recipe, then load it
-through Diode. Start with a regional bank, data center, school district,
-hospital network or provider backbone and change the demand to suit your customer.
+Generate a believable, connected NetBox estate from a small recipe. Target-aware
+loading is in active qualification. Start with a regional bank, data center,
+school district, hospital network or provider backbone and change the demand to
+suit your customer.
 
 **The goal is the whole estate.** Sites, rooms, racks, devices, ports, cables,
 address plans, services and operational context should make sense together.
@@ -57,19 +58,27 @@ phased Diode export. Follow the [Diode loading guide](docs/loading.md) for a
 configured target, or the [local lab guide](lab/README.md) to use the disposable
 NetBox/Diode environment. Generation itself does not write to NetBox.
 
+Cloud TurboBulk work is still a qualification path rather than the fresh-clone
+quick start. Its operator interface is the existing Justfile: `just load` runs
+preflight, loading, recovery checkpoints, REST completion, strict readback, and
+cable-path checks. See the [transport model](docs/transports.md#one-command-several-internal-steps)
+for current model coverage, safety boundaries, and evidence.
+
 Existing [scenario guides](docs/scenarios.md) cover branch acquisition and refresh,
 a power-diversity defect, and provider span maintenance. Each derives its subjects
 and relationships from the estate and explains which changes have been qualified
 for live replay.
 For a worked customer story, try [Harbor Supply](profiles/harbor-supply.md).
 
-**Scale has two separate proofs.** Recorded offline generation reaches 239,058
-objects; current representative live qualification reaches 12,702 objects on one
-pinned local stack. Larger live loads and Cloud/Enterprise targets remain
-unqualified; this project exports through Diode. See the
+**Scale has separate generation and loading proofs.** Recorded offline generation
+reaches 239,058 objects. A 12,702-object estate has passed local Diode qualification,
+and an 8,432-object estate has passed strict readback after a Cloud TurboBulk load.
+Larger live loads and Enterprise targets remain unqualified. See the
 [scale measurements](docs/qualification.md#current-offline-scale-evidence) and
 [live results](lab/README.md#current-v09-qualification) for scope and limits.
-The next proposed gate is [Cloud qualification](docs/loading.md#cloud-qualification-plan).
+The next gate is resolving the observed stuck-job behavior and obtaining a clean
+one-command Cloud run, followed by an estate above 50,000 objects; see the
+[qualification plan](docs/loading.md#cloud-qualification-plan).
 
 ## Documentation
 
@@ -78,7 +87,7 @@ The next proposed gate is [Cloud qualification](docs/loading.md#cloud-qualificat
 | Generate, configure or grow an estate | [Usage](docs/usage.md) |
 | Understand the rules and connected detail | [Modeling](docs/modeling.md) |
 | Run a change or defect demonstration | [Scenarios](docs/scenarios.md) |
-| Inspect artifacts or load through Diode | [Loading](docs/loading.md) · [Local lab](lab/README.md) |
+| Choose Diode, TurboBulk or REST | [Transport model](docs/transports.md) · [Loading](docs/loading.md) |
 | Check scale, compatibility and historical evidence | [Qualification](docs/qualification.md) · [Community comparison](COMPARISON.md) |
 | Extend the generator | [Development](CLAUDE.md) · [Graph contract](CONTRACT.md) · [Hardware catalog](catalog/README.md) |
 | See remaining gaps or prior acceptance criteria | [Coverage](COVERAGE.md) · [Completed goal](GOAL.md) |

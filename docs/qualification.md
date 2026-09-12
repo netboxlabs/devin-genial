@@ -282,6 +282,55 @@ unchanged; this checks identical-artifact replay, not changed timestamps, new
 observations, or target-side matching after edits.
 This is a single local observation, not a 100,000-object ingestion benchmark.
 
+## Cloud Diode probe
+
+On September 12, 2026, a first Cloud probe used NetBox 4.6.8, Diode plugin
+1.14.1, and the Ready `Generator Benchmark` branch. It selected the exact v0.2
+artifact used for the local result above: 8,432 canonical objects, 9,057 wire
+entities, 15 requests, and nine dependency phases. All 29 emitted model families
+were empty in the branch before submission.
+
+Only phase one was submitted. Diode accepted its 25 entities in 0.221 seconds,
+but none was REST-visible in the branch after approximately 303 seconds, when
+the operator stopped the run. Later phases were not submitted. The private local
+receipt is `build/cloud-qualification/cloud-bank-v2-branch-initial.json`.
+
+This is not a failed-ingestion or throughput result. It establishes fast Ingester
+acceptance without downstream REST visibility during the observation window.
+That behavior is consistent with the target's installed Assurance review workflow,
+where incoming differences remain deviations until applied, but the harness could
+not read Cloud deviation or reconciler telemetry and therefore did not prove that
+the 25 deviations were created. Future qualification must first record Assurance
+review versus direct auto-apply, then measure the corresponding workflow described
+in the [Cloud loading guide](loading.md#cloud-diode-execution-modes).
+
+## Cloud TurboBulk qualification
+
+On September 12, 2026, the same frozen v0.2 bank was loaded into the `Generator
+Benchmark` branch on NetBox Cloud 4.6.8 with TurboBulk 0.3.0. TurboBulk created
+the 8,432 canonical objects plus 2,082 cable-termination rows in 38 successful
+jobs. The later supported-loader receipt records 1.005 seconds queued, 131.244
+seconds executing, and 132.249 seconds from job creation through completion.
+
+REST completed primary-IP, tag, and tagged-VLAN relations that were unavailable
+or incorrect through the observed bulk path. The supported loader's final strict
+branch readback took 72.214 seconds and matched all 8,432 objects, 32,203
+attributes, and 17,783 references with zero mismatches. It then traced all 1,041
+generated cables through native REST in 34.987 seconds. The plan SHA-256 was
+`1c5a3016ce3503b240d4d0ccc4e6c3e609f46506416eb8c80a9f89781acaf902`.
+
+The supported loader's fresh write completed all 38 TurboBulk jobs, then rejected
+its own invalid REST tag payload. After that defect was corrected, the identical
+`just load` command and receipt resumed without new jobs and reached the exact
+state above in 435.128 seconds. This qualifies write recovery and final state,
+not a clean end-to-end timing. A separate clean branch attempt stopped safely at
+919.739 seconds when the first one-row TurboBulk job stayed `running`, with zero
+rows processed, for the 900-second polling bound. A later one-shot inspection
+stored the unchanged server observation in its receipt; that branch now requires
+service-side cleanup or replacement rather than repeated polling. Version-specific
+failures and the implementation path are recorded in the
+[transport study](transports.md#what-the-first-cloud-run-taught-us).
+
 The validator checks reference closure, hardware inventory, rack occupancy,
 port occupancy and media/speed compatibility, passive cable paths, redundant
 attachments, addressing, VLAN continuity to access uplinks and gateway SVIs,
@@ -303,9 +352,9 @@ Routing protocols, firewall policy, carrier interiors, last-mile duct diversity,
 RF coverage, measured PoE/electrical consumption, application replication, and recovery behavior
 are not simulated. Management switches and endpoints are single-homed; modeled
 network and power redundancy applies only to the contracted infrastructure.
-One local NetBox/Diode version combination has been checked. Additional versions,
-Cloud/Enterprise targets and transitions other than the documented local provider
-status sequence remain unqualified. Live growth
+One local NetBox/Diode version combination and one mixed Cloud TurboBulk/REST
+combination have been checked. Cloud Diode completion, Enterprise loading, and
+transitions other than the documented local provider status sequence remain unqualified. Live growth
 has been checked only for the documented additive branch/DC-capacity expansion.
 Use a disposable tenant to qualify the intended workflow before relying on a demo.
 The unmodified official Diode plugin still needs mapping support for full passive
