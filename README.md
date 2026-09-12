@@ -58,23 +58,51 @@ phased Diode export. Follow the [Diode loading guide](docs/loading.md) for a
 configured target, or the [local lab guide](lab/README.md) to use the disposable
 NetBox/Diode environment. Generation itself does not write to NetBox.
 
-The Justfile is also the loading interface. Inspect a target without writing:
+The Justfile is also the loading interface. The public recipes require `just`;
+a Diode load additionally requires the
+devenv-managed SDK environment described in the [loading guide](docs/loading.md).
+Inspect a target without writing:
 
 ```sh
-just load-explain build/my-bank "Disposable branch"
+cp .env.example .env
+# Put the raw nbt_... value in NETBOX_TOKEN; do not include "Bearer".
+just load-explain build/my-bank https://netbox.example "Disposable branch"
 ```
 
+The target is the NetBox root URL, without `/api/`, a plugin path, credentials,
+query parameters or fragments. In `.env`, enable `TURBOBULK_WRITES=1` or fill
+the documented Diode attestation for the transport that target actually uses.
 The result gives a preliminary transport choice and known compatibility blockers.
-Run `just load build/my-bank "Disposable branch"` to perform the adapter's full
+Run `just load build/my-bank https://netbox.example "Disposable branch"` to perform the adapter's full
 read-only schema/package preflight, then load it and write the default private
 receipt under `build/`. That second preflight can find additional blockers and
 still stops before target writes.
-The current TurboBulk adapter is qualified for its frozen 29-kind contract. The
-remote Diode adapter is implemented for externally confirmed direct auto-apply,
-with request checkpoints and strict REST visibility barriers, but still needs a
-live qualification run. Assurance review is not executable because the ingestion
-API cannot enforce that tenant mode. REST creation and
-rich TurboBulk coverage remain work in progress. See the [transport model](docs/transports.md#one-command-several-internal-steps)
+These setup steps should take less than ten minutes; target processing time is
+separate and is recorded in the private receipt.
+
+To empty a disposable Cloud branch for another run, replace that branch and wait
+for its new schema to become ready:
+
+```sh
+just reset https://netbox.example "Disposable branch"
+```
+
+This permanently deletes only an exact named `ready` branch after a read-only
+create-permission and delete-capability preflight, recreates it, and archives its
+matching local load receipts as qualification history. It refuses a blank or
+`main` scope and fails closed if an interrupted delete leaves a renamed branch.
+If Diode routes to the branch schema ID, copy the new ID printed by reset into
+`DIODE_BRANCH` and refresh the configuration attestation before loading.
+The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
+compiles the current 53-kind enterprise data center contract. The configured
+NetBox 4.6.8 tenant cannot represent the 4.7-only module-bay compatibility model,
+so preflight rejects that exact rich artifact before writes; its complete 4.7
+path still needs live qualification. The remote Diode adapter is implemented for
+externally confirmed direct auto-apply, with request checkpoints and strict REST
+visibility barriers, but still needs a live qualification run. Assurance review
+is not executable because the ingestion
+API cannot enforce that tenant mode. General REST-only loading remains work in
+progress. See the [transport model](docs/transports.md#one-command-several-internal-steps)
 for configuration, safety boundaries, and evidence.
 
 Existing [scenario guides](docs/scenarios.md) cover branch acquisition and refresh,

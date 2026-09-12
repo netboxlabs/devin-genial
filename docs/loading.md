@@ -9,6 +9,42 @@ mixed path, and verify the completed graph on the intended target.
 Run commands from the repository root. Paths in code blocks are relative to that root.
 Generated `build/` artifacts and qualification receipts are local outputs, not included in a clone.
 
+The ordinary target workflow is:
+
+```sh
+cp .env.example .env
+# Add the raw NETBOX_TOKEN and the documented write-mode settings to .env.
+just load-explain build/my-estate https://netbox.example "Disposable branch"
+just load build/my-estate https://netbox.example "Disposable branch"
+```
+
+The target argument is the NetBox root origin. The optional branch is required
+when Branching is installed; a target without Branching requires the explicit
+`ALLOW_MAIN_WRITES=1` guard. The loader prints its stable private checkpoint
+receipt before writes so the same command can resume safely.
+
+## Reset a disposable branch
+
+```sh
+just reset https://netbox.example "Disposable branch"
+```
+
+Reset is deliberately branch-scoped and destructive. It requires the exact branch
+to be `ready`, verifies read-only API metadata for create permission and DELETE
+capability,
+records intent, deletes that branch by its checkpointed ID and removes its schema,
+archives matching local load receipts under `build/load-receipts/history/`, creates
+a replacement with the same name, and waits for it to become ready. It refuses
+blank and `main`. The reset receipt under `build/reset-receipts/` allows safe
+inspection or continuation after interruption. A definite HTTP rejection is
+reported separately from an ambiguous connection failure; after an ambiguous
+delete, reset checks the checkpointed ID and refuses a renamed survivor. The API
+does not expose a read-only DELETE-permission check, so the actual DELETE may
+still return a definite permission rejection before anything is recreated.
+Because the replacement has a new schema ID, update `DIODE_BRANCH` and reconfirm
+the external Diode routing evidence before a Diode load. TurboBulk continues to
+use the human branch name.
+
 ## Artifacts and Diode
 
 | File | Purpose |
@@ -106,12 +142,19 @@ assume that previously open deviations will be applied or replayed automatically
 ## Cloud qualification plan
 
 One complete mixed TurboBulk/REST estate has passed strict Cloud readback. Its
-29-kind qualification compiler is callable through `just load`. A fresh write
+29-kind qualification compiler is callable through `just load`. The compiler now
+also covers all 53 kinds and references in the current enterprise data center,
+including content-type-safe generic relationships, deferred many-to-many fields,
+and resumable REST creation when a required model is absent from TurboBulk. A fresh write
 reached all 38 successful TurboBulk jobs, then failed on a REST tag payload; the
 same command and receipt resumed without duplicate jobs and reached exact strict
 readback. A separate clean attempt stopped at the 900-second bound when its first
 one-row TurboBulk job remained `running` with zero rows processed. A clean
-end-to-end timing and expansion to the current rich graph remain unqualified.
+end-to-end timing and the current rich graph remain unqualified. The configured
+Cloud tenant runs NetBox 4.6.8. Its API cannot represent `module_bay_type` or the
+related compatibility fields, which NetBox [introduced in 4.7](https://github.com/netbox-community/netbox/discussions/22950).
+Read-only preflight therefore rejects the exact 53-kind artifact before writes.
+The 4.7 rich path is implemented and offline-tested but remains live-unqualified.
 The target-aware selector and checkpointed remote Diode adapter are implemented,
 but Cloud Diode completion remains unqualified. The
 first Diode probe established that the tenant execution mode is a prerequisite

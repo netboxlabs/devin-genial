@@ -22,7 +22,7 @@ import uuid
 
 from .diode import _index, _phases
 from .model import canonical, digest
-from lab.verify import ENDPOINTS, fetch_inventory, verify_plan
+from lab.verify import CONTENT_TYPES as API_CONTENT_TYPES, ENDPOINTS, fetch_inventory, verify_plan
 
 
 class LoadError(RuntimeError):
@@ -41,10 +41,17 @@ class JobTimeout(LoadError):
 
 
 RECEIPT_VERSION = 1
-COMPILER_VERSION = "v02-turbobulk-3"
+COMPILER_VERSION = "v02-turbobulk-5"
 
 
 SPECS = {
+    "aggregate": ("ipam.aggregate", "/api/ipam/aggregates/"),
+    "console_port": ("dcim.consoleport", "/api/dcim/console-ports/"),
+    "console_server_port": ("dcim.consoleserverport", "/api/dcim/console-server-ports/"),
+    "contact": ("tenancy.contact", "/api/tenancy/contacts/"),
+    "contact_assignment": ("tenancy.contactassignment", "/api/tenancy/contact-assignments/"),
+    "contact_group": ("tenancy.contactgroup", "/api/tenancy/contact-groups/"),
+    "contact_role": ("tenancy.contactrole", "/api/tenancy/contact-roles/"),
     "manufacturer": ("dcim.manufacturer", "/api/dcim/manufacturers/"),
     "tag": ("extras.tag", "/api/extras/tags/"),
     "circuit_type": ("circuits.circuittype", "/api/circuits/circuit-types/"),
@@ -68,15 +75,37 @@ SPECS = {
     "power_port": ("dcim.powerport", "/api/dcim/power-ports/"),
     "interface": ("dcim.interface", "/api/dcim/interfaces/"),
     "ip_address": ("ipam.ipaddress", "/api/ipam/ip-addresses/"),
+    "journal_entry": ("extras.journalentry", "/api/extras/journal-entries/"),
+    "mac_address": ("dcim.macaddress", "/api/dcim/mac-addresses/"),
+    "module": ("dcim.module", "/api/dcim/modules/"),
+    "module_bay": ("dcim.modulebay", "/api/dcim/module-bays/"),
+    "module_bay_type": (None, "/api/dcim/module-bay-types/"),
+    "module_type": ("dcim.moduletype", "/api/dcim/module-types/"),
+    "module_type_profile": ("dcim.moduletypeprofile", "/api/dcim/module-type-profiles/"),
+    "owner": ("users.owner", "/api/users/owners/"),
+    "owner_group": ("users.ownergroup", "/api/users/owner-groups/"),
+    "platform": ("dcim.platform", "/api/dcim/platforms/"),
     "power_feed": ("dcim.powerfeed", "/api/dcim/power-feeds/"),
     "virtual_machine": ("virtualization.virtualmachine", "/api/virtualization/virtual-machines/"),
     "power_outlet": ("dcim.poweroutlet", "/api/dcim/power-outlets/"),
+    "provider_account": ("circuits.provideraccount", "/api/circuits/provider-accounts/"),
+    "rack_role": ("dcim.rackrole", "/api/dcim/rack-roles/"),
+    "region": ("dcim.region", "/api/dcim/regions/"),
+    "rir": ("ipam.rir", "/api/ipam/rirs/"),
     "service": ("ipam.service", "/api/ipam/services/"),
+    "site_group": ("dcim.sitegroup", "/api/dcim/site-groups/"),
+    "virtual_disk": ("virtualization.virtualdisk", "/api/virtualization/virtual-disks/"),
+    "vlan_group": ("ipam.vlangroup", "/api/ipam/vlan-groups/"),
     "vm_interface": ("virtualization.vminterface", "/api/virtualization/interfaces/"),
     "cable": ("dcim.cable", "/api/dcim/cables/"),
 }
 
 CONTENT_TYPES = {
+    "circuit": ("circuits", "circuit"),
+    "cluster": ("virtualization", "cluster"),
+    "console_port": ("dcim", "consoleport"),
+    "console_server_port": ("dcim", "consoleserverport"),
+    "device": ("dcim", "device"),
     "site": ("dcim", "site"),
     "provider_network": ("circuits", "providernetwork"),
     "interface": ("dcim", "interface"),
@@ -88,6 +117,9 @@ CONTENT_TYPES = {
     "virtual_machine": ("virtualization", "virtualmachine"),
 }
 
+REST_CREATE_KINDS = {"module_bay_type"}
+ATTRIBUTE_RENAMES = {("module_type", "attributes"): "attribute_data"}
+
 DIRECT_REFS = {
     "tenant": "tenant_id", "site": "site_id", "location": "location_id",
     "rack": "rack_id", "device_type": "device_type_id", "role": "role_id",
@@ -96,38 +128,68 @@ DIRECT_REFS = {
     "vlan": "vlan_id", "untagged_vlan": "untagged_vlan_id",
     "power_panel": "power_panel_id", "power_port": "power_port_id",
     "virtual_machine": "virtual_machine_id", "circuit": "circuit_id",
+    "contact": "contact_id", "group": "group_id", "module": "module_id",
+    "module_bay": "module_bay_id", "module_type": "module_type_id",
+    "owner": "owner_id", "parent": "parent_id", "platform": "platform_id",
+    "profile": "profile_id", "provider_account": "provider_account_id",
+    "region": "region_id", "rir": "rir_id",
 }
 
-DEFERRED = {"primary_ip4", "primary_ip6", "oob_ip", "tagged_vlans", "tags"}
+DEFERRED = {"primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address",
+            "tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses"}
 SUPPORTED_REFS = {
+    "aggregate": {"rir", "tenant"},
     "cable": {"a", "b"},
-    "circuit": {"provider", "tenant", "type"},
+    "circuit": {"owner", "provider", "provider_account", "tenant", "type"},
     "circuit_termination": {"circuit", "termination"},
     "circuit_type": set(),
-    "cluster": {"scope_site", "tenant", "type"},
+    "cluster": {"owner", "scope_site", "tenant", "type"},
     "cluster_type": set(),
-    "device": {"cluster", "device_type", "location", "primary_ip4", "rack", "role", "site", "tags", "tenant"},
+    "console_port": {"device"},
+    "console_server_port": {"device"},
+    "contact": {"groups"},
+    "contact_assignment": {"contact", "object", "role"},
+    "contact_group": set(),
+    "contact_role": set(),
+    "device": {"cluster", "device_type", "location", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant"},
     "device_role": set(),
     "device_type": {"manufacturer"},
-    "interface": {"device", "tagged_vlans", "untagged_vlan", "vrf"},
+    "interface": {"device", "module", "primary_mac_address", "tagged_vlans", "untagged_vlan", "vrf"},
     "ip_address": {"assigned_object", "tenant", "vrf"},
-    "location": {"site"},
+    "journal_entry": {"assigned_object"},
+    "location": {"parent", "site", "tenant"},
+    "mac_address": {"assigned_object"},
     "manufacturer": set(),
+    "module": {"device", "module_bay", "module_type"},
+    "module_bay": {"device", "module_bay_types"},
+    "module_bay_type": {"manufacturer"},
+    "module_type": {"manufacturer", "module_bay_types", "profile"},
+    "module_type_profile": set(),
+    "owner": {"group"},
+    "owner_group": set(),
+    "platform": set(),
     "power_feed": {"power_panel", "rack"},
     "power_outlet": {"device", "power_port"},
     "power_panel": {"location", "site"},
-    "power_port": {"device"},
+    "power_port": {"device", "module"},
     "prefix": {"scope_site", "tenant", "vlan", "vrf"},
     "provider": set(),
+    "provider_account": {"owner", "provider"},
     "provider_network": {"provider"},
-    "rack": {"location", "site", "tenant"},
-    "service": {"virtual_machine"},
-    "site": {"tags", "tenant"},
+    "rack": {"location", "role", "site", "tenant"},
+    "rack_role": set(),
+    "region": {"parent"},
+    "rir": set(),
+    "service": {"ipaddresses", "virtual_machine"},
+    "site": {"group", "owner", "region", "tags", "tenant"},
+    "site_group": set(),
     "tag": set(),
     "tenant": set(),
-    "virtual_machine": {"cluster", "device", "primary_ip4", "tags", "tenant"},
-    "vlan": {"site", "tenant"},
-    "vm_interface": {"untagged_vlan", "virtual_machine", "vrf"},
+    "virtual_disk": {"virtual_machine"},
+    "virtual_machine": {"cluster", "device", "platform", "primary_ip4", "primary_ip6", "role", "tags", "tenant"},
+    "vlan": {"group", "site", "tenant"},
+    "vlan_group": {"scope_site", "tenant"},
+    "vm_interface": {"primary_mac_address", "untagged_vlan", "virtual_machine", "vrf"},
     "vrf": {"tenant"},
 }
 
@@ -153,6 +215,16 @@ def _token(value):
 
 def _nested_id(value):
     return value.get("id") if isinstance(value, dict) else value
+
+
+def _content_type_name(value):
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        if value.get("app_label") and value.get("model"):
+            return f"{value['app_label']}.{value['model']}"
+        return value.get("value")
+    return None
 
 
 def _numeric_ids(values):
@@ -254,11 +326,19 @@ def _ref_id(obj, name, ids):
     return ids[obj["refs"][name]]
 
 
-def _matches(obj, row, ids):
+def _matches(obj, row, ids, objects=None):
     kind, attrs = obj["kind"], obj["attrs"]
     if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
-                "device_role", "site", "device_type"}:
+                "device_role", "site", "device_type", "contact_group", "contact_role",
+                "platform", "rack_role", "rir", "site_group"}:
         return row.get("slug") == attrs["slug"]
+    if kind in {"contact", "module_type_profile", "owner", "owner_group"}:
+        return row.get("name") == attrs["name"]
+    if kind == "region":
+        return (row.get("slug") == attrs["slug"]
+                and ("parent" not in obj["refs"] or _nested_id(row.get("parent")) == _ref_id(obj, "parent", ids)))
+    if kind == "aggregate":
+        return row.get("prefix") == attrs["prefix"] and _nested_id(row.get("rir")) == _ref_id(obj, "rir", ids)
     if kind == "vrf":
         return (row.get("name") == attrs["name"]
                 and ("tenant" not in obj["refs"] or _nested_id(row.get("tenant")) == _ref_id(obj, "tenant", ids))
@@ -267,8 +347,13 @@ def _matches(obj, row, ids):
         return row.get("name") == attrs["name"] and _nested_id(row.get("provider")) == _ref_id(obj, "provider", ids)
     if kind == "circuit":
         return row.get("cid") == attrs["cid"] and _nested_id(row.get("provider")) == _ref_id(obj, "provider", ids)
+    if kind == "provider_account":
+        return row.get("account") == attrs["account"] and _nested_id(row.get("provider")) == _ref_id(obj, "provider", ids)
     if kind in {"location", "power_panel"}:
-        return row.get("name") == attrs["name"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
+        return (row.get("name") == attrs["name"]
+                and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
+                and (kind != "location" or "parent" not in obj["refs"]
+                     or _nested_id(row.get("parent")) == _ref_id(obj, "parent", ids)))
     if kind == "rack":
         return (row.get("asset_tag") == attrs.get("asset_tag") if attrs.get("asset_tag") else
                 row.get("name") == attrs["name"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
@@ -277,7 +362,9 @@ def _matches(obj, row, ids):
         return row.get("vid") == attrs["vid"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
     if kind == "cluster":
         return (row.get("name") == attrs["name"]
-                and ("scope_site" not in obj["refs"] or row.get("scope_id") == _ref_id(obj, "scope_site", ids)))
+                and ("scope_site" not in obj["refs"] or
+                     (row.get("scope_id") == _ref_id(obj, "scope_site", ids)
+                      and _content_type_name(row.get("scope_type")) == API_CONTENT_TYPES["site"])))
     if kind == "device":
         return (row.get("asset_tag") == attrs.get("asset_tag") if attrs.get("asset_tag") else
                 row.get("name") == attrs["name"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
@@ -288,8 +375,13 @@ def _matches(obj, row, ids):
         side = row.get("term_side")
         side = side.get("value") if isinstance(side, dict) else side
         return side == attrs["term_side"] and _nested_id(row.get("circuit")) == _ref_id(obj, "circuit", ids)
-    if kind in {"power_port", "power_outlet", "interface"}:
+    if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet", "interface"}:
         return row.get("name") == attrs["name"] and _nested_id(row.get("device")) == _ref_id(obj, "device", ids)
+    if kind == "module":
+        return _nested_id(row.get("module_bay")) == _ref_id(obj, "module_bay", ids)
+    if kind in {"module_bay_type", "module_type"}:
+        name = "model" if kind == "module_type" else "name"
+        return row.get(name) == attrs[name] and _nested_id(row.get("manufacturer")) == _ref_id(obj, "manufacturer", ids)
     if kind == "ip_address":
         return row.get("address") == attrs["address"] and _nested_id(row.get("vrf")) == _ref_id(obj, "vrf", ids)
     if kind == "power_feed":
@@ -300,17 +392,39 @@ def _matches(obj, row, ids):
                 and ("tenant" not in obj["refs"] or _nested_id(row.get("tenant")) == _ref_id(obj, "tenant", ids)))
     if kind == "service":
         parent = row.get("parent_object_id", _nested_id(row.get("parent")))
-        return row.get("name") == attrs["name"] and parent == _ref_id(obj, "virtual_machine", ids)
+        return (row.get("name") == attrs["name"] and parent == _ref_id(obj, "virtual_machine", ids)
+                and _content_type_name(row.get("parent_object_type")) == API_CONTENT_TYPES["virtual_machine"])
     if kind == "vm_interface":
         return row.get("name") == attrs["name"] and _nested_id(row.get("virtual_machine")) == _ref_id(obj, "virtual_machine", ids)
+    if kind == "virtual_disk":
+        return row.get("name") == attrs["name"] and _nested_id(row.get("virtual_machine")) == _ref_id(obj, "virtual_machine", ids)
+    if kind == "vlan_group":
+        return (row.get("name") == attrs["name"]
+                and row.get("scope_id") == _ref_id(obj, "scope_site", ids)
+                and _content_type_name(row.get("scope_type")) == API_CONTENT_TYPES["site"])
+    if kind == "contact_assignment":
+        target_kind = objects[obj["refs"]["object"]]["kind"] if objects else None
+        target = _nested_id(row.get("object", row.get("object_id")))
+        return (target == _ref_id(obj, "object", ids)
+                and _content_type_name(row.get("object_type")) == API_CONTENT_TYPES.get(target_kind)
+                and _nested_id(row.get("contact")) == _ref_id(obj, "contact", ids)
+                and _nested_id(row.get("role")) == _ref_id(obj, "role", ids))
+    if kind in {"journal_entry", "mac_address"}:
+        target_kind = objects[obj["refs"]["assigned_object"]]["kind"] if objects else None
+        field = "comments" if kind == "journal_entry" else "mac_address"
+        return (row.get(field) == attrs[field]
+                and _nested_id(row.get("assigned_object", row.get("assigned_object_id")))
+                == _ref_id(obj, "assigned_object", ids)
+                and _content_type_name(row.get("assigned_object_type")) == API_CONTENT_TYPES.get(target_kind))
     if kind == "cable":
         return row.get("label") == attrs["label"]
     raise LoadError(f"no target identity matcher for {kind}")
 
 
-def _content_types(client):
+def _content_types(client, required=None):
     result = {}
-    for kind, (app_label, model) in CONTENT_TYPES.items():
+    for kind in sorted(required or CONTENT_TYPES):
+        app_label, model = CONTENT_TYPES[kind]
         rows = client.all(f"/api/core/object-types/?app_label={app_label}&model={model}")
         if len(rows) != 1:
             raise LoadError(f"content type {app_label}.{model}: expected one row, found {len(rows)}")
@@ -318,16 +432,53 @@ def _content_types(client):
     return result
 
 
-def _render(obj, objects, ids, content_types):
+def _required_content_types(objects):
+    required = set()
+    for obj in objects.values():
+        if "scope_site" in obj["refs"]:
+            required.add("site")
+        for field in ("termination", "assigned_object", "object"):
+            if field in obj["refs"]:
+                required.add(objects[obj["refs"][field]]["kind"])
+        if obj["kind"] == "service":
+            required.add(objects[obj["refs"]["virtual_machine"]]["kind"])
+        if obj["kind"] == "cable":
+            required.update(objects[obj["refs"][field]]["kind"] for field in ("a", "b"))
+    return required
+
+
+def _service_port_mappings(obj):
+    protocol = obj["attrs"].get("protocol")
+    ports = obj["attrs"].get("ports")
+    if protocol not in {"tcp", "udp"}:
+        raise LoadError(f"{obj['key']}: service protocol must be tcp or udp")
+    if (not isinstance(ports, list) or not ports or len(ports) != len(set(ports))
+            or any(type(port) is not int or not 1 <= port <= 65535 for port in ports)):
+        raise LoadError(f"{obj['key']}: service ports must be unique integers from 1 through 65535")
+    return [f"{protocol}/{port}" for port in ports]
+
+
+def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     row = dict(obj["attrs"])
+    for (kind, source), target in ATTRIBUTE_RENAMES.items():
+        if obj["kind"] == kind and source in row:
+            row[target] = row.pop(source)
     if obj["kind"] == "virtual_machine" and "start_on_boot" not in row:
         row["start_on_boot"] = "off"
+    if obj["kind"] == "service":
+        mappings = _service_port_mappings(obj)
+        if service_shape == "port_mappings":
+            row["port_mappings"] = mappings
+            row.pop("protocol", None)
+            row.pop("ports", None)
+        elif service_shape != "protocol_ports":
+            raise LoadError(f"unknown TurboBulk service shape {service_shape!r}")
     for name, column in DIRECT_REFS.items():
         if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine"):
             row[column] = ids[obj["refs"][name]]
     if "scope_site" in obj["refs"]:
         row["scope_type_id"], row["scope_id"] = content_types["site"], ids[obj["refs"]["scope_site"]]
-    for field in ("termination", "assigned_object"):
+    for field in ("termination", "assigned_object", "object"):
         if field in obj["refs"]:
             target = objects[obj["refs"][field]]
             row[field + "_type_id"], row[field + "_id"] = content_types[target["kind"]], ids[target["key"]]
@@ -340,14 +491,25 @@ def _render(obj, objects, ids, content_types):
     return row
 
 
-def _rendered_columns(obj):
+def _rendered_columns(obj, service_shape="protocol_ports"):
     """Return database columns without needing resolved target IDs."""
     columns = set(obj["attrs"]) - DEFERRED
+    if obj["kind"] == "service":
+        _service_port_mappings(obj)
+        if service_shape == "port_mappings":
+            columns.difference_update(("protocol", "ports"))
+            columns.add("port_mappings")
+        elif service_shape != "protocol_ports":
+            raise LoadError(f"unknown TurboBulk service shape {service_shape!r}")
+    for (kind, source), target in ATTRIBUTE_RENAMES.items():
+        if obj["kind"] == kind and source in columns:
+            columns.remove(source)
+            columns.add(target)
     columns.update(column for name, column in DIRECT_REFS.items()
                    if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine"))
     if "scope_site" in obj["refs"]:
         columns.update(("scope_type_id", "scope_id"))
-    for field in ("termination", "assigned_object"):
+    for field in ("termination", "assigned_object", "object"):
         if field in obj["refs"]:
             columns.update((field + "_type_id", field + "_id"))
     if obj["kind"] == "service":
@@ -434,17 +596,19 @@ def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_pa
     boundary, body = _multipart({"model": model, "mode": mode, "validation_mode": "full",
                                  "branch": branch_name, "create_changelogs": "true",
                                  "apply_save_hooks": "false"}, model + ".jsonl.gz", payload)
+    entry = {"purpose": purpose, "model": model, "canonical_keys": keys,
+             "rows_expected": len(rows), "compressed_bytes": len(payload),
+             "payload_sha256": hashlib.sha256(payload).hexdigest(),
+             "compile_seconds": compile_seconds, "status": "submitting",
+             "intent_recorded_at": _now()}
+    receipt["jobs"].append(entry)
+    _write_receipt(receipt_path, receipt)
     started = time.monotonic()
     status, answer = client.request("/api/plugins/turbobulk/load/", method="POST", body=body,
                                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}, branch=False)
     uploaded = time.monotonic()
-    entry = {"purpose": purpose, "model": model, "canonical_keys": keys,
-             "rows_expected": len(rows), "compressed_bytes": len(payload),
-             "payload_sha256": hashlib.sha256(payload).hexdigest(),
-             "compile_seconds": compile_seconds, "upload_seconds": round(uploaded - started, 6),
-             "http_status": status,
-             "job_id": answer["job_id"], "status": "submitted", "submitted_at": _now()}
-    receipt["jobs"].append(entry)
+    entry.update(upload_seconds=round(uploaded - started, 6), http_status=status,
+                 job_id=answer["job_id"], status="submitted", submitted_at=_now())
     _write_receipt(receipt_path, receipt)
     job = _poll(client, entry["job_id"], timeout)
     finished = time.monotonic()
@@ -455,16 +619,25 @@ def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_pa
     return entry
 
 
-def _refresh(client, kind, candidates, ids, *, allow_missing=False):
+def _bound_job_id(entry):
+    if not entry.get("job_id"):
+        raise LoadError(
+            f"TurboBulk submission outcome for {entry['purpose']} is ambiguous: durable intent exists "
+            "without a job ID. Inspect or clean up the target job and branch, or use a fresh branch and receipt."
+        )
+    return entry["job_id"]
+
+
+def _refresh(client, kind, candidates, ids, *, allow_missing=False, objects=None):
     rows = client.all(SPECS[kind][1])
     by_id = {row["id"]: row for row in rows}
     for obj in candidates:
         if obj["key"] in ids:
             row = by_id.get(ids[obj["key"]])
-            if row is None or not _matches(obj, row, ids):
+            if row is None or not _matches(obj, row, ids, objects):
                 raise LoadError(f"checkpoint identity {obj['key']} no longer matches target ID {ids[obj['key']]}; use a fresh branch")
             continue
-        found = [row for row in rows if _matches(obj, row, ids)]
+        found = [row for row in rows if _matches(obj, row, ids, objects)]
         if len(found) > 1:
             raise LoadError(f"{obj['key']}: target identity is ambiguous ({len(found)} rows)")
         if found:
@@ -482,9 +655,12 @@ def _schema_preflight(client, objects):
         detail = "; ".join(f"{kind}: {', '.join(sorted(refs))}"
                            for kind, refs in sorted(unsupported_refs.items()))
         raise LoadError("TurboBulk compiler has no translation for canonical references: " + detail)
+    rest_schemas = _rest_schema_preflight(client, objects)
+    rest_patch_schemas = _rest_patch_preflight(client, objects)
     _, available = client.request("/api/plugins/turbobulk/models/", branch=False)
     models = {row["full_name"] for row in available if not row.get("export_only")}
-    required = {SPECS[obj["kind"]][0] for obj in objects.values()}
+    required = {SPECS[obj["kind"]][0] for obj in objects.values()
+                if obj["kind"] not in REST_CREATE_KINDS}
     if any(obj["kind"] == "cable" for obj in objects.values()):
         required.add("dcim.cabletermination")
     missing = sorted(required - models)
@@ -494,10 +670,22 @@ def _schema_preflight(client, objects):
     for model in sorted(required):
         _, schema = client.request(f"/api/plugins/turbobulk/models/{model}/", branch=False)
         schemas[model] = {field["name"] for field in schema["fields"]}
+    service_shape = None
+    if any(obj["kind"] == "service" for obj in objects.values()):
+        service_fields = schemas["ipam.service"]
+        if "port_mappings" in service_fields:
+            service_shape = "port_mappings"
+        elif {"protocol", "ports"} <= service_fields:
+            service_shape = "protocol_ports"
+        else:
+            raise LoadError("installed TurboBulk service schema supports neither port_mappings nor protocol plus ports")
     missing_columns = {}
     for obj in objects.values():
+        if obj["kind"] in REST_CREATE_KINDS:
+            continue
         model = SPECS[obj["kind"]][0]
-        columns = set(obj["attrs"]) if obj["kind"] == "cable" else _rendered_columns(obj)
+        columns = (set(obj["attrs"]) if obj["kind"] == "cable" else
+                   _rendered_columns(obj, service_shape or "protocol_ports"))
         if absent := columns - schemas[model]:
             missing_columns.setdefault(model, set()).update(absent)
     if any(obj["kind"] == "cable" for obj in objects.values()):
@@ -508,7 +696,100 @@ def _schema_preflight(client, objects):
         detail = "; ".join(f"{model}: {', '.join(sorted(columns))}"
                            for model, columns in sorted(missing_columns.items()))
         raise LoadError("installed TurboBulk schemas would drop required columns: " + detail)
-    return {"models": sorted(required), "schema_fields": {model: len(fields) for model, fields in schemas.items()}}
+    return {"models": sorted(required), "schema_fields": {model: len(fields) for model, fields in schemas.items()},
+            "rest_create_fields": rest_schemas, "rest_patch_fields": rest_patch_schemas,
+            "service_shape": service_shape}
+
+
+def _rest_schema_preflight(client, objects):
+    rest_only = sorted({obj["kind"] for obj in objects.values()} & REST_CREATE_KINDS)
+    rest_schemas = {}
+    for kind in rest_only:
+        endpoint = SPECS[kind][1]
+        try:
+            _, options = client.request(endpoint, method="OPTIONS")
+        except LoadError as exc:
+            raise LoadError(
+                f"target has no writable REST model for required canonical kind {kind} at {endpoint}; "
+                "the artifact cannot be loaded exactly into this NetBox version"
+            ) from exc
+        fields = set((options.get("actions") or {}).get("POST") or {})
+        required_fields = set().union(*(_rest_create_fields(kind, obj)
+                                        for obj in objects.values() if obj["kind"] == kind))
+        if absent := required_fields - fields:
+            raise LoadError(f"REST schema {endpoint} would drop required fields: {', '.join(sorted(absent))}")
+        rest_schemas[kind] = len(fields)
+    return rest_schemas
+
+
+def _rest_patch_preflight(client, objects):
+    required = defaultdict(set)
+    for obj in objects.values():
+        required[obj["kind"]].update(set(obj["refs"]) & DEFERRED)
+    result = {}
+    for kind, fields in sorted(required.items()):
+        if not fields:
+            continue
+        endpoint = SPECS[kind][1]
+        try:
+            _, options = client.request(endpoint, method="OPTIONS")
+        except LoadError as exc:
+            raise LoadError(f"cannot inspect REST completion schema for {kind} at {endpoint}") from exc
+        actions = options.get("actions") or {}
+        writable = set(actions.get("PATCH") or actions.get("POST") or {})
+        if absent := fields - writable:
+            raise LoadError(f"REST completion schema {endpoint} cannot write: {', '.join(sorted(absent))}")
+        result[kind] = sorted(fields)
+    return result
+
+
+def _rest_create_fields(kind, obj):
+    if kind != "module_bay_type":
+        raise LoadError(f"no REST create compiler for {kind}")
+    return set(obj["attrs"]) | {"manufacturer"}
+
+
+def _render_rest_create(obj, ids):
+    if obj["kind"] != "module_bay_type":
+        raise LoadError(f"no REST create compiler for {obj['kind']}")
+    return {**obj["attrs"], "manufacturer": ids[obj["refs"]["manufacturer"]]}
+
+
+def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=None):
+    """Create REST-only rows one at a time with durable intent for safe recovery."""
+    endpoint = SPECS[kind][1]
+    operations = receipt.setdefault("rest_creates", [])
+    for obj in candidates:
+        prior = next((entry for entry in operations if entry["canonical_key"] == obj["key"]), None)
+        if prior:
+            _refresh(client, kind, [obj], ids, allow_missing=True, objects=objects)
+            if obj["key"] not in ids:
+                if prior["status"] == "submitting":
+                    raise LoadError(f"REST create outcome for {obj['key']} is ambiguous; use a fresh branch and receipt")
+                raise LoadError(f"completed REST create for {obj['key']} is absent; use a fresh branch")
+            prior.update(status="completed", target_id=ids[obj["key"]], recovered=True,
+                         last_observed_at=_now())
+            _write_receipt(receipt_path, receipt)
+            continue
+        before = dict(ids)
+        _refresh(client, kind, [obj], ids, allow_missing=True, objects=objects)
+        if set(ids) - set(before):
+            raise LoadError(f"found uncheckpointed {kind} identity {obj['key']}; use a fresh branch and receipt")
+        entry = {"purpose": f"create:{kind}", "canonical_key": obj["key"],
+                 "status": "submitting", "submitted_at": _now()}
+        operations.append(entry)
+        _write_receipt(receipt_path, receipt)
+        started = time.monotonic()
+        status, row = client.request(endpoint, method="POST",
+                                     body=json.dumps(_render_rest_create(obj, ids)).encode(),
+                                     headers={"Content-Type": "application/json"})
+        target_id = _nested_id(row)
+        if not isinstance(target_id, int) or not _matches(obj, row, ids):
+            raise LoadError(f"REST create for {obj['key']} returned an invalid target row")
+        ids[obj["key"]] = target_id
+        entry.update(status="completed", target_id=target_id, http_status=status,
+                     wall_seconds=round(time.monotonic() - started, 6), completed_at=_now())
+        _write_receipt(receipt_path, receipt)
 
 
 def _bulk_patch(client, endpoint, rows, receipt, receipt_path, purpose, batch_size=50):
@@ -583,20 +864,22 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
                         raise LoadError(f"{obj['key']}.{field} changed outside this receipt; use a fresh branch")
                     if actual != desired:
                         patch[field] = desired
-            if "tagged_vlans" in obj["refs"]:
-                desired = sorted(ids[key] for key in obj["refs"]["tagged_vlans"])
-                actual = sorted(_nested_id(value) for value in existing.get("tagged_vlans", []))
-                if set(actual) - set(desired):
-                    raise LoadError(f"{obj['key']}.tagged_vlans has concurrent values; refusing to replace them")
+            if "primary_mac_address" in obj["refs"]:
+                desired = ids[obj["refs"]["primary_mac_address"]]
+                actual = _nested_id(existing.get("primary_mac_address"))
+                if actual not in (None, desired):
+                    raise LoadError(f"{obj['key']}.primary_mac_address changed outside this receipt; use a fresh branch")
                 if actual != desired:
-                    patch["tagged_vlans"] = desired
-            if "tags" in obj["refs"]:
-                desired = sorted(ids[key] for key in obj["refs"]["tags"])
-                actual = sorted(_nested_id(value) for value in existing.get("tags", []))
+                    patch["primary_mac_address"] = desired
+            for field in ("tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses"):
+                if field not in obj["refs"]:
+                    continue
+                desired = sorted(ids[key] for key in obj["refs"][field])
+                actual = sorted(_nested_id(value) for value in existing.get(field, []))
                 if set(actual) - set(desired):
-                    raise LoadError(f"{obj['key']}.tags has concurrent values; refusing to replace them")
+                    raise LoadError(f"{obj['key']}.{field} has concurrent values; refusing to replace them")
                 if actual != desired:
-                    patch["tags"] = desired
+                    patch[field] = desired
             if kind == "virtual_machine" and existing.get("start_on_boot") is None:
                 patch["start_on_boot"] = "off"
             if len(patch) > 1:
@@ -633,6 +916,11 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         for key, value in binding.items():
             if receipt.get(key) != value:
                 raise LoadError(f"receipt {receipt_path} has different {key}; choose a new receipt and fresh branch")
+
+    # NetBox 4.6 lacks module bay types entirely. Prove any REST-only model is
+    # writable before inventory reads or target writes so exactness fails clearly.
+    if {obj["kind"] for obj in objects.values()} & REST_CREATE_KINDS:
+        _rest_schema_preflight(client, objects)
 
     # A complete matching target is the strongest idempotency signal and needs no writes.
     readback_started = time.monotonic()
@@ -680,6 +968,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
                        "preflight": {"strict_existing_readback": existing,
                                      "readback_seconds": preflight_readback_seconds},
                        "computed_paths": paths, "jobs": [], "rest_batches": [],
+                       "rest_creates": [],
                        "attempts": [{"started_at": started_at, "completed_at": observation["observed_at"],
                                      "wall_seconds": observation["wall_seconds"],
                                      "result": "already-matched", "success": True}],
@@ -693,6 +982,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         ids = {key: int(value) for key, value in receipt.get("resolved_ids", {}).items()}
         receipt.setdefault("jobs", [])
         receipt.setdefault("rest_batches", [])
+        receipt.setdefault("rest_creates", [])
         receipt.setdefault("attempts", []).append({"started_at": started_at, "success": False})
     else:
         occupied = {kind: len(rows) for kind, rows in inventory.items() if rows}
@@ -702,6 +992,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
         ids = {}
         receipt = {**binding, "started_at": started_at, "success": False, "target_status": status,
                    "offline_checks": offline, "jobs": [], "rest_batches": [], "resolved_ids": {},
+                   "rest_creates": [],
                    "attempts": [{"started_at": started_at, "success": False}]}
     receipt["preflight"] = {"strict_existing_readback": existing,
                             "readback_seconds": preflight_readback_seconds,
@@ -711,7 +1002,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
     try:
         receipt["preflight"]["transport"] = _schema_preflight(client, objects)
         _write_receipt(receipt_path, receipt)
-        content_types = _content_types(client)
+        service_shape = receipt["preflight"]["transport"].get("service_shape") or "protocol_ports"
+        content_types = _content_types(client, _required_content_types(objects))
         for phase_number, keys in enumerate(_phases(objects), 1):
             grouped = defaultdict(list)
             for key in keys:
@@ -720,34 +1012,38 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900):
                 candidates = grouped[kind]
                 completed = [obj for obj in candidates if obj["key"] in ids]
                 if completed:
-                    _refresh(client, kind, completed, ids)
+                    _refresh(client, kind, completed, ids, objects=objects)
                 pending = [obj for obj in candidates if obj["key"] not in ids]
                 purpose = f"phase-{phase_number}:{kind}"
                 if pending:
+                    if kind in REST_CREATE_KINDS:
+                        _create_rest(client, kind, pending, ids, receipt, receipt_path, objects)
+                        pending = []
+                if pending:
                     prior = next((job for job in receipt["jobs"] if job["purpose"] == purpose), None)
                     if prior:
-                        job = _poll(client, prior["job_id"], timeout)
+                        job = _poll(client, _bound_job_id(prior), timeout)
                         _record_terminal(prior, job)
                         _write_receipt(receipt_path, receipt)
-                        _refresh(client, kind, pending, ids)
+                        _refresh(client, kind, pending, ids, objects=objects)
                     else:
                         # Existing identities without a bound receipt could belong to someone else.
                         before = dict(ids)
-                        _refresh(client, kind, pending, ids, allow_missing=True)
+                        _refresh(client, kind, pending, ids, allow_missing=True, objects=objects)
                         adopted = sorted(set(ids) - set(before))
                         if adopted:
                             raise LoadError(f"found {len(adopted)} uncheckpointed {kind} identities; discard this branch and start with a new branch and receipt")
                         rows = ([obj["attrs"] for obj in pending] if kind == "cable" else
-                                [_render(obj, objects, ids, content_types) for obj in pending])
+                                [_render(obj, objects, ids, content_types, service_shape) for obj in pending])
                         _submit(client, branch, SPECS[kind][0], rows, purpose,
                                 [obj["key"] for obj in pending], receipt, receipt_path, timeout)
-                        _refresh(client, kind, pending, ids)
+                        _refresh(client, kind, pending, ids, objects=objects)
                 if kind == "cable":
                     termination_purpose = purpose + ":terminations"
                     prior_terminations = next((job for job in receipt["jobs"]
                                                if job["purpose"] == termination_purpose), None)
                     if prior_terminations:
-                        job = _poll(client, prior_terminations["job_id"], timeout)
+                        job = _poll(client, _bound_job_id(prior_terminations), timeout)
                         _record_terminal(prior_terminations, job)
                     else:
                         terminations = []

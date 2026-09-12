@@ -70,23 +70,31 @@ on every supported edition.
 The supported operator interface is the existing Justfile:
 
 ```sh
-just load build/bank-v2 "Generator Benchmark" build/cloud-load.json
+just load build/bank-v2 https://netbox.example "Generator Benchmark"
 ```
 
 Use the shorter read-only explanation recipe before a write:
 
 ```sh
-just load-explain build/bank-v2 "Generator Benchmark"
+just load-explain build/bank-v2 https://netbox.example "Generator Benchmark"
 ```
 
 This is preliminary target and transport discovery. The selected adapter performs
 its complete package/schema preflight again before submission; that deeper check
 can still reject the run without target writes.
 
+The command chooses a stable private receipt path from the artifact, target and
+branch, prints it before loading, and reuses it when the same operation resumes.
+Advanced troubleshooting can invoke `python3 -m estates.load --help` to override
+the receipt, transport or timeout without expanding the ordinary SE command.
+
 The frozen `build/bank-v2` artifact is preserved local qualification evidence;
-it is not shipped in a fresh clone. The command reads `NETBOX_URL` and
-`NETBOX_TOKEN` from the environment or the ignored
-`.env`, resolves the branch schema ID from its human name, and writes a private
+it is not shipped in a fresh clone. `TARGET` is the non-secret NetBox root origin;
+the loader rejects API/plugin paths, embedded credentials, queries and fragments.
+The command reads `NETBOX_TOKEN` from the environment or ignored `.env`. Store
+the raw token value there without an authorization prefix. `DIODE_TARGET` is the
+separate ingestion endpoint and never substitutes for the NetBox target argument.
+The loader resolves the branch schema ID from its human name and writes a private
 checkpoint/receipt after every job and REST batch. Repeating the command is a
 verified no-op when strict readback already matches the artifact. Interrupted
 runs resume only from a receipt bound to the same artifact, target, and branch.
@@ -100,6 +108,8 @@ new branch and receipt.
 For a new receipt, every inventory represented by the artifact must be empty;
 otherwise the command stops before writes. Treat the branch as exclusively owned
 by that receipt until loading and verification finish.
+Never pass a token on the command line or store one in a recipe, artifact,
+receipt, source file or shell history.
 
 Transport selection is deterministic. TurboBulk is eligible only when the plugin
 is present, `TURBOBULK_WRITES=1`, a disposable branch was named, and the entire
@@ -109,14 +119,19 @@ and branch scope from the last 24 hours, matching source-checked target versions
 and working REST endpoints for every emitted kind. The Diode ingestion API does
 not control or introspect its downstream NetBox branch or Assurance mode, so the
 loader records that operator confirmation as an external boundary. It does not
-execute Assurance-review mode. REST creation is not implemented yet, so the
-selector reports that gap rather than silently omitting unsupported objects.
+execute Assurance-review mode. A standalone REST loader is not implemented yet,
+so the selector reports that gap rather than silently omitting unsupported objects.
 
-The TurboBulk adapter covers the 29 canonical kinds in the frozen v0.2 bank
-qualification. The remote Diode adapter can execute the richer generated package,
-checkpoint each dependency phase, wait for target visibility, and strictly read
-back the final graph. Its live remote run remains unqualified. Expanding rich
-TurboBulk mappings and implementing REST creation remain loader work.
+The frozen v0.2 bank qualifies 29 canonical kinds through TurboBulk on Cloud.
+The compiler now covers all 53 kinds in the current enterprise data center,
+including REST relationship completion and resumable REST creation for a model
+absent from TurboBulk. The configured NetBox 4.6.8 target lacks that 4.7 model
+entirely, so it rejects the artifact before any write. The complete rich path
+needs live qualification on a target that exposes the model. The remote Diode
+adapter can execute the richer generated package, checkpoint each dependency
+phase, wait for target visibility, and strictly read back the final graph. Its
+live remote run also remains unqualified. A general REST-only loader remains
+future work.
 
 The command performs these steps internally:
 
@@ -232,7 +247,7 @@ Remaining work is to:
   already idempotent completion comparison after interruption;
 - retain clean-run evidence for compilation, upload, queue, job, REST completion,
   readback, and cable-trace timings after the stuck-job issue is resolved; and
-- qualify the implemented remote Diode direct/recovery path on a matching target;
+- qualify the rich TurboBulk/REST and remote Diode direct/recovery paths on a matching 4.7 target;
 - implement canonical REST creation for targets without a qualified plugin path.
 
 Qualification should next resolve or operationally handle the stuck TurboBulk

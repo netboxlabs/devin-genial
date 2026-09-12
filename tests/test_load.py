@@ -1,6 +1,7 @@
 """The public loader selects only complete, explicitly enabled transports."""
 
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from estates.diode import export
-from estates.load import (_diode_manifest, _phase_plan, _probe_endpoints, inspect,
-                          _schedule, load, load_diode)
+from estates.load import (_diode_manifest, _phase_plan, _probe_endpoints, default_receipt,
+                          inspect, main, _schedule, load, load_diode)
 from estates.model import canonical, digest
 from estates.turbobulk import LoadError
 
@@ -38,6 +39,7 @@ class LoaderSelectionTests(unittest.TestCase):
             stack.enter_context(patch("estates.load._target", return_value=(Target(), status, branch)))
             stack.enter_context(patch("estates.load._diode_manifest", return_value=((root / "diode", manifest), [])))
             stack.enter_context(patch("estates.load._probe_endpoints", return_value=[]))
+            stack.enter_context(patch("estates.load._schema_preflight", return_value={"models": []}))
             return inspect(root, url=Target.base, token=Target.token, branch="Demo", transport=transport)
 
     def test_auto_uses_explicitly_enabled_turbobulk_for_covered_graph(self):
@@ -49,6 +51,63 @@ class LoaderSelectionTests(unittest.TestCase):
                 "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
             decision = self.selection(root, status, {}, {"TURBOBULK_WRITES": "1"})
             self.assertEqual(decision["selected"], "turbobulk")
+
+    def test_explain_rejects_turbobulk_schema_gap_before_selection(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.artifact(root, [{"key": "tag:demo", "kind": "tag",
+                                  "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}}])
+            status = {"netbox-version": "4.7.0", "plugins": {
+                "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
+            branch = {"id": 1, "name": "Demo", "schema_id": "branch_schema",
+                      "status": {"value": "ready"}}
+            with patch.dict(os.environ, {"TURBOBULK_WRITES": "1"}, clear=True), \
+                    patch("estates.load._target", return_value=(Target(), status, branch)), \
+                    patch("estates.load._diode_manifest", return_value=(None, ["no package"])), \
+                    patch("estates.load._probe_endpoints", return_value=[]), \
+                    patch("estates.load._schema_preflight",
+                          side_effect=LoadError("target lacks required model")):
+                decision = inspect(root, url=Target.base, token=Target.token, branch="Demo")
+            self.assertIsNone(decision["selected"])
+            self.assertIn("target lacks required model",
+                          decision["candidates"]["turbobulk"]["reasons"])
+
+    def test_default_receipt_is_stable_and_separates_target_scope(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "My estate"
+            self.artifact(root, [{"key": "tag:demo", "kind": "tag",
+                                  "attrs": {"name": "Demo"}, "refs": {}}])
+            first = default_receipt(root, "https://netbox.example", "Demo Branch")
+            self.assertEqual(first, default_receipt(root, "https://netbox.example/", "Demo Branch"))
+            self.assertNotEqual(first, default_receipt(root, "https://other.example", "Demo Branch"))
+            self.assertNotEqual(first, default_receipt(root, "https://netbox.example", "Other"))
+            self.assertEqual(first.parent, Path("build/load-receipts"))
+            self.assertTrue(first.name.startswith("My-estate-Demo-Branch-"))
+            self.assertNotIn("netbox.example", str(first))
+
+    def test_main_accepts_public_artifact_target_branch_shape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.artifact(root, [{"key": "tag:demo", "kind": "tag",
+                                  "attrs": {"name": "Demo"}, "refs": {}}])
+            receipt = root / "receipt.json"
+            with patch.dict(os.environ, {"NETBOX_TOKEN": "raw-token"}, clear=True), \
+                    patch("estates.load.default_receipt", return_value=receipt), \
+                    patch("estates.load.load", return_value={
+                        "success": True, "result": "loaded", "transport": "diode"}) as run, \
+                    redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                self.assertEqual(main([str(root), "https://netbox.example", "--branch", "Demo"]), 0)
+            self.assertEqual(run.call_args.kwargs["url"], "https://netbox.example")
+            self.assertEqual(run.call_args.kwargs["branch"], "Demo")
+            self.assertEqual(run.call_args.kwargs["receipt_path"], receipt)
+
+    def test_main_reports_bad_artifact_without_traceback(self):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.dict(os.environ, {"NETBOX_TOKEN": "raw-token"}, clear=True), \
+                redirect_stdout(stdout), redirect_stderr(stderr):
+            self.assertEqual(main(["/definitely/missing", "https://netbox.example"]), 2)
+        self.assertIn("Load failed:", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_auto_uses_diode_only_with_exact_target_contract_and_scope(self):
         with tempfile.TemporaryDirectory() as temporary:

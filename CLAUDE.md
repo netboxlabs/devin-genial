@@ -67,8 +67,10 @@ those receipt paths are local evidence, not files shipped in a clone.
 Use the standalone devenv shell (`direnv allow`). The runtime is Python 3.11+
 standard library; the pinned Diode SDK is an optional export-verification tool.
 The Justfile is the human CLI. Run `just check` before committing.
-The target-aware loader is `just load ARTIFACT [BRANCH] [RECEIPT] [TRANSPORT] [EXPLAIN]`;
-the normal read-only preflight is `just load-explain ARTIFACT [BRANCH]`.
+The target-aware loader is `just load ARTIFACT TARGET [BRANCH]`;
+the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
+`just reset TARGET BRANCH` replaces only an exact disposable Branching branch and
+archives its bound private load receipts.
 Keep transport orchestration behind that recipe rather than adding an installed CLI.
 Use `devenv --profile diode shell` to install/run the pinned SDK checks.
 CI runs the full suite on Python 3.11/3.14, then generates and SDK-checks each
@@ -117,7 +119,8 @@ for the separately recorded pinned-target live qualification.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
-  `estates/turbobulk.py`: the qualified bounded TurboBulk/REST adapter.
+  `estates/turbobulk.py`: the bounded TurboBulk/REST adapter, including the
+  29-kind Cloud qualification and live-unqualified 53-kind enterprise contract.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
 
 ## Design boundaries

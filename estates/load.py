@@ -19,7 +19,7 @@ import time
 from .diode import _PRIMARY_IPS, _deferred_fields, _phases
 from .model import digest
 from .turbobulk import (Client, LoadError, SPECS, _artifact, _branch,
-                        _numeric_ids, _verify_paths, _write_receipt,
+                        _numeric_ids, _schema_preflight, _verify_paths, _write_receipt,
                         load as load_turbobulk)
 from lab.verify import ENDPOINTS, fetch_inventory, verify_plan
 
@@ -174,8 +174,14 @@ def inspect(artifact, *, url, token, branch, transport="auto"):
         tb_reasons.append("the qualified TurboBulk adapter requires a disposable branch")
     if branch and not branch_row:
         tb_reasons.append("requested branch is unavailable on this target")
+    tb_preflight = None
+    if plugins.get("netbox_turbobulk") and not unsupported and branch_row:
+        try:
+            tb_preflight = _schema_preflight(client, objects)
+        except LoadError as exc:
+            tb_reasons.append(str(exc))
     candidates["turbobulk"] = {"available": not tb_reasons, "reasons": tb_reasons,
-                                "transport": "turbobulk+rest"}
+                                "transport": "turbobulk+rest", "preflight": tb_preflight}
 
     package, diode_reasons = _diode_manifest(plan_path, plan)
     if not plugins.get("netbox_diode_plugin"):
@@ -202,7 +208,7 @@ def inspect(artifact, *, url, token, branch, transport="auto"):
                             "transport": "diode+rest-readback",
                             "external_configuration": diode_evidence}
     candidates["rest"] = {"available": False,
-                           "reasons": ["canonical REST creation adapter is not implemented yet"],
+                           "reasons": ["standalone canonical REST creation adapter is not implemented yet"],
                            "transport": "rest"}
 
     order = [transport] if transport != "auto" else ["turbobulk", "diode", "rest"]
@@ -504,31 +510,52 @@ def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeou
     raise LoadError("selected REST transport is not implemented")
 
 
+def default_receipt(artifact, target, branch):
+    """Return a stable private receipt path for one artifact/target/scope."""
+    plan_path, _, plan, _, _ = _artifact(artifact)
+    origin = target.rstrip("/")
+    scope = branch or "main"
+    binding = json.dumps({"canonical_sha256": digest(plan), "target": origin,
+                          "branch": scope}, sort_keys=True, separators=(",", ":"))
+    suffix = hashlib.sha256(binding.encode()).hexdigest()[:12]
+    artifact_name = plan_path.parent.name if plan_path.name == "plan.json" else plan_path.stem
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", artifact_name).strip("-.") or "estate"
+    scope_slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", scope).strip("-.") or "main"
+    return Path("build/load-receipts") / f"{slug}-{scope_slug}-{suffix}.json"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Inspect a NetBox target and load one complete canonical estate")
     parser.add_argument("artifact", help="generated directory or plan.json")
-    parser.add_argument("--target", default=os.environ.get("NETBOX_URL"))
+    parser.add_argument("target", nargs="?", default=os.environ.get("NETBOX_URL"),
+                        help="NetBox http(s) origin (defaults to NETBOX_URL for internal callers)")
     parser.add_argument("--branch", default="", help="ready disposable branch name; omit only with ALLOW_MAIN_WRITES=1")
-    parser.add_argument("--receipt", type=Path, default=Path("build/load-receipt.json"))
+    parser.add_argument("--receipt", type=Path,
+                        help="private checkpoint receipt (default is stable per artifact, target and branch)")
     parser.add_argument("--transport", choices=("auto", "turbobulk", "diode", "rest"), default="auto")
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--explain", action="store_true", help="inspect and explain without writing")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not args.target or not token:
-        parser.error("--target/NETBOX_URL and NETBOX_TOKEN are required")
+        parser.error("target/NETBOX_URL and NETBOX_TOKEN are required")
+    receipt = args.receipt
     try:
+        receipt = receipt or default_receipt(args.artifact, args.target, args.branch)
+        if not args.explain:
+            print(f"Receipt: {receipt}", file=os.sys.stderr, flush=True)
         result = load(args.artifact, url=args.target, token=token, branch=args.branch,
-                      receipt_path=args.receipt, transport=args.transport,
+                      receipt_path=receipt, transport=args.transport,
                       timeout=args.timeout, explain=args.explain)
         if args.explain:
             print(json.dumps(result["decision"], indent=2, sort_keys=True))
         else:
             print(json.dumps({"success": result.get("success", False), "result": result.get("result"),
-                              "transport": result.get("transport"), "receipt": str(args.receipt)}, sort_keys=True))
+                              "transport": result.get("transport"), "receipt": str(receipt)}, sort_keys=True))
         return 0
     except (LoadError, ValueError, OSError, KeyError, TypeError) as exc:
-        print(f"Load failed: {exc}", file=os.sys.stderr)
+        detail = f"; receipt: {receipt}" if receipt is not None and not args.explain else ""
+        print(f"Load failed: {exc}{detail}", file=os.sys.stderr)
         return 2
 
 

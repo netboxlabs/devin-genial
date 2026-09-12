@@ -27,12 +27,16 @@ sdk-check directory='build/bank-v9/diode':
     python3 -m estates sdk-check {{quote(directory)}}
 
 # Inspect the target, choose a faithful transport, load, and strictly verify
-load artifact branch='' receipt='build/load-receipt.json' transport='auto' explain='false':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --receipt {{quote(receipt)}} --transport {{quote(transport)}} {{if explain == 'true' { '--explain' } else { '' }}}
+load artifact target branch='':
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}}
 
 # Explain the transport choice and compatibility blockers without writing
-load-explain artifact branch='' transport='auto':
-    @just load {{quote(artifact)}} {{quote(branch)}} build/load-explain-unused.json {{quote(transport)}} true
+load-explain artifact target branch='':
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --explain
+
+# Permanently replace one named disposable branch and archive its load receipts
+reset target branch:
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.reset {{quote(target)}} {{quote(branch)}}
 
 # Review an inherited branch's acquisition and refresh; no target writes
 scenario plan='build/bank-v9/plan.json' site='br-s0002' output='build/acquisition-refresh':
