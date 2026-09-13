@@ -15,7 +15,8 @@ from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, R
                                JobTimeout, LoadError,
                                _artifact, _batch_request_settings, _complete_rest, _job_result,
                                _component_cache_ids, _component_filter_preflight,
-                               _job_request_schedule, _load_model_batches, _load_termination_batches,
+                               _finalizer_plan, _finalizer_request_settings, _job_request_schedule,
+                               _load_model_batches, _load_termination_batches, _run_finalizers,
                                _matches, _NoRedirect, _refresh, _render, _rendered_columns,
                                _poll, _review_history_preflight, _schema_preflight, _token,
                                _verify_component_caches, _verify_review_history,
@@ -41,7 +42,7 @@ def response(value):
 
 
 class TurboBulkLoaderTests(unittest.TestCase):
-    def test_hook_schedule_waits_for_a_models_last_phase_and_all_cables(self):
+    def test_hook_schedule_separates_rows_from_global_finalizers(self):
         objects = {
             "tag:a": {"key": "tag:a", "kind": "tag", "attrs": {}, "refs": {}},
             "tag:b": {"key": "tag:b", "kind": "tag", "attrs": {}, "refs": {}},
@@ -56,13 +57,17 @@ class TurboBulkLoaderTests(unittest.TestCase):
         self.assertFalse(any(schedule["phase-1:cable"]["post_hooks"].values()))
         self.assertFalse(any(schedule[
             "phase-1:cable:terminations:batch-2-of-2"]["post_hooks"].values()))
-        final_model = schedule["phase-2:cable"]["post_hooks"]
-        self.assertTrue(all(final_model[name] for name in
-                            ("fix_denormalized", "rebuild_search_index", "fix_counters")))
-        self.assertFalse(final_model["fix_cable_links"])
-        self.assertFalse(final_model["rebuild_cable_paths"])
-        self.assertTrue(all(schedule[
+        self.assertFalse(any(schedule["phase-2:cable"]["post_hooks"].values()))
+        self.assertFalse(any(schedule[
             "phase-2:cable:terminations:batch-2-of-2"]["post_hooks"].values()))
+        search = schedule["finalize:dcim.cable:rebuild_search_index"]
+        self.assertTrue(search["post_hooks"]["rebuild_search_index"])
+        self.assertEqual(sum(search["post_hooks"].values()), 1)
+        self.assertFalse(search["create_changelogs"])
+        self.assertTrue(schedule[
+            "finalize:dcim.cabletermination:fix_cable_links"]["post_hooks"]["fix_cable_links"])
+        self.assertTrue(schedule[
+            "finalize:dcim.cabletermination:rebuild_cable_paths"]["post_hooks"]["rebuild_cable_paths"])
 
     def test_interface_refresh_is_indexed_at_75k_scale(self):
         count = 75_519
@@ -116,7 +121,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
         with self.assertRaisesRegex(LoadError, r"target identity is ambiguous \(2 rows\)"):
             _refresh(Target(), "interface", [interface], {"device:1": 7})
 
-    def test_scale_jobs_are_bounded_and_only_final_batches_run_global_hooks(self):
+    def test_scale_data_jobs_are_bounded_and_run_no_global_hooks(self):
         candidates = [{"key": f"tag:{number}", "kind": "tag",
                        "attrs": {"name": str(number)}, "refs": {}}
                       for number in range(4_706)]
@@ -147,16 +152,11 @@ class TurboBulkLoaderTests(unittest.TestCase):
             ("phase-1:tag:batch-2-of-3", 2_000),
             ("phase-1:tag:batch-3-of-3", 706),
         ])
-        self.assertTrue(all(not any(row[3]["post_hooks"].values()) for row in submissions[:2]))
-        final = submissions[-1][3]["post_hooks"]
-        self.assertTrue(all(final[name] for name in
-                            ("fix_denormalized", "rebuild_search_index", "fix_counters")))
-        self.assertFalse(final["fix_cable_links"])
-        self.assertFalse(final["rebuild_cable_paths"])
+        self.assertTrue(all(not any(row[3]["post_hooks"].values()) for row in submissions))
         self.assertEqual(len(refreshes), 1)
         self.assertEqual(len(refreshes[0]), 4_706)
 
-    def test_cable_hooks_run_only_after_final_termination_batch(self):
+    def test_cable_data_batches_run_no_global_hooks(self):
         rows = [{"cable_id": number} for number in range(4_001)]
         submissions = []
 
@@ -171,8 +171,113 @@ class TurboBulkLoaderTests(unittest.TestCase):
                 delivery_contract("reviewable")["request_settings"])
 
         self.assertEqual([row[1] for row in submissions], [2_000, 2_000, 1])
-        self.assertTrue(all(not any(row[2]["post_hooks"].values()) for row in submissions[:2]))
-        self.assertTrue(all(submissions[-1][2]["post_hooks"].values()))
+        self.assertTrue(all(not any(row[2]["post_hooks"].values()) for row in submissions))
+
+    def test_finalizers_are_zero_row_single_hook_jobs(self):
+        objects = {obj["key"]: obj for obj in [
+            {"key": "tag:a", "kind": "tag", "attrs": {}, "refs": {}},
+            {"key": "owner:a", "kind": "owner", "attrs": {}, "refs": {}},
+            {"key": "cable:a", "kind": "cable", "attrs": {}, "refs": {}},
+            {"key": "device:a", "kind": "device", "attrs": {}, "refs": {}},
+            {"key": "interface:a", "kind": "interface", "attrs": {}, "refs": {}},
+            {"key": "vm:a", "kind": "virtual_machine", "attrs": {}, "refs": {}},
+            {"key": "vm-interface:a", "kind": "vm_interface", "attrs": {}, "refs": {}},
+        ]}
+        receipt = {"jobs": []}
+        submissions = []
+
+        def submit(_client, _branch, model, rows, purpose, keys, *_args, **kwargs):
+            submissions.append((purpose, model, rows, keys, kwargs["request_settings"]))
+
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch("estates.turbobulk._submit", side_effect=submit):
+            _run_finalizers(object(), "Demo", objects, receipt,
+                            Path(temporary) / "receipt.json", 1,
+                            delivery_contract("reviewable")["request_settings"])
+
+        self.assertEqual(len(submissions), 11)
+        self.assertTrue(all(rows == [] and keys == []
+                            for _purpose, _model, rows, keys, _settings in submissions))
+        self.assertTrue(all(not settings["create_changelogs"]
+                            for *_rest, settings in submissions))
+        self.assertTrue(all(sum(settings["post_hooks"].values()) == 1
+                            for *_rest, settings in submissions))
+        purposes = {purpose for purpose, *_rest in submissions}
+        self.assertIn("finalize:dcim.cabletermination:rebuild_cable_paths", purposes)
+        self.assertIn("finalize:dcim.device:fix_denormalized", purposes)
+        self.assertIn("finalize:dcim.device:fix_counters", purposes)
+        self.assertIn("finalize:virtualization.virtualmachine:fix_counters", purposes)
+        self.assertIn("finalize:extras.tag:rebuild_search_index", purposes)
+        self.assertNotIn("finalize:users.owner:rebuild_search_index", purposes)
+
+    def test_verified_finalizer_is_not_resubmitted(self):
+        objects = {"tag:a": {"key": "tag:a", "kind": "tag", "attrs": {}, "refs": {}}}
+        base = delivery_contract("reviewable")["request_settings"]
+        plan = _finalizer_plan(objects)
+        receipt = {"jobs": [{"purpose": purpose, "model": model, "mode": "insert",
+                              "rows_expected": 0, "request_verified": True,
+                              "request_settings": _finalizer_request_settings(base, hook)}
+                             for purpose, model, hook in plan]}
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch("estates.turbobulk._submit") as submit, \
+                patch("estates.turbobulk._poll") as poll:
+            _run_finalizers(object(), "Demo", objects, receipt,
+                            Path(temporary) / "receipt.json", 1, base)
+        submit.assert_not_called()
+        poll.assert_not_called()
+
+    def test_terminal_failed_finalizer_is_recorded_and_retried(self):
+        objects = {"tag:a": {"key": "tag:a", "kind": "tag", "attrs": {}, "refs": {}}}
+        base = delivery_contract("reviewable")["request_settings"]
+        purpose, model, hook = _finalizer_plan(objects)[0]
+        settings = _finalizer_request_settings(base, hook)
+        prior = {"purpose": purpose, "model": model, "mode": "insert",
+                 "job_id": "failed-finalizer", "rows_expected": 0,
+                 "request_settings": settings, "request_verified": False}
+        receipt = {"jobs": [prior]}
+        terminal = {"job_id": "failed-finalizer", "status": "completed", "data": {
+            "rows_processed": 0, "rows_inserted": 0, "rows_updated": 0,
+            "changelogs_created": 0, "errors": [],
+            "post_hooks": {name: ({"error": "reindex failed"} if name == hook else {"skipped": True})
+                           for name in POST_HOOKS}}}
+        submissions = []
+
+        def submit(_client, _branch, _model, _rows, submitted_purpose,
+                   _keys, *_args, **_kwargs):
+            submissions.append(submitted_purpose)
+
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch("estates.turbobulk._poll", return_value=terminal), \
+                patch("estates.turbobulk._submit", side_effect=submit):
+            _run_finalizers(object(), "Demo", objects, receipt,
+                            Path(temporary) / "receipt.json", 1, base)
+
+        self.assertTrue(prior["retryable_finalizer"])
+        self.assertEqual(submissions.count(purpose), 1)
+
+    def test_second_terminal_finalizer_failure_requires_a_fresh_branch(self):
+        objects = {"tag:a": {"key": "tag:a", "kind": "tag", "attrs": {}, "refs": {}}}
+        base = delivery_contract("reviewable")["request_settings"]
+        purpose, model, hook = _finalizer_plan(objects)[0]
+        settings = _finalizer_request_settings(base, hook)
+        receipt = {"jobs": [
+            {"purpose": purpose, "model": model, "mode": "insert", "job_id": job_id,
+             "rows_expected": 0, "request_settings": settings, "request_verified": False}
+            for job_id in ("failed-finalizer-1", "failed-finalizer-2")
+        ]}
+        terminal = {"job_id": "failed-finalizer-2", "status": "completed", "data": {
+            "rows_processed": 0, "rows_inserted": 0, "rows_updated": 0,
+            "changelogs_created": 0, "errors": [],
+            "post_hooks": {name: ({"error": "reindex failed"} if name == hook else {"skipped": True})
+                           for name in POST_HOOKS}}}
+
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch("estates.turbobulk._poll", return_value=terminal), \
+                patch("estates.turbobulk._submit") as submit:
+            with self.assertRaisesRegex(LoadError, "failed after 2 attempts.*fresh branch"):
+                _run_finalizers(object(), "Demo", objects, receipt,
+                                Path(temporary) / "receipt.json", 1, base)
+        submit.assert_not_called()
 
     def test_batch_resume_keeps_original_boundaries_and_skips_verified_jobs(self):
         candidates = [{"key": f"tag:{number}", "kind": "tag",
@@ -180,7 +285,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                       for number in range(5)]
         base = delivery_contract("reviewable")["request_settings"]
         receipt = {"jobs": [{"purpose": "phase-1:tag:batch-1-of-3",
-                              "request_settings": _batch_request_settings(base, last_batch=False),
+                              "request_settings": _batch_request_settings(base),
                               "request_verified": True}], "resolved_ids": {}}
         submitted = []
 
@@ -207,7 +312,8 @@ class TurboBulkLoaderTests(unittest.TestCase):
                        "attrs": {"name": str(number)}, "refs": {}}
                       for number in range(3)]
         base = delivery_contract("reviewable")["request_settings"]
-        wrong = _batch_request_settings(base, last_batch=True)
+        wrong = _batch_request_settings(base)
+        wrong["post_hooks"]["rebuild_search_index"] = True
         receipt = {"jobs": [{"purpose": "phase-1:tag:batch-1-of-2",
                               "request_settings": wrong, "request_verified": True}]}
         with tempfile.TemporaryDirectory() as temporary, \
@@ -223,9 +329,114 @@ class TurboBulkLoaderTests(unittest.TestCase):
 
     def test_batch_settings_are_independent_from_delivery_contract(self):
         base = delivery_contract("reviewable")["request_settings"]
-        batched = _batch_request_settings(base, last_batch=False)
+        batched = _batch_request_settings(base)
         batched["post_hooks"]["fix_counters"] = True
         self.assertTrue(all(base["post_hooks"].values()))
+
+    def test_operator_interrupt_closes_receipt_attempt(self):
+        plan = {"schema_version": 1, "generator_version": "fixture", "objects": [
+            {"key": "tag:demo", "kind": "tag",
+             "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}},
+        ]}
+
+        class Target:
+            base = "https://netbox.example"
+            token = "fixture"
+            branch_id = None
+
+            def request(self, path, **_kwargs):
+                if path == "/api/status/":
+                    return 200, {"netbox-version": "4.6.8", "plugins": {
+                        "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
+                if path.startswith("/api/plugins/branching/branches/"):
+                    return 200, {"results": [{"id": 1, "name": "Demo", "schema_id": "schema1",
+                                               "status": {"value": "ready"}}]}
+                if path == "/api/core/object-changes/?limit=1":
+                    return 200, {"count": 0, "results": []}
+                raise AssertionError(path)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_bytes(canonical(plan) + b"\n")
+            (root / "checks.json").write_text(json.dumps({
+                "status": "passed", "plan_sha256": digest(plan)}))
+            receipt_path = root / "receipt.json"
+            with patch("estates.turbobulk.Client", return_value=Target()), \
+                    patch("estates.turbobulk.fetch_inventory", return_value={"tag": []}), \
+                    patch("estates.turbobulk.verify_plan", return_value={"success": False,
+                                                                          "ids": {}}), \
+                    patch("estates.turbobulk._schema_preflight", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    load(root, url="https://netbox.example", token="fixture", branch="Demo",
+                         receipt_path=receipt_path, delivery_policy="disposable-baseline")
+
+            receipt = json.loads(receipt_path.read_text())
+            self.assertFalse(receipt["success"])
+            self.assertEqual(receipt["error"], "KeyboardInterrupt")
+            self.assertEqual(receipt["attempts"][-1]["result"], "failed")
+            self.assertEqual(receipt["attempts"][-1]["error"], "KeyboardInterrupt")
+            self.assertIn("completed_at", receipt["attempts"][-1])
+
+    def test_exact_recovery_interrupt_closes_receipt_attempt(self):
+        plan = {"schema_version": 1, "generator_version": "fixture", "objects": [
+            {"key": "tag:demo", "kind": "tag",
+             "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}},
+        ]}
+
+        class Target:
+            base = "https://netbox.example"
+            token = "fixture"
+            branch_id = None
+
+            def request(self, path, **_kwargs):
+                if path == "/api/status/":
+                    return 200, {"netbox-version": "4.6.8", "plugins": {
+                        "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
+                if path.startswith("/api/plugins/branching/branches/"):
+                    return 200, {"results": [{"id": 1, "name": "Demo", "schema_id": "schema1",
+                                               "status": {"value": "ready"}}]}
+                if path == "/api/core/object-changes/?limit=1":
+                    return 200, {"count": 0, "results": []}
+                raise AssertionError(path)
+
+        verified = {"success": True, "ids": {"tag:demo": 41}, "matched_objects": 1}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_bytes(canonical(plan) + b"\n")
+            (root / "checks.json").write_text(json.dumps({
+                "status": "passed", "plan_sha256": digest(plan)}))
+            receipt_path = root / "receipt.json"
+            common = [patch("estates.turbobulk.Client", return_value=Target()),
+                      patch("estates.turbobulk.fetch_inventory", return_value={"tag": [{"id": 41}]}),
+                      patch("estates.turbobulk.verify_plan", return_value=verified)]
+            with common[0], common[1], common[2]:
+                load(root, url="https://netbox.example", token="fixture", branch="Demo",
+                     receipt_path=receipt_path, delivery_policy="disposable-baseline")
+            receipt = json.loads(receipt_path.read_text())
+            base = delivery_contract("disposable-baseline")["request_settings"]
+            purpose, model, hook = _finalizer_plan({"tag:demo": plan["objects"][0]})[0]
+            receipt["jobs"] = [
+                {"purpose": "phase-1:tag", "model": "extras.tag",
+                 "mode": "insert", "rows_expected": 1, "request_verified": True,
+                 "request_settings": _batch_request_settings(base)},
+                {"purpose": purpose, "model": model, "mode": "insert",
+                 "job_id": "pending-finalizer", "rows_expected": 0,
+                 "request_verified": False,
+                 "request_settings": _finalizer_request_settings(base, hook)},
+            ]
+            receipt_path.write_text(json.dumps(receipt))
+            with patch("estates.turbobulk.Client", return_value=Target()), \
+                    patch("estates.turbobulk.fetch_inventory", return_value={"tag": [{"id": 41}]}), \
+                    patch("estates.turbobulk.verify_plan", return_value=verified), \
+                    patch("estates.turbobulk._run_finalizers", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    load(root, url="https://netbox.example", token="fixture", branch="Demo",
+                         receipt_path=receipt_path, delivery_policy="disposable-baseline")
+
+            interrupted = json.loads(receipt_path.read_text())
+            self.assertFalse(interrupted["success"])
+            self.assertEqual(interrupted["attempts"][-1]["result"], "failed")
+            self.assertEqual(interrupted["attempts"][-1]["error"], "KeyboardInterrupt")
 
     def test_delivery_contract_keeps_reviewable_default_and_explicit_disposable_tradeoff(self):
         reviewable = delivery_contract("reviewable")
@@ -405,7 +616,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
         hooks = {name: {"success": True} for name in POST_HOOKS}
         hooks["fix_cable_links"] = {"skipped": True, "reason": "not applicable"}
         job = {"job_id": "job-1", "status": "completed", "data": {
-            "rows_inserted": 2, "rows_updated": 0, "changelogs_created": 2,
+            "rows_processed": 2, "rows_inserted": 2, "rows_updated": 0, "changelogs_created": 2,
             "errors": [], "post_hooks": hooks}}
         self.assertEqual(_job_result(job, 2, settings, "insert")["rows_inserted"], 2)
 
@@ -430,7 +641,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(LoadError, message):
                 _job_result(broken, 2, settings, "insert")
 
-        deferred = _batch_request_settings(settings, last_batch=False)
+        deferred = _batch_request_settings(settings)
         skipped = deepcopy(job)
         skipped["data"]["post_hooks"] = {name: {"skipped": True} for name in POST_HOOKS}
         self.assertEqual(_job_result(skipped, 2, deferred, "insert")["rows_inserted"], 2)
@@ -656,14 +867,20 @@ class TurboBulkLoaderTests(unittest.TestCase):
                                 "model": "extras.tag",
                                 "mode": "insert", "rows_expected": 1,
                                 "request_settings": _batch_request_settings(
-                                    delivery_contract("reviewable")["request_settings"],
-                                    last_batch=True),
+                                    delivery_contract("reviewable")["request_settings"]),
                                 "request_verified": True}
                 receipt["jobs"] = [recorded_job]
+                for purpose, model, hook in _finalizer_plan({"tag:demo": plan["objects"][0]}):
+                    receipt["jobs"].append({
+                        "purpose": purpose, "model": model, "mode": "insert",
+                        "rows_expected": 0, "request_verified": True,
+                        "request_settings": _finalizer_request_settings(
+                            delivery_contract("reviewable")["request_settings"], hook),
+                    })
                 receipt_path.write_text(json.dumps(receipt))
                 load(root, url="https://netbox.example", token="fixture", branch="Demo", receipt_path=receipt_path)
             repeated = json.loads(receipt_path.read_text())
-            self.assertEqual(repeated["jobs"], [recorded_job])
+            self.assertEqual(repeated["jobs"], receipt["jobs"])
             self.assertEqual(len(repeated["repeat_verifications"]), 1)
             self.assertEqual([attempt["result"] for attempt in repeated["attempts"]],
                              ["already-matched", "already-matched"])
@@ -690,7 +907,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                                  branch="Demo", receipt_path=receipt_path)
             self.assertTrue(recovered["success"])
             self.assertEqual(recovered["result"], "recovered-matched")
-            self.assertEqual(recovered["jobs"], [recorded_job])
+            self.assertEqual(recovered["jobs"], receipt["jobs"])
             self.assertEqual(recovered["attempts"][-1]["result"], "recovered-matched")
             self.assertNotIn("error", recovered)
 
@@ -718,11 +935,12 @@ class TurboBulkLoaderTests(unittest.TestCase):
                 self.last_path = path
                 return [{"id": 51, "label": "CAB-1"}]
 
-        settings = delivery_contract("reviewable")["request_settings"]
+        settings = _batch_request_settings(
+            delivery_contract("reviewable")["request_settings"])
         terminal = {"job_id": "terms-job", "status": "completed", "duration_seconds": 0.1,
-                    "data": {"rows_inserted": 2, "rows_updated": 0,
+                    "data": {"rows_processed": 2, "rows_inserted": 2, "rows_updated": 0,
                              "changelogs_created": 2, "errors": [],
-                             "post_hooks": {name: {"success": True} for name in POST_HOOKS}}}
+                             "post_hooks": {name: {"skipped": True} for name in POST_HOOKS}}}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             raw = canonical(plan) + b"\n"
@@ -758,6 +976,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                     patch("estates.turbobulk._content_types", return_value={"interface": 1}), \
                     patch("estates.turbobulk._phases", return_value=[["cable:1"]]), \
                     patch("estates.turbobulk._complete_rest", return_value=0), \
+                    patch("estates.turbobulk._run_finalizers"), \
                     patch("estates.turbobulk._verify_paths", return_value={"cables_expected": 1,
                                                                            "cables_traced": 1,
                                                                            "failures": []}), \

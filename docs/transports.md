@@ -102,13 +102,19 @@ REST create or completion PATCH. Both explain and load reject other artifacts
 before target writes. The current rich and scale artifacts require completion
 PATCHes and are therefore ineligible. This policy is never selected from object count. Both
 policies keep full validation and set event dispatch off explicitly for branch-scoped
-loads. Genial declares all five post-hooks on every request, with intermediate
-batches explicitly disabled. The final batch for a model runs denormalization,
-search, and counters; cable-link and cable-path hooks wait for the final
-cable-termination batch. Terminal verification requires every hook result to match
-that exact request; reviewable insert jobs must report one changelog per row. The
+loads. Every bounded data request disables all five global post-hooks. After all
+data and REST completion, deterministic zero-row jobs run one required hook at a
+time: applicable parent denormalization and counters, cable links, cable paths,
+then one search rebuild per searchable model. Terminal
+verification requires every hook result to match that exact request; finalizers
+must report zero TurboBulk input-row changes and create zero changelogs, while
+reviewable data inserts must report one changelog per row. Derived rows repaired
+inside a hook remain visible in that hook's recorded result. The
 policy, branch capabilities, 2,000-row job bound, and exact per-job TurboBulk
 settings are immutable receipt bindings.
+Any terminal finalizer whose job or hook result fails its contract may be retried
+once because it is a zero-row idempotent repair operation. A second failure requires
+a fresh branch; nonterminal finalizers are never duplicated.
 Receipts created before this contract do not prove their request settings and
 cannot be resumed; reset the branch and start with the newly selected policy.
 
@@ -183,12 +189,13 @@ The command performs these steps internally:
 3. Select TurboBulk plus bounded REST completion for the currently qualified
    model set, or Diode when its complete target contract is satisfied.
 4. Split each model deterministically into jobs of at most 2,000 rows. After each
-   job, verify row counts, changelogs, and its exact hook results, then save the job
+   job, verify row counts, changelogs, and its exact disabled-hook results, then save the job
    checkpoint. Resolve the model's canonical keys to target IDs once all its jobs
    finish, then release dependent models.
 5. Close cycles such as device and VM primary IPs. Expand every cable into two
-   typed terminations and rebuild cable paths. Complete many-to-many relations in
-   bounded bulk REST requests.
+   typed terminations and complete many-to-many relations in bounded bulk REST
+   requests. Run each global maintenance, cable-path, and search hook in its own
+   zero-row checkpointed finalizer.
 6. Fetch complete inventories for every emitted kind with stable pagination,
    compare every emitted attribute and reference with `plan.json`, and trace one
    origin for every generated cable through the native REST action. Success
@@ -296,3 +303,14 @@ Qualification should next resolve or operationally handle the stuck TurboBulk
 job and prove a clean 8,432-object run, then a current rich
 estate, then a believable estate above 50,000 canonical objects. Scale success is
 the time to a verified usable organization, not a table-row rate.
+
+The subsequent bounded scale attempt advanced the same 128,932-object artifact
+through 73 verified jobs and 104,119 accepted canonical objects. Its next job
+committed 52 power ports but stranded before recording post-hook results. This
+narrows the unresolved problem from bulk row insertion to safe large-estate
+finalization: a small final batch may still launch work over an entire model.
+TurboBulk's public large-import guidance recommends one manual search rebuild at
+the end, but that management command is unavailable to a NetBox Cloud customer
+and the public API documents no hook-only endpoint. Genial must therefore prove a
+retry-safe API composition for finalization or obtain a supported Cloud operation;
+it must not infer hook completion from committed row counters.

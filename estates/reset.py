@@ -34,6 +34,14 @@ class HTTPRejected(LoadError):
         super().__init__(f"{method} {path} returned HTTP {status}: {detail}")
 
 
+class HTTPAmbiguous(OSError):
+    """A server/proxy failure did not prove whether a mutation committed."""
+
+    def __init__(self, method, path, status, detail):
+        self.status = status
+        super().__init__(f"{method} {path} returned HTTP {status}: {detail}")
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -58,10 +66,13 @@ def _request_json(client, path, *, method="GET", body=None, allowed=(), include_
             return (*result, response.headers) if include_headers else result
     except urllib.error.HTTPError as exc:
         payload = exc.read(2000)
+        exc.close()
         if exc.code in allowed:
             result = (exc.code, json.loads(payload) if payload else None)
             return (*result, exc.headers) if include_headers else result
         detail = payload.decode(errors="replace")
+        if method not in {"GET", "HEAD", "OPTIONS"} and exc.code >= 500:
+            raise HTTPAmbiguous(method, path, exc.code, detail) from exc
         raise HTTPRejected(method, path, exc.code, detail) from exc
 
 

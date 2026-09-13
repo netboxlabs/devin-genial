@@ -99,18 +99,18 @@ loader refuses before target writes. The current rich and scale artifacts need
 REST completion, so they must use the reviewable policy until NetBox provides a
 way to make those REST writes non-reviewable under the same branch contract. Both
 policies keep full validation and schedule every required TurboBulk post-hook at
-its safe dependency boundary. Genial limits each job to 2,000 rows, skips
-table-wide hooks on intermediate batches, runs denormalization, search, and
-counters on the last batch for each model, and runs cable-link and cable-path
-work only after the final cable-termination batch. A completed job is accepted
+its safe dependency boundary. Genial limits each data job to 2,000 rows and runs
+no global hooks inside those jobs. After every row and REST relationship is in
+place, separate zero-row jobs run denormalization, counters, cable links, cable
+paths, and search one hook at a time. A completed job is accepted
 only when it reports the exact enabled or explicitly skipped hook results and,
 for reviewable inserts, one changelog per inserted row. The policy, row bound,
 and exact per-job settings are bound to the receipt, so changing them requires a
 new receipt and fresh branch. Keep the default unless a measured qualification
 run justifies the optional fourth `turbobulk_job_rows` argument to `just load`.
 Device-component placement caches are compiled into the original insert from
-the parent device, because the device denormalization hook runs before later
-interfaces, ports, outlets, and bays exist. Before writes, the target OpenAPI
+the parent device, so each component row is valid as soon as it is inserted,
+before final maintenance runs. Before writes, the target OpenAPI
 schema must expose the three cache-backed placement filters on every emitted
 component kind. Final readback then compares exact component IDs with one query
 per distinct component-kind and site/location/rack placement, including explicit

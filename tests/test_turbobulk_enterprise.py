@@ -205,7 +205,8 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
     def test_disposable_submit_sends_and_records_exact_request_policy(self):
         settings = delivery_contract("disposable-baseline")["request_settings"]
         terminal = {"job_id": "job-1", "status": "completed", "data": {
-            "rows_inserted": 1, "rows_updated": 0, "changelogs_created": 0, "errors": [],
+            "rows_processed": 1, "rows_inserted": 1, "rows_updated": 0,
+            "changelogs_created": 0, "errors": [],
             "post_hooks": {name: {"success": True} for name in settings["post_hooks"]}}}
 
         class Client:

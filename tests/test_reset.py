@@ -7,6 +7,7 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
+import urllib.error
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from estates.turbobulk import LoadError
 
 TARGET = "https://netbox.example"
 NAME = "Generator Benchmark"
+REQUEST_JSON = subject._request_json
 
 
 def branch(branch_id, status="ready", name=NAME, description="SE scratch branch"):
@@ -146,6 +148,20 @@ class ResetTests(unittest.TestCase):
         return subject.reset(TARGET, NAME, token="nbt_secret", poll_interval=0,
                              receipt_root=self.reset_root, load_receipt_root=self.load_root,
                              **kwargs)
+
+    def test_mutating_http_5xx_is_ambiguous(self):
+        class Opener:
+            def open(self, request, timeout):
+                raise urllib.error.HTTPError(
+                    request.full_url, 502, "Bad Gateway", {}, io.BytesIO(b"origin failed"))
+
+        client = type("Client", (), {
+            "base": TARGET,
+            "headers": {"Authorization": "Bearer fixture"},
+            "opener": Opener(),
+        })()
+        with self.assertRaises(subject.HTTPAmbiguous):
+            REQUEST_JSON(client, subject.BRANCHES + "7/", method="DELETE")
 
     def test_initial_reset_archives_matching_load_receipt_and_preserves_description(self):
         self.load_root.mkdir(parents=True)

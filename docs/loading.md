@@ -45,18 +45,25 @@ for artifacts requiring no REST creation or completion PATCH; the explain comman
 lists those blockers, and the load command repeats that check before target writes.
 The current rich and scale artifacts therefore remain on the reviewable path.
 It still requests full validation and schedules every required post-hook. TurboBulk
-jobs are limited to 2,000 rows. Intermediate batches explicitly skip all table-wide
-hooks; the last batch for each model runs denormalization, search indexing, and
-counters; cable-link repair and cable-path rebuilding run only after the last
-cable-termination batch. The loader requires an exact result for every enabled or
-skipped hook and requires reviewable insert jobs to report one changelog per row.
+data jobs are limited to 2,000 rows and explicitly skip all global hooks. After
+all rows and bounded REST completion, zero-row finalizer jobs run denormalization,
+counters, cable-link repair, cable-path rebuilding, and search indexing one hook
+at a time. Denormalization and counter jobs target only the parent models whose
+derived fields the emitted graph can change; search still runs once per searchable
+model. The loader requires an exact result for every enabled or skipped hook,
+zero TurboBulk input-row changes and changelogs from finalizers, and one changelog
+per reviewable data row. A hook may still repair derived rows internally; its
+reported result is retained in the receipt. A terminal zero-row finalizer whose
+job or hook result fails its contract is recorded and retried once; a second failure
+requires a new receipt and fresh branch. A nonterminal job remains the exclusive
+checkpoint and is never duplicated.
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings.
 
-Device components need one extra invariant. TurboBulk's device denormalization
-hook can run before later component phases, so Genial writes `_site_id`,
+Device components need one extra invariant. Genial writes `_site_id`,
 `_location_id`, and `_rack_id` into each component's original insert from its
-parent device. Preflight requires `site_id`, `location_id`, and `rack_id` filters
+parent device so the row is correct before final maintenance. Preflight requires
+`site_id`, `location_id`, and `rack_id` filters
 on every emitted component REST endpoint. Strict readback groups expected IDs by
 component kind and placement and makes one query per group, including `null`
 location and rack values. This proves the caches without another mutation, so
@@ -92,6 +99,11 @@ Branching 1.1.2 exposes no status transition for this purpose, so the reversible
 rename is the coordination boundary. If job draining times out, the old branch
 stays under the quarantine name recorded in the receipt; rerunning the same
 command recovers the rename by old branch ID and continues waiting before delete.
+An HTTP 5xx or connection loss during PATCH, DELETE, or POST is an ambiguous
+mutation: a proxy response cannot prove whether the origin committed it. Rerunning
+the same reset receipt inspects the immutable branch ID before retrying or advancing.
+A very large Cloud branch can still require operator cleanup if its synchronous
+schema deletion repeatedly exceeds the service gateway.
 Use the printed replacement name for the next load and as the input to the next
 reset. Because the replacement also has a new schema ID, update `DIODE_BRANCH` and
 reconfirm the external Diode routing evidence before a Diode load. Pass the printed
@@ -267,6 +279,17 @@ different bound requires a fresh branch and receipt.
 Read-only API requests retry transient disconnects four times with bounded
 backoff. Mutating requests are never retried automatically; their durable intent
 and returned job ID remain the resume boundary.
+
+The first bounded 128,932-object Cloud attempt confirmed that the row limit is
+necessary but insufficient. Seventy-three bounded jobs completed and verified
+104,119 objects. A final 52-row power-port batch committed every row, passed
+validation, and created every requested changelog, then remained `running`
+without post-hook results. A post-hook can operate over the whole target model,
+so reducing the submitted row count does not necessarily reduce that work.
+Genial keeps this state ambiguous and will not advance past it. The current
+Cloud-safe recovery is to preserve the receipt and branch for diagnosis or start
+a new branch with a changed, separately qualified hook strategy; do not mark the
+committed rows complete solely from counters.
 
 TurboBulk supports branch-targeted jobs, making a disposable branch the rollback
 boundary for a multi-model estate. It does not make every model idempotent:

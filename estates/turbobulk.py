@@ -42,12 +42,13 @@ class JobTimeout(LoadError):
 
 
 RECEIPT_VERSION = 2
-COMPILER_VERSION = "v02-turbobulk-10"
+COMPILER_VERSION = "v02-turbobulk-11"
 DEFAULT_JOB_ROWS = 2_000
 READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
     "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
 }
+SEARCH_FINALIZER_EXCLUDED_KINDS = {"contact_assignment", "owner", "owner_group"}
 
 DELIVERY_POLICIES = ("reviewable", "disposable-baseline")
 POST_HOOKS = {
@@ -82,16 +83,46 @@ def delivery_contract(policy):
     }
 
 
-def _batch_request_settings(base, *, last_batch, cable_final=False):
-    """Run table-wide hooks once per model and cable hooks only after all terminations."""
-    settings = {**base, "post_hooks": {name: False for name in POST_HOOKS}}
-    if last_batch:
-        for name in ("fix_denormalized", "rebuild_search_index", "fix_counters"):
-            settings["post_hooks"][name] = base["post_hooks"][name]
-    if cable_final:
-        for name in ("fix_cable_links", "rebuild_cable_paths"):
-            settings["post_hooks"][name] = base["post_hooks"][name]
-    return settings
+def _batch_request_settings(base):
+    """Keep every data-bearing request bounded to its rows, not global hooks."""
+    return {**base, "post_hooks": {name: False for name in POST_HOOKS}}
+
+
+def _finalizer_request_settings(base, hook):
+    """Return a zero-row request which runs exactly one global maintenance hook."""
+    if hook not in POST_HOOKS:
+        raise LoadError(f"unsupported TurboBulk finalizer hook {hook!r}")
+    return {**base, "create_changelogs": False,
+            "post_hooks": {name: name == hook for name in POST_HOOKS}}
+
+
+def _finalizer_plan(objects):
+    """Order global maintenance after all canonical rows and REST completion."""
+    kinds = {obj["kind"] for obj in objects.values()}
+    models = sorted({SPECS[obj["kind"]][0] for obj in objects.values()
+                     if obj["kind"] not in REST_CREATE_KINDS})
+    result = []
+    if kinds & DEVICE_COMPONENT_KINDS:
+        result.extend([
+            ("finalize:dcim.device:fix_denormalized", "dcim.device", "fix_denormalized"),
+            ("finalize:dcim.device:fix_counters", "dcim.device", "fix_counters"),
+        ])
+    if "vm_interface" in kinds:
+        result.append(("finalize:virtualization.virtualmachine:fix_counters",
+                       "virtualization.virtualmachine", "fix_counters"))
+    if "cable" in kinds:
+        result.extend([
+            ("finalize:dcim.cabletermination:fix_cable_links",
+             "dcim.cabletermination", "fix_cable_links"),
+            ("finalize:dcim.cabletermination:rebuild_cable_paths",
+             "dcim.cabletermination", "rebuild_cable_paths"),
+        ])
+    searchable = sorted({SPECS[obj["kind"]][0] for obj in objects.values()
+                         if obj["kind"] not in
+                         REST_CREATE_KINDS | SEARCH_FINALIZER_EXCLUDED_KINDS})
+    result.extend((f"finalize:{model}:rebuild_search_index", model,
+                   "rebuild_search_index") for model in searchable)
+    return result
 
 
 def rest_mutation_requirements(objects):
@@ -808,6 +839,8 @@ def _job_result(job, expected, request_settings, mode):
         issues.append(f"status is {job.get('status')!r}")
     if job.get("error") or data.get("error") or data.get("errors"):
         issues.append("job reported errors")
+    if data.get("rows_processed") != expected:
+        issues.append(f"processed {data.get('rows_processed')!r} rows instead of {expected}")
     if affected != expected:
         issues.append(f"affected {affected} rows instead of {expected}")
 
@@ -959,6 +992,21 @@ def _record_terminal(entry, job, wall_seconds=None):
     return result
 
 
+def _record_failure(receipt, receipt_path, ids, overall, exc):
+    """Close the active attempt and preserve the latest durable observation."""
+    if isinstance(exc, JobTimeout):
+        entry = next((job for job in receipt["jobs"] if job.get("job_id") == exc.job_id), None)
+        if entry is not None:
+            _record_observed(entry, exc.job)
+    message = str(exc) if isinstance(exc, Exception) else type(exc).__name__
+    receipt.update(success=False, failed_at=_now(), error=message, resolved_ids=ids)
+    receipt["attempts"][-1].update(success=False, result="failed",
+                                   completed_at=receipt["failed_at"],
+                                   wall_seconds=round(time.monotonic() - overall, 6),
+                                   error=message)
+    _write_receipt(receipt_path, receipt)
+
+
 def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_path, timeout,
             mode="insert", request_settings=None):
     request_settings = request_settings or delivery_contract("reviewable")["request_settings"]
@@ -1008,14 +1056,11 @@ def _batch_purpose(purpose, number, count):
 def _job_request_schedule(phases, objects, max_job_rows, base_settings):
     """Return exact hook settings after considering every occurrence of each model."""
     grouped_phases = []
-    last_phase = {}
     for phase_number, keys in enumerate(phases, 1):
         grouped = defaultdict(list)
         for key in keys:
             grouped[objects[key]["kind"]].append(objects[key])
         grouped_phases.append((phase_number, grouped))
-        for kind in grouped:
-            last_phase[kind] = phase_number
 
     schedule = {}
     for phase_number, grouped in grouped_phases:
@@ -1026,19 +1071,15 @@ def _job_request_schedule(phases, objects, max_job_rows, base_settings):
             count = (len(candidates) + max_job_rows - 1) // max_job_rows
             for number in range(1, count + 1):
                 schedule[_batch_purpose(purpose, number, count)] = _batch_request_settings(
-                    base_settings,
-                    last_batch=phase_number == last_phase[kind] and number == count)
+                    base_settings)
             if kind == "cable":
                 termination_purpose = purpose + ":terminations"
                 termination_count = (2 * len(candidates) + max_job_rows - 1) // max_job_rows
                 for number in range(1, termination_count + 1):
                     schedule[_batch_purpose(termination_purpose, number, termination_count)] = (
-                        _batch_request_settings(
-                            base_settings,
-                            last_batch=(phase_number == last_phase[kind]
-                                        and number == termination_count),
-                            cable_final=(phase_number == last_phase[kind]
-                                         and number == termination_count)))
+                        _batch_request_settings(base_settings))
+    for purpose, _model, hook in _finalizer_plan(objects):
+        schedule[purpose] = _finalizer_request_settings(base_settings, hook)
     return schedule
 
 
@@ -1052,13 +1093,12 @@ def _require_job_settings(entry, expected):
 
 def _load_model_batches(client, branch_name, kind, candidates, objects, ids, content_types,
                         service_shape, purpose, receipt, receipt_path, timeout, max_job_rows,
-                        base_settings, final_model_group=True):
+                        base_settings):
     """Submit deterministic model batches and checkpoint IDs after each one."""
     batches = _batches(candidates, max_job_rows)
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
-        settings = _batch_request_settings(
-            base_settings, last_batch=final_model_group and number == len(batches))
+        settings = _batch_request_settings(base_settings)
         prior = next((job for job in receipt["jobs"] if job["purpose"] == batch_purpose), None)
         if prior:
             _require_job_settings(prior, settings)
@@ -1079,16 +1119,12 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
 
 
 def _load_termination_batches(client, branch_name, terminations, purpose, receipt,
-                              receipt_path, timeout, max_job_rows, base_settings,
-                              final_cable_group=True):
-    """Submit deterministic termination batches, running cable-wide hooks only once."""
+                              receipt_path, timeout, max_job_rows, base_settings):
+    """Submit deterministic cable-termination batches without global hooks."""
     batches = _batches(terminations, max_job_rows)
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
-        settings = _batch_request_settings(
-            base_settings,
-            last_batch=final_cable_group and number == len(batches),
-            cable_final=final_cable_group and number == len(batches))
+        settings = _batch_request_settings(base_settings)
         prior = next((job for job in receipt["jobs"] if job["purpose"] == batch_purpose), None)
         if prior:
             _require_job_settings(prior, settings)
@@ -1099,6 +1135,36 @@ def _load_termination_batches(client, branch_name, terminations, purpose, receip
             continue
         _submit(client, branch_name, "dcim.cabletermination", batch, batch_purpose, [],
                 receipt, receipt_path, timeout, request_settings=settings)
+
+
+def _run_finalizers(client, branch_name, objects, receipt, receipt_path, timeout,
+                    base_settings):
+    """Run global hooks as independently checkpointed zero-row jobs."""
+    for purpose, model, hook in _finalizer_plan(objects):
+        settings = _finalizer_request_settings(base_settings, hook)
+        attempts = [job for job in receipt["jobs"] if job["purpose"] == purpose]
+        prior = attempts[-1] if attempts else None
+        if prior:
+            _require_job_settings(prior, settings)
+            if prior.get("request_verified") is True:
+                continue
+            job = _poll(client, _bound_job_id(prior), timeout)
+            try:
+                _record_terminal(prior, job)
+            except LoadError as exc:
+                _write_receipt(receipt_path, receipt)
+                if len(attempts) >= 2:
+                    raise LoadError(
+                        f"zero-row finalizer {purpose} failed after {len(attempts)} attempts; "
+                        "choose a new receipt and fresh branch"
+                    ) from exc
+                prior.update(retryable_finalizer=True, retry_recorded_at=_now())
+                _write_receipt(receipt_path, receipt)
+            else:
+                _write_receipt(receipt_path, receipt)
+                continue
+        _submit(client, branch_name, model, [], purpose, [], receipt, receipt_path,
+                timeout, request_settings=settings)
 
 
 def _bound_job_id(entry):
@@ -1465,8 +1531,6 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     phases = list(_phases(objects))
     job_schedule = _job_request_schedule(
         phases, objects, max_job_rows, delivery["request_settings"])
-    last_phase = {objects[key]["kind"]: phase_number
-                  for phase_number, keys in enumerate(phases, 1) for key in keys}
     receipt_path = Path(receipt_path)
     client = Client(url, token)
     _, status = client.request("/api/status/", branch=False)
@@ -1542,42 +1606,56 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     existing = verify_plan(plan, inventory, strict_inventory=True)
     preflight_readback_seconds = round(time.monotonic() - readback_started, 6)
     if existing["success"]:
-        for entry in receipt.get("jobs", []) if receipt else []:
-            if entry.get("request_verified") is True:
-                continue
-            job = _poll(client, _bound_job_id(entry), timeout)
-            try:
-                _record_terminal(entry, job)
-            finally:
-                _write_receipt(receipt_path, receipt)
-        current_ids = _numeric_ids(existing["ids"])
-        checkpoint_ids = _numeric_ids(receipt.get("resolved_ids", {})) if receipt else {}
-        changed_ids = sorted(key for key, value in checkpoint_ids.items()
-                             if current_ids.get(key) != value)
-        if changed_ids:
-            raise LoadError(f"{len(changed_ids)} checkpoint target IDs changed despite exact natural-key readback; use a fresh branch and receipt")
-        paths = _verify_paths(client, plan, objects, current_ids)
-        if paths["failures"]:
-            raise LoadError(f"computed-path readback failed for {len(paths['failures'])} of {paths['cables_expected']} cables")
-        component_caches = _verify_component_caches(client, objects, current_ids)
-        if component_caches["failures"]:
-            raise LoadError(
-                f"component-cache readback failed for {len(component_caches['failures'])} placements"
-            )
-        review_history = (_verify_review_history(client, branch_row, objects, history_preflight)
-                          if delivery_policy == "reviewable" else None)
-        observation = {"observed_at": _now(), "wall_seconds": round(time.monotonic() - overall, 6),
-                       "readback_seconds": preflight_readback_seconds,
-                       "verification": existing, "computed_paths": paths,
-                       "component_caches": component_caches,
-                       "review_history": review_history}
         if receipt is not None:
             recovered = not receipt.get("success")
-            receipt.setdefault("attempts", []).append({"started_at": started_at,
-                                                        "completed_at": observation["observed_at"],
-                                                        "wall_seconds": observation["wall_seconds"],
-                                                        "result": "recovered-matched" if recovered else "already-matched",
-                                                        "success": True})
+            receipt.setdefault("attempts", []).append({"started_at": started_at, "success": False})
+            _write_receipt(receipt_path, receipt)
+        try:
+            for entry in receipt.get("jobs", []) if receipt else []:
+                if (entry.get("request_verified") is True
+                        or entry.get("purpose", "").startswith("finalize:")):
+                    continue
+                job = _poll(client, _bound_job_id(entry), timeout)
+                try:
+                    _record_terminal(entry, job)
+                finally:
+                    _write_receipt(receipt_path, receipt)
+            if receipt is not None and any(
+                    not job.get("purpose", "").startswith("finalize:")
+                    for job in receipt.get("jobs", [])):
+                _run_finalizers(client, branch, objects, receipt, receipt_path, timeout,
+                                delivery["request_settings"])
+            current_ids = _numeric_ids(existing["ids"])
+            checkpoint_ids = _numeric_ids(receipt.get("resolved_ids", {})) if receipt else {}
+            changed_ids = sorted(key for key, value in checkpoint_ids.items()
+                                 if current_ids.get(key) != value)
+            if changed_ids:
+                raise LoadError(f"{len(changed_ids)} checkpoint target IDs changed despite exact natural-key readback; use a fresh branch and receipt")
+            paths = _verify_paths(client, plan, objects, current_ids)
+            if paths["failures"]:
+                raise LoadError(f"computed-path readback failed for {len(paths['failures'])} of {paths['cables_expected']} cables")
+            component_caches = _verify_component_caches(client, objects, current_ids)
+            if component_caches["failures"]:
+                raise LoadError(
+                    f"component-cache readback failed for {len(component_caches['failures'])} placements"
+                )
+            review_history = (_verify_review_history(client, branch_row, objects, history_preflight)
+                              if delivery_policy == "reviewable" else None)
+            observation = {"observed_at": _now(), "wall_seconds": round(time.monotonic() - overall, 6),
+                           "readback_seconds": preflight_readback_seconds,
+                           "verification": existing, "computed_paths": paths,
+                           "component_caches": component_caches,
+                           "review_history": review_history}
+        except BaseException as exc:
+            if receipt is not None:
+                _record_failure(receipt, receipt_path, receipt.get("resolved_ids", {}), overall, exc)
+            raise
+        if receipt is not None:
+            receipt["attempts"][-1].update(
+                completed_at=observation["observed_at"],
+                wall_seconds=observation["wall_seconds"],
+                result="recovered-matched" if recovered else "already-matched",
+                success=True)
             receipt.setdefault("repeat_verifications", []).append(observation)
             receipt["last_verified_at"] = observation["observed_at"]
             receipt["verification"] = existing
@@ -1672,7 +1750,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                     _load_model_batches(
                         client, branch, kind, candidates, objects, ids, content_types,
                         service_shape, purpose, receipt, receipt_path, timeout, max_job_rows,
-                        delivery["request_settings"], phase_number == last_phase[kind])
+                        delivery["request_settings"])
                 if kind == "cable":
                     termination_purpose = purpose + ":terminations"
                     terminations = []
@@ -1684,12 +1762,13 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                                                  "termination_id": ids[target["key"]]})
                     _load_termination_batches(
                         client, branch, terminations, termination_purpose, receipt, receipt_path,
-                        timeout, max_job_rows, delivery["request_settings"],
-                        phase_number == last_phase[kind])
+                        timeout, max_job_rows, delivery["request_settings"])
                 receipt["resolved_ids"] = ids
                 _write_receipt(receipt_path, receipt)
 
         receipt["rest_rows_attempted"] = _complete_rest(client, plan, objects, ids, receipt, receipt_path)
+        _run_finalizers(client, branch, objects, receipt, receipt_path, timeout,
+                        delivery["request_settings"])
         readback_started = time.monotonic()
         inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]), client.branch_id)
         verification = verify_plan(plan, inventory, strict_inventory=True)
@@ -1717,17 +1796,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                                        wall_seconds=receipt["wall_seconds"])
         _write_receipt(receipt_path, receipt)
         return receipt
-    except Exception as exc:
-        if isinstance(exc, JobTimeout):
-            entry = next((job for job in receipt["jobs"] if job.get("job_id") == exc.job_id), None)
-            if entry is not None:
-                _record_observed(entry, exc.job)
-        receipt.update(success=False, failed_at=_now(), error=str(exc), resolved_ids=ids)
-        receipt["attempts"][-1].update(success=False, result="failed",
-                                       completed_at=receipt["failed_at"],
-                                       wall_seconds=round(time.monotonic() - overall, 6),
-                                       error=str(exc))
-        _write_receipt(receipt_path, receipt)
+    except BaseException as exc:
+        _record_failure(receipt, receipt_path, ids, overall, exc)
         raise
 
 

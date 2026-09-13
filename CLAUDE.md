@@ -71,8 +71,9 @@ The target-aware loader is `just load ARTIFACT TARGET [BRANCH]`;
 the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
 TurboBulk jobs default to at most 2,000 rows. Keep deterministic batch purposes,
 receipt-bound request settings, one ID-resolution read per completed model, and
-cable hooks only on the final cable-termination batch. A fourth `just load`
-argument changes the bound for measured qualification runs.
+all global hooks out of data-bearing jobs. Run required maintenance, cable, and
+search hooks as separate zero-row finalizers after data and REST completion. A
+fourth `just load` argument changes the bound for measured qualification runs.
 Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
 the parent device in the original TurboBulk row. Require the corresponding REST
 filters during preflight and prove exact component IDs by kind and placement at

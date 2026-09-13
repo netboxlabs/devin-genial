@@ -2,7 +2,7 @@
 
 [Back to the quick start](../README.md) · [Documentation map](../README.md#documentation)
 
-This reference preserves implementation notes and recorded qualification history. The [local lab guide](../lab/README.md#current-v09-qualification) owns the latest representative live results. Older version-specific passages below are historical, not instructions to reproduce them with current code.
+This reference preserves implementation notes and recorded qualification history. The [local lab guide](../lab/README.md#current-v09-qualification) owns the latest local-target results; Cloud evidence lives here. Older version-specific passages below are historical, not instructions to reproduce them with current code.
 
 Run commands from the repository root. Paths in code blocks are relative to that root.
 Generated `build/` artifacts and qualification receipts are local outputs, not included in a clone.
@@ -263,7 +263,8 @@ The September 8, 2026 v0.2 mixed scale run produced 128,932 canonical objects
 across 253 sites in 141 requests. Generation, graph validation, and export took
 3.9 seconds locally; the pinned SDK check took 29.0 seconds. These are single
 Python 3.14.7 observations; `build/scale-v2/timings.json` and `sdk-checks.json`
-retain the local receipts. Live ingestion was not run.
+retain the local receipts. No live ingestion was part of that September 8
+measurement; later Cloud attempts are recorded below.
 
 On September 9, 2026, the default mixed bank passed live ingestion into local
 NetBox 4.7.0 with Diode 2.2.0 and plugin 1.17.0. Nine phases submitted 9,057
@@ -349,9 +350,65 @@ At the operator's direction the disposable `Generator Benchmark` branch was
 deleted by its immutable branch ID. Cloud returned HTTP 204; subsequent reads
 found neither that ID nor that name. Its 128,932-object run therefore remains an
 aborted partial qualification, not a throughput result. The failed receipt is
-preserved under `build/load-receipts/history/discarded/`. The next scale attempt
-must bound Genial's own per-job row count below the observed 4,706-row failure
-and avoid repeating whole-model search and cable-path hooks after every batch.
+preserved under `build/load-receipts/history/discarded/`. That result led the
+next attempt to bound Genial's own per-job row count below 4,706 and avoid
+repeating whole-model search and cable-path hooks after every batch.
+
+A second scale attempt used the same frozen artifact, canonical SHA-256
+`79fd3f08f22ac6c99460d16f545431a6971732e79f7bdbe36cda8abd82424ccf`, on the
+fresh, reviewable `Genial Scale 128k Batched` branch (Branching ID 5, schema
+`0mcf6jo7`). The target reported NetBox 4.6.8, Branching 1.1.2, and TurboBulk
+0.3.0. Genial bounded every submission to 2,000
+rows, skipped table-wide hooks on intermediate batches, and ran each applicable
+hook only on the final batch for its model. Seventy-three jobs reached verified
+terminal completion, accounting for exactly 104,119 canonical objects and
+104,119 changelogs. Their
+recorded totals were 0.299 seconds compiling payloads, 29.045 seconds uploading,
+2.092 seconds queued, and 305.845 seconds of server execution. These are sums
+over verified jobs, not end-to-end elapsed time or a completed-estate benchmark.
+
+The next job inserted and validated its final 52 `dcim.powerport` rows and
+created 52 changelogs, but remained server-side `running` without post-hook
+results or a completion timestamp for more than two hours. Cloud therefore
+contained 104,171 observed canonical identities, while the loader accepted only
+the preceding 104,119 as verified checkpoints. The loader did not start cables
+or REST completion. Partial strict readback therefore reported 43,646 expected
+mismatches: 24,761 objects had not yet been submitted and 18,885 deferred
+relations had not yet been patched. From the verified boundary, 24,813 canonical objects remain:
+52 power ports, 6,240 power outlets, 13,383 cables, 4,954 IP addresses, 60 virtual
+machines, 60 VM interfaces, and 64 services. The exact job is preserved in the
+private receipt. After the operator chose to discard the attempt, two direct
+branch DELETE requests returned Cloudflare HTTP 502 after roughly one minute;
+a later API listing proved Branching ID 5 still present and `ready`. The public
+[Branching 1.1.2 source](https://github.com/netboxlabs/netbox-branching/blob/736c279441b2a29953dcd356547a14a3f2d677c6/netbox_branching/models/branches.py#L359-L367)
+performs branch-row deletion and `DROP SCHEMA ... CASCADE` in one synchronous
+transaction. This branch now needs service-side cleanup; the
+failed proxy responses are not evidence that deletion committed.
+
+This proves that client-side row bounds prevent the earlier oversized submission
+but do not bound a model-wide post-hook. The TurboBulk 0.3.1 public guide advises
+disabling search reindexing during imports above 100,000 rows and running NetBox's
+management command once afterward. NetBox Cloud customers cannot run that command,
+and the documented API exposes no hook-only finalization operation. The stranded
+job's missing post-hook results do not identify which hook failed, so attributing
+it specifically to search indexing would be speculation. Scale qualification now
+needs a Cloud-safe finalization strategy that separates committed data batches
+from retryable model-wide hooks; weakening the loader's terminal-job requirement
+would conceal an ambiguous operation and is not an acceptable workaround.
+
+The installed TurboBulk 0.3.0 source provides a usable API composition even
+though it has no dedicated finalizer endpoint: a zero-row load still runs its
+requested post-hooks after an empty transaction. A disposable Cloud probe on
+September 12 submitted an empty gzipped JSONL `extras.tag` load with changelogs
+disabled and only search indexing enabled. The job completed in 0.650 seconds of
+server lifecycle, reported zero rows processed, inserted, or updated, zero
+changelogs, a successful search rebuild, and zero ChangeDiffs before and after.
+The probe branch was then deleted with HTTP 204 and verified absent. Genial now
+uses this primitive to keep every data-bearing job free of global hooks, then
+runs denormalization, counters, cable links, cable paths, and search as separate
+zero-row finalizers after data and REST completion. This source and one-model
+probe establish the mechanism; the full 8,432-object load must qualify every
+finalizer and repeat recovery before the schedule is accepted at scale.
 
 The validator checks reference closure, hardware inventory, rack occupancy,
 port occupancy and media/speed compatibility, passive cable paths, redundant
