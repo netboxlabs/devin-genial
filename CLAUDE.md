@@ -75,7 +75,8 @@ all global hooks out of data-bearing jobs. Run required maintenance, cable, and
 search hooks as separate zero-row finalizers after data and REST completion. A
 fourth `just load` argument changes the bound for measured qualification runs.
 Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
-the parent device in the original TurboBulk row. Require the corresponding REST
+the parent device in the original TurboBulk row; derive the device location from
+its rack when NetBox would inherit it on save. Require the corresponding REST
 filters during preflight and prove exact component IDs by kind and placement at
 final readback, including null location/rack placements. Do not add a repair
 upsert: reviewable history must remain one create ChangeDiff per canonical object.
@@ -86,6 +87,10 @@ also requires a TurboBulk-only artifact with no REST create or completion writes
 the explain and load preflights reject other artifacts before target writes.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
+Write each bounded REST completion payload to the receipt before PATCH. Recover a
+lost response only from exact target readback; never resend an unresolved mutation.
+A lost zero-row finalizer response may adopt one exact core-job match inside its
+recorded request window, but an unbound data-bearing job always requires a fresh branch.
 `just reset TARGET BRANCH` replaces only an exact disposable Branching branch and
 archives its bound private load receipts.
 Keep transport orchestration behind that recipe rather than adding an installed CLI.

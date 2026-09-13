@@ -109,13 +109,18 @@ and exact per-job settings are bound to the receipt, so changing them requires a
 new receipt and fresh branch. Keep the default unless a measured qualification
 run justifies the optional fourth `turbobulk_job_rows` argument to `just load`.
 Device-component placement caches are compiled into the original insert from
-the parent device, so each component row is valid as soon as it is inserted,
+the parent device, including the location inherited from its rack, so each
+component row is valid as soon as it is inserted,
 before final maintenance runs. Before writes, the target OpenAPI
 schema must expose the three cache-backed placement filters on every emitted
 component kind. Final readback then compares exact component IDs with one query
 per distinct component-kind and site/location/rack placement, including explicit
 null location and rack placement. This adds bounded readback requests without
 adding repair rows, jobs, ObjectChanges, or ChangeDiffs.
+REST completion writes its exact intent before each ten-row PATCH. A lost response
+resumes only when readback proves the batch committed; unresolved batches stop
+with a fresh-branch instruction. Receipts preserve failed attempts and can recover
+one exact zero-row finalizer from unique core-job evidence.
 These setup steps should take less than ten minutes; target processing time is
 separate and is recorded in the private receipt.
 

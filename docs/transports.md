@@ -148,9 +148,15 @@ After target binding and initial readback, the current receipt format retains
 each invocation's outcome and wall time, so future successful resumes do not
 erase the failed attempt that preceded them. The historical recovery receipt
 below predates this attempt-history field.
-If submission reaches the server but its job ID never reaches the receipt, the
-command refuses to adopt those identities; discard that branch and begin with a
-new branch and receipt.
+Every REST completion payload is written ahead with its endpoint, numeric target
+IDs, and hash. Exact target readback can close a lost-response batch without
+resubmission. Any unresolved or mixed result requires a fresh branch because the
+original synchronous request has no job handle and might still be executing.
+If a TurboBulk submission reaches the server but its job ID never reaches the
+receipt, the command refuses to adopt data-bearing work. It may adopt a zero-row
+finalizer only from one exact, otherwise-unbound core job inside the recorded
+request window with the same branch, model, mode, and zero-row result. Zero or
+multiple matches require a fresh branch.
 For a new receipt, every inventory represented by the artifact must be empty;
 otherwise the command stops before writes. Treat the branch as exclusively owned
 by that receipt until loading and verification finish.

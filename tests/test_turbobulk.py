@@ -13,13 +13,15 @@ from unittest.mock import ANY, Mock, patch
 from estates.model import canonical, digest
 from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, RECEIPT_VERSION, Client,
                                JobTimeout, LoadError,
-                               _artifact, _batch_request_settings, _complete_rest, _job_result,
+                               _adopt_finalizer_job, _artifact, _batch_request_settings,
+                               _complete_rest, _job_result,
                                _component_cache_ids, _component_filter_preflight,
                                _finalizer_plan, _finalizer_request_settings, _job_request_schedule,
-                               _load_model_batches, _load_termination_batches, _run_finalizers,
+                               _bulk_patch, _load_model_batches, _load_termination_batches,
+                               _reconcile_rest_patches, _rest_payload, _run_finalizers,
                                _matches, _NoRedirect, _refresh, _render, _rendered_columns,
                                _poll, _review_history_preflight, _schema_preflight, _token,
-                               _verify_component_caches, _verify_review_history,
+                               _verify_component_caches, _verify_review_history, _write_receipt,
                                delivery_contract, load)
 
 
@@ -225,6 +227,145 @@ class TurboBulkLoaderTests(unittest.TestCase):
                             Path(temporary) / "receipt.json", 1, base)
         submit.assert_not_called()
         poll.assert_not_called()
+
+    def test_lost_finalizer_submission_adopts_exactly_one_job_and_persists(self):
+        settings = _finalizer_request_settings(
+            delivery_contract("reviewable")["request_settings"], "rebuild_search_index")
+        entry = {"purpose": "finalize:extras.tag:rebuild_search_index",
+                 "model": "extras.tag", "mode": "insert", "rows_expected": 0,
+                 "request_settings": settings,
+                 "intent_recorded_at": "2026-09-13T01:00:00+00:00"}
+        receipt = {"failed_at": "2026-09-13T01:02:00+00:00", "jobs": [entry]}
+        detail = {"job_id": "job-candidate", "status": "completed",
+                  "created": "2026-09-13T01:00:30+00:00", "error": "",
+                  "data": {"branch": "Demo", "model": "extras.tag", "mode": "insert",
+                           "rows_processed": 0, "rows_inserted": 0, "rows_updated": 0,
+                           "changelogs_created": 0, "errors": [],
+                           "post_hooks": {
+                               name: ({"success": True} if name == "rebuild_search_index"
+                                      else {"skipped": True})
+                               for name in POST_HOOKS}}}
+        case = self
+
+        class Target:
+            def request(self, path, **kwargs):
+                case.assertFalse(kwargs.get("branch", True))
+                if path.startswith("/api/core/jobs/?"):
+                    query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+                    case.assertIn("created__after", query)
+                    case.assertIn("created__before", query)
+                    return 200, {"results": [{"job_id": "job-candidate", "name": "Bulk Load"}]}
+                case.assertEqual(path, "/api/plugins/turbobulk/jobs/job-candidate/")
+                return 200, detail
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt_path.write_text(json.dumps(receipt))
+            _adopt_finalizer_job(Target(), "Demo", entry, receipt, receipt_path)
+            saved = json.loads(receipt_path.read_text())["jobs"][0]
+        self.assertEqual(saved["job_id"], "job-candidate")
+        self.assertEqual(saved["status"], "adopted")
+        self.assertEqual(saved["adoption_evidence"], {
+            "created": "2026-09-13T01:00:30+00:00", "model": "extras.tag",
+            "branch": "Demo", "rows_processed": 0})
+
+    def test_lost_finalizer_submission_refuses_zero_or_multiple_matches(self):
+        for count in (0, 2):
+            with self.subTest(count=count):
+                settings = _finalizer_request_settings(
+                    delivery_contract("reviewable")["request_settings"],
+                    "rebuild_search_index")
+                entry = {"purpose": "finalize:extras.tag:rebuild_search_index",
+                         "model": "extras.tag", "mode": "insert", "rows_expected": 0,
+                         "request_settings": settings,
+                         "intent_recorded_at": "2026-09-13T01:00:00+00:00"}
+                receipt = {"failed_at": "2026-09-13T01:02:00+00:00", "jobs": [entry]}
+
+                class Target:
+                    def request(self, path, **_kwargs):
+                        if path.startswith("/api/core/jobs/?"):
+                            return 200, {"results": [
+                                {"job_id": f"job-{number}", "name": "Bulk Load"}
+                                for number in range(count)]}
+                        job_id = path.removeprefix(
+                            "/api/plugins/turbobulk/jobs/").removesuffix("/")
+                        return 200, {"job_id": job_id, "status": "completed", "error": "",
+                                     "data": {
+                            "branch": "Demo", "model": "extras.tag", "mode": "insert",
+                            "rows_processed": 0, "rows_inserted": 0, "rows_updated": 0,
+                            "changelogs_created": 0, "errors": [],
+                            "post_hooks": {
+                                name: ({"success": True} if name == "rebuild_search_index"
+                                       else {"skipped": True})
+                                for name in POST_HOOKS}}}
+
+                with tempfile.TemporaryDirectory() as temporary:
+                    receipt_path = Path(temporary) / "receipt.json"
+                    receipt_path.write_text(json.dumps(receipt))
+                    with self.assertRaisesRegex(LoadError, f"found {count} matching zero-row jobs"):
+                        _adopt_finalizer_job(Target(), "Demo", entry, receipt, receipt_path)
+                self.assertNotIn("job_id", entry)
+
+    def test_lost_finalizer_submission_rejects_wrong_hook_result(self):
+        settings = _finalizer_request_settings(
+            delivery_contract("reviewable")["request_settings"], "rebuild_search_index")
+        entry = {"purpose": "finalize:extras.tag:rebuild_search_index",
+                 "model": "extras.tag", "mode": "insert", "rows_expected": 0,
+                 "request_settings": settings,
+                 "intent_recorded_at": "2026-09-13T01:00:00+00:00"}
+        receipt = {"failed_at": "2026-09-13T01:02:00+00:00", "jobs": [entry]}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                if path.startswith("/api/core/jobs/?"):
+                    return 200, {"results": [{"job_id": "wrong-hook", "name": "Bulk Load"}]}
+                return 200, {"job_id": "wrong-hook", "status": "completed", "error": "",
+                             "data": {
+                                 "branch": "Demo", "model": "extras.tag", "mode": "insert",
+                                 "rows_processed": 0, "rows_inserted": 0, "rows_updated": 0,
+                                 "changelogs_created": 0, "errors": [],
+                                 "post_hooks": {
+                                     name: ({"success": True} if name == "fix_counters"
+                                            else {"skipped": True})
+                                     for name in POST_HOOKS}}}
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt_path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(LoadError, "found 0 matching zero-row jobs"):
+                _adopt_finalizer_job(Target(), "Demo", entry, receipt, receipt_path)
+        self.assertNotIn("job_id", entry)
+
+    def test_lost_finalizer_submission_refuses_paginated_candidate_window(self):
+        settings = _finalizer_request_settings(
+            delivery_contract("reviewable")["request_settings"], "rebuild_search_index")
+        entry = {"purpose": "finalize:extras.tag:rebuild_search_index",
+                 "model": "extras.tag", "mode": "insert", "rows_expected": 0,
+                 "request_settings": settings,
+                 "intent_recorded_at": "2026-09-13T01:00:00+00:00"}
+        receipt = {"failed_at": "2026-09-13T01:02:00+00:00", "jobs": [entry]}
+        client = Mock()
+        client.request.return_value = (200, {
+            "count": 2, "next": "https://netbox.example/api/core/jobs/?offset=1",
+            "results": [{"job_id": "job-1", "name": "Bulk Load"}],
+        })
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(LoadError, "matching job window is paginated"):
+                _adopt_finalizer_job(client, "Demo", entry, receipt,
+                                     Path(temporary) / "receipt.json")
+        self.assertEqual(client.request.call_count, 1)
+        self.assertNotIn("job_id", entry)
+
+    def test_lost_nonfinalizer_submission_refuses_without_querying(self):
+        entry = {"purpose": "phase-1:tag", "model": "extras.tag", "mode": "insert",
+                 "rows_expected": 1, "intent_recorded_at": "2026-09-13T01:00:00+00:00"}
+        receipt = {"failed_at": "2026-09-13T01:02:00+00:00", "jobs": [entry]}
+        client = Mock()
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(LoadError, "durable intent exists without a job ID"):
+                _adopt_finalizer_job(client, "Demo", entry, receipt,
+                                     Path(temporary) / "receipt.json")
+        client.request.assert_not_called()
 
     def test_terminal_failed_finalizer_is_recorded_and_retried(self):
         objects = {"tag:a": {"key": "tag:a", "kind": "tag", "attrs": {}, "refs": {}}}
@@ -539,11 +680,11 @@ class TurboBulkLoaderTests(unittest.TestCase):
         ids = {"site:1": 10, "location:1": 20, "rack:1": 30, "device:1": 40}
 
         self.assertEqual(_component_cache_ids(objects["interface:1"], objects, ids), {
-            "_site_id": 10, "_location_id": None, "_rack_id": 30,
+            "_site_id": 10, "_location_id": 20, "_rack_id": 30,
         })
         row = _render(objects["interface:1"], objects, ids, {})
         self.assertEqual((row["_site_id"], row["_location_id"], row["_rack_id"]),
-                         (10, None, 30))
+                         (10, 20, 30))
         objects["device:1"]["refs"]["location"] = "location:1"
         self.assertEqual(_component_cache_ids(objects["interface:1"], objects, ids), {
             "_site_id": 10, "_location_id": 20, "_rack_id": 30,
@@ -584,6 +725,32 @@ class TurboBulkLoaderTests(unittest.TestCase):
 
         stale = _verify_component_caches(Stale(), objects, ids)
         self.assertEqual(stale["failures"][0]["missing_ids"], [50])
+
+    def test_component_cache_readback_sorts_null_and_numeric_placements(self):
+        objects = {
+            "site:1": {"key": "site:1", "kind": "site", "attrs": {}, "refs": {}},
+            "location:1": {"key": "location:1", "kind": "location", "attrs": {},
+                           "refs": {"site": "site:1"}},
+            "device:1": {"key": "device:1", "kind": "device", "attrs": {},
+                         "refs": {"site": "site:1"}},
+            "device:2": {"key": "device:2", "kind": "device", "attrs": {},
+                         "refs": {"site": "site:1", "location": "location:1"}},
+            "interface:1": {"key": "interface:1", "kind": "interface", "attrs": {},
+                            "refs": {"device": "device:1"}},
+            "interface:2": {"key": "interface:2", "kind": "interface", "attrs": {},
+                            "refs": {"device": "device:2"}},
+        }
+        ids = {"site:1": 10, "location:1": 20, "device:1": 40, "device:2": 41,
+               "interface:1": 50, "interface:2": 51}
+
+        class Target:
+            def all(self, path):
+                location = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["location_id"][0]
+                return [{"id": 50 if location == "null" else 51}]
+
+        result = _verify_component_caches(Target(), objects, ids)
+        self.assertEqual(result["placement_queries"], 2)
+        self.assertEqual(result["failures"], [])
 
     def test_component_cache_filter_preflight_requires_all_filters(self):
         objects = {"interface:1": {"key": "interface:1", "kind": "interface",
@@ -733,6 +900,272 @@ class TurboBulkLoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(LoadError, "concurrent values"):
                 _complete_rest(Target([{"id": 8, "slug": "other"}]), plan, objects, ids,
                                {"rest_batches": []}, receipt_path)
+
+    def test_rest_patch_persists_intent_before_request(self):
+        rows = [{"id": 9, "tags": [7]}]
+        case = self
+
+        class Target:
+            def request(self, _path, **_kwargs):
+                saved = json.loads(receipt_path.read_text())["rest_batches"][0]
+                case.assertEqual(saved["status"], "submitting")
+                case.assertEqual(saved["payload"], rows)
+                case.assertEqual(saved["payload_sha256"], hashlib.sha256(
+                    json.dumps(rows, separators=(",", ":")).encode()).hexdigest())
+                case.assertEqual(len(saved["attempts"]), 1)
+                return 200, []
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": []}
+            receipt_path.write_text(json.dumps(receipt))
+            _bulk_patch(Target(), "/api/dcim/sites/", rows, receipt, receipt_path,
+                        "complete:site")
+        self.assertEqual(receipt["rest_batches"][0]["status"], "completed")
+
+    def test_rest_patch_persists_ambiguous_timeout(self):
+        class Target:
+            def request(self, _path, **_kwargs):
+                raise LoadError("PATCH response was lost")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": []}
+            receipt_path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(LoadError, "response was lost"):
+                _bulk_patch(Target(), "/api/dcim/sites/", [{"id": 9, "tags": [7]}],
+                            receipt, receipt_path, "complete:site")
+            saved = json.loads(receipt_path.read_text())["rest_batches"][0]
+        self.assertEqual(saved["status"], "submitting")
+        self.assertEqual(saved["attempts"][-1]["result"], "no-terminal-response")
+
+    def test_rest_patch_exact_match_recovers_without_resend(self):
+        payload = [{"id": 9, "tags": [7]}]
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        entry = {"purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                 "rows": 1, "target_ids": [9], "payload": payload,
+                 "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                 "status": "submitting", "attempts": [
+                     {"result": "no-terminal-response", "wall_seconds": 120.0}]}
+        client = Mock()
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": [entry]}
+            receipt_path.write_text(json.dumps(receipt))
+            _reconcile_rest_patches(client, "/api/dcim/sites/",
+                                    {9: {"id": 9, "tags": [{"id": 7}]}},
+                                    receipt, receipt_path, "complete:site")
+        client.request.assert_not_called()
+        self.assertEqual(entry["status"], "completed")
+        self.assertTrue(entry["recovered"])
+
+    def test_rest_patch_safe_preimage_requires_fresh_branch_without_resend(self):
+        payload = [{"id": 9, "tags": [7]}]
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        entry = {"purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                 "rows": 1, "target_ids": [9], "payload": payload,
+                 "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                 "status": "submitting", "attempts": [
+                     {"result": "no-terminal-response", "wall_seconds": 120.0}]}
+
+        client = Mock()
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": [entry]}
+            receipt_path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(LoadError, "still unresolved.*fresh branch"):
+                _reconcile_rest_patches(client, "/api/dcim/sites/",
+                                        {9: {"id": 9, "tags": []}},
+                                        receipt, receipt_path, "complete:site")
+        client.request.assert_not_called()
+        self.assertEqual(entry["status"], "submitting")
+
+    def test_rest_patch_recovery_rejects_conflict_and_hash_drift(self):
+        payload = [{"id": 9, "tags": [7]}]
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        base = {"purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                "rows": 1, "target_ids": [9], "payload": payload,
+                "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                "status": "submitting", "attempts": []}
+        cases = [
+            (deepcopy(base), {9: {"id": 9, "tags": [{"id": 8}]}}, "concurrent"),
+            ({**deepcopy(base), "payload_sha256": "0" * 64},
+             {9: {"id": 9, "tags": []}}, "invalid REST write-ahead"),
+        ]
+        for entry, current, error in cases:
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as temporary:
+                receipt_path = Path(temporary) / "receipt.json"
+                receipt = {"rest_batches": [entry]}
+                receipt_path.write_text(json.dumps(receipt))
+                client = Mock()
+                with self.assertRaisesRegex(LoadError, error):
+                    _reconcile_rest_patches(client, "/api/dcim/sites/", current,
+                                            receipt, receipt_path, "complete:site")
+                client.request.assert_not_called()
+
+    def test_complete_rest_recovers_pending_exact_batch_without_duplicate_request(self):
+        tag = {"key": "tag:demo", "kind": "tag", "attrs": {"slug": "demo"}, "refs": {}}
+        site = {"key": "site:demo", "kind": "site", "attrs": {"name": "Demo"},
+                "refs": {"tags": [tag["key"]]}}
+        payload = [{"id": 9, "tags": [7]}]
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        entry = {"purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                 "offset": 0, "rows": 1, "target_ids": [9], "payload": payload,
+                 "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                 "status": "submitting", "attempts": [
+                     {"result": "no-terminal-response", "wall_seconds": 120.0}]}
+
+        class Target:
+            def all(self, _path):
+                return [{"id": 9, "tags": [{"id": 7}]}]
+
+            def request(self, *_args, **_kwargs):
+                raise AssertionError("recovered completion batch must not be resent")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": [entry]}
+            receipt_path.write_text(json.dumps(receipt))
+            rows = _complete_rest(Target(), {"objects": [tag, site]},
+                                  {obj["key"]: obj for obj in (tag, site)},
+                                  {tag["key"]: 7, site["key"]: 9}, receipt, receipt_path)
+        self.assertEqual(rows, 1)
+        self.assertEqual(len(receipt["rest_batches"]), 1)
+        self.assertEqual(entry["status"], "completed")
+        self.assertTrue(entry["recovered"])
+
+    def test_complete_rest_rejects_drift_from_completed_checkpoint(self):
+        tag = {"key": "tag:demo", "kind": "tag", "attrs": {"slug": "demo"}, "refs": {}}
+        site = {"key": "site:demo", "kind": "site", "attrs": {"name": "Demo"},
+                "refs": {"tags": [tag["key"]]}}
+        payload = [{"id": 9, "tags": [7]}]
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        entry = {"purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                 "offset": 0, "rows": 1, "target_ids": [9], "payload": payload,
+                 "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                 "status": "completed", "attempts": []}
+
+        class Target:
+            def all(self, _path):
+                return [{"id": 9, "tags": []}]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": [entry]}
+            receipt_path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(LoadError, "completed REST checkpoint no longer matches"):
+                _complete_rest(Target(), {"objects": [tag, site]},
+                               {obj["key"]: obj for obj in (tag, site)},
+                               {tag["key"]: 7, site["key"]: 9}, receipt, receipt_path)
+
+    def test_complete_rest_rejects_receipt_row_count_drift(self):
+        tag = {"key": "tag:demo", "kind": "tag", "attrs": {"slug": "demo"}, "refs": {}}
+        site = {"key": "site:demo", "kind": "site", "attrs": {"name": "Demo"},
+                "refs": {"tags": [tag["key"]]}}
+        payload = [{"id": 9, "tags": [7]}]
+        encoded = json.dumps(payload, separators=(",", ":")).encode()
+        entry = {"purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                 "offset": 0, "rows": 2, "target_ids": [9], "payload": payload,
+                 "payload_sha256": hashlib.sha256(encoded).hexdigest(),
+                 "status": "submitting", "attempts": []}
+
+        class Target:
+            def all(self, _path):
+                return [{"id": 9, "tags": [{"id": 7}]}]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            receipt = {"rest_batches": [entry]}
+            receipt_path.write_text(json.dumps(receipt))
+            with self.assertRaisesRegex(LoadError, "invalid REST write-ahead checkpoint"):
+                _complete_rest(Target(), {"objects": [tag, site]},
+                               {obj["key"]: obj for obj in (tag, site)},
+                               {tag["key"]: 7, site["key"]: 9}, receipt, receipt_path)
+
+    def test_rest_payload_hash_is_stable_across_receipt_reload_and_key_order(self):
+        payload = [{"start_on_boot": "off", "tags": [7], "id": 9, "primary_ip4": 11}]
+        encoded = _rest_payload(payload)
+        receipt = {"rest_batches": [{"payload": payload,
+                                      "payload_sha256": hashlib.sha256(encoded).hexdigest()}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "receipt.json"
+            _write_receipt(receipt_path, receipt)
+            reloaded = json.loads(receipt_path.read_text())["rest_batches"][0]
+        reordered = [{"id": 9, "primary_ip4": 11, "tags": [7], "start_on_boot": "off"}]
+        self.assertEqual(_rest_payload(reloaded["payload"]), encoded)
+        self.assertEqual(_rest_payload(reordered), encoded)
+        self.assertEqual(hashlib.sha256(_rest_payload(reloaded["payload"])).hexdigest(),
+                         reloaded["payload_sha256"])
+
+    def test_exact_match_load_rejects_corrupt_rest_payload_hash(self):
+        tag = {"key": "tag:demo", "kind": "tag",
+               "attrs": {"name": "Demo", "slug": "demo"}, "refs": {}}
+        site = {"key": "site:demo", "kind": "site",
+                "attrs": {"name": "Demo", "slug": "demo"},
+                "refs": {"tags": [tag["key"]]}}
+        plan = {"schema_version": 1, "generator_version": "fixture",
+                "objects": [tag, site]}
+
+        class Target:
+            base = "https://netbox.example"
+            token = "fixture"
+            branch_id = None
+
+            def request(self, path, **kwargs):
+                if path == "/api/status/":
+                    return 200, {"netbox-version": "4.6.8", "plugins": {
+                        "netbox_turbobulk": "0.3.0", "netbox_branching": "1.1.2"}}
+                if path.startswith("/api/plugins/branching/branches/"):
+                    return 200, {"results": [{"id": 1, "name": "Demo",
+                                               "schema_id": "schema1",
+                                               "status": {"value": "ready"}}]}
+                raise AssertionError(f"unexpected request: {kwargs.get('method', 'GET')} {path}")
+
+            def all(self, path):
+                if path == "/api/dcim/sites/":
+                    return [{"id": 9, "name": "Demo", "slug": "demo",
+                             "tags": [{"id": 7, "slug": "demo"}]}]
+                raise AssertionError(f"unexpected inventory request: {path}")
+
+        verified = {"success": True, "ids": {tag["key"]: 7, site["key"]: 9},
+                    "matched_objects": 2}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_bytes(canonical(plan) + b"\n")
+            (root / "checks.json").write_text(json.dumps({
+                "status": "passed", "plan_sha256": digest(plan)}))
+            receipt_path = root / "receipt.json"
+            common = (
+                patch("estates.turbobulk.Client", return_value=Target()),
+                patch("estates.turbobulk._review_history_preflight", return_value={
+                    "branch_id": 1, "initial_count": 0,
+                    "object_types": {"extras.tag": 11, "dcim.site": 12}}),
+                patch("estates.turbobulk._verify_review_history", return_value={
+                    "expected": 2, "observed": 2}),
+                patch("estates.turbobulk.fetch_inventory", return_value={
+                    "tag": [{"id": 7}], "site": [{"id": 9}]}),
+                patch("estates.turbobulk.verify_plan", return_value=verified),
+            )
+            with common[0], common[1], common[2], common[3], common[4]:
+                load(root, url="https://netbox.example", token="fixture", branch="Demo",
+                     receipt_path=receipt_path)
+            receipt = json.loads(receipt_path.read_text())
+            receipt["rest_batches"] = [{
+                "purpose": "complete:site", "endpoint": "/api/dcim/sites/",
+                "offset": 0, "rows": 1, "target_ids": [9],
+                "payload": [{"id": 9, "tags": [7]}], "payload_sha256": "0" * 64,
+                "status": "completed", "attempts": [],
+            }]
+            receipt_path.write_text(json.dumps(receipt))
+            with patch("estates.turbobulk.Client", return_value=Target()), \
+                    patch("estates.turbobulk._verify_review_history", return_value={
+                        "expected": 2, "observed": 2}), \
+                    patch("estates.turbobulk.fetch_inventory", return_value={
+                        "tag": [{"id": 7}], "site": [{"id": 9}]}), \
+                    patch("estates.turbobulk.verify_plan", return_value=verified):
+                with self.assertRaisesRegex(LoadError, "invalid REST write-ahead checkpoint"):
+                    load(root, url="https://netbox.example", token="fixture", branch="Demo",
+                         receipt_path=receipt_path)
 
     def test_fresh_dirty_branch_and_mismatched_receipt_fail_before_write(self):
         plan = {"schema_version": 1, "generator_version": "fixture", "objects": [

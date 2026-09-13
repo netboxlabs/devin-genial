@@ -60,6 +60,22 @@ checkpoint and is never duplicated.
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings.
 
+REST completion uses ten-row synchronous PATCH batches on the qualified NetBox 4.6
+Cloud target. Before each request, the receipt stores its endpoint, target IDs, exact
+payload, hash, and an attempt record. After a lost response, a resume reads the target
+before doing more work. An exact match marks the existing batch recovered without
+another write. An unchanged, partial, or conflicting target remains ambiguous and
+requires a fresh branch because the request might still be executing. HTTP 4xx
+responses are recorded as definite rejections and are never replayed. The receipt
+reports completed logical rows, write-intent rows, and readback-recovered rows
+separately.
+
+The same rule applies to a TurboBulk POST whose response is lost. Data-bearing jobs
+cannot be adopted without a returned job ID. A zero-row finalizer can be adopted only
+when the core job history contains exactly one otherwise-unbound job inside the
+recorded request window with the same branch, model, mode, and zero-row result. Zero
+or multiple matches leave the operation ambiguous.
+
 Device components need one extra invariant. Genial writes `_site_id`,
 `_location_id`, and `_rack_id` into each component's original insert from its
 parent device so the row is correct before final maintenance. Preflight requires

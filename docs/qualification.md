@@ -407,8 +407,30 @@ The probe branch was then deleted with HTTP 204 and verified absent. Genial now
 uses this primitive to keep every data-bearing job free of global hooks, then
 runs denormalization, counters, cable links, cable paths, and search as separate
 zero-row finalizers after data and REST completion. This source and one-model
-probe establish the mechanism; the full 8,432-object load must qualify every
-finalizer and repeat recovery before the schedule is accepted at scale.
+probe established the mechanism.
+
+The full 8,432-object finalizer qualification completed on September 12, 2026
+against NetBox Cloud 4.6.8 with Branching 1.1.2 and TurboBulk 0.3.0. Its private
+receipt is `build/load-receipts/bank-v2-Genial-Finalizer-Qualification-8432-6f76dfac7dcf.json`.
+It preserves the qualified receipt v2 and `v02-turbobulk-11` compiler binding.
+The recovery and cache fixes ship as receipt v3 and compiler `v02-turbobulk-12`,
+so this historical receipt cannot be replayed under changed compiler semantics.
+Thirty-nine bounded data jobs and 34 zero-row finalizers completed. The receipt
+proves all 8,432 canonical objects, 32,203 attributes, and 17,783 references;
+all 1,041 native cable traces; all 5,513 components across 64 cache placements;
+and exactly 10,514 Branching create diffs, including 2,082 cable terminations.
+
+The qualification also exercised recovery. A legacy 50-device PATCH and a
+receipt-bound 10-interface PATCH both committed after the client timed out;
+exact readback recovered all 60 rows without resubmission. A finalizer POST lost
+its response, and the loader adopted the single matching zero-row core job by
+branch, model, mode, request window, and result. Five recorded invocations failed
+safely before the final read-only verification succeeded. The full elapsed span
+was 4,126.960 seconds, including pauses between invocations. TurboBulk reported
+132.252 seconds of summed server work and 134.245 seconds of summed job lifecycle.
+The final verification invocation took 277.451 seconds, including 34.647 seconds
+for cable traces and 151.328 seconds for component placement queries. These
+timings qualify correctness and recovery, not clean-run throughput.
 
 The validator checks reference closure, hardware inventory, rack occupancy,
 port occupancy and media/speed compatibility, passive cable paths, redundant

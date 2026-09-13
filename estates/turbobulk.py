@@ -7,7 +7,7 @@ which are cyclic or absent from the installed TurboBulk schema.
 
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import gzip
 import hashlib
 import http.client
@@ -30,6 +30,10 @@ class LoadError(RuntimeError):
     """The target cannot safely or completely receive the artifact."""
 
 
+class WriteRejected(LoadError):
+    """The target returned a definite client-error response to a write."""
+
+
 class JobTimeout(LoadError):
     def __init__(self, job_id, job, timeout):
         self.job_id = job_id
@@ -41,9 +45,10 @@ class JobTimeout(LoadError):
         )
 
 
-RECEIPT_VERSION = 2
-COMPILER_VERSION = "v02-turbobulk-11"
+RECEIPT_VERSION = 3
+COMPILER_VERSION = "v02-turbobulk-12"
 DEFAULT_JOB_ROWS = 2_000
+REST_PATCH_ROWS = 10
 READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
     "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
@@ -404,7 +409,10 @@ class Client:
                 return response.status, json.load(response)
         except urllib.error.HTTPError as exc:
             detail = exc.read(2000).decode(errors="replace")
-            raise LoadError(f"{method} {path} returned HTTP {exc.code}: {detail}") from exc
+            error = f"{method} {path} returned HTTP {exc.code}: {detail}"
+            if method != "GET" and 400 <= exc.code < 500:
+                raise WriteRejected(error) from exc
+            raise LoadError(error) from exc
         except (urllib.error.URLError, TimeoutError, ConnectionError,
                 http.client.HTTPException, json.JSONDecodeError, EOFError) as exc:
             detail = (f"after {READ_ATTEMPTS} read attempts" if method == "GET" and body is None
@@ -459,8 +467,10 @@ def _component_cache_ids(obj, objects, ids):
     """Materialize ComponentModel caches from the component's parent device."""
     device = objects[obj["refs"]["device"]]
     site_key = device["refs"].get("site")
-    location_key = device["refs"].get("location")
     rack_key = device["refs"].get("rack")
+    location_key = device["refs"].get("location")
+    if location_key is None and rack_key is not None:
+        location_key = objects[rack_key]["refs"].get("location")
     return {
         "_site_id": ids[site_key] if site_key is not None else None,
         "_location_id": ids[location_key] if location_key is not None else None,
@@ -1148,6 +1158,9 @@ def _run_finalizers(client, branch_name, objects, receipt, receipt_path, timeout
             _require_job_settings(prior, settings)
             if prior.get("request_verified") is True:
                 continue
+            if not prior.get("job_id"):
+                _adopt_finalizer_job(
+                    client, branch_name, prior, receipt, receipt_path)
             job = _poll(client, _bound_job_id(prior), timeout)
             try:
                 _record_terminal(prior, job)
@@ -1165,6 +1178,59 @@ def _run_finalizers(client, branch_name, objects, receipt, receipt_path, timeout
                 continue
         _submit(client, branch_name, model, [], purpose, [], receipt, receipt_path,
                 timeout, request_settings=settings)
+
+
+def _adopt_finalizer_job(client, branch_name, entry, receipt, receipt_path):
+    """Bind one otherwise unambiguous zero-row finalizer after a lost POST response."""
+    if entry.get("rows_expected") != 0 or not entry.get("purpose", "").startswith("finalize:"):
+        _bound_job_id(entry)
+    started = datetime.fromisoformat(entry["intent_recorded_at"].replace("Z", "+00:00"))
+    failed = datetime.fromisoformat(receipt["failed_at"].replace("Z", "+00:00"))
+    query = urllib.parse.urlencode({
+        "created__after": (started - timedelta(seconds=30)).isoformat(),
+        "created__before": (failed + timedelta(seconds=30)).isoformat(),
+        "limit": 100,
+        "ordering": "created",
+    })
+    _, page = client.request(f"/api/core/jobs/?{query}", branch=False)
+    rows = page.get("results", page)
+    if isinstance(page, dict) and (page.get("next") or page.get("count", len(rows)) > len(rows)):
+        raise LoadError(
+            f"TurboBulk submission outcome for {entry['purpose']} is ambiguous: "
+            "the matching job window is paginated. Inspect the target job and branch, "
+            "or use a fresh branch and receipt."
+        )
+    bound = {job.get("job_id") for job in receipt["jobs"] if job.get("job_id")}
+    matches = []
+    for row in rows:
+        job_id = row.get("job_id")
+        if not job_id or job_id in bound or row.get("name") != "Bulk Load":
+            continue
+        _, detail = client.request(f"/api/plugins/turbobulk/jobs/{job_id}/", branch=False)
+        data = detail.get("data") or {}
+        if (data.get("branch") == branch_name
+                and data.get("model") == entry["model"]
+                and data.get("mode") == entry["mode"]
+                and data.get("rows_processed") == 0):
+            try:
+                _job_result(detail, 0, entry["request_settings"], entry["mode"])
+            except LoadError:
+                continue
+            matches.append(detail)
+    if len(matches) != 1:
+        raise LoadError(
+            f"TurboBulk submission outcome for {entry['purpose']} is ambiguous: found "
+            f"{len(matches)} matching zero-row jobs. Inspect or clean up the target job and branch, "
+            "or use a fresh branch and receipt."
+        )
+    job = matches[0]
+    entry.update(
+        job_id=job["job_id"], status="adopted", adopted_at=_now(),
+        adoption_evidence={
+            "created": job.get("created"), "model": job["data"]["model"],
+            "branch": job["data"]["branch"], "rows_processed": 0,
+        })
+    _write_receipt(receipt_path, receipt)
 
 
 def _bound_job_id(entry):
@@ -1380,16 +1446,137 @@ def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=N
         _write_receipt(receipt_path, receipt)
 
 
-def _bulk_patch(client, endpoint, rows, receipt, receipt_path, purpose, batch_size=50):
+REST_PATCH_LIST_FIELDS = {"tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses"}
+
+
+def _patch_state(actual, desired, purpose):
+    """Return field matches after proving every nonmatching value is safe to replace."""
+    matches = []
+    for field, expected in desired.items():
+        if field == "id":
+            continue
+        if field in REST_PATCH_LIST_FIELDS:
+            observed = sorted(_nested_id(item) for item in (actual.get(field) or []))
+            if set(observed) - set(expected):
+                raise LoadError(
+                    f"{purpose} target {desired['id']} field {field} has concurrent values"
+                )
+        else:
+            observed = _nested_id(actual.get(field))
+            if observed not in (None, expected):
+                raise LoadError(
+                    f"{purpose} target {desired['id']} field {field} changed concurrently"
+                )
+        matches.append(observed == expected)
+    return matches
+
+
+def _rest_payload(rows):
+    return json.dumps(rows, separators=(",", ":"), sort_keys=True).encode()
+
+
+def _send_rest_patch(client, endpoint, entry, receipt, receipt_path):
+    attempt = {"started_at": _now()}
+    entry.setdefault("attempts", []).append(attempt)
+    _write_receipt(receipt_path, receipt)
+    started = time.monotonic()
+    try:
+        status, _ = client.request(
+            endpoint, method="PATCH", body=_rest_payload(entry["payload"]),
+            headers={"Content-Type": "application/json"})
+    except WriteRejected as exc:
+        attempt.update(
+            completed_at=_now(), result="rejected",
+            wall_seconds=round(time.monotonic() - started, 6), error=str(exc))
+        entry.update(status="rejected", rejected_at=attempt["completed_at"])
+        _write_receipt(receipt_path, receipt)
+        raise
+    except BaseException as exc:
+        attempt.update(
+            completed_at=_now(), result="no-terminal-response",
+            wall_seconds=round(time.monotonic() - started, 6),
+            error=str(exc) if isinstance(exc, Exception) else type(exc).__name__)
+        _write_receipt(receipt_path, receipt)
+        raise
+    attempt.update(completed_at=_now(), result="accepted", http_status=status,
+                   wall_seconds=round(time.monotonic() - started, 6))
+    entry.update(status="completed", http_status=status, completed_at=attempt["completed_at"],
+                 wall_seconds=round(sum(item["wall_seconds"] for item in entry["attempts"]), 6))
+    _write_receipt(receipt_path, receipt)
+
+
+def _reconcile_rest_patches(client, endpoint, current, receipt, receipt_path, purpose,
+                            expected=None):
+    """Resolve durable PATCH intents before compiling any new completion work."""
+    expected = expected or {}
+    for entry in receipt["rest_batches"]:
+        if entry.get("purpose") != purpose:
+            continue
+        if not entry.get("payload"):
+            raise LoadError(
+                f"{purpose} has a legacy REST checkpoint without its payload; use a fresh branch"
+            )
+        payload = entry["payload"]
+        encoded = _rest_payload(payload)
+        target_ids = [row.get("id") for row in payload]
+        valid = (
+            entry.get("endpoint") == endpoint
+            and entry.get("target_ids") == target_ids
+            and entry.get("payload_sha256") == hashlib.sha256(encoded).hexdigest()
+            and len(target_ids) == len(set(target_ids))
+            and all(type(target_id) is int and target_id in current for target_id in target_ids)
+            and entry.get("rows") == len(payload)
+            and entry.get("status") in {"submitting", "completed", "rejected"}
+        )
+        if not valid:
+            raise LoadError(f"{purpose} has an invalid REST write-ahead checkpoint; use a fresh branch")
+        for row in payload:
+            artifact_row = expected.get(row["id"])
+            if expected and artifact_row is None:
+                raise LoadError(
+                    f"{purpose} REST checkpoint is outside the bound artifact; use a fresh branch"
+                )
+            if artifact_row is not None and (set(row) - set(artifact_row)
+                    or any(artifact_row.get(field) != value for field, value in row.items())):
+                raise LoadError(
+                    f"{purpose} REST checkpoint differs from the bound artifact; use a fresh branch"
+                )
+        matches = [matched for row in payload
+                   for matched in _patch_state(current[row["id"]], row, purpose)]
+        if entry["status"] == "rejected":
+            raise LoadError(
+                f"{purpose} REST batch was rejected by the target; use a fresh branch"
+            )
+        if entry["status"] == "completed":
+            if not all(matches):
+                raise LoadError(
+                    f"{purpose} completed REST checkpoint no longer matches; use a fresh branch"
+                )
+            continue
+        if all(matches):
+            entry.update(status="completed", recovered=True, recovered_at=_now())
+            _write_receipt(receipt_path, receipt)
+            continue
+        state = "partially applied or changed concurrently" if any(matches) else "still unresolved"
+        raise LoadError(
+            f"{purpose} REST batch is {state} after a lost response; use a fresh branch"
+        )
+
+
+def _bulk_patch(client, endpoint, rows, receipt, receipt_path, purpose,
+                batch_size=REST_PATCH_ROWS):
     for offset in range(0, len(rows), batch_size):
         batch = rows[offset:offset + batch_size]
-        started = time.monotonic()
-        status, _ = client.request(endpoint, method="PATCH", body=json.dumps(batch).encode(),
-                                   headers={"Content-Type": "application/json"})
-        receipt["rest_batches"].append({"purpose": purpose, "offset": offset, "rows": len(batch),
-                                         "http_status": status,
-                                         "wall_seconds": round(time.monotonic() - started, 6)})
+        payload = _rest_payload(batch)
+        entry = {
+            "purpose": purpose, "endpoint": endpoint, "offset": offset, "rows": len(batch),
+            "target_ids": [row["id"] for row in batch], "payload": batch,
+            "payload_sha256": hashlib.sha256(payload).hexdigest(), "status": "submitting",
+            "intent_recorded_at": _now(), "attempts": [],
+        }
+        receipt["rest_batches"].append(entry)
         _write_receipt(receipt_path, receipt)
+        _send_rest_patch(client, endpoint, entry, receipt, receipt_path)
 
 
 def _trace_contains_cable(value, cable_id, label):
@@ -1446,7 +1633,8 @@ def _verify_component_caches(client, objects, ids):
 
     failures = []
     started = time.monotonic()
-    for (kind, placement), target_ids in sorted(expected.items()):
+    order = lambda item: (item[0][0], tuple(-1 if value is None else value for value in item[0][1]))
+    for (kind, placement), target_ids in sorted(expected.items(), key=order):
         parameters = [("brief", "1")]
         for field, value in zip(("site_id", "location_id", "rack_id"), placement):
             parameters.append((field, "null" if value is None else str(value)))
@@ -1474,42 +1662,47 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
                for kind in sorted({obj["kind"] for obj in plan["objects"]
                                    if obj["kind"] in SPECS and (set(obj["refs"]) & DEFERRED)})}
     for kind, rows in current.items():
+        purpose = f"complete:{kind}"
+        expected = {}
+        for obj in plan["objects"]:
+            if obj["kind"] != kind:
+                continue
+            row = {"id": ids[obj["key"]]}
+            for field in ("primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address"):
+                if field in obj["refs"]:
+                    row[field] = ids[obj["refs"][field]]
+            for field in REST_PATCH_LIST_FIELDS:
+                if field in obj["refs"]:
+                    row[field] = sorted(ids[key] for key in obj["refs"][field])
+            if kind == "virtual_machine":
+                row["start_on_boot"] = obj["attrs"].get("start_on_boot", "off")
+            expected[row["id"]] = row
+        _reconcile_rest_patches(
+            client, SPECS[kind][1], rows, receipt, receipt_path, purpose, expected)
         patches = []
         for obj in plan["objects"]:
             if obj["kind"] != kind:
                 continue
-            existing, patch = rows[ids[obj["key"]]], {"id": ids[obj["key"]]}
-            for field in ("primary_ip4", "primary_ip6", "oob_ip"):
-                if field in obj["refs"]:
-                    desired = ids[obj["refs"][field]]
-                    actual = _nested_id(existing.get(field))
-                    if actual not in (None, desired):
-                        raise LoadError(f"{obj['key']}.{field} changed outside this receipt; use a fresh branch")
-                    if actual != desired:
-                        patch[field] = desired
-            if "primary_mac_address" in obj["refs"]:
-                desired = ids[obj["refs"]["primary_mac_address"]]
-                actual = _nested_id(existing.get("primary_mac_address"))
-                if actual not in (None, desired):
-                    raise LoadError(f"{obj['key']}.primary_mac_address changed outside this receipt; use a fresh branch")
-                if actual != desired:
-                    patch["primary_mac_address"] = desired
-            for field in ("tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses"):
-                if field not in obj["refs"]:
-                    continue
-                desired = sorted(ids[key] for key in obj["refs"][field])
-                actual = sorted(_nested_id(value) for value in existing.get(field, []))
-                if set(actual) - set(desired):
-                    raise LoadError(f"{obj['key']}.{field} has concurrent values; refusing to replace them")
-                if actual != desired:
-                    patch[field] = desired
-            if kind == "virtual_machine" and existing.get("start_on_boot") is None:
-                patch["start_on_boot"] = "off"
+            desired = expected[ids[obj["key"]]]
+            matches = _patch_state(rows[desired["id"]], desired, obj["key"])
+            patch = {"id": desired["id"]}
+            fields = [field for field in desired if field != "id"]
+            for field, matched in zip(fields, matches):
+                if not matched:
+                    patch[field] = desired[field]
             if len(patch) > 1:
                 patches.append(patch)
         if patches:
-            _bulk_patch(client, SPECS[kind][1], patches, receipt, receipt_path, f"complete:{kind}")
-    return sum(row["rows"] for row in receipt["rest_batches"])
+            _bulk_patch(client, SPECS[kind][1], patches, receipt, receipt_path, purpose)
+    completed = [row for row in receipt["rest_batches"] if row.get("status") == "completed"]
+    receipt["rest_rows_completed"] = sum(row["rows"] for row in completed)
+    receipt["rest_rows_recovered"] = sum(row["rows"] for row in completed if row.get("recovered"))
+    receipt["rest_rows_write_intents"] = sum(
+        row["rows"] * len(row.get("attempts", [])) for row in receipt["rest_batches"])
+    # Backward-compatible name retained for existing receipt consumers.
+    receipt["rest_rows_attempted"] = receipt["rest_rows_write_intents"]
+    _write_receipt(receipt_path, receipt)
+    return receipt["rest_rows_completed"]
 
 
 def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
@@ -1620,12 +1813,14 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                     _record_terminal(entry, job)
                 finally:
                     _write_receipt(receipt_path, receipt)
+            current_ids = _numeric_ids(existing["ids"])
+            if receipt is not None:
+                _complete_rest(client, plan, objects, current_ids, receipt, receipt_path)
             if receipt is not None and any(
                     not job.get("purpose", "").startswith("finalize:")
                     for job in receipt.get("jobs", [])):
                 _run_finalizers(client, branch, objects, receipt, receipt_path, timeout,
                                 delivery["request_settings"])
-            current_ids = _numeric_ids(existing["ids"])
             checkpoint_ids = _numeric_ids(receipt.get("resolved_ids", {})) if receipt else {}
             changed_ids = sorted(key for key, value in checkpoint_ids.items()
                                  if current_ids.get(key) != value)
@@ -1766,7 +1961,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                 receipt["resolved_ids"] = ids
                 _write_receipt(receipt_path, receipt)
 
-        receipt["rest_rows_attempted"] = _complete_rest(client, plan, objects, ids, receipt, receipt_path)
+        _complete_rest(client, plan, objects, ids, receipt, receipt_path)
         _run_finalizers(client, branch, objects, receipt, receipt_path, timeout,
                         delivery["request_settings"])
         readback_started = time.monotonic()
