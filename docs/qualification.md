@@ -432,6 +432,45 @@ The final verification invocation took 277.451 seconds, including 34.647 seconds
 for cable traces and 151.328 seconds for component placement queries. These
 timings qualify correctness and recovery, not clean-run throughput.
 
+## Cloud worker-death investigation and loader hardening
+
+Between September 12 and 17, 2026, seven TurboBulk jobs on the Cloud tenant were
+killed mid-job and left permanently `running`: the worker container died (memory
+ceiling; the web tier and worker share one 2000 MiB container), NetBox writes a
+job row's terminal status only from inside the killed process, and the hourly
+orphaned-job reaper never ran because a stale system-job row blocks
+re-registration after Redis loses its schedule entries
+([netbox#22714](https://github.com/netbox-community/netbox/issues/22714)).
+Each stranded job also blocked deleting its branch. Pod-heartbeat gaps, RQ
+registry state, and replacement-worker births pinned the diagnosis; the byte-identical
+batch that stranded one run completed in 1.5 seconds on a fresh branch, ruling
+out the data. The September 17 attempts are preserved in
+`build/load-receipts/scale-v2-Genial-Scale-128932-rows-1000-5aa0974c1b27.json`
+(42 verified jobs, stranded at `phase-5:ip_address`) and
+`build/load-receipts/scale-v2-Genial-Scale-128932-probe-2-cfcf46ddf3a9.json`
+(161 verified jobs, stranded at `phase-7:power_outlet`). The upstream record is
+Linear TRB-23; TurboBulk 0.4.0 ships a scheduler-independent opportunistic reap
+at job start that marks such rows errored, verified against this failure
+sequence on a local replica before release.
+
+The loader was hardened in response. Polling now consults the target's core
+background-tasks record after 60 seconds and stops with a worker-death diagnosis
+when RQ reports the job failed while its row is nonterminal (66 seconds observed
+versus the 900-second bound). On resume, a reaper-errored data job is arbitrated
+from the branch's exact per-model create-ChangeDiff counts and either adopted
+read-only as a verified checkpoint or superseded and resubmitted; the final exact
+count gate audits every adoption. Both were certified live on a disposable local
+NetBox 4.6.8 + Branching 1.1.2 + TurboBulk 0.4.0 stack
+(`build/turbobulk-repro/`): a clean full 8,432-object load passed with strict
+readback (`build/load-receipts/bank-v2-Local-Clean-Cert-1555404d720b.json`), and
+a run killed mid-job resumed on the same branch, arbitrated the dead job as
+rolled back, resubmitted, and completed with exact ChangeDiff verification
+(`build/load-receipts/bank-v2-Local-Oracle-Cert-a91789fa3495.json`). This local
+harness develops loader behavior only; it does not qualify Cloud. The 128,932-object
+Cloud qualification remains blocked until the tenant runs TurboBulk 0.4.0, after
+which the stranded jobs self-heal on the first submission, the blocked branches
+become resettable, and the campaign can restart.
+
 The validator checks reference closure, hardware inventory, rack occupancy,
 port occupancy and media/speed compatibility, passive cable paths, redundant
 attachments, addressing, VLAN continuity to access uplinks and gateway SVIs,
