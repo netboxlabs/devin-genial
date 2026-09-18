@@ -84,7 +84,7 @@ checkpoint and is never duplicated.
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings.
 
-REST completion uses ten-row synchronous PATCH batches on the qualified NetBox 4.6
+REST completion uses 100-row synchronous PATCH batches (NetBox's bulk PATCH is a single atomic transaction with no row cap) on the qualified NetBox 4.6
 Cloud target. Before each request, the receipt stores its endpoint, target IDs, exact
 payload, hash, and an attempt record. After a lost response, a resume reads the target
 before doing more work. An exact match marks the existing batch recovered without
@@ -108,6 +108,13 @@ on every emitted component REST endpoint. Strict readback groups expected IDs by
 component kind and placement and makes one query per group, including `null`
 location and rack values. This proves the caches without another mutation, so
 reviewable ChangeDiff counts remain exactly one create per canonical object.
+
+## Verify without loading
+
+`just verify-target ARTIFACT TARGET [BRANCH]` runs the loader's final strict
+gate — inventory comparison, cable traces, component placements — with zero
+writes, against main or one branch. See the [seeding guide](seeding.md) for
+restore-based seeding and its acceptance evidence.
 
 ## Reset a disposable branch
 

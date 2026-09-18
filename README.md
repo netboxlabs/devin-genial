@@ -178,6 +178,7 @@ one-command Cloud run, followed by an estate above 50,000 objects; see the
 | Understand the rules and connected detail | [Modeling](docs/modeling.md) |
 | Run a change or defect demonstration | [Scenarios](docs/scenarios.md) |
 | Choose Diode, TurboBulk or REST | [Transport model](docs/transports.md) · [Loading](docs/loading.md) |
+| Seed environments and verify without loading | [Seeding](docs/seeding.md) |
 | Check scale, compatibility and historical evidence | [Qualification](docs/qualification.md) · [Community comparison](COMPARISON.md) |
 | Extend the generator | [Development](CLAUDE.md) · [Graph contract](CONTRACT.md) · [Hardware catalog](catalog/README.md) |
 | See remaining gaps or prior acceptance criteria | [Coverage](COVERAGE.md) · [Completed goal](GOAL.md) |

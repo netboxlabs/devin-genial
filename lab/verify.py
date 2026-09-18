@@ -14,6 +14,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
+import concurrent.futures
 import http.client
 import json
 import os
@@ -451,8 +452,15 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def fetch_inventory(url, token, kinds, branch=None):
-    """Fetch full paginated inventories; never follow credential-bearing redirects."""
+def fetch_inventory(url, token, kinds, branch=None, fields_by_kind=None, workers=1):
+    """Fetch full paginated inventories; never follow credential-bearing redirects.
+
+    fields_by_kind optionally narrows each kind's records with NetBox's
+    ``?fields=`` projection; verification fails closed on a missing field, so a
+    too-narrow projection surfaces as missing_api_field rather than silence.
+    Kinds are independent read streams, so ``workers`` > 1 fetches them
+    concurrently; pages within a kind stay sequential.
+    """
     parsed = urllib.parse.urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError("NetBox URL must be an HTTP(S) base URL without credentials, query, or fragment")
@@ -460,12 +468,15 @@ def fetch_inventory(url, token, kinds, branch=None):
         raise ValueError("NetBox token is empty or contains whitespace")
     base = url.rstrip("/") + "/api/"
     origin = parsed.scheme, parsed.netloc
-    opener = urllib.request.build_opener(_NoRedirect())
     inventory = {}
-    for kind in sorted(set(kinds)):
-        if kind not in ENDPOINTS:
-            continue  # verify_plan reports unsupported kinds explicitly.
-        next_url = base + ENDPOINTS[kind] + "/?limit=1000&ordering=id"
+
+    def fetch_kind(kind):
+        opener = urllib.request.build_opener(_NoRedirect())
+        query = "/?limit=1000&ordering=id"
+        projection = (fields_by_kind or {}).get(kind)
+        if projection:
+            query += "&fields=" + urllib.parse.quote(",".join(sorted(projection)))
+        next_url = base + ENDPOINTS[kind] + query
         seen, records, count = set(), [], None
         while next_url:
             target = urllib.parse.urlsplit(next_url)
@@ -493,7 +504,16 @@ def fetch_inventory(url, token, kinds, branch=None):
             next_url = urllib.parse.urljoin(next_url, page["next"]) if page.get("next") else None
         if count != len(records):
             raise ValueError(f"{kind}: pagination count disagrees with returned records")
-        inventory[kind] = records
+        return records
+
+    wanted = sorted(kind for kind in set(kinds) if kind in ENDPOINTS)
+    if workers > 1 and len(wanted) > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            for kind, records in zip(wanted, pool.map(fetch_kind, wanted)):
+                inventory[kind] = records
+    else:
+        for kind in wanted:
+            inventory[kind] = fetch_kind(kind)
     return inventory
 
 

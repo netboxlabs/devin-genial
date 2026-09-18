@@ -563,12 +563,30 @@ def main(argv=None):
     parser.add_argument("--turbobulk-job-rows", type=int, default=DEFAULT_JOB_ROWS,
                         help=f"maximum rows per TurboBulk job (default: {DEFAULT_JOB_ROWS})")
     parser.add_argument("--explain", action="store_true", help="inspect and explain without writing")
+    parser.add_argument("--verify-only", action="store_true",
+                        help="strictly verify the target against the artifact with zero writes")
     args = parser.parse_args(argv)
+    if not 1 <= args.turbobulk_job_rows <= 10_000:
+        parser.error("--turbobulk-job-rows must be between 1 and 10000: TurboBulk's JSONL "
+                     "reader fixes the column set from the first 10000 rows, so a sparse "
+                     "payload spanning chunks can silently drop columns")
     token = os.environ.get("NETBOX_TOKEN")
     if not args.target or not token:
         parser.error("target/NETBOX_URL and NETBOX_TOKEN are required")
     receipt = args.receipt
     try:
+        if args.verify_only:
+            from .turbobulk import verify_target
+            if receipt is None:
+                receipt = default_receipt(args.artifact, args.target, args.branch or "main",
+                                          args.delivery_policy)
+                receipt = receipt.with_name("verify-" + receipt.name)
+            result = verify_target(args.artifact, url=args.target, token=token,
+                                   branch=args.branch or None, receipt_path=receipt)
+            print(json.dumps({"success": result["success"], "result": result["result"],
+                              "mismatches": result["verification"].get("mismatch_count"),
+                              "receipt": str(receipt)}, sort_keys=True))
+            return 0 if result["success"] else 2
         receipt = receipt or default_receipt(args.artifact, args.target, args.branch,
                                              args.delivery_policy)
         if not args.explain:

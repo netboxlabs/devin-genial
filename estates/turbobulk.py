@@ -66,7 +66,7 @@ class WorkerDied(JobTimeout):
 RECEIPT_VERSION = 3
 COMPILER_VERSION = "v02-turbobulk-12"
 DEFAULT_JOB_ROWS = 2_000
-REST_PATCH_ROWS = 10
+REST_PATCH_ROWS = 100
 READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
     "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
@@ -832,13 +832,29 @@ def _multipart(fields, filename, payload):
     return boundary, b"".join(chunks)
 
 
+def _bounded_readback(verification):
+    """Persist the preflight readback with a bounded mismatch sample.
+
+    On a fresh branch every artifact object is an expected mismatch; the full
+    list is tens of MB and gets rewritten with every receipt checkpoint. The
+    count plus a sample is the evidence; the live target remains the source
+    for anything deeper (matches the failures[:20] convention elsewhere).
+    """
+    mismatches = verification.get("mismatches")
+    if not isinstance(mismatches, list) or len(mismatches) <= 20:
+        return verification
+    return {**verification, "mismatches": mismatches[:20],
+            "mismatches_omitted": len(mismatches) - 20}
+
+
 def _write_receipt(path, receipt):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}-", dir=path.parent)
     try:
         with os.fdopen(fd, "w") as handle:
-            json.dump(receipt, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+            # json.dumps-then-write is ~4x faster than streaming json.dump on
+            # multi-MB receipts, and this function runs after every job/batch.
+            handle.write(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
     finally:
@@ -868,7 +884,7 @@ def _rq_job_state(client, job_id):
 def _poll(client, job_id, timeout):
     deadline = time.monotonic() + timeout
     started = time.monotonic()
-    interval = 0.5
+    interval = 0.15
     dead_observations = 0
     while True:
         _, job = client.request(f"/api/plugins/turbobulk/jobs/{job_id}/", branch=False)
@@ -1706,7 +1722,8 @@ def _bulk_patch(client, endpoint, rows, receipt, receipt_path, purpose,
             "intent_recorded_at": _now(), "attempts": [],
         }
         receipt["rest_batches"].append(entry)
-        _write_receipt(receipt_path, receipt)
+        # _send_rest_patch durably writes the receipt (entry + attempt) before
+        # the PATCH; a second pre-PATCH write here adds cost, not safety.
         _send_rest_patch(client, endpoint, entry, receipt, receipt_path)
 
 
@@ -1718,6 +1735,40 @@ def _trace_contains_cable(value, cable_id, label):
     if isinstance(value, list):
         return any(_trace_contains_cable(item, cable_id, label) for item in value)
     return False
+
+
+def _readback_fields(plan):
+    """Per-kind ``?fields=`` projections derived from the plan's own emissions.
+
+    verify_plan compares exactly the plan's attr/ref keys against each REST row
+    (plus identity/matching fields and two documented special mappings), and it
+    fails closed on any missing field — so a projection can only surface as a
+    loud missing_api_field, never silent under-verification. Projections cut
+    payloads, serializer prefetches, and per-row computed fields (for example
+    interface connected_endpoints resolves a CablePath per row).
+    """
+    from lab.verify import IDENTITIES
+
+    base = {"id", "url", "display", "name", "label", "slug", "description", "asset_tag"}
+    specials = {"front_port": {"rear_ports", "positions", "rear_port", "rear_port_position"},
+                "service": {"port_mappings"},
+                "cable": {"a_terminations", "b_terminations"}}
+    # Projection is limited to kinds whose serializers hold no composed/generic
+    # fields that NetBox cannot project (e.g. circuit_termination.termination):
+    # interface dominates readback cost (its serializer resolves a CablePath per
+    # row for connected_endpoints), and its fields are all plain.
+    projectable = {"interface"}
+    fields = {}
+    for obj in plan["objects"]:
+        kind = obj["kind"]
+        if kind not in projectable:
+            continue
+        if kind not in fields:
+            identity = set(IDENTITIES.get(kind, ()))
+            fields[kind] = set(base) | specials.get(kind, set()) | identity
+        fields[kind].update(obj["attrs"])
+        fields[kind].update(obj["refs"])
+    return fields
 
 
 def _verify_paths(client, plan, objects, ids, workers=8):
@@ -1836,6 +1887,47 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
     return receipt["rest_rows_completed"]
 
 
+def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
+    """Read-only strict verification of a target against a frozen plan.
+
+    Runs the same inventory readback, attribute/reference comparison, cable
+    traces and component-placement checks as a load's final gate, with zero
+    writes. Works against main (no branch) or one ready branch — the
+    acceptance check for any seeding path that bypasses the loader, such as a
+    database-restore-seeded instance. Records what was checked in a
+    verification receipt when a path is given.
+    """
+    started = time.monotonic()
+    plan_path, raw, plan, objects, _offline = _artifact(plan_path)
+    client = Client(url, token)
+    _, status = client.request("/api/status/", branch=False)
+    branch_row = _branch(client, branch) if branch else None
+    inventory = fetch_inventory(client.base, client.token,
+                                (obj["kind"] for obj in plan["objects"]),
+                                client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
+    verification = verify_plan(plan, inventory, strict_inventory=True)
+    result = {"verified_at": _now(), "result": "verify-only", "artifact": str(plan_path),
+              "plan_sha256": hashlib.sha256(raw).hexdigest(), "canonical_sha256": digest(plan),
+              "target": client.base, "branch": branch,
+              "branch_id": branch_row["schema_id"] if branch_row else None,
+              "netbox": status.get("netbox-version"),
+              "verification": _bounded_readback(verification)}
+    success = verification["success"]
+    if success:
+        # verify_plan's id map holds {"id": N, ...} rows; downstream checks
+        # expect the loader's plain-int shape.
+        ids = {key: value["id"] if isinstance(value, dict) else value
+               for key, value in verification["ids"].items()}
+        result["computed_paths"] = _verify_paths(client, plan, objects, ids)
+        result["component_caches"] = _verify_component_caches(client, objects, ids)
+        success = (not result["computed_paths"]["failures"]
+                   and not result["component_caches"]["failures"])
+    result.update(success=success, wall_seconds=round(time.monotonic() - started, 6))
+    if receipt_path is not None:
+        _write_receipt(Path(receipt_path), result)
+    return result
+
+
 def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
          delivery_policy="reviewable", max_job_rows=DEFAULT_JOB_ROWS):
     """Load one frozen artifact into a branch and strictly read it back."""
@@ -1926,7 +2018,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
 
     # A complete matching target is the strongest idempotency signal and needs no writes.
     readback_started = time.monotonic()
-    inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]), client.branch_id)
+    inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]),
+                                client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
     existing = verify_plan(plan, inventory, strict_inventory=True)
     preflight_readback_seconds = round(time.monotonic() - readback_started, 6)
     if existing["success"]:
@@ -2002,7 +2095,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
             receipt = {**binding, "started_at": started_at, "completed_at": observation["observed_at"],
                        "wall_seconds": observation["wall_seconds"], "success": True,
                        "result": "already-matched", "target_status": status, "offline_checks": offline,
-                       "preflight": {"strict_existing_readback": existing,
+                       "preflight": {"strict_existing_readback": _bounded_readback(existing),
                                      "readback_seconds": preflight_readback_seconds},
                        "computed_paths": paths, "component_caches": component_caches,
                        "jobs": [], "rest_batches": [],
@@ -2052,7 +2145,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                    "rest_creates": [],
                    "review_history_preflight": history_preflight,
                    "attempts": [{"started_at": started_at, "success": False}]}
-    receipt["preflight"] = {"strict_existing_readback": existing,
+    receipt["preflight"] = {"strict_existing_readback": _bounded_readback(existing),
                             "readback_seconds": preflight_readback_seconds,
                             "branch": {key: branch_row.get(key) for key in ("id", "name", "schema_id", "status")}}
     _write_receipt(receipt_path, receipt)
@@ -2096,7 +2189,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         _run_finalizers(client, branch, objects, receipt, receipt_path, timeout,
                         delivery["request_settings"])
         readback_started = time.monotonic()
-        inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]), client.branch_id)
+        inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]),
+                                client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
         verification = verify_plan(plan, inventory, strict_inventory=True)
         receipt["verification"] = verification
         receipt["readback_seconds"] = round(time.monotonic() - readback_started, 6)

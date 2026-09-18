@@ -15,6 +15,7 @@ from estates.model import canonical, digest
 from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, RECEIPT_VERSION, Client,
                                JobTimeout, LoadError, WorkerDied,
                                _arbitrate_worker_death, _resolve_worker_death,
+                               _bounded_readback, _readback_fields,
                                _adopt_finalizer_job, _artifact, _batch_request_settings,
                                _complete_rest, _job_result,
                                _component_cache_ids, _component_filter_preflight,
@@ -873,6 +874,28 @@ class TurboBulkLoaderTests(unittest.TestCase):
             _poll(Target(), "job-1", 0)
         self.assertIs(caught.exception.job, running)
         self.assertIn("resume only after it progresses", str(caught.exception))
+
+    def test_readback_projection_covers_only_plain_kinds_and_all_compared_fields(self):
+        plan = {"objects": [
+            {"kind": "interface", "attrs": {"name": "e0", "type": "1000base-t"},
+             "refs": {"device": "d", "untagged_vlan": "v"}},
+            {"kind": "circuit_termination", "attrs": {"term_side": "A"}, "refs": {"termination": "s"}},
+        ]}
+        fields = _readback_fields(plan)
+        self.assertEqual(set(fields), {"interface"})  # composed-field kinds are never projected
+        projection = fields["interface"]
+        # everything verify_plan will compare must be requested: identity, attrs, refs
+        for required in ("id", "name", "device", "type", "untagged_vlan"):
+            self.assertIn(required, projection)
+
+    def test_bounded_readback_keeps_count_and_sample(self):
+        verification = {"mismatch_count": 100, "mismatches": [{"n": i} for i in range(100)], "success": False}
+        bounded = _bounded_readback(verification)
+        self.assertEqual(len(bounded["mismatches"]), 20)
+        self.assertEqual(bounded["mismatches_omitted"], 80)
+        self.assertEqual(bounded["mismatch_count"], 100)
+        small = {"mismatch_count": 3, "mismatches": [{}, {}, {}]}
+        self.assertIs(_bounded_readback(small), small)
 
     def test_orphaned_committed_job_is_adopted_from_exact_diff_counts(self):
         receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},

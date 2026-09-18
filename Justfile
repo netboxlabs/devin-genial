@@ -34,6 +34,10 @@ load artifact target branch='' turbobulk_job_rows='2000':
 load-disposable artifact target branch turbobulk_job_rows='2000':
     @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
 
+# Strictly verify a target against an artifact with zero writes (any seeding path)
+verify-target artifact target branch='':
+    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --verify-only
+
 # Explain the transport choice and compatibility blockers without writing
 load-explain artifact target branch='':
     @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --explain

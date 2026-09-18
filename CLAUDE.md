@@ -112,6 +112,7 @@ for the separately recorded pinned-target live qualification.
 - [docs/modeling.md](docs/modeling.md): construction rules and connected detail.
 - [docs/scenarios.md](docs/scenarios.md): change/defect walkthroughs and boundaries.
 - [docs/loading.md](docs/loading.md): artifacts and Diode handoff.
+- [docs/seeding.md](docs/seeding.md): zero-write target verification and restore-based seeding.
 - [docs/qualification.md](docs/qualification.md): scale, limits and preserved history.
 - [CONTRACT.md](CONTRACT.md): canonical graph, ledgers, units and module interfaces.
 - [COVERAGE.md](COVERAGE.md): hospital/provider omissions and ranked next work;
