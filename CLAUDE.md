@@ -91,6 +91,10 @@ Write each bounded REST completion payload to the receipt before PATCH. Recover 
 lost response only from exact target readback; never resend an unresolved mutation.
 A lost zero-row finalizer response may adopt one exact core-job match inside its
 recorded request window, but an unbound data-bearing job always requires a fresh branch.
+A data job the orphaned-job reaper marked errored after worker death is arbitrated
+on resume from exact per-model create-ChangeDiff counts: adopt when its transaction
+provably committed, supersede and submit fresh rows when it provably rolled back,
+and require a fresh branch for anything unexplained.
 `just reset TARGET BRANCH` replaces only an exact disposable Branching branch and
 archives its bound private load receipts.
 Keep transport orchestration behind that recipe rather than adding an installed CLI.

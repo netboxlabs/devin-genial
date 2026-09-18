@@ -33,7 +33,21 @@ finish without it), and an absent or erroring oracle endpoint leaves the origina
 timeout behavior unchanged. Rows from such a job may have committed; the recorded
 guidance is the same as a timeout: never resubmit, use a new branch and receipt, or
 resume only after the row reaches a terminal state (for example once TurboBulk
-0.4.0's opportunistic reaper marks it errored). Write requests are never retried after an ambiguous
+0.4.0's opportunistic reaper marks it errored).
+
+Once the reaper has marked such a job's row errored (its error begins with the
+reaper's "Job orphaned" message), a resume arbitrates the dead job from exact
+branch evidence instead of abandoning the branch. Reviewable inserts create one
+create-ChangeDiff per row in the same transaction as the rows, and no other
+writer touches these models on the branch, so the model's create-diff count
+equals the rows of previously verified entries plus this job's rows exactly when
+its transaction committed before the kill. A committed job is adopted read-only
+as a verified checkpoint (the final exact total and per-model count gate still
+applies); a rolled-back job is marked superseded in the receipt and its rows are
+submitted as a fresh job — a new mutation, never a resend of the dead one. Any
+other count is unexplained state and still requires a fresh branch, as does an
+orphaned job on a receipt without the reviewable history preflight. Orphaned
+zero-row finalizers follow the existing retry-once rule. Write requests are never retried after an ambiguous
 transport failure; their recorded intent must be inspected or resumed instead.
 
 The default `just load` policy retains the TurboBulk changelogs and branch diffs

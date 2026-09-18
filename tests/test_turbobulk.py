@@ -14,6 +14,7 @@ from unittest.mock import ANY, Mock, patch
 from estates.model import canonical, digest
 from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, RECEIPT_VERSION, Client,
                                JobTimeout, LoadError, WorkerDied,
+                               _arbitrate_worker_death, _resolve_worker_death,
                                _adopt_finalizer_job, _artifact, _batch_request_settings,
                                _complete_rest, _job_result,
                                _component_cache_ids, _component_filter_preflight,
@@ -872,6 +873,95 @@ class TurboBulkLoaderTests(unittest.TestCase):
             _poll(Target(), "job-1", 0)
         self.assertIs(caught.exception.job, running)
         self.assertIn("resume only after it progresses", str(caught.exception))
+
+    def test_orphaned_committed_job_is_adopted_from_exact_diff_counts(self):
+        receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},
+                   "jobs": []}
+        done = {"purpose": "phase-2:site:batch-1-of-2", "model": "dcim.site", "mode": "insert",
+                "rows_expected": 100, "request_verified": True}
+        orphan = {"purpose": "phase-2:site:batch-2-of-2", "model": "dcim.site", "mode": "insert",
+                  "rows_expected": 40, "job_id": "dead-1"}
+        receipt["jobs"] = [done, orphan]
+        job = {"status": "errored", "error": "Job orphaned: the worker terminated before finalizing it",
+               "data": {"rows_inserted": 40}}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                assert "branch_id=5" in path and "object_type_id=31" in path and "action=create" in path
+                return 200, {"count": 140}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            adopted = _resolve_worker_death(Target(), orphan, receipt,
+                                            Path(tmp) / "r.json", job)
+        self.assertTrue(adopted)
+        self.assertTrue(orphan["request_verified"])
+        self.assertEqual(orphan["adopted_after_worker_death"]["observed_create_diffs"], 140)
+        self.assertEqual(orphan["adopted_after_worker_death"]["verified_rows_before"], 100)
+
+    def test_orphaned_rolled_back_job_is_superseded_for_resubmission(self):
+        receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},
+                   "jobs": []}
+        orphan = {"purpose": "phase-2:site:batch-1-of-1", "model": "dcim.site", "mode": "insert",
+                  "rows_expected": 40, "job_id": "dead-1"}
+        receipt["jobs"] = [orphan]
+        job = {"status": "errored", "error": "Job orphaned: worker terminated", "data": {}}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                return 200, {"count": 0}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            adopted = _resolve_worker_death(Target(), orphan, receipt,
+                                            Path(tmp) / "r.json", job)
+        self.assertFalse(adopted)
+        self.assertNotIn("request_verified", orphan)
+        self.assertEqual(orphan["superseded"]["reason"], "worker death before commit")
+
+    def test_orphaned_job_with_unexplained_diff_count_requires_fresh_branch(self):
+        receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},
+                   "jobs": []}
+        orphan = {"purpose": "p", "model": "dcim.site", "mode": "insert",
+                  "rows_expected": 40, "job_id": "dead-1"}
+        receipt["jobs"] = [orphan]
+
+        class Target:
+            def request(self, path, **_kwargs):
+                return 200, {"count": 17}
+
+        with self.assertRaises(LoadError) as caught:
+            _arbitrate_worker_death(Target(), receipt, orphan)
+        self.assertIn("unexplained branch state", str(caught.exception))
+        self.assertIn("new branch", str(caught.exception))
+
+    def test_orphaned_job_without_history_preflight_requires_fresh_branch(self):
+        receipt = {"jobs": []}
+        orphan = {"purpose": "p", "model": "dcim.site", "mode": "insert",
+                  "rows_expected": 40, "job_id": "dead-1"}
+        receipt["jobs"] = [orphan]
+        with self.assertRaises(LoadError) as caught:
+            _arbitrate_worker_death(object(), receipt, orphan)
+        self.assertIn("lacks the reviewable history preflight", str(caught.exception))
+
+    def test_superseded_entries_are_ignored_and_adopted_rows_count_as_verified(self):
+        # arbitration must count adopted entries and skip superseded ones
+        receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},
+                   "jobs": []}
+        superseded = {"purpose": "b1", "model": "dcim.site", "mode": "insert",
+                      "rows_expected": 40, "superseded": {"reason": "worker death before commit"}}
+        adopted = {"purpose": "b1", "model": "dcim.site", "mode": "insert",
+                   "rows_expected": 40, "request_verified": True,
+                   "adopted_after_worker_death": {}}
+        orphan = {"purpose": "b2", "model": "dcim.site", "mode": "insert",
+                  "rows_expected": 10, "job_id": "dead-2"}
+        receipt["jobs"] = [superseded, adopted, orphan]
+
+        class Target:
+            def request(self, path, **_kwargs):
+                return 200, {"count": 50}
+
+        verdict, evidence = _arbitrate_worker_death(Target(), receipt, orphan)
+        self.assertEqual(verdict, "committed")
+        self.assertEqual(evidence["verified_rows_before"], 40)
 
     def test_poll_stops_early_when_rq_confirms_the_worker_died(self):
         running = {"job_id": "job-1", "status": "running", "data": {"rows_processed": 100}}

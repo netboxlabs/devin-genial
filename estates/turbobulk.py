@@ -973,6 +973,73 @@ def _expected_change_diff_counts(objects):
     return +expected
 
 
+WORKER_DEATH_SIGNATURE = "Job orphaned:"
+
+
+def _is_worker_death_row(job):
+    """True for a terminal row the orphaned-job reaper marked errored after worker death."""
+    return (job.get("status") == "errored"
+            and WORKER_DEATH_SIGNATURE in (job.get("error") or ""))
+
+
+def _arbitrate_worker_death(client, receipt, entry):
+    """Decide from exact branch evidence whether an orphaned insert committed.
+
+    Reviewable inserts create exactly one create-ChangeDiff per row inside the
+    same transaction as the rows, and no other writer touches these models on
+    the branch (REST creation is limited to module_bay_type, never a TurboBulk
+    job model; REST completion PATCHes do not change a diff's create action).
+    The model's create-diff count therefore equals the rows of previously
+    verified entries, plus this entry's rows exactly when its transaction
+    committed before the worker died. Anything else is unexplained state.
+    """
+    preflight = receipt.get("review_history_preflight") or {}
+    object_types = preflight.get("object_types") or {}
+    model = entry["model"]
+    if "branch_id" not in preflight or model not in object_types:
+        raise LoadError(
+            f"cannot arbitrate the orphaned job for {model}: the receipt lacks the "
+            "reviewable history preflight for it; use a new branch and receipt"
+        )
+    verified_rows = sum(
+        job["rows_expected"] for job in receipt["jobs"]
+        if job is not entry and job.get("model") == model and job.get("mode") == "insert"
+        and job.get("request_verified") is True and not job.get("superseded"))
+    observed = _change_diff_count(client, preflight["branch_id"],
+                                  object_type_id=object_types[model], action="create")
+    evidence = {"model": model, "observed_create_diffs": observed,
+                "verified_rows_before": verified_rows,
+                "rows_expected": entry["rows_expected"], "read_at": _now()}
+    if observed == verified_rows + entry["rows_expected"]:
+        return "committed", evidence
+    if observed == verified_rows:
+        return "rolled-back", evidence
+    raise LoadError(
+        f"orphaned job for {model} left unexplained branch state: {observed} create "
+        f"ChangeDiffs with {verified_rows} verified rows and {entry['rows_expected']} "
+        "in question; use a new branch and receipt"
+    )
+
+
+def _resolve_worker_death(client, prior, receipt, receipt_path, job):
+    """Adopt a committed orphaned insert or mark a rolled-back one superseded.
+
+    Returns True when adopted (the entry counts as verified) and False when the
+    caller must resubmit the batch as a fresh job. Read-only: recovery never
+    resends the dead job itself.
+    """
+    verdict, evidence = _arbitrate_worker_death(client, receipt, prior)
+    _record_observed(prior, job)
+    if verdict == "committed":
+        prior["adopted_after_worker_death"] = evidence
+        prior["request_verified"] = True
+        _write_receipt(receipt_path, receipt)
+        return True
+    prior["superseded"] = {"reason": "worker death before commit", **evidence}
+    _write_receipt(receipt_path, receipt)
+    return False
+
+
 def _review_history_preflight(client, branch_row, objects):
     count = _change_diff_count(client, branch_row["id"])
     if count:
@@ -1162,14 +1229,19 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
         settings = _batch_request_settings(base_settings)
-        prior = next((job for job in receipt["jobs"] if job["purpose"] == batch_purpose), None)
+        prior = next((job for job in receipt["jobs"]
+                      if job["purpose"] == batch_purpose and not job.get("superseded")), None)
         if prior:
             _require_job_settings(prior, settings)
             if prior.get("request_verified") is not True:
                 job = _poll(client, _bound_job_id(prior), timeout)
-                _record_terminal(prior, job)
-                _write_receipt(receipt_path, receipt)
-        elif not all(obj["key"] in ids for obj in batch):
+                if _is_worker_death_row(job):
+                    if not _resolve_worker_death(client, prior, receipt, receipt_path, job):
+                        prior = None
+                else:
+                    _record_terminal(prior, job)
+                    _write_receipt(receipt_path, receipt)
+        if prior is None and not all(obj["key"] in ids for obj in batch):
             pending = [obj for obj in batch if obj["key"] not in ids]
             rows = ([obj["attrs"] for obj in pending] if kind == "cable" else
                     [_render(obj, objects, ids, content_types, service_shape) for obj in pending])
@@ -1188,13 +1260,19 @@ def _load_termination_batches(client, branch_name, terminations, purpose, receip
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
         settings = _batch_request_settings(base_settings)
-        prior = next((job for job in receipt["jobs"] if job["purpose"] == batch_purpose), None)
+        prior = next((job for job in receipt["jobs"]
+                      if job["purpose"] == batch_purpose and not job.get("superseded")), None)
         if prior:
             _require_job_settings(prior, settings)
             if prior.get("request_verified") is not True:
                 job = _poll(client, _bound_job_id(prior), timeout)
-                _record_terminal(prior, job)
-                _write_receipt(receipt_path, receipt)
+                if _is_worker_death_row(job):
+                    if not _resolve_worker_death(client, prior, receipt, receipt_path, job):
+                        prior = None
+                else:
+                    _record_terminal(prior, job)
+                    _write_receipt(receipt_path, receipt)
+        if prior is not None:
             continue
         _submit(client, branch_name, "dcim.cabletermination", batch, batch_purpose, [],
                 receipt, receipt_path, timeout, request_settings=settings)
