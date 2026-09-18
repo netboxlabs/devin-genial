@@ -466,7 +466,16 @@ readback (`build/load-receipts/bank-v2-Local-Clean-Cert-1555404d720b.json`), and
 a run killed mid-job resumed on the same branch, arbitrated the dead job as
 rolled back, resubmitted, and completed with exact ChangeDiff verification
 (`build/load-receipts/bank-v2-Local-Oracle-Cert-a91789fa3495.json`). This local
-harness develops loader behavior only; it does not qualify Cloud. The 128,932-object
+harness develops loader behavior only; it does not qualify Cloud. On that
+harness the full 128,932-object reviewable load first completed in 47.6
+minutes with 28.8 seconds of summed server work; receipt-measured client fixes
+(single-serialization receipt writes, a bounded preflight mismatch sample,
+100-row REST batches, one pre-PATCH durability write, pooled readback with an
+interface field projection) brought the identical load to 13.5 minutes with
+identical verification: 128,932/128,932 objects, zero mismatches, exactly
+155,698 create ChangeDiffs, 13,383/13,383 cable traces, readback 223 to 76
+seconds, 1,242 to 126 REST batches. Receipts are the two
+`scale-v2-Local-Scale-*` files under `build/load-receipts/`. The 128,932-object
 Cloud qualification remains blocked until the tenant runs TurboBulk 0.4.0, after
 which the stranded jobs self-heal on the first submission, the blocked branches
 become resettable, and the campaign can restart.
