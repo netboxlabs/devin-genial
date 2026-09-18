@@ -45,6 +45,24 @@ class JobTimeout(LoadError):
         )
 
 
+class WorkerDied(JobTimeout):
+    """RQ confirms the job's worker died; the row can never finalize on its own."""
+
+    def __init__(self, job_id, job, rq_status, elapsed):
+        self.job_id = job_id
+        self.job = job
+        self.rq_status = rq_status
+        LoadError.__init__(
+            self,
+            f"TurboBulk job {job_id} was abandoned by a dead worker after {elapsed:.0f}s: "
+            f"RQ reports {rq_status!r} while the job row is still nonterminal, and only the "
+            "worker process that died could have finalized it. Receipt preserved. Rows may "
+            "have committed before the kill; never resubmit this job. Use a new branch and "
+            "receipt, or resume after the row reaches a terminal state (for example once the "
+            "orphaned-job reaper marks it errored)."
+        )
+
+
 RECEIPT_VERSION = 3
 COMPILER_VERSION = "v02-turbobulk-12"
 DEFAULT_JOB_ROWS = 2_000
@@ -828,13 +846,48 @@ def _write_receipt(path, receipt):
             os.unlink(temporary)
 
 
+RQ_DEAD_STATUSES = frozenset({"failed", "stopped", "canceled"})
+RQ_ORACLE_AFTER_SECONDS = 60.0
+
+
+def _rq_job_state(client, job_id):
+    """Best-effort read of RQ's view of a job; None when unavailable or ambiguous.
+
+    NetBox's core background-tasks endpoint returns the RQ job record while its
+    Redis hash exists and HTTP 500 mentioning NoSuchJobError once it is gone.
+    Any other failure (endpoint absent, transient error) is indeterminate.
+    """
+    try:
+        _, task = client.request(f"/api/core/background-tasks/{job_id}/", branch=False)
+    except LoadError as exc:
+        return "missing" if "NoSuchJobError" in str(exc) else None
+    status = task.get("status")
+    return status.lower() if isinstance(status, str) else None
+
+
 def _poll(client, job_id, timeout):
     deadline = time.monotonic() + timeout
+    started = time.monotonic()
     interval = 0.5
+    dead_observations = 0
     while True:
         _, job = client.request(f"/api/plugins/turbobulk/jobs/{job_id}/", branch=False)
         if job["status"] in {"completed", "failed", "errored", "cancelled"}:
             return job
+        if time.monotonic() - started >= RQ_ORACLE_AFTER_SECONDS:
+            # Only the worker process finalizes the job row, and RQ's own
+            # terminal-failed statuses are written exactly when that process
+            # died without returning (kill mid-job or abandoned sweep). Two
+            # consecutive observations guard against a misread. A missing RQ
+            # hash stays inconclusive at this age: a live horse can finish and
+            # write the row without its Redis record.
+            rq_status = _rq_job_state(client, job_id)
+            if rq_status in RQ_DEAD_STATUSES:
+                dead_observations += 1
+                if dead_observations >= 2:
+                    raise WorkerDied(job_id, job, rq_status, time.monotonic() - started)
+            else:
+                dead_observations = 0
         if time.monotonic() >= deadline:
             raise JobTimeout(job_id, job, timeout)
         time.sleep(min(interval, max(0, deadline - time.monotonic())))

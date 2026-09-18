@@ -23,7 +23,17 @@ when Branching is installed; a target without Branching requires the explicit
 `ALLOW_MAIN_WRITES=1` guard. The loader prints its stable private checkpoint
 receipt before writes so the same command can resume safely.
 Read-only target discovery, pagination, and job polling retry transient connection
-failures with bounded backoff. Write requests are never retried after an ambiguous
+failures with bounded backoff. After a TurboBulk job has been nonterminal for 60
+seconds, polling also consults the target's core background-tasks record: when RQ
+reports the job failed, stopped, or canceled while its row is still nonterminal —
+twice consecutively — the worker died mid-job and nothing can finalize the row, so
+the loader stops immediately with that diagnosis instead of waiting out the full
+polling bound. A missing RQ record stays inconclusive (a live worker can still
+finish without it), and an absent or erroring oracle endpoint leaves the original
+timeout behavior unchanged. Rows from such a job may have committed; the recorded
+guidance is the same as a timeout: never resubmit, use a new branch and receipt, or
+resume only after the row reaches a terminal state (for example once TurboBulk
+0.4.0's opportunistic reaper marks it errored). Write requests are never retried after an ambiguous
 transport failure; their recorded intent must be inspected or resumed instead.
 
 The default `just load` policy retains the TurboBulk changelogs and branch diffs

@@ -7,12 +7,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import unittest.mock
 import urllib.parse
 from unittest.mock import ANY, Mock, patch
 
 from estates.model import canonical, digest
 from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, RECEIPT_VERSION, Client,
-                               JobTimeout, LoadError,
+                               JobTimeout, LoadError, WorkerDied,
                                _adopt_finalizer_job, _artifact, _batch_request_settings,
                                _complete_rest, _job_result,
                                _component_cache_ids, _component_filter_preflight,
@@ -871,6 +872,74 @@ class TurboBulkLoaderTests(unittest.TestCase):
             _poll(Target(), "job-1", 0)
         self.assertIs(caught.exception.job, running)
         self.assertIn("resume only after it progresses", str(caught.exception))
+
+    def test_poll_stops_early_when_rq_confirms_the_worker_died(self):
+        running = {"job_id": "job-1", "status": "running", "data": {"rows_processed": 100}}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                if path.startswith("/api/core/background-tasks/"):
+                    return 200, {"status": "failed", "ended_at": None}
+                return 200, running
+
+        with unittest.mock.patch("estates.turbobulk.RQ_ORACLE_AFTER_SECONDS", 0.0):
+            with self.assertRaises(WorkerDied) as caught:
+                _poll(Target(), "job-1", 900)
+        self.assertIs(caught.exception.job, running)
+        self.assertEqual(caught.exception.rq_status, "failed")
+        self.assertIsInstance(caught.exception, JobTimeout)  # receipt handling path
+        self.assertIn("never resubmit", str(caught.exception))
+        self.assertIn("new branch and receipt", str(caught.exception))
+
+    def test_poll_treats_missing_rq_hash_as_inconclusive(self):
+        running = {"job_id": "job-1", "status": "running", "data": {}}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                if path.startswith("/api/core/background-tasks/"):
+                    raise LoadError("GET returned HTTP 500: NoSuchJobError: job-1")
+                return 200, running
+
+        with unittest.mock.patch("estates.turbobulk.RQ_ORACLE_AFTER_SECONDS", 0.0):
+            with self.assertRaises(JobTimeout) as caught:
+                _poll(Target(), "job-1", 0)
+        self.assertNotIsInstance(caught.exception, WorkerDied)
+
+    def test_poll_survives_an_unavailable_rq_oracle(self):
+        running = {"job_id": "job-1", "status": "running", "data": {}}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                if path.startswith("/api/core/background-tasks/"):
+                    raise LoadError("GET returned HTTP 404: not found")
+                return 200, running
+
+        with unittest.mock.patch("estates.turbobulk.RQ_ORACLE_AFTER_SECONDS", 0.0):
+            with self.assertRaises(JobTimeout) as caught:
+                _poll(Target(), "job-1", 0)
+        self.assertNotIsInstance(caught.exception, WorkerDied)
+
+    def test_poll_requires_two_consecutive_dead_observations(self):
+        running = {"job_id": "job-1", "status": "running", "data": {}}
+
+        class Target:
+            def __init__(self):
+                self.oracle_reads = 0
+
+            def request(self, path, **_kwargs):
+                if path.startswith("/api/core/background-tasks/"):
+                    self.oracle_reads += 1
+                    # one flaky 'failed' read, then healthy 'started' forever
+                    status = "failed" if self.oracle_reads == 1 else "started"
+                    return 200, {"status": status}
+                return 200, running
+
+        target = Target()
+        with unittest.mock.patch("estates.turbobulk.RQ_ORACLE_AFTER_SECONDS", 0.0):
+            with self.assertRaises(JobTimeout) as caught:
+                _poll(target, "job-1", 0.2)
+        self.assertNotIsInstance(caught.exception, WorkerDied)
+        self.assertGreaterEqual(target.oracle_reads, 2)
 
     def test_rest_tag_completion_uses_numeric_ids_and_refuses_extras(self):
         tag = {"key": "tag:demo", "kind": "tag", "attrs": {"slug": "demo"}, "refs": {}}
