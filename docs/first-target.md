@@ -102,7 +102,10 @@ just load        build/my-estate https://target.example demo-acme
 prints every transport blocker if no faithful loader fits, and reports
 `fresh_load_occupancy` — which emitted kinds already hold rows on the target,
 which of those the loader will allowlist, and the exact endpoints to clear
-for any that block a fresh load. `just load` loads and
+for any that block a fresh load. Exit codes: `load-explain` exits 2 only when
+no transport fits at all; fresh-load blockers print a `NOTE:` but keep exit 0,
+because a resume against its existing receipt is unaffected by them — read
+`fresh_load_occupancy.blocking` before a first load. `just load` loads and
 then strictly reads the estate back — attribute-exact, reference-exact, with
 native cable traces and component-placement checks. Expect on the order of a
 minute or two per few thousand objects on a local target; the streaming row
@@ -167,7 +170,24 @@ One namespace has one verifiable branch at a time; a side-by-side
 before/after demo therefore needs **two namespaces planned from the start**
 (or the scenario snapshot flow on fresh targets).
 
-## 8. Verify anytime, write nothing
+## 8. Retiring a demo
+
+When the demo cycle ends, two things carry your namespace on the target: the
+branch, and the namespace's `owner`/`owner_group` rows on main. One command
+removes both:
+
+```
+just retire https://target.example demo-acme acme
+```
+
+It deletes the named branch, then deletes exactly the main-scoped ownership
+rows whose names begin with your namespace, reporting each. (Separately,
+`just branch-delete` removes only the branch, and `just reset` *replaces* a
+branch with a fresh empty one.) End-state check: the branch list and
+`/api/users/owners/` + `/api/users/owner-groups/` show nothing carrying your
+namespace, and main still has none of your objects.
+
+## 9. Verify anytime, write nothing
 
 ```
 just verify-target build/my-estate https://target.example demo-acme

@@ -685,12 +685,15 @@ def main(argv=None):
             else:
                 verdict = ("Loadable via TurboBulk+REST. Run just load-explain against "
                            "the target for the binding preflight.")
-            print(verdict)
+            # stdout is one parseable JSON document (verdict included for
+            # scripting); the human verdict repeats on stderr.
             print(json.dumps({"artifact": args.artifact, "kinds": len(kinds),
                               "turbobulk_loadable": loadable,
                               "turbobulk_uncovered": uncovered,
                               "turbobulk_unsupported_refs": unsupported_refs,
-                              "rest_create_kinds": rest_kinds}, indent=2, sort_keys=True))
+                              "rest_create_kinds": rest_kinds,
+                              "verdict": verdict}, indent=2, sort_keys=True))
+            print(verdict, file=os.sys.stderr)
             return 0 if loadable else 2
         if args.verify_only:
             from .turbobulk import verify_target

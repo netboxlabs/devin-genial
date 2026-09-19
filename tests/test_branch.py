@@ -68,6 +68,35 @@ class BranchTests(unittest.TestCase):
         self.assertIn("found 0", str(caught.exception))
         self.assertFalse(stub.deleted)
 
+    def test_retire_namespace_rows_deletes_only_exact_prefix_matches(self):
+        from estates.branch import retire_namespace_rows
+
+        class Owners:
+            rows = {3: "lakes-fiber Infrastructure operations",
+                    13: "meridian Infrastructure operations",
+                    14: "meridian-east Infrastructure operations"}
+
+            def __init__(self):
+                self.deleted = set()
+
+            def request(self, path, *, method="GET", **_kwargs):
+                if "?limit" in path:
+                    return 200, {"results": [{"id": i, "name": n}
+                                             for i, n in self.rows.items()]}
+                row_id = int(path.rstrip("/").rsplit("/", 1)[1])
+                if method == "DELETE":
+                    self.deleted.add(row_id)
+                    raise LoadError("204 empty body")
+                if row_id in self.deleted:
+                    raise LoadError("GET returned HTTP 404")
+                return 200, {"id": row_id}
+
+        stub = Owners()
+        deleted = retire_namespace_rows(stub, "meridian")
+        # only the exact-namespace row goes; meridian-east and lakes-fiber stay
+        self.assertEqual(stub.deleted, {13})
+        self.assertTrue(all(item["name"].startswith("meridian ") for item in deleted))
+
     def test_timeout_deletes_the_stuck_branch_and_names_the_worker(self):
         stub = Stub(states=["new"] * 5)
         with self.assertRaises(LoadError) as caught:

@@ -49,6 +49,10 @@ branch target name timeout='300':
 branch-delete target name:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete
 
+# Full demo retirement: delete the branch AND the namespace's main-scoped owner rows
+retire target name namespace:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete --retire-namespace {{quote(namespace)}}
+
 # Strictly verify a target against an artifact with zero writes (any seeding path)
 verify-target artifact target branch='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --verify-only

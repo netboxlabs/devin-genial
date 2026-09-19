@@ -71,7 +71,8 @@ The target-aware loader is `just load ARTIFACT TARGET [BRANCH]`;
 the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
 `just load-check ARTIFACT` reports TurboBulk contract fit offline; `just branch
 TARGET NAME` creates the ready branch a load requires and refuses existing names;
-`just branch-delete TARGET NAME` permanently retires one branch (reset replaces).
+`just branch-delete TARGET NAME` permanently deletes one branch (reset replaces);
+`just retire TARGET NAME NAMESPACE` also removes the namespace's main-scoped owner rows.
 `just verify-target ARTIFACT TARGET [BRANCH]` runs the final strict gate with zero writes.
 Target recipes source `.env` only when `NETBOX_TOKEN` is not already exported.
 TurboBulk jobs default to at most 2,000 rows. Keep deterministic batch purposes,

@@ -102,20 +102,59 @@ def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
         sleep(poll_interval)
 
 
+OWNER_ENDPOINTS = ("/api/users/owners/", "/api/users/owner-groups/")
+
+
+def retire_namespace_rows(client, namespace, *, endpoints=OWNER_ENDPOINTS):
+    """Delete the namespace's own main-scoped owner/owner_group rows.
+
+    These rows are not branch-isolated, so branch deletion leaves them behind
+    and they block the namespace's next fresh load. Names are authored as
+    "<namespace> …", so an exact prefix match selects only this estate's rows.
+    """
+    deleted = []
+    for endpoint in endpoints:
+        _, page = client.request(endpoint + "?limit=200", branch=False)
+        for row in page.get("results", []):
+            name = row.get("name") or ""
+            if not name.startswith(namespace + " "):
+                continue
+            try:
+                client.request(f"{endpoint}{row['id']}/", method="DELETE", branch=False)
+            except LoadError:
+                pass  # a 204 empty body reads as a parse failure; confirm below
+            try:
+                client.request(f"{endpoint}{row['id']}/", branch=False)
+            except LoadError:
+                deleted.append({"endpoint": endpoint, "id": row["id"], "name": name})
+                continue
+            raise LoadError(f"row {row['id']} ({name!r}) at {endpoint} survived deletion; "
+                            "inspect the target")
+    return deleted
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Create or delete one named Branching branch")
+    parser = argparse.ArgumentParser(description="Create, delete, or retire one named Branching branch")
     parser.add_argument("target", help="NetBox http(s) origin")
     parser.add_argument("name", help="branch name")
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--delete", action="store_true",
                         help="permanently delete the named branch instead of creating one")
+    parser.add_argument("--retire-namespace",
+                        help="after deleting the branch, also delete this namespace's "
+                             "main-scoped owner/owner_group rows (full demo retirement)")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not token:
         parser.error("NETBOX_TOKEN is required")
+    if args.retire_namespace and not args.delete:
+        parser.error("--retire-namespace requires --delete")
     try:
         if args.delete:
-            row = delete_branch(Client(args.target, token), args.name, timeout=args.timeout)
+            client = Client(args.target, token)
+            row = delete_branch(client, args.name, timeout=args.timeout)
+            if args.retire_namespace:
+                row["retired_rows"] = retire_namespace_rows(client, args.retire_namespace)
             print(json.dumps(row, sort_keys=True))
             return 0
         row = create_branch(Client(args.target, token), args.name, timeout=args.timeout)

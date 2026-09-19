@@ -146,8 +146,10 @@ and strict readback: 7,340 attributes and 3,809 references, zero mismatches, all
 unchanged. Evidence is under `build/goal-live/enterprise/corrected/`. Actual path
 inspection is recorded separately. This qualifies the pinned local stack with
 its explicit patch, not every NetBox edition/version. Use the [local target
-procedure](../lab/README.md); the default bank aggregate overlaps this profile, so a
-new namespace alone does not permit coexistence.
+procedure](../lab/README.md); on that Diode main-write path the default bank
+aggregate overlaps this profile, so a new namespace alone does not permit
+coexistence there. Branch-scoped TurboBulk loads are unaffected — see
+[first target](first-target.md) for the shared-target coexistence rule.
 
 ## School district
 

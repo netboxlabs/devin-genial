@@ -93,7 +93,7 @@ artifact offline, then inspect the target without writing:
 ```sh
 just generate profiles/enterprise-dc.toml build/my-dc
 just load-check build/my-dc          # offline: does it fit the TurboBulk contract?
-cp .env.example .env
+cp -n .env.example .env   # -n: never overwrite an existing .env
 # Put the raw token value in NETBOX_TOKEN (Cloud tokens look like nbt_...;
 # self-hosted tokens are plain hex). Do not include "Bearer".
 just branch https://netbox.example "Generator Review"   # create the ready branch
