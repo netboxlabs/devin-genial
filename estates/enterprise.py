@@ -10,7 +10,7 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
-          "max_objects", "patching", "reservation_user", "naming", "site_names"}
+          "max_objects", "patching", "reservation_user", "naming", "site_names", "hardware"}
 NETWORKS = ("management", "applications", "database", "backup", "wan", "storage")
 DEFAULT_WORKLOADS = [
     dict(key="inventory-api", groups=3, replicas=2, failure_domain="rack",

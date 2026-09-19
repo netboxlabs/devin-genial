@@ -57,7 +57,7 @@ def branch(site, demand):
     switches, usable, access_count = access["access_devices"], access["access_usable_ports"], access["access_count"]
     site.contract.update(endpoint_count=len(endpoints), demand=demand, branch_design=site.design,
                          branch_architecture=architecture,
-                         access_hardware=design["access_hardware"], access_devices=switches,
+                         access_hardware=site.w.hardware_alias(design["access_hardware"]), access_devices=switches,
                          access_usable_ports=usable, required_device_roles={"role/wan-edge": 2, "role/distribution": len(dist), "role/access": access_count})
     site.contract["required_device_roles"].update({"role/workstation": demand["workstations"], "role/atm": demand["atms"],
                                                  "role/ap": demand["aps"], "role/camera": demand["cameras"]})

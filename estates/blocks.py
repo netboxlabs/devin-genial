@@ -17,7 +17,10 @@ NETWORKS = ("management", "users", "atm", "wireless", "security", "voice",
 # these are not vendor maximums or measured consumption.
 # A dual-supply device normally splits its allowance; either inlet can take it
 # all during an A/B failover. Endpoint wall power remains outside this scope.
-PLANNED_WATTS = {"access": 120, "inherited-access": 120, "leaf": 160,
+# Selectable vendor lines share their family's authored allowance: the number is
+# a planning allocation for that role, never a vendor or measured figure.
+PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
+                 "leaf": 160, "leaf-juniper": 160,
                  "core": 220, "edge": 40, "server": 250,
                  "console-server": 40, "liquid-chassis": 400, "provider-edge": 320}
 
@@ -56,9 +59,12 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
     for group in ("network", "compute"):
         w.add("rack_role", f"rack-role/{group}", {"name": f"{ns} {group}", "slug": f"{ns}-{group}",
               "color": "1565c0" if group == "network" else "2e7d32"})
+    # Callers name role families; the recipe's selected vendor line decides which
+    # catalog model that family actually emits.
+    selected = None if hardware_aliases is None else {w.hardware_alias(a) for a in hardware_aliases}
     manufacturers = set()
     for alias, spec in w.catalog["models"].items():
-        if hardware_aliases is not None and alias not in hardware_aliases:
+        if selected is not None and alias not in selected:
             continue
         manufacturer = spec["manufacturer"]
         if manufacturer not in manufacturers:
@@ -153,6 +159,9 @@ class Site:
 
     def device(self, alias, label, role, group="network", racked=True, meta=None, location=None, rack_domain=None):
         location = location or self.equipment_location
+        # Single resolution point: builders name a role family, the recipe's
+        # selected vendor line names the catalog model that is actually built.
+        alias = self.w.hardware_alias(alias)
         spec = self.w.catalog["models"][alias]
         key = f"device/{self.id}/{label}"
         inherited = self.lineage == "birch" and not (role == "access" and self.design == "refreshed")
@@ -429,6 +438,8 @@ class Site:
         managed = [(key, p["name"]) for key in self.devices
                    if not self.w.obj(key)["refs"].get("primary_ip4")
                    for p in self.w.catalog["models"][self.w.obj(key)["meta"]["hardware"]]["interfaces"] if p.get("mgmt_only")]
+        spec = self.w.hardware("access")
+        access_ports, uplink_ports = spec["access_ports"], spec["uplink_ports"]
         switches = {}
         for device, port_name in managed:
             location = self.w.obj(device)["refs"]["location"]
@@ -445,9 +456,10 @@ class Site:
                         raise DesignError(f"{self.name}: management blocks exceed the supplied parent ports")
                     parent_port = uplinks[parent_slot]
                 else:
-                    parent_port = self.interface(parents[parent_slot % 2], f"Ethernet{41 + parent_slot//2}")
+                    parent_port = self.interface(parents[parent_slot % 2],
+                                                 self.w.hardware("leaf")["fabric_ports"][40 + parent_slot//2])
                 copper = self.w.obj(parent_port)["attrs"]["type"] == "1000base-t"
-                uplink = self.interface(switch, "GigabitEthernet1/0/24" if copper else "TenGigabitEthernet1/1/1")
+                uplink = self.interface(switch, access_ports[-1] if copper else uplink_ports[0])
                 self.cable(uplink, parent_port, "cat6" if copper else "smf")
                 vlan, _ = self.network("management")
                 for p in (uplink, parent_port):
@@ -456,7 +468,7 @@ class Site:
                 vi = self.virtual_interface(switch, "Vlan10", "management")
                 self.address(vi, "management", primary=True, device=switch)
             switch = switches[group]
-            source = self.interface(switch, f"GigabitEthernet1/0/{port+1}")
+            source = self.interface(switch, access_ports[port])
             target = self.interface(device, port_name)
             self.cable(source, target)
             vlan, _ = self.network("management")

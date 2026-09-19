@@ -131,6 +131,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
         raise DesignError("DC WAN attachment must be a callable construction policy")
     w = site.w
     reserve = w.recipe["reserve_fraction"]
+    fabric_ports, leaf_uplinks = (w.hardware("leaf")[field] for field in ("fabric_ports", "uplink_ports"))
     rack_diversity = any(workload.get("failure_domain") == "rack" for workload in workloads)
     # Replica racks alone are insufficient if a rack loss removes both upstreams.
     spines = [site.device("core", f"spine-{s}", "spine", **({"rack_domain": i} if rack_diversity else {}))
@@ -145,7 +146,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             pods[key] = pair
             for i, leaf in enumerate(pair):
                 for j, spine in enumerate(spines):
-                    a = site.interface(leaf, f"Ethernet{49+j}/1")
+                    a = site.interface(leaf, leaf_uplinks[j])
                     b = site.interface(spine, f"Ethernet{ordinal*2+i+1}/1")
                     site.cable(a, b, "smf")
                     trunk(site, [a, b], ("applications", "database", "backup", "storage", "management"))
@@ -162,7 +163,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             edge = site.device("edge", f"edge-{i+1:03}-{side}", "wan-edge",
                                **({"rack_domain": j} if rack_diversity else {}))
             for k, leaf in enumerate(leaves):
-                a, b = site.interface(edge, f"x{k+1}"), site.interface(leaf, f"Ethernet{(i%20)*2+j+1}")
+                a, b = site.interface(edge, f"x{k+1}"), site.interface(leaf, fabric_ports[(i%20)*2+j])
                 site.cable(a, b, "smf")
                 trunk(site, [a, b], ("applications", "database", "backup", "management"))
             site.redundant(edge, leaves)
@@ -200,7 +201,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             pool.append(host)
             hosts.append(host)
             for j, leaf in enumerate(leaves):
-                a, b = site.interface(host, f"eth{j}"), site.interface(leaf, f"Ethernet{stable_slot%40+1}")
+                a, b = site.interface(host, f"eth{j}"), site.interface(leaf, fabric_ports[stable_slot%40])
                 site.cable(a, b, "smf")
                 trunk(site, [a, b], (network, "backup", "storage"))
             site.redundant(host, leaves)

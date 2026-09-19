@@ -121,12 +121,20 @@ checks address tenants against the actual segment and, for VM interfaces, the
 owning VM; copying the same wrong tenant into both families cannot bypass it.
 
 Hardware is a versioned JSON catalog at `catalog/hardware.json`: top-level
-`version`, `sources`, `models` and the shared `optics` policy. Each model indexed by alias has `manufacturer`,
+`version`, `sources`, `hardware_lines`, `models` and the shared `optics` policy.
+Each model indexed by alias has `manufacturer`,
 `model`, `slug`, `u_height`, `is_full_depth`, `interfaces` (list of `{name,type,
-mgmt_only?}`), `power_ports` (list of `{name,type}`), and optional `description`.
-Branch access models additionally declare ordered `access_ports` and `uplink_ports`
-lists naming unique entries in `interfaces`. Capacity uses these lists rather than
-a hardcoded port count. All normalized data must retain sources and license provenance. Generic example
+mgmt_only?,speed?}`), `power_ports` (list of `{name,type}`), and optional `description`.
+Access models additionally declare ordered `access_ports`, `uplink_ports` and
+`stack_ports` lists, and fabric models ordered `fabric_ports` and `uplink_ports`
+lists, naming unique entries in `interfaces`. Capacity and every port lookup use
+these lists rather than a hardcoded port count or vendor numbering scheme.
+`hardware_lines` maps each selectable role family (`access`, `leaf`, `ap`) to its
+`default` vendor and a `lines` table of vendor to alias; the recipe's `hardware`
+table picks one per family, `World.hardware_alias` resolves it for builders and
+`selected_alias(recipe, family)` resolves it for independent checkers.
+An alternate line must meet or beat the model it substitutes on every quantity a
+resolver binds, and carry complete equivalent PSU, PoE and reviewed-optics data. All normalized data must retain sources and license provenance. Generic example
 equipment is explicitly fictional. Optional `console_ports` and
 `console_server_ports` list actual name/type pairs, just like power ports.
 Installed components are explicit objects; native component templates have no
@@ -311,7 +319,9 @@ gateway. Unbound routed/loopback and FHRP records keep their separate semantics.
 `networking.wireless(world, sites, lan_roles=..., diagnostic=..., stable_channels=..., guest_sites=())`
 consumes canonical site objects. Bank defaults preserve the original one-staff-LAN
 and diagnostic example. School passes staff/students on wlan0/wlan1 with diagnostic
-disabled and stable channels enabled. Client VLANs are tagged over AP Ethernet;
+disabled and stable channels enabled. Each radio's channel comes from the
+authored non-overlapping plan for the band its catalog model declares in
+`radio_bands`, not from a fixed 5 GHz assumption. Client VLANs are tagged over AP Ethernet;
 the distinct wireless-management VLAN stays native. Several WLANs can share one
 actual radio, whose complete `wireless_lans` list carries membership; the radio
 has no VLAN/mode fields. Each WLAN owns its VLAN. Optional guest sites are

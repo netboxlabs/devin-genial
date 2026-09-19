@@ -33,6 +33,12 @@ recipe key (authored by default; `legacy` restores namespace-ordinal names),
 and `[site_names]` overrides any site with the customer's real names — see the
 [recipe reference](recipes.md#common-keys). Both keys are rebaseline-frozen.
 
+`[hardware]` picks the vendor line for the access, leaf and AP role families
+(`access = "juniper"`, `leaf = "juniper"`, `ap = "aruba"`) when the audience is
+a Juniper or Aruba shop; omitted families keep the shipped defaults. It is
+rebaseline-frozen too, and the alternates meet or beat the models they replace,
+so every power, PoE, optics and port check still applies.
+
 Python 3.11+ and `just` are all generation needs — devenv and direnv are
 optional, used only for the pinned Diode SDK checks. From this directory:
 

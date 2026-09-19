@@ -13,6 +13,7 @@ import re
 from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
+from .model import selected_alias
 
 
 NETWORK_OFFSETS = {"management": 0, "clinical": 1, "medical": 2, "wireless": 3,
@@ -328,6 +329,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     recipe = plan.get("recipe", {})
     if recipe.get("profile") != "hospital-clinics":
         return []
+    access_alias, leaf_alias, ap_alias = (selected_alias(recipe, family)
+                                          for family in ("access", "leaf", "ap"))
     findings = []
 
     def report(code, key, message):
@@ -400,7 +403,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return findings
     reserve = recipe["reserve_fraction"]
     usable = Decimal(1) - Decimal(str(reserve))
-    capacity = int(Decimal(len(catalog.get("access", {}).get("access_ports", []))) * usable)
+    capacity = int(Decimal(len(catalog.get(access_alias, {}).get("access_ports", []))) * usable)
     if not capacity:
         report("hospital-access-capacity", "plan", "The reviewed access hardware must retain usable endpoint ports after reserve.")
         return findings
@@ -446,7 +449,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             roles[refs(device).get("role")].append(device)
         endpoint_roles = {"role/workstation", "role/medical-device", "role/imaging-device", "role/ap", "role/camera"}
         actual = {key for key in devices if refs(key).get("role") in endpoint_roles or
-                  refs(key).get("device_type") in {"hardware/endpoint", "hardware/ap"}}
+                  refs(key).get("device_type") in {"hardware/endpoint", f"hardware/{ap_alias}"}}
         if actual != set(expected):
             report("hospital-endpoint-inventory", site, "Every requested bedside monitor, clinical/admin station, modality, AP and circulation camera must exist exactly once.")
         switch_counts, room_endpoints = Counter(), defaultdict(set)
@@ -454,7 +457,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             floor = rooms[room]["floor"]
             closet = closets[floor]
             room_endpoints[closet].add(device)
-            hardware = "ap" if role == "ap" else "endpoint"
+            hardware = ap_alias if role == "ap" else "endpoint"
             if (kind(device) != "device" or attrs(device).get("status") != "active" or refs(device).get("site") != site or
                     refs(device).get("location") != room or refs(device).get("role") != f"role/{role}" or
                     refs(device).get("device_type") != f"hardware/{hardware}" or refs(device).get("tenant") != "tenant"):
@@ -520,7 +523,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             for device, slot in slots.items():
                 pair, offset = divmod(slot, 2*capacity)
                 switch = f"device/{sid}/{prefix}access-{2*pair+offset%2+1:02}"
-                port = catalog["access"]["access_ports"][offset//2]
+                port = catalog[access_alias]["access_ports"][offset//2]
                 if peers.get(f"{device}/if/eth0") != f"{switch}/if/{port}":
                     report("hospital-access-allocation", device, "Actual care endpoint must match its reserved switch and catalog copper port.")
         if len(roles["role/access"]) > 38 or any(switch_counts[key] > capacity for key in roles["role/access"]):
@@ -549,7 +552,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                         upstreams.add(parent)
                 if len(upstreams) != 2:
                     report("hospital-uplink-path", device, "Each access or carrier-edge device needs two active local distribution uplinks carrying all campus segments.")
-        for role, hardware in (("role/distribution", "leaf"), ("role/wan-edge", "edge"), ("role/access", "access")):
+        for role, hardware in (("role/distribution", leaf_alias), ("role/wan-edge", "edge"), ("role/access", access_alias)):
             for device in roles[role]:
                 if refs(device).get("device_type") != f"hardware/{hardware}" or (role != "role/access" and refs(device).get("location") != mdf):
                     report("hospital-core-placement", device, "Core and access equipment must retain its actual catalog hardware and correct serving closet.")

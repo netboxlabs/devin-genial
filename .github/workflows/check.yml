@@ -43,6 +43,14 @@ jobs:
           python -m estates scenario-check build/provider-maintenance/scenario.json
           python -m estates sdk-check build/provider-maintenance/baseline/diode
           python -m estates sdk-check build/provider-maintenance/changed/diode
+      - name: Qualify the alternate vendor lines across all profiles
+        run: |
+          for profile in bank enterprise-dc school-district hospital-clinics provider-backbone retail-chain university-campus; do
+            cp "profiles/${profile}.toml" "build/${profile}-juniper.toml"
+            printf '\n[hardware]\naccess = "juniper"\nleaf = "juniper"\nap = "aruba"\n' >> "build/${profile}-juniper.toml"
+            python -m estates generate "build/${profile}-juniper.toml" --out "build/${profile}-juniper"
+            python -m estates sdk-check "build/${profile}-juniper/diode"
+          done
       - name: Qualify optional dual-stack across all profiles
         run: |
           for profile in bank enterprise-dc school-district hospital-clinics provider-backbone retail-chain university-campus; do

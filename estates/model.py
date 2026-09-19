@@ -30,6 +30,41 @@ def hardware_catalog():
     return json.loads((ROOT / "catalog/hardware.json").read_text())
 
 
+def resolve_hardware(raw, catalog=None):
+    """Complete the vendor-line selection; unknown families or vendors are errors."""
+    catalog = hardware_catalog() if catalog is None else catalog
+    lines = catalog["hardware_lines"]
+    if not isinstance(raw, dict):
+        raise DesignError("hardware must be a table mapping a role family to a vendor line, "
+                          'for example [hardware] followed by access = "juniper"')
+    for family, vendor in sorted(raw.items()):
+        if family not in lines:
+            raise DesignError(f"hardware.{family} is not a selectable role family; "
+                              f"this version selects lines for: {', '.join(sorted(lines))}")
+        if not isinstance(vendor, str) or vendor not in lines[family]["lines"]:
+            choices = ", ".join(f"{name} ({catalog['models'][alias]['manufacturer']} "
+                                f"{catalog['models'][alias]['model']})"
+                                for name, alias in sorted(lines[family]["lines"].items()))
+            raise DesignError(f"hardware.{family} = {vendor!r} is not a catalog line for {family}; "
+                              f"choose one of: {choices}")
+    return {family: raw.get(family, lines[family]["default"]) for family in sorted(lines)}
+
+
+def selected_alias(recipe, alias, catalog=None):
+    """Catalog model a resolved recipe selects for a role family; others pass through.
+
+    Independent checkers and resolvers use this instead of a literal alias: the
+    declared selection plus the pinned catalog, with no builder state.
+    """
+    catalog = hardware_catalog() if catalog is None else catalog
+    line = catalog.get("hardware_lines", {}).get(alias)
+    if line is None:
+        return alias
+    selection = recipe.get("hardware") if isinstance(recipe, dict) else None
+    vendor = selection.get(alias, line["default"]) if isinstance(selection, dict) else line["default"]
+    return line["lines"].get(vendor, line["lines"][line["default"]])
+
+
 def recipe_from_file(path):
     with open(path, "rb") as handle:
         return resolve_recipe(tomllib.load(handle))
@@ -69,7 +104,7 @@ def resolve_bank_recipe(raw):
     allowed = {"profile", "namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool",
                "data_centers", "headquarters", "branches", "reserve_fraction", "max_objects", "patching",
                "design_mix", "site_designs", "acquired_sites", "headquarters_staff", "wan_tiers_mbps",
-               "reservation_user", "demo", "naming", "site_names"}
+               "reservation_user", "demo", "naming", "site_names", "hardware"}
     if unknown := raw.keys() - allowed:
         raise DesignError(f"Unknown recipe fields: {', '.join(sorted(unknown))}")
     r = dict(profile="regional-bank", namespace="cedar", name="Cedar Regional Bank",
@@ -78,8 +113,9 @@ def resolve_bank_recipe(raw):
              reserve_fraction=0.2, max_objects=500000, patching="direct",
              design_mix={"modern": 100, "inherited": 0, "refreshed": 0}, site_designs={}, acquired_sites=[],
              wan_tiers_mbps=[50, 100, 200, 500, 1000], reservation_user="",
-             naming="authored", site_names={})
+             naming="authored", site_names={}, hardware={})
     r.update(raw)
+    r["hardware"] = resolve_hardware(r["hardware"])
     if "demo" in r:
         r["demo"] = resolve_demo(r["demo"])
     if r["profile"] != "regional-bank":
@@ -175,7 +211,7 @@ class World:
                 raise DesignError("Previous plan has a different schema/generator version; explicit rebaseline required")
             if previous.get("hardware_digest") != digest(self.catalog):
                 raise DesignError("Hardware catalog changed since previous plan; explicit rebaseline required")
-            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming"):
+            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming", "hardware"):
                 if previous["recipe"].get(k) != self.recipe.get(k):
                     raise DesignError(f"Changing {k} requires a new estate; omit --previous for an explicit rebaseline")
             # site_names is append-only under growth: the freeze exists to stop
@@ -205,6 +241,19 @@ class World:
                               "hospital-clinics": 16, "provider-backbone": 24,
                               "retail-chain": 16, "university-campus": 16}[self.recipe["profile"]]
         self._next = {scope: max(items.values(), default=-1) + 1 for scope, items in self.reservations.items()}
+
+    def hardware_alias(self, alias):
+        """Resolve a selectable role family to its catalog model; others pass through.
+
+        This is the single point where a role family becomes a concrete vendor
+        model. Builders keep naming families ("access", "leaf", "ap"); every
+        port, PSU, PoE and optic fact then follows the resolved catalog entry.
+        """
+        return selected_alias(self.recipe, alias, self.catalog)
+
+    def hardware(self, alias):
+        """The resolved catalog model for a role family or plain catalog alias."""
+        return self.catalog["models"][self.hardware_alias(alias)]
 
     def reserve(self, scope, key, capacity):
         items = self.reservations.setdefault(scope, {})

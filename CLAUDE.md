@@ -124,8 +124,8 @@ archives its bound private load receipts.
 Keep transport orchestration behind that recipe rather than adding an installed CLI.
 Use `devenv --profile diode shell` to install/run the pinned SDK checks.
 CI runs the full suite on Python 3.11/3.14, then generates and SDK-checks each
-implemented composition, its scenario, and optional dual-stack across every
-profile. These offline jobs do not substitute
+implemented composition, its scenario, the alternate vendor lines and optional
+dual-stack across every profile. These offline jobs do not substitute
 for the separately recorded pinned-target live qualification.
 
 ## Navigation
@@ -143,7 +143,8 @@ for the separately recorded pinned-target live qualification.
 - [CONTRACT.md](CONTRACT.md): canonical graph, ledgers, units and module interfaces.
 - [COVERAGE.md](COVERAGE.md): hospital/provider omissions and ranked next work;
   a reviewed backlog, not implemented scope.
-- [catalog/README.md](catalog/README.md): pinned vendor sources and fictional hardware.
+- [catalog/README.md](catalog/README.md): pinned vendor sources, fictional hardware
+  and the selectable vendor lines the `[hardware]` recipe key chooses between.
 - `estates/bank.py`: bank demand and service policy; `estates/datacenter.py`:
   shared DC construction from resolved workloads; `blocks.py`: physical allocators.
 - `estates/generate.py`: profile dispatch; `enterprise.py`: workload/replica policy;
@@ -257,7 +258,8 @@ for the separately recorded pinned-target live qualification.
   Growth may increase PSE inlet draws; it must retain old port/cable identities.
   Local wireless zone counts use explicit frozen defaults and an authored
   32-device/AP threshold, not RF or association evidence. Radios carry WLAN
-  membership. Managed demand is aggregate AP sizing, with no per-SSID address
+  membership and take their authored non-overlapping channel plan from the
+  catalog's declared band for that radio, never from a fixed 5 GHz assumption. Managed demand is aggregate AP sizing, with no per-SSID address
   admission check; guest demand must fit its explicit local segment. VLANs belong
   to WLANs and actual wired trunks.
 - Optical fit derives from actual device type, named physical cage, configured
@@ -333,6 +335,20 @@ for the separately recorded pinned-target live qualification.
   sites), so growth cannot rename and seeds cannot reshuffle. Workspace.finish
   enforces global display-name uniqueness. Never rename objects in a running
   estate; naming keys are rebaseline-frozen.
+- Recipe `hardware` selects the vendor line for exactly three role families:
+  `access`, `leaf` and `ap`. `catalog/hardware_lines` declares each family's
+  default and alternates; an unknown family or vendor is a hard error listing the
+  real choices. Resolution happens in one place — `World.hardware_alias` for
+  builders, `selected_alias` for independent checkers — so profiles keep naming
+  families and never a vendor. Builders and checkers must read port, PSU, PoE,
+  stacking and optical-cage names from the resolved catalog entry, never from a
+  literal vendor interface name. An alternate line must meet or beat the model it
+  substitutes on every quantity a resolver binds, proven from the catalog in
+  `tests/test_hardware_lines.py`, and must carry complete equivalent PSU, PoE and
+  reviewed-optics data. The selection is rebaseline-frozen; adding a line changes
+  the hardware digest and needs a new baseline for every profile. New catalog
+  models still require pinned real sources or clearly labeled fiction, and
+  normalized interface names are a labeled deviation, never a vendor claim.
 - HQ staff demand determines office floors and equipment rooms. Allocate access,
   management and power locally; check the actual copper paths and fiber backbone.
   Rack names may repeat across rooms; rack references and asset tags retain room scope.

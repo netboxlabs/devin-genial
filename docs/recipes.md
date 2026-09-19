@@ -6,8 +6,9 @@ A recipe is the TOML file passed to `plan` and `generate` (`build` takes a
 frozen `plan.json`, not a recipe). It expresses
 demand: how many branches, workloads, classrooms, wards, PoPs and customers, plus
 the shared identity and addressing settings. Shared builders turn that demand into
-equipment, ports, addresses, racks and cables; nothing in this file selects a
-vendor, a device model or a rack position.
+equipment, ports, addresses, racks and cables. The one exception is
+`[hardware]`, which picks the vendor line for three role families; nothing else
+in this file selects a device model or a rack position.
 
 Every profile hard-rejects unknown keys. A misspelled or unsupported key raises
 an `Unknown … fields:` error naming the profile (for example `Unknown provider
@@ -50,9 +51,9 @@ choosing the maximum of every input is not a supported composition.
 ## Common keys
 
 These are top-level keys accepted by more than one profile. They are validated in
-`resolve_bank_recipe` (`estates/model.py:61`) and re-exported to the other four
-profiles through each module's `COMMON` set. The thirteen keys frozen for growth
-are enforced at `estates/model.py:146`.
+`resolve_bank_recipe` (`estates/model.py`) and re-exported to the other six
+profiles through each module's `COMMON` set. The fourteen keys frozen for growth
+are enforced by the loop in `World.__init__` (`estates/model.py`).
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
@@ -71,6 +72,7 @@ are enforced at `estates/model.py:146`.
 | `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
 | `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-general`, `clinic-riverside`, `pop-chicago-lakeview`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). An unknown site id fails generation and the error lists the estate's real ids. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
+| `hardware` | table | `{}` | Vendor line per role family. Families are exactly `access`, `leaf` and `ap`. Values: `access` = `cisco` (default, Cisco Catalyst 9200L-24P-4X) or `juniper` (Juniper EX3400-24P); `leaf` = `arista` (default, Arista DCS-7050SX3-48C8-F) or `juniper` (Juniper QFX5120-48Y-AFO2); `ap` = `reference` (default, Reference PoE access point) or `aruba` (HPE Aruba AP-505). Omitted families keep their default. An unknown family or vendor fails generation and the error lists the real choices. This is "they're a Juniper shop" — the alternates meet or beat the models they replace, so every port, PSU, PoE and optics check still holds. Written as its own `[hardware]` header, so place it AFTER every top-level scalar key: TOML scoping otherwise swallows them. See [the catalog](../catalog/README.md#selectable-vendor-lines). | **rebaseline** |
 
 Per-profile `address_pool` ceilings and per-site reservation sizes:
 
@@ -383,8 +385,11 @@ rather than silently renumbering.
 
 Recipes size demand. They do not select:
 
-- **Vendors, device types or models.** Hardware comes from `catalog/hardware.json`
-  and each profile's authored role-to-alias mapping.
+- **Arbitrary vendors, device types or models.** Hardware comes from
+  `catalog/hardware.json` and each profile's authored role-to-family mapping.
+  (The `access`, `leaf` and `ap` families ARE selectable between reviewed vendor
+  lines via `[hardware]` — see Common keys. Every other role, and any model not
+  already in the catalog, is a code-level change.)
 - **Metros, rooms and rack geometry.** Authored in `estates/places.py`. (Site
   *display names* and facility codes ARE expressible: authored defaults via
   `naming`, exact per-site values via `[site_names]` — see Common keys.)

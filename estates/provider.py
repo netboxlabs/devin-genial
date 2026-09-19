@@ -19,7 +19,7 @@ from .model import DesignError, World, canonical, resolve_bank_recipe, resolve_d
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names"}
+          "naming", "site_names", "hardware"}
 DEFAULT_POPS = [dict(key="chicago-west",metro="chicago"),dict(key="detroit-south",metro="detroit"),
                 dict(key="cleveland-east",metro="cleveland")]
 DEFAULT_CUSTOMERS = [dict(key="harbor-logistics",hub_pop="chicago-west",sites=[dict(pop=p["key"],count=1) for p in DEFAULT_POPS])]
@@ -306,9 +306,10 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
 def _console_management(site,switch):
     equipment.enrich_site(site,demonstrations=False)
     vlan,_ = site.network("management")
+    access_ports = site.w.hardware("access")["access_ports"]
     for device in list(site.devices):
         if site.w.obj(device)["refs"]["device_type"] != "hardware/console-server": continue
-        port = site.interface(device,"mgmt0"); peer = site.interface(switch,"GigabitEthernet1/0/23")
+        port = site.interface(device,"mgmt0"); peer = site.interface(switch,access_ports[-2])
         site.cable(port,peer)
         for key in (port,peer):
             site.w.obj(key)["attrs"]["mode"] = "access"
@@ -341,7 +342,7 @@ def _pop(w,item):
     switch = site.device("access","mgmt-01","management")
     vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=1,primary=True,device=switch)
     for i,router in enumerate(routers):
-        a = site.interface(switch,f"TenGigabitEthernet1/1/{i+1}"); b = site.interface(router,"xe-0/1/6")
+        a = site.interface(switch,w.hardware("access")["uplink_ports"][i]); b = site.interface(router,"xe-0/1/6")
         w.obj(a)["attrs"]["speed"] = 10000000
         site.cable(a,b,"smf"); _routed_pair(w,f"management/{site.id}/{'ab'[i]}",a,b)
         site.contract["required_connections"].append(dict(a=a,b=b))
@@ -410,7 +411,8 @@ def _customer(w,sid,c,pop,number,pop_sites):
     room = places.provider_office(site)
     edge = site.device("edge","edge-01","customer-edge")
     switch = site.device("access","access-01","access")
-    a,b = site.interface(edge,"port1"),site.interface(switch,"GigabitEthernet1/0/24")
+    access_ports = w.hardware("access")["access_ports"]
+    a,b = site.interface(edge,"port1"),site.interface(switch,access_ports[-1])
     site.cable(a,b); trunk(site,(a,b),("management","clients")); site.contract["required_connections"].append(dict(a=a,b=b))
     for role,name in (("management","Management"),("clients","Clients")):
         vi = site.virtual_interface(edge,name,role); w.obj(vi)["refs"]["parent"] = a
@@ -421,11 +423,11 @@ def _customer(w,sid,c,pop,number,pop_sites):
         device = site.device("endpoint",f"pc-{i+1:03}","workstation",racked=False,
                              meta=dict(endpoint=True,network="clients",power_scope="local outlet"))
         places.provider_endpoint(site,device,room,i+1)
-        source,target = site.interface(switch,f"GigabitEthernet1/0/{i+1}"),site.interface(device,"eth0")
+        source,target = site.interface(switch,access_ports[i]),site.interface(device,"eth0")
         vlan,_ = site.network("clients")
         for port in (source,target):
             w.obj(port)["attrs"]["mode"] = "access"; w.obj(port)["refs"]["untagged_vlan"] = vlan
-        site.patch(switch,f"GigabitEthernet1/0/{i+1}",device,"eth0",panel,i+1)
+        site.patch(switch,access_ports[i],device,"eth0",panel,i+1)
         site.address(target,"clients",primary=True,device=device)
     pop_site,pe_port = _service_port(w,pop_sites,pop,sid)
     hub = pop==c["hub_pop"] and number==1
@@ -439,7 +441,7 @@ def _customer(w,sid,c,pop,number,pop_sites):
     w.add("virtual_circuit_termination",f"virtual-circuit-termination/{sid}",dict(role="peer",description="Customer service membership; traffic demand is separately directed to its hub"),
           dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
     site.contract.update(required_device_roles={"role/customer-edge":1,"role/access":1},endpoint_count=c["lan_endpoints"],
-                         demand=dict(lan_endpoints=c["lan_endpoints"],peak_mbps=c["site_peak_mbps"],hub=hub,commit_mbps=rate),access_hardware="access")
+                         demand=dict(lan_endpoints=c["lan_endpoints"],peak_mbps=c["site_peak_mbps"],hub=hub,commit_mbps=rate),access_hardware=w.hardware_alias("access"))
     site.contract["assumptions"].extend(["The private-L3 customer has one physical access circuit and one CE. A CE, access-link or serving-PE failure can isolate this premises.",
         "Twelve fixed office positions and a same-room access switch preserve existing endpoint cables and addresses during growth. Customer LAN is wired; no wireless service is modeled."])
     _console_management(site,switch); site.power()

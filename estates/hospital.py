@@ -12,7 +12,7 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names"}
+          "naming", "site_names", "hardware"}
 CAMPUS_NETWORKS = ("clinical", "medical", "imaging", "staff", "wireless", "security", "management")
 NETWORKS = ("management", "clinical", "medical", "wireless", "security", "applications",
             "database", "backup", "wan", "storage", "staff", "imaging")
@@ -247,7 +247,7 @@ def _campus(site,item):
             add(f"camera-{'ground' if floor == 1 else f'floor-{floor:02}'}-{side}","camera","security",room,"corridor-camera",number)
     facts = campus.access(site,endpoints,upstreams,networks,
                           {"access_hardware":"access","upstreams":2,"label":"access-"},stable=True)
-    site.contract.update(endpoint_count=len(endpoints),demand=demand(item),access_hardware="access",
+    site.contract.update(endpoint_count=len(endpoints),demand=demand(item),access_hardware=site.w.hardware_alias("access"),
         access_devices=facts["access_devices"],access_usable_ports=facts["access_usable_ports"],
         required_device_roles={"role/wan-edge":2,"role/distribution":2,"role/access":facts["access_count"]})
     site.contract["assumptions"].extend([

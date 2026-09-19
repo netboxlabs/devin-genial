@@ -15,6 +15,7 @@ import re
 from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
+from .model import selected_alias
 
 
 METROS = {"chicago": ("Chicago", "IL", "Illinois", "America/Chicago"),
@@ -182,9 +183,21 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     recipe, findings = plan.get("recipe", {}), []
     if recipe.get("profile") != "provider-backbone":
         return findings
+    # The recipe declares the vendor line; every port name below follows the
+    # resolved catalog entry rather than one vendor's naming.
+    access_alias = selected_alias(recipe, "access")
+    access_spec = catalog.get(access_alias, {})
+    access_ports = access_spec.get("access_ports", [])
+    access_uplinks = access_spec.get("uplink_ports", [])
+    access_mgmt = next((p["name"] for p in access_spec.get("interfaces", []) if p.get("mgmt_only")), None)
 
     def report(code, key, message):
         findings.append(dict(code=code, object=key, message=message))
+
+    if len(access_ports) < 3 or len(access_uplinks) < 2 or access_mgmt is None:
+        report("provider-access-catalog", "catalog", "The selected access line must supply its ordered "
+               "access ports, at least two uplinks and one management port.")
+        return findings
 
     try:
         pops, customers, premises, pool, usable = _recipe(recipe)
@@ -425,11 +438,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         expected = {f"device/{sid}/console-01": ("console-server", "console-server")}
         if customer:
             expected.update({f"device/{sid}/edge-01": ("customer-edge", "edge"),
-                             f"device/{sid}/access-01": ("access", "access")})
+                             f"device/{sid}/access-01": ("access", access_alias)})
             expected.update({f"device/{sid}/pc-{n:03}": ("workstation", "endpoint") for n in range(1, customer["lan_endpoints"] + 1)})
         else:
             expected.update({f"device/{sid}/pe-{side}": ("provider-edge", "provider-edge") for side in ("a", "b")})
-            expected[f"device/{sid}/mgmt-01"] = ("management", "access")
+            expected[f"device/{sid}/mgmt-01"] = ("management", access_alias)
         for key, (role, hardware) in expected.items():
             location = f"{room}/office-01" if role == "workstation" else room
             if (kind(key) != "device" or attrs(key).get("status") != "active" or refs(key).get("site") != site or
@@ -542,7 +555,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         else:
             report("provider-pair-path", site, "A connected routed 100G local pair cable must join the two actual PE data ports.")
         for side, router, number in (("a", pe_a, 1), ("b", pe_b, 2)):
-            a, b = f"device/{sid}/mgmt-01/if/TenGigabitEthernet1/1/{number}", f"{router}/if/xe-0/1/6"
+            a, b = f"device/{sid}/mgmt-01/if/{access_uplinks[number-1]}", f"{router}/if/xe-0/1/6"
             routed(f"management/{sid}/{side}", (a, b), "vrf/provider")
             if not physical(a, b, 10000000):
                 report("provider-management-uplink", site, "PoP management requires two real routed 10G switch uplinks to the separate PE data ports.")
@@ -575,7 +588,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     def console_management(sid, switch, network, vlan, vrf, tenant):
         device = f"device/{sid}/console-01"
-        port, peer = f"{device}/if/mgmt0", f"{switch}/if/GigabitEthernet1/0/23"
+        port, peer = f"{device}/if/mgmt0", f"{switch}/if/{access_ports[-2]}"
         if (not physical(port, peer) or vlans(port) != {vlan} or vlans(peer) != {vlan} or
                 not address(port, network, vrf, 3, tenant) or not primary(device, port)):
             report("provider-console-management", device, "The local console server needs its active management address and actual VLAN channel into the routed site switch.")
@@ -592,7 +605,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if not svi(port, network, vlan, vrf, 1, "tenant") or not primary(switch, port):
             report("provider-management-gateway", switch, "The PoP console subnet requires its actual routed switch SVI and primary management address.")
         console_management(sid, switch, network, vlan, vrf, "tenant")
-        dedicated = f"{switch}/if/GigabitEthernet0/0"
+        dedicated = f"{switch}/if/{access_mgmt}"
         if peers.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
             report("provider-management-mode", dedicated, "The routed management switch must not duplicate its SVI subnet on the dedicated management port.")
 
@@ -618,7 +631,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 tenant, f"provider-account/customer/{customer['key']}")
         management, management_vlan = local_network(sid, "management", vrf, tenant)
         clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
-        lan, upstream = f"{cpe}/if/port1", f"{switch}/if/GigabitEthernet1/0/24"
+        lan, upstream = f"{cpe}/if/port1", f"{switch}/if/{access_ports[-1]}"
         if (not physical(lan, upstream) or any(vlans(p) != {management_vlan, clients_vlan} or attrs(p).get("mode") != "tagged" for p in (lan, upstream)) or
                 not svi(f"{cpe}/if/Management", management, management_vlan, vrf, 1, tenant, lan) or
                 not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
@@ -626,12 +639,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 not primary(switch, f"{switch}/if/Vlan10")):
             report("provider-customer-gateway", cpe, "Customer LAN requires the real CPE/switch trunk, separate addressed local management/client gateways and the switch management SVI.")
         console_management(sid, switch, management, management_vlan, vrf, tenant)
-        for dedicated in (f"{cpe}/if/mgmt", f"{switch}/if/GigabitEthernet0/0"):
+        for dedicated in (f"{cpe}/if/mgmt", f"{switch}/if/{access_mgmt}"):
             if peers.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
                 report("provider-management-mode", dedicated, "Customer management uses the routed local LAN; dedicated management ports remain unused.")
         for n in range(1, customer["lan_endpoints"] + 1):
             device = f"device/{sid}/pc-{n:03}"
-            port, access = f"{device}/if/eth0", f"{switch}/if/GigabitEthernet1/0/{n}"
+            port, access = f"{device}/if/eth0", f"{switch}/if/{access_ports[n-1]}"
             if (not physical(port, access) or any(vlans(p) != {clients_vlan} for p in (port, access)) or
                     not address(port, clients, vrf, tenant=tenant) or not primary(device, port)):
                 report("provider-customer-endpoint", device, "Every requested PC needs its own active access channel, customer VLAN/VRF and actual primary address.")
@@ -654,10 +667,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     report("provider-customer-patching", device, "Panel channels must use this customer's office outlet and local equipment-room panel.")
             elif len(members) != 2:
                 report("provider-customer-patching", device, "Direct customer access requires exactly one real cable channel.")
-        used_copper = {f"{switch}/if/GigabitEthernet1/0/{n}" for n in range(1, customer["lan_endpoints"] + 1)} | {
-            f"{switch}/if/GigabitEthernet1/0/23", f"{switch}/if/GigabitEthernet1/0/24"}
+        used_copper = {f"{switch}/if/{access_ports[n-1]}" for n in range(1, customer["lan_endpoints"] + 1)} | {
+            f"{switch}/if/{access_ports[-2]}", f"{switch}/if/{access_ports[-1]}"}
         actual_copper = {p for p in child("device", switch, "interface") if attrs(p).get("type") == "1000base-t" and peers.get(p)}
-        if actual_copper != used_copper or Decimal(len(used_copper)) > 24 * usable:
+        if actual_copper != used_copper or Decimal(len(used_copper)) > len(access_ports) * usable:
             report("provider-customer-port-capacity", switch, "Actual customer access attachments must use the finite fixed ports and retain declared copper-port reserve.")
 
     noc_edges = set()

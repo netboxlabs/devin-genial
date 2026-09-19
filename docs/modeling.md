@@ -38,12 +38,15 @@ the builders allocate connections to those ports and fail on exhaustion.
 
 | Design | Equipment and connectivity | Naming, addressing, and ownership |
 | --- | --- | --- |
-| `modern` | Cisco C9200L-24P-4X; two direct upstream neighbors and two supplies | Site-local names and corporate address plan |
+| `modern` | The selected `access` line; two direct upstream neighbors and two supplies | Site-local names and corporate address plan |
 | `inherited` | Juniper EX3300-24P; one direct upstream neighbor and one supply per switch | Birch names, separately scoped VRFs and /20 reservations from 172.16.0.0/12; independent Birch ownership until acquisition |
-| `refreshed` | New Cisco access identities, two direct upstream neighbors and two supplies | Acquired Cedar ownership; Birch endpoint names and addressing retained |
+| `refreshed` | New access identities on the selected line, two direct upstream neighbors and two supplies | Acquired Cedar ownership; Birch endpoint names and addressing retained |
 
 These are fictional procurement designs, not vendor lifecycle or performance
-claims. Both switch models have 24 access ports in the selected configuration.
+claims. `modern` and `refreshed` follow the `[hardware]` recipe key's `access`
+line — Cisco C9200L-24P-4X by default, Juniper EX3400-24P when selected —
+while `inherited` stays bound to the acquisition story's EX3300-24P. Every one
+of these models has 24 access ports in the selected configuration.
 Small branches route at the WAN edge; larger footprints use distribution pairs.
 This architecture follows immutable site size, while the procurement design
 controls access hardware, direct attachments, supply count and retained lineage.
@@ -344,10 +347,11 @@ Managed demand sizes AP equipment in aggregate across managed WLANs, without a
 per-SSID address-admission check. Guest demand maps to one guest segment per
 facility and must fit its available IPv4 capacity after existing allocations.
 
-The reference AP reserves 30 W at its actual serving Type 2 PSE port. Cisco
+Either AP line reserves 30 W at its actual serving Type 2 PSE port. Cisco
 C9200L access switches plan against 370 W after losing one of two compatible
-600 W supplies; EX3300-24P uses its 405 W fixed-supply PoE budget and claims no
-supply redundancy. These are separate from copper port headroom. New demand can
+600 W supplies, and the Juniper EX3400-24P line plans against the same 370 W
+after losing one of its two 600 W supplies; EX3300-24P uses its 405 W
+fixed-supply PoE budget and claims no supply redundancy. These are separate from copper port headroom. New demand can
 therefore add a switch pair when power binds, while wired devices can still use
 unused copper ports. Existing endpoint reservations never move.
 
@@ -387,7 +391,8 @@ large live load.
 
 The finite [catalog](../catalog/README.md) selects LR/LX/LR4 parts for reviewed
 Cisco, Juniper, Arista and Fortinet cages, plus an explicit reference-server
-transceiver. A configured 1G MX204 handoff receives LX even though its cage can
+transceiver. The alternate Juniper access and leaf lines carry their own
+reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives LX even though its cage can
 also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
 one active optical cable, two captive end modules, one shared assembly serial.
 The existing cable label remains stable and its comments show the assembly

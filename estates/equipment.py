@@ -28,18 +28,21 @@ def enrich_site(site, *, demonstrations=True):
                   {"name": f"{ns} {role}", "slug": f"{ns}-{role}", "color": "455a64"})
     if demonstrations and site.contract["kind"] == "dc":
         _laboratory(site)
+        spec = w.hardware("access")
+        first, second = spec["stack_ports"]
         members = [site.device("access", f"stack-{i:02}", "stack") for i in (1, 2)]
         chassis = w.add("virtual_chassis", f"virtual-chassis/{site.id}",
                         {"name": f"{site.name}-service-stack", "domain": f"{ns}-{site.code}",
-                         "description": "Two Cisco access chassis joined by their catalog StackWise ports; auxiliary service stack"},
+                         "description": f"Two {spec['manufacturer']} access chassis joined by their catalog "
+                                        "stacking ports; auxiliary service stack"},
                         {"master": members[0]})
         for position, device in enumerate(members, 1):
             w.obj(device)["refs"]["virtual_chassis"] = chassis
             w.obj(device)["attrs"].update(vc_position=position, vc_priority=100 - position)
-        for port_a, port_b in (("StackPort1/1", "StackPort1/2"), ("StackPort1/2", "StackPort1/1")):
+        for port_a, port_b in ((first, second), (second, first)):
             cable = site.cable(site.interface(members[0], port_a), site.interface(members[1], port_b))
             w.obj(cable)["attrs"].pop("type")
-            w.obj(cable)["attrs"]["description"] = "Catalog StackWise ports; cable medium left unspecified by the pinned schema"
+            w.obj(cable)["attrs"]["description"] = "Catalog stacking ports; cable medium left unspecified by the pinned schema"
 
     # Preserve each serial attachment's reservation across ordinary growth and
     # hardware refresh; retired slots remain reserved like rack/IP allocations.
@@ -154,6 +157,7 @@ def validate(plan, catalog=None):
         catalog = json.loads((Path(__file__).resolve().parent.parent / "catalog/hardware.json").read_text())["models"]
     children, by_kind, cables = defaultdict(list), defaultdict(list), defaultdict(list)
     modules_by_bay = defaultdict(list)
+    models_by_device = {}
     findings = []
 
     def refs(key):
@@ -184,6 +188,7 @@ def validate(plan, catalog=None):
         model = catalog.get(device_type.removeprefix("hardware/"), {}) if isinstance(device_type, str) else {}
         if not plan.get("recipe", {}).get("profile") and not model:
             model = catalog.get(objects[device].get("meta", {}).get("hardware"), {})
+        models_by_device[device] = model
         if plan.get("recipe", {}).get("profile") and (not model or
                 objects.get(device_type, {}).get("kind") != "device_type" or
                 attrs(device_type).get("model") != model.get("model") or
@@ -277,7 +282,11 @@ def validate(plan, catalog=None):
         if len(members) != 2 or len(set(positions)) != 2:
             report("equipment-stack-members", chassis, "The service stack requires two distinct member positions.")
         for device in members:
-            peers = [refs(peer).get("device") for p in children[device] if "stackwise" in attrs(p).get("type", "") for peer in cables[p]]
-            if len(peers) != 2 or any(peer not in members or peer == device for peer in peers):
-                report("equipment-stack-links", device, "Each member needs two catalog StackWise links to the other member.")
+            # The stacking ports are whatever this chassis's own catalog entry
+            # declares; a vendor line change must not weaken the link obligation.
+            names = set(models_by_device.get(device, {}).get("stack_ports", []))
+            peers = [refs(peer).get("device") for p in children[device]
+                     if attrs(p).get("name") in names for peer in cables[p]]
+            if len(names) != 2 or len(peers) != 2 or any(peer not in members or peer == device for peer in peers):
+                report("equipment-stack-links", device, "Each member needs two catalog stacking links to the other member.")
     return findings
