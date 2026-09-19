@@ -12,7 +12,8 @@ import urllib.parse
 from unittest.mock import ANY, Mock, patch
 
 from estates.model import canonical, digest
-from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, RECEIPT_VERSION, Client,
+from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, MAX_JOB_ROWS, POST_HOOKS,
+                               RENDER_DEFAULTS, RECEIPT_VERSION, Client,
                                JobTimeout, LoadError, WorkerDied,
                                _arbitrate_worker_death, _resolve_worker_death,
                                _bounded_readback, _readback_fields,
@@ -26,7 +27,8 @@ from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, R
                                _reconcile_rest_patches, _rest_payload, _run_finalizers,
                                _matches, _NoRedirect, _refresh, _render, _rendered_columns,
                                _poll, _review_history_preflight, _schema_preflight, _token,
-                               _verify_component_caches, _verify_review_history, _write_receipt,
+                               _verify_component_caches, _verify_receipt_guard,
+                               _verify_review_history, _write_receipt,
                                delivery_contract, load)
 
 
@@ -896,6 +898,97 @@ class TurboBulkLoaderTests(unittest.TestCase):
         plan = {"objects": [{"kind": "module_type_profile", "attrs": {"name": "CPU"}, "refs": {}}]}
         inventory = {"module_type_profile": [{"id": 1, "name": "CPU"}]}
         self.assertEqual(_bootstrap_allowlist(plan, inventory), {})
+
+    def test_bootstrap_allowlist_never_adopts_undeclared_kinds(self):
+        # leftover population of any other kind (for example owner rows NetBox
+        # 4.7 keeps on main) must stay a hard empty-inventory block
+        plan = {"objects": []}
+        inventory = {"tag": [{"id": 1, "name": "leftover", "slug": "leftover"}],
+                     "owner": [{"id": 3, "name": "stale-owner"}]}
+        self.assertEqual(_bootstrap_allowlist(plan, inventory), {})
+
+    def test_bootstrap_allowlist_extras_mode_allows_only_unplanned_rows(self):
+        plan = {"objects": [{"kind": "module_type_profile",
+                             "attrs": {"name": "Custom PSU"}, "refs": {}}]}
+        inventory = {"module_type_profile": [{"id": 1, "name": "CPU"},
+                                             {"id": 9, "name": "Custom PSU"}]}
+        # fresh-load mode: a planned identity already on the target is a collision
+        self.assertEqual(_bootstrap_allowlist(plan, inventory), {})
+        # verify mode: the plan's own loaded row is expected; only the factory
+        # extra is allowlisted, by exact id
+        allowed = _bootstrap_allowlist(plan, inventory, extras_only=True)
+        self.assertEqual(allowed["target_ids"], {"module_type_profile": [1]})
+
+    def test_render_semantics_are_pinned_to_the_compiler_version(self):
+        # Rendered payloads are receipt-bound: changing what _render emits for
+        # the same artifact must reject stale receipts, so this golden digest
+        # and COMPILER_VERSION must change together.
+        device = {"kind": "device", "key": "d", "attrs": {"name": "d1"},
+                  "refs": {"site": "s"}, "meta": {}}
+        rows = []
+        for kind in sorted(RENDER_DEFAULTS):
+            obj = {"kind": kind, "key": "k", "attrs": {"name": "n"}, "refs": {}, "meta": {}}
+            if kind == "power_outlet":
+                obj["refs"] = {"device": "d"}
+            rows.append(_render(obj, {"d": device, "k": obj}, {"d": 1, "s": 2}, {}))
+        golden = hashlib.sha256(json.dumps({"defaults": RENDER_DEFAULTS, "rows": rows},
+                                           sort_keys=True).encode()).hexdigest()
+        self.assertEqual(
+            (COMPILER_VERSION, golden),
+            ("v02-turbobulk-13",
+             "bc1f571dc42b7c17a12c8c2982daa9c96f282d2831f5df6550a8ab521a97cb6e"))
+
+    def test_supersede_refuses_when_rq_reports_the_job_alive(self):
+        receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},
+                   "jobs": []}
+        orphan = {"purpose": "b", "model": "dcim.site", "mode": "insert",
+                  "rows_expected": 40, "job_id": "dead-1"}
+        receipt["jobs"] = [orphan]
+        job = {"status": "errored", "error": "Job orphaned: worker terminated", "data": {}}
+
+        class Target:
+            def request(self, path, **_kwargs):
+                if "background-tasks" in path:
+                    return 200, {"status": "started"}
+                return 200, {"count": 0}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(LoadError) as caught:
+                _resolve_worker_death(Target(), orphan, receipt, Path(tmp) / "r.json", job)
+        self.assertIn("refusing to resubmit", str(caught.exception))
+        self.assertNotIn("superseded", orphan)
+
+    def test_load_rejects_job_rows_above_the_jsonl_chunk_bound(self):
+        with self.assertRaises(LoadError) as caught:
+            load("missing-artifact", url="http://t.example", token="0" * 40,
+                 branch="b", receipt_path=Path("unused.json"),
+                 max_job_rows=MAX_JOB_ROWS + 1)
+        self.assertIn("silently drop columns", str(caught.exception))
+
+    def test_patch_state_normalizes_choice_and_fk_readback_shapes(self):
+        from estates.turbobulk import _patch_state
+        actual = {"primary_ip4": {"id": 363, "address": "10.0.96.12/20"},
+                  "start_on_boot": {"value": "off", "label": "Off"},
+                  "tags": [{"id": 6, "name": "t"}]}
+        desired = {"id": 25, "primary_ip4": 363, "start_on_boot": "off", "tags": [6]}
+        self.assertEqual(_patch_state(actual, desired, "complete:virtual_machine"),
+                         [True, True, True])
+        drifted = dict(actual, start_on_boot={"value": "on", "label": "On"})
+        with self.assertRaises(LoadError):
+            _patch_state(drifted, desired, "complete:virtual_machine")
+
+    def test_verify_receipt_guard_protects_load_receipts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "new.json"
+            _verify_receipt_guard(missing)  # absent path is fine
+            prior_verify = Path(tmp) / "verify.json"
+            prior_verify.write_text(json.dumps({"result": "verify-only"}))
+            _verify_receipt_guard(prior_verify)  # re-running a verify is fine
+            load_receipt = Path(tmp) / "load.json"
+            load_receipt.write_text(json.dumps({"result": "loaded", "jobs": []}))
+            with self.assertRaises(LoadError) as caught:
+                _verify_receipt_guard(load_receipt)
+            self.assertIn("refusing to overwrite", str(caught.exception))
 
     def test_render_defaults_supply_model_defaults_without_overriding(self):
         rack = {"kind": "rack", "key": "r", "attrs": {"name": "r1", "status": "active"},

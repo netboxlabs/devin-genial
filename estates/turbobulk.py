@@ -63,9 +63,12 @@ class WorkerDied(JobTimeout):
         )
 
 
-RECEIPT_VERSION = 3
-COMPILER_VERSION = "v02-turbobulk-12"
+RECEIPT_VERSION = 4
+COMPILER_VERSION = "v02-turbobulk-13"
 DEFAULT_JOB_ROWS = 2_000
+# TurboBulk's JSONL reader fixes the column set from the first chunk (10,000
+# rows), so a sparse payload spanning chunks can silently drop columns.
+MAX_JOB_ROWS = 10_000
 REST_PATCH_ROWS = 100
 READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
@@ -1065,8 +1068,9 @@ def _arbitrate_worker_death(client, receipt, entry):
 
     Reviewable inserts create exactly one create-ChangeDiff per row inside the
     same transaction as the rows, and no other writer touches these models on
-    the branch (REST creation is limited to module_bay_type, never a TurboBulk
-    job model; REST completion PATCHes do not change a diff's create action).
+    the branch (REST_CREATE_KINDS — module_bay_type and provider_account — are
+    never TurboBulk job models; REST completion PATCHes do not change a diff's
+    create action).
     The model's create-diff count therefore equals the rows of previously
     verified entries, plus this entry's rows exactly when its transaction
     committed before the worker died. Anything else is unexplained state.
@@ -1113,6 +1117,17 @@ def _resolve_worker_death(client, prior, receipt, receipt_path, job):
         prior["request_verified"] = True
         _write_receipt(receipt_path, receipt)
         return True
+    # Resubmitting behind a still-live transaction would double every row, so
+    # before a supersede ask RQ's own record as a cross-check: an affirmatively
+    # live status refuses the resubmit. A dead, expired, or unreadable record
+    # (the oracle needs staff access some tokens lack) leaves the ChangeDiff
+    # arbitration as the deciding evidence.
+    rq_status = _rq_job_state(client, _bound_job_id(prior))
+    if rq_status is not None and rq_status != "missing" and rq_status not in RQ_DEAD_STATUSES:
+        raise LoadError(
+            f"orphaned job for {prior['model']} reads rolled back but RQ reports "
+            f"{rq_status!r}; refusing to resubmit — use a fresh branch and receipt")
+    evidence["rq_status"] = rq_status
     prior["superseded"] = {"reason": "worker death before commit", **evidence}
     _write_receipt(receipt_path, receipt)
     return False
@@ -1666,6 +1681,14 @@ REST_PATCH_LIST_FIELDS = {"tagged_vlans", "tags", "groups", "module_bay_types", 
                           "asns", "export_targets", "import_targets"}
 
 
+def _observed_patch_value(value):
+    """Readback shape back to the scalar the PATCH sent: FK dicts carry an id,
+    choice fields come back as {"value", "label"} dicts (e.g. start_on_boot)."""
+    if isinstance(value, dict) and "id" not in value and "value" in value:
+        return value["value"]
+    return _nested_id(value)
+
+
 def _patch_state(actual, desired, purpose):
     """Return field matches after proving every nonmatching value is safe to replace."""
     matches = []
@@ -1679,7 +1702,7 @@ def _patch_state(actual, desired, purpose):
                     f"{purpose} target {desired['id']} field {field} has concurrent values"
                 )
         else:
-            observed = _nested_id(actual.get(field))
+            observed = _observed_patch_value(actual.get(field))
             if observed not in (None, expected):
                 raise LoadError(
                     f"{purpose} target {desired['id']} field {field} changed concurrently"
@@ -1807,16 +1830,28 @@ def _trace_contains_cable(value, cable_id, label):
     return False
 
 
-def _bootstrap_allowlist(plan, inventory):
+# The only kinds whose target-native factory rows may be allowlisted past the
+# hard empty-inventory rule. Kinds here must have a plain-attribute readback
+# identity (never a reference) so disjointness needs no resolution. Keeping
+# this an explicit set prevents the allowlist from silently adopting leftover
+# population of arbitrary kinds (for example owner/owner_group rows that
+# NetBox 4.7 writes to main and branch deletion does not remove).
+ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile"}
+
+
+def _bootstrap_allowlist(plan, inventory, extras_only=False):
     """Allow target-native builtin rows that cannot collide with the artifact.
 
     NetBox versions ship factory rows for some catalog kinds (for example the
-    eight ModuleTypeProfiles on 4.7). A fresh load may proceed over them only
-    when the kind's readback identity is a plain attribute (never a reference,
-    so no resolution ambiguity) and every existing identity is disjoint from
-    the plan's — the exact ids are recorded and allowlisted through strict
-    readback, mirroring the lab bootstrap receipt. Anything else keeps the
-    hard empty-inventory rule.
+    eight ModuleTypeProfiles on 4.7.1). A fresh load may proceed over them
+    only for kinds in ALLOWLISTED_BUILTIN_KINDS when every existing identity
+    is disjoint from the plan's — the exact ids are recorded and allowlisted
+    through strict readback, mirroring the lab bootstrap receipt. Anything
+    else keeps the hard empty-inventory rule.
+
+    With extras_only=True (verifying an already-loaded target, where planned
+    rows are legitimately present) the allowlist is instead the per-row set of
+    builtin rows whose identities are not planned.
     """
     from lab.verify import IDENTITIES
 
@@ -1825,7 +1860,7 @@ def _bootstrap_allowlist(plan, inventory):
     for obj in plan["objects"]:
         plan_kinds[obj["kind"]].append(obj)
     for kind, rows in inventory.items():
-        if not rows:
+        if kind not in ALLOWLISTED_BUILTIN_KINDS or not rows:
             continue
         identity = IDENTITIES.get(kind, ("name",))
         objs = plan_kinds.get(kind, [])
@@ -1833,11 +1868,13 @@ def _bootstrap_allowlist(plan, inventory):
             continue
         if any(field not in row for row in rows for field in identity):
             continue
-        existing = {tuple(row[field] for field in identity) for row in rows}
         planned = {tuple(obj["attrs"].get(field) for field in identity) for obj in objs}
-        if existing & planned:
-            continue
-        allowed[kind] = sorted(row["id"] for row in rows)
+        extras = [row for row in rows
+                  if tuple(row[field] for field in identity) not in planned]
+        if not extras_only and len(extras) != len(rows):
+            continue  # identity collision on a fresh load stays a hard block
+        if extras:
+            allowed[kind] = sorted(row["id"] for row in extras)
     if not allowed:
         return {}
     return {"success": True, "target_ids": allowed}
@@ -1856,13 +1893,13 @@ def _readback_fields(plan):
     from lab.verify import IDENTITIES
 
     base = {"id", "url", "display", "name", "label", "slug", "description", "asset_tag"}
-    specials = {"front_port": {"rear_ports", "positions", "rear_port", "rear_port_position"},
-                "service": {"port_mappings"},
-                "cable": {"a_terminations", "b_terminations"}}
     # Projection is limited to kinds whose serializers hold no composed/generic
     # fields that NetBox cannot project (e.g. circuit_termination.termination):
     # interface dominates readback cost (its serializer resolves a CablePath per
-    # row for connected_endpoints), and its fields are all plain.
+    # row for connected_endpoints), and its fields are all plain. Widening this
+    # set means adding the readback fields verify_plan reads that are not in
+    # attrs/refs (front_port rear-port mapping, service port_mappings, cable
+    # terminations) for each new kind.
     projectable = {"interface"}
     fields = {}
     for obj in plan["objects"]:
@@ -1871,7 +1908,7 @@ def _readback_fields(plan):
             continue
         if kind not in fields:
             identity = set(IDENTITIES.get(kind, ()))
-            fields[kind] = set(base) | specials.get(kind, set()) | identity
+            fields[kind] = set(base) | identity
         fields[kind].update(obj["attrs"])
         fields[kind].update(obj["refs"])
     return fields
@@ -1993,6 +2030,23 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
     return receipt["rest_rows_completed"]
 
 
+def _verify_receipt_guard(path):
+    """Refuse to overwrite anything but a prior verification receipt.
+
+    Load receipts are the sole resume/recovery checkpoint for their branch; a
+    verify run pointed at one must never replace it.
+    """
+    if not path.exists():
+        return
+    try:
+        existing = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        existing = None
+    if not isinstance(existing, dict) or existing.get("result") != "verify-only":
+        raise LoadError(f"refusing to overwrite non-verification receipt {path}; "
+                        "choose another --receipt path")
+
+
 def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
     """Read-only strict verification of a target against a frozen plan.
 
@@ -2004,6 +2058,8 @@ def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
     verification receipt when a path is given.
     """
     started = time.monotonic()
+    if receipt_path is not None:
+        _verify_receipt_guard(Path(receipt_path))
     plan_path, raw, plan, objects, _offline = _artifact(plan_path)
     client = Client(url, token)
     _, status = client.request("/api/status/", branch=False)
@@ -2011,13 +2067,21 @@ def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
     inventory = fetch_inventory(client.base, client.token,
                                 (obj["kind"] for obj in plan["objects"]),
                                 client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
-    verification = verify_plan(plan, inventory, strict_inventory=True)
+    # On a loaded target the plan's own rows are present, so builtin factory
+    # rows are the per-row extras beyond the plan (extras_only).
+    allowed_existing = _bootstrap_allowlist(plan, inventory, extras_only=True)
+    verification = verify_plan(plan, inventory, strict_inventory=True,
+                               allow_existing_receipt=allowed_existing or None)
     result = {"verified_at": _now(), "result": "verify-only", "artifact": str(plan_path),
+              "receipt_version": RECEIPT_VERSION, "compiler_version": COMPILER_VERSION,
               "plan_sha256": hashlib.sha256(raw).hexdigest(), "canonical_sha256": digest(plan),
               "target": client.base, "branch": branch,
               "branch_id": branch_row["schema_id"] if branch_row else None,
               "netbox": status.get("netbox-version"),
-              "verification": _bounded_readback(verification)}
+              "allowed_existing": allowed_existing,
+              # Unlike a load's expected-mismatch preflight, mismatches here
+              # are the deliverable: persist the full list.
+              "verification": verification}
     success = verification["success"]
     if success:
         # verify_plan's id map holds {"id": N, ...} rows; downstream checks
@@ -2039,9 +2103,13 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     """Load one frozen artifact into a branch and strictly read it back."""
     started_at = _now()
     overall = time.monotonic()
+    if (not isinstance(max_job_rows, int) or isinstance(max_job_rows, bool)
+            or not 1 <= max_job_rows <= MAX_JOB_ROWS):
+        raise LoadError(
+            f"TurboBulk maximum job rows must be an integer from 1 through {MAX_JOB_ROWS}: "
+            "TurboBulk's JSONL reader fixes the column set from the first chunk, so a "
+            "sparse payload spanning chunks can silently drop columns")
     plan_path, raw, plan, objects, offline = _artifact(plan_path)
-    if not isinstance(max_job_rows, int) or isinstance(max_job_rows, bool) or max_job_rows < 1:
-        raise LoadError("TurboBulk maximum job rows must be a positive integer")
     unsupported = sorted({obj["kind"] for obj in objects.values()} - SPECS.keys())
     if unsupported:
         raise LoadError("TurboBulk compiler does not yet cover canonical kinds: " + ", ".join(unsupported))
@@ -2126,7 +2194,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     readback_started = time.monotonic()
     inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]),
                                 client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
-    existing = verify_plan(plan, inventory, strict_inventory=True)
+    existing = verify_plan(plan, inventory, strict_inventory=True,
+                           allow_existing_receipt=(receipt or {}).get("allowed_existing") or None)
     preflight_readback_seconds = round(time.monotonic() - readback_started, 6)
     if existing["success"]:
         if receipt is not None:
@@ -2136,9 +2205,19 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         try:
             for entry in receipt.get("jobs", []) if receipt else []:
                 if (entry.get("request_verified") is True
+                        or entry.get("superseded")
                         or entry.get("purpose", "").startswith("finalize:")):
                     continue
                 job = _poll(client, _bound_job_id(entry), timeout)
+                if _is_worker_death_row(job):
+                    # The exact strict readback above is the strongest signal;
+                    # arbitration still proves the orphaned insert committed
+                    # before the entry is adopted as verified.
+                    if not _resolve_worker_death(client, entry, receipt, receipt_path, job):
+                        raise LoadError(
+                            f"orphaned job for {entry['model']} rolled back yet the target "
+                            "matches the artifact exactly; use a fresh branch and receipt")
+                    continue
                 try:
                     _record_terminal(entry, job)
                 finally:

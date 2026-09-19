@@ -197,7 +197,10 @@ def _archive_load_receipts(receipt, receipt_path, load_root):
                 raise LoadError(f"cannot inspect load receipt {source}: {exc}") from exc
             if (value.get("target", "").rstrip("/") == receipt["target"]
                     and value.get("branch") == receipt["branch"]
-                    and value.get("branch_id") == receipt["old_branch"].get("schema_id")):
+                    and value.get("branch_id") == receipt["old_branch"].get("schema_id")
+                    # verify-only receipts are re-runnable evidence, not load
+                    # checkpoints; leave them out of the immutable archive.
+                    and value.get("result") != "verify-only"):
                 archive.append({"source": str(source), "destination": str(destination / source.name),
                                 "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
                                 "status": "pending"})
