@@ -465,6 +465,15 @@ identical gate (11,801 objects, receipt
 current profile now holds a local live-qualification receipt. Cloud and
 Enterprise remain unqualified.
 
+Also on September 19, 2026 the `[hardware]` vendor lever passed the same gate
+live: an all-alternate bank estate (Juniper EX3400-24P access, QFX5120-48Y
+leaves, Aruba AP-505 APs) loaded 10,587/10,587 objects and 12,596/12,596
+create ChangeDiffs with zero mismatches, 1,006/1,006 cable traces and 6,179
+component placements, plus clean zero-write verify and idempotent repeat
+(receipt `v1-Jasper-Federal-Credit-Union-685fb1af89d4.json` and its `verify-`
+sibling). This qualifies the variant hardware through the identical loader
+path; default-line estates remain the primary receipts above.
+
 "TurboBulk 0.4.0" here means a source build of TurboBulk main carrying the
 opportunistic reaper (TRB-23); the receipts' target contract records the locally
 built plugin as `0.0.0`. The version is publicly released:

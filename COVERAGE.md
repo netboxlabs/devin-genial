@@ -217,7 +217,7 @@ government/defense (enterprise/campus plus `site_names`).
 | 2 | Bank kinds (loader-only) | **complete 2026-09-19** — all 37 remaining kinds + 12 refs landed in one wave; full 98-kind bank loaded/verified/repeated live (11,801 objects, 0 mismatches). No hard residual. |
 | 3 | Retail chain profile | **complete 2026-09-19** — 55-kind profile merged (789 tests); first live load on the pinned 4.7.1 stack: 13,005/13,005 objects, 0 mismatches, 1,265/1,265 cables, verify + idempotent repeat clean |
 | 4 | University campus profile | **complete 2026-09-19** — merged (832 tests); first live load: 21,970/21,970 objects, 0 mismatches, 2,380/2,380 cables, 26,730/26,730 ChangeDiffs, verify + repeat clean (largest single estate loaded to date) |
-| 5 | Vendor lever | in progress — worktree build launched 2026-09-19 |
+| 5 | Vendor lever | **complete 2026-09-19** — `[hardware]` selects access/leaf/ap lines (Juniper EX3400/QFX5120, Aruba AP-505); 56-cell fit matrix + adversarial review hardening (854 tests); all-Juniper bank live: 10,587/10,587 objects, 0 mismatches, verify + idempotent repeat clean |
 | 6 | MSP profile (one NOC operating N customer tenants) | pending |
 | 7 | Bank hard-kinds decision point | **dissolved** — phase 2 left no residual; the extras trio went via REST-create and the exempt-count gate |
 | 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | pending |
