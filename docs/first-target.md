@@ -7,10 +7,13 @@ detail and [seeding](seeding.md) the database-restore alternative.
 
 ## 1. What the target must have
 
-- **NetBox 4.6 or newer.** Artifacts that emit module bay types (for example
-  the 59-kind rich provider artifact) require NetBox 4.7: 4.6 has no
-  module-bay-type model at all. `just load-check` (below) tells you offline
-  whether your artifact needs it.
+- **NetBox 4.7 or newer for anything you generate today.** Every current
+  profile emits module bay types (PSU bays and optic cages are unconditional
+  enrichment), and that model does not exist before NetBox 4.7 — a 4.6 target
+  cannot load any artifact this generator currently produces. Only historical
+  pre-module-bay artifacts still load on 4.6. `just load-check` (below) names
+  the requirement offline; check the target's `/api/status/` version before
+  creating anything on it.
 - **The Branching plugin**, for branch-scoped loads. Loading without a branch
   writes to main and requires the explicit `ALLOW_MAIN_WRITES=1` opt-in.
 - **The TurboBulk plugin**, for bulk transport. Without it the loader falls
@@ -51,10 +54,12 @@ exported environment always wins.
 just load-check build/my-estate
 ```
 
-No target or token needed. It reports whether every emitted kind fits the
-TurboBulk compiler contract, lists the uncovered kinds when not, and notes
-when the artifact needs a NetBox 4.7 target. Run this before asking anyone
-for tenant access.
+No target or token needed. It reports whether every emitted kind and
+reference fits the TurboBulk compiler contract, lists the gaps when not, and
+names the NetBox 4.7 requirement when the artifact carries module bay types.
+Run this before asking anyone for tenant access — and when it names a version
+requirement, confirm the target's `/api/status/` version before creating a
+branch on it.
 
 ## 4. Create the branch
 

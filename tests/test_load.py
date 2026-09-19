@@ -372,6 +372,27 @@ class FreshLoadOccupancyTests(unittest.TestCase):
                          {"site": {"rows": 2, "endpoint": "/api/dcim/sites/"}})
         self.assertIn("clear the listed endpoints", result["note"])
 
+    def test_probe_reports_absent_endpoints_instead_of_crashing(self):
+        # module bay types return a rendered HTML 404 before NetBox 4.7; the
+        # probe must leave that to the transport blockers, not crash explain
+        from estates.load import _fresh_load_occupancy
+
+        class Missing(Target):
+            def request(self, path, **_kwargs):
+                if "module-bay-types" in path:
+                    raise LoadError("GET returned HTTP 404: <!DOCTYPE html>...")
+                return 200, {"count": 0}
+
+        plan = {"objects": [
+            {"kind": "module_bay_type", "attrs": {"name": "b"}, "refs": {}},
+            {"kind": "site", "attrs": {"name": "s"}, "refs": {}},
+        ]}
+        objects = {f"k{i}": obj for i, obj in enumerate(plan["objects"])}
+        result = _fresh_load_occupancy(Missing(), plan, objects)
+        self.assertEqual(result["blocking"], {})
+        self.assertEqual(result["unreadable"],
+                         {"module_bay_type": "/api/dcim/module-bay-types/"})
+
     def test_probe_is_quiet_on_an_empty_target(self):
         from estates.load import _fresh_load_occupancy
 

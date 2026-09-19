@@ -166,25 +166,39 @@ def _fresh_load_occupancy(client, plan, objects):
     from .turbobulk import SPECS as TB_SPECS
     kinds = sorted({obj["kind"] for obj in objects.values()} & TB_SPECS.keys())
     occupied = {}
+    unreadable = {}
     for kind in kinds:
         endpoint = TB_SPECS[kind][1]
-        _, page = client.request(f"{endpoint}?brief=1&limit=1")
+        try:
+            _, page = client.request(f"{endpoint}?brief=1&limit=1")
+        except LoadError:
+            # An absent model (module bay types before NetBox 4.7 return a
+            # rendered HTML 404) is a transport blocker the candidates already
+            # explain; occupancy is about rows, not endpoints.
+            unreadable[kind] = endpoint
+            continue
         count = page.get("count", 0)
         if count:
             occupied[kind] = {"rows": count, "endpoint": endpoint}
     if not occupied:
-        return {"occupied": {}, "blocking": {}, "allowlisted": {}}
+        result = {"occupied": {}, "blocking": {}, "allowlisted": {}}
+        if unreadable:
+            result["unreadable"] = unreadable
+        return result
     candidates = [kind for kind in occupied if kind in ALLOWLISTED_KINDS]
     inventory = (fetch_inventory(client.base, client.token, candidates, client.branch_id)
                  if candidates else {})
     allowed = _bootstrap_allowlist(plan, inventory).get("target_ids", {})
     blocking = {kind: value for kind, value in occupied.items() if kind not in allowed}
-    return {"occupied": occupied,
-            "allowlisted": {kind: allowed[kind] for kind in occupied if kind in allowed},
-            "blocking": blocking,
-            "note": ("a fresh load refuses while blocking kinds hold rows; clear the "
-                     "listed endpoints or use a fresh target (a resume with its "
-                     "receipt is unaffected)") if blocking else None}
+    result = {"occupied": occupied,
+              "allowlisted": {kind: allowed[kind] for kind in occupied if kind in allowed},
+              "blocking": blocking,
+              "note": ("a fresh load refuses while blocking kinds hold rows; clear the "
+                       "listed endpoints or use a fresh target (a resume with its "
+                       "receipt is unaffected)") if blocking else None}
+    if unreadable:
+        result["unreadable"] = unreadable
+    return result
 
 
 def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="reviewable",
@@ -636,11 +650,14 @@ def main(argv=None):
                          f"{len(unsupported_refs)} references have no compiler translation")
                       + " (listed above).", file=os.sys.stderr)
                 return 2
-            note = ("; module bay types require a NetBox 4.7 target"
-                    if "module_bay_type" in rest_kinds else "")
-            print("Loadable via TurboBulk+REST" + note +
-                  ". Run just load-explain against the target for the binding preflight.",
-                  file=os.sys.stderr)
+            if "module_bay_type" in rest_kinds:
+                print("REQUIRES a NetBox 4.7+ target (module bay types do not exist "
+                      "before 4.7). Loadable there via TurboBulk+REST; run just "
+                      "load-explain against the target for the binding preflight.",
+                      file=os.sys.stderr)
+            else:
+                print("Loadable via TurboBulk+REST. Run just load-explain against the "
+                      "target for the binding preflight.", file=os.sys.stderr)
             return 0
         if args.verify_only:
             from .turbobulk import verify_target
@@ -672,7 +689,9 @@ def main(argv=None):
             print(json.dumps({"success": result.get("success", False), "result": result.get("result"),
                               "transport": result.get("transport"), "receipt": str(receipt)}, sort_keys=True))
         return 0
-    except (LoadError, ValueError, OSError, KeyError, TypeError) as exc:
+    except (LoadError, ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
+        # RuntimeError covers readback fetch failures (lab.verify) so every
+        # subcommand exits 2 with a message instead of a traceback.
         if args.explain or receipt is None:
             detail = ""
         elif isinstance(receipt, Path) and not receipt.exists():

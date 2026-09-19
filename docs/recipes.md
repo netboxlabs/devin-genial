@@ -267,10 +267,11 @@ identities (`ce-<customer>-<pop>-<nnn>`) must not collide.
 ## Worked example
 
 Start from a shipped profile and edit a copy — never the shipped file, and never a
-generated `plan.json`:
+generated `plan.json`. Keep customer recipes under the gitignored `build/` so
+the repository tree stays clean:
 
 ```sh
-cp profiles/school-district.toml profiles/greenfield-district.toml
+cp profiles/school-district.toml build/greenfield-district.toml
 ```
 
 Three realistic edits, from safest to most disruptive.

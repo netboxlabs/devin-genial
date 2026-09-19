@@ -100,3 +100,4 @@ template below. Prefer `model: opus` for fan-out.
 | Date | Scenario | Target | Verdict | S1/S2 findings |
 | --- | --- | --- | --- | --- |
 | 2026-09-19 | Provider, 5 PoPs / 3 customers, shared box | 4.7.1 local | no (blocked at write boundary) | owner/owner_group shared-box block; load-explain missed it; wrong documented remedy; phantom receipt message |
+| 2026-09-19 | Enterprise DC, 3 workloads, manufacturing | 4.6.8 local | no (4.6 cannot load any current profile) | docs claimed "4.6 or newer"; load-explain occupancy probe crashed on the absent 4.7 endpoint; verify-target raw traceback; README walkthrough used the unloadable bank artifact |

@@ -62,16 +62,23 @@ The Justfile is also the loading interface. The public recipes require `just`;
 a Diode load additionally requires the
 devenv-managed SDK environment described in the [loading guide](docs/loading.md).
 New to loading? [First target](docs/first-target.md) is the start-to-finish
-runbook: prerequisites, token shape, branch creation, load, verify. Check an
-artifact offline, then inspect a target without writing:
+runbook: prerequisites, token shape, branch creation, load, verify.
+
+Not every profile is loadable today: the bank estate emits 39 kinds beyond the
+TurboBulk compiler contract, and school/hospital emit wireless kinds outside
+it, so `just load-check` is the required first step when picking a demo
+profile — enterprise-dc and provider-backbone load completely, and every
+current profile requires a NetBox 4.7+ target (module bay types). Check the
+artifact offline, then inspect the target without writing:
 
 ```sh
-just load-check build/my-bank        # offline: does it fit the TurboBulk contract?
+just generate profiles/enterprise-dc.toml build/my-dc
+just load-check build/my-dc          # offline: does it fit the TurboBulk contract?
 cp .env.example .env
 # Put the raw token value in NETBOX_TOKEN (Cloud tokens look like nbt_...;
 # self-hosted tokens are plain hex). Do not include "Bearer".
 just branch https://netbox.example "Generator Review"   # create the ready branch
-just load-explain build/my-bank https://netbox.example "Generator Review"
+just load-explain build/my-dc https://netbox.example "Generator Review"
 ```
 
 The target recipes read `.env` only when `NETBOX_TOKEN` is not already exported, so
@@ -81,7 +88,7 @@ The target is the NetBox root URL, without `/api/`, a plugin path, credentials,
 query parameters or fragments. In `.env`, enable `TURBOBULK_WRITES=1` or fill
 the documented Diode attestation for the transport that target actually uses.
 The result gives a preliminary transport choice and known compatibility blockers.
-Run `just load build/my-bank https://netbox.example "Generator Review"` to perform the adapter's full
+Run `just load build/my-dc https://netbox.example "Generator Review"` to perform the adapter's full
 read-only schema/package preflight, then load it and write the default private
 receipt under `build/`. That second preflight can find additional blockers and
 still stops before target writes.
@@ -97,8 +104,8 @@ For a load-only scale test on a newly reset, empty branch, use the explicit
 disposable command:
 
 ```sh
-just load-explain-disposable build/my-bank https://netbox.example "Scale baseline"
-just load-disposable build/my-bank https://netbox.example "Scale baseline"
+just load-explain-disposable build/my-dc https://netbox.example "Scale baseline"
+just load-disposable build/my-dc https://netbox.example "Scale baseline"
 ```
 
 That branch cannot be reviewed, merged, or reverted. The command says so before
