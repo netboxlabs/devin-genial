@@ -55,7 +55,7 @@ are enforced at `estates/model.py:146`.
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
-| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`. Omitting the key selects the bank. | **rebaseline** |
+| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`, `university-campus`. Omitting the key selects the bank. | **rebaseline** |
 | `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. | **rebaseline** |
 | `name` | string | per profile | 1–80 characters. Participates in Diode matching identities for the provider. | **rebaseline** |
 | `seed` | integer | `42` | `0` ≤ seed < 2^63. Drives bounded local variation (serials, procurement dates, design-pool choices) only. | **rebaseline** |
@@ -68,7 +68,7 @@ are enforced at `estates/model.py:146`.
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Strictly increasing unique integers, each 1–1000, last element exactly `1000`. Purchased tiers; the physical handoff stays 1 Gb/s. Not accepted by the enterprise profile. | **rebaseline** |
 | `max_objects` | integer | `500000` | `100`–`2000000`. Generation fails when the budget is exceeded. | mutable |
 | `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
-| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-general`, `clinic-riverside`, `pop-chicago-lakeview`, `st-s0002`, `di-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). An unknown site id fails generation and the error lists the estate's real ids. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
+| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-general`, `clinic-riverside`, `pop-chicago-lakeview`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). An unknown site id fails generation and the error lists the estate's real ids. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
 
 Per-profile `address_pool` ceilings and per-site reservation sizes:
@@ -81,11 +81,13 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `hospital-clinics` | `/8`–`/16` | `/16` | `10.128.0.0/12` |
 | `provider-backbone` | `/8`–`/12` | `/24` (first `/16` NOC, last `/16` infrastructure) | `10.0.0.0/8` |
 | `retail-chain` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
+| `university-campus` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 
 Default `namespace` / `name`: bank `cedar` / `Cedar Regional Bank`; enterprise
 `summit` / `Summit Enterprise Infrastructure`; school `maple` / `Maple School
 District`; hospital `lakeshore` / `Lakeshore Health System`; provider
-`lakes-fiber` / `Great Lakes Fiber`; retail `harvest` / `Harvest Retail Group`.
+`lakes-fiber` / `Great Lakes Fiber`; retail `harvest` / `Harvest Retail Group`;
+university `lakemont` / `Lakemont University`.
 
 ## Regional bank
 
@@ -401,3 +403,49 @@ Recipes size demand. They do not select:
 All of the above are code-level changes in `estates/` or `catalog/`, and each one
 changes the hardware digest or generated identities, so each needs a new baseline.
 Do not work around any of them by renaming or editing objects in a running estate.
+
+## University campus
+
+Allowlist: `estates/university.py:217`, with `COMMON` at `estates/university.py:24`.
+Accepts every common key **except `headquarters_staff`**, which is an office-sizing
+input for the bank and retail profiles; `reservation_user` must be empty. One
+campus data center is fixed. There is no `design_mix`, `site_designs` or
+`acquired_sites` key: every building is modern, and no acquisition, refresh or
+remodel transition exists in this profile.
+
+| Key | Type | Default | Accepted values and bounds | Growth |
+| --- | --- | --- | --- | --- |
+| `buildings` | array of tables | four authored buildings | `1`–`16` entries; each needs a unique lowercase `key` matching `[a-z][a-z0-9-]{0,19}`, also distinct with hyphens removed | grow-only (append entries) |
+| `buildings[].classrooms` | integer | `8` | `0`–`40` lecture halls | grow-only |
+| `buildings[].lab_seats` | integer | `48` | `0`–`200`, filling 24-seat teaching and research labs | grow-only |
+| `buildings[].offices` | integer | `24` | `0`–`60` desks, filling twelve-desk faculty pods | grow-only |
+| `buildings[].wireless` | table of tables | authored per zone | Existing zones only (`lecture-<nnn>`, `lab-<nn>`, `office-<nn>`); each `managed`/`guest` an integer `0`–`128` with a per-zone total of at most `128` | grow-only |
+| `residences` | array of tables | three authored halls | `0`–`16` entries with the same key rules | grow-only (append entries) |
+| `residences[].rooms` | integer | `120` | `10`–`400` | grow-only |
+| `residences[].wired_ports_per_room` | integer | `1` | `0`–`2` | **rebaseline** |
+| `residences[].wireless` | table of tables | authored per floor | Existing `floor-<nn>` zones only; same managed/guest rules | grow-only |
+| `library` | table | `{reading_seats = 160, aps = 8}` | Only `reading_seats` (`24`–`300`) and `aps` (`1`–`16`). `aps` must fit the entrance mount plus four mounts per reading room | grow-only |
+| `wan_peak_mbps` | integer | `4000` | `1`–`16000` for the campus data center edge; must be at least the sum of the building peaks | **rebaseline** |
+
+An academic building needs at least one of `classrooms`, `lab_seats` or
+`offices`. Site ids are `dc-01`, `bldg-<key>`, `hall-<key>` and `library-01`.
+Each site reserves a `/16` and each of its segments is a `/22`.
+
+Per-building peak demand is authored policy, not a recipe input:
+
+| Building | Peak Mbps |
+| --- | --- |
+| Academic | `4 × classrooms + 2 × lab_seats + 2 × offices + 10` |
+| Residence | `rooms + 100` |
+| Library | `2 × reading_seats + 50` |
+
+Each building's own peak must fit `1000 × (1 − reserve_fraction)`, each building
+must stay inside eight floors, and its floors together must need at most 38
+access switches. All three fail with the exact arithmetic.
+
+Segments per site are `management`, `staff`, `students`, `wireless`, `security`
+and `guest`, plus `research` in academic buildings only. See the
+[profile guide](../profiles/university-campus.md) for what is physically
+represented and what is explicitly not asserted — in particular that identity
+and WLAN records use eduroam-style naming only, with no authentication protocol
+configured anywhere.

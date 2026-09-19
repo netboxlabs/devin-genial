@@ -744,6 +744,9 @@ def markdown(plan):
         demand_text = ", ".join(f"{n} {kind}" for kind, n in sorted(demand.items()) if kind != "peak_mbps") or "Shared services"
         if recipe.get("profile") == "school-district" and contract.get("kind") == "school":
             demand_text = f"{demand.get('enrollment', '?')} students; {demand.get('staff', '?')} staff"
+        elif recipe.get("profile") == "university-campus":
+            demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
+                                    if label != "peak_mbps") or "Shared services"
         elif recipe.get("profile") == "retail-chain":
             # The shared staffed-building contract carries an explicit zero for
             # the self-service lobby it does not use; retail has no such lanes.

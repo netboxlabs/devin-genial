@@ -30,7 +30,7 @@ jobs:
       - run: python -m estates sdk-check build/refreshed/diode
       - name: Qualify composed profiles and their shared power scenario
         run: |
-          for profile in enterprise-dc school-district hospital-clinics provider-backbone retail-chain school-wireless hospital-wireless; do
+          for profile in enterprise-dc school-district hospital-clinics provider-backbone retail-chain university-campus school-wireless hospital-wireless; do
             python -m estates generate "profiles/${profile}.toml" --out "build/${profile}"
             python -m estates sdk-check "build/${profile}/diode"
             python -m estates scenario "build/${profile}/plan.json" --kind loss-of-power-diversity --out "build/${profile}-power"
@@ -45,7 +45,7 @@ jobs:
           python -m estates sdk-check build/provider-maintenance/changed/diode
       - name: Qualify optional dual-stack across all profiles
         run: |
-          for profile in bank enterprise-dc school-district hospital-clinics provider-backbone retail-chain; do
+          for profile in bank enterprise-dc school-district hospital-clinics provider-backbone retail-chain university-campus; do
             python -c 'import sys; from pathlib import Path; Path(sys.argv[2]).write_text("ipv6_pool = \"2001:db8::/32\"\n" + Path(sys.argv[1]).read_text())' "profiles/${profile}.toml" "build/${profile}-ipv6.toml"
             python -m estates generate "build/${profile}-ipv6.toml" --out "build/${profile}-ipv6"
             python -m estates sdk-check "build/${profile}-ipv6/diode"
