@@ -36,10 +36,10 @@ runs out.
 
 There is no `wan_peak_mbps` key. The NOC edge is sized from the resolved managed
 demand on every generation, so appending customers never collides with a frozen
-purchase. The reviewed bounds cap that demand at 11,136 Mbps — inside both the
-1 Gb/s office handoff after the widest supported `reserve_fraction` and the
-shared data-center aggregation, which answers it with fourteen carrier edge
-pairs. The widest recipe this profile accepts (24 accounts × 4 offices × 48
+purchase. The reviewed bounds cap each office's own peak at 116 Mbps — inside
+the 1 Gb/s office handoff after the widest supported `reserve_fraction` — and
+the aggregate at 11,136 Mbps, which the shared data-center aggregation answers
+with fourteen carrier edge pairs. The widest recipe this profile accepts (24 accounts × 4 offices × 48
 desks) generates 97 sites and 104,793 objects and passes offline validation;
 that is a generation-scale figure, not a live ingestion result.
 
@@ -70,10 +70,9 @@ managed agent counts, ticket volume or measured utilisation.
 
 Default wireless zone budgets are `reception` at 6 managed and 12 guest devices,
 and each `pod-<nn>` at two managed devices per installed desk with no guest
-service. Those defaults apply when the zone budget is first resolved and are
-then frozen into the plan: growing `staff` from a frozen recipe fills the last
-pod with desks but leaves its recorded device budget where it was, so raise the
-budget explicitly if you want it to keep tracking desks. An office whose
+service. Default budgets are recomputed from the current `staff` on every
+generation, so growing desks grows the pod budgets with them; only a zone value
+you supplied explicitly in the recipe stays exactly where you pinned it. An office whose
 customer declares no guest devices anywhere gets no guest VLAN, prefix or WLAN
 at all.
 
@@ -125,8 +124,9 @@ concept:
   carrier edges, the management switch and the console server — carries a direct
   technical assignment chosen by equipment role and actual tenant: the
   provider's own NOC duty desk for that account, in the provider's operations
-  contact group. Endpoints and PDUs carry none; they are installed inventory,
-  not operated equipment;
+  contact group. Access points carry the same desk (they are operated radio
+  infrastructure); workstations, cameras and PDUs carry none — installed
+  inventory, not operated equipment;
 - the per-customer `management` segment carries the operated equipment's
   addresses, and each office record names that segment;
 - the shared infrastructure owner and the carrier accounts for every office

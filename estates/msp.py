@@ -199,10 +199,11 @@ def resolve(raw):
         raise DesignError("MSP address_pool must hold /16 site reservations; choose an aligned private /8 through /16")
     if recipe["reservation_user"]:
         raise DesignError("MSP rack-user reservations are not implemented; leave reservation_user empty")
-    # The reviewed bounds above (24 accounts, four offices, 48 desks) cap the
-    # managed peak at 11,136 Mbps, inside both the 1 Gbps office handoff after
-    # the widest supported reserve and the shared NOC aggregation the DC builder
-    # sizes. Raising any of those bounds needs both ceilings rechecked.
+    # The reviewed bounds above (24 accounts, four offices, 48 desks) cap each
+    # office's own peak at 116 Mbps — inside the 1 Gbps office handoff after the
+    # widest supported reserve — and the aggregate at 11,136 Mbps, which the
+    # shared NOC aggregation the DC builder sizes must answer. Raising any of
+    # those bounds needs both ceilings rechecked.
     recipe["customers"] = _customers(raw.get("customers", deepcopy(DEFAULT_CUSTOMERS)))
     return recipe
 

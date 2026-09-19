@@ -546,6 +546,39 @@ class MspValidatorTests(unittest.TestCase):
             objects["prefix/off-summit-legal-01/staff"]["attrs"]["prefix"] = "10.9.9.0/24"
         self.assertIn("msp-prefix-policy", self.mutated(renumber))
 
+    def test_reservation_container_leaving_the_customer_vrf_is_reported(self):
+        def borrow(plan, objects):
+            objects["prefix/off-summit-legal-01/staff/reservation"]["refs"]["vrf"] = "vrf/management"
+        self.assertIn("msp-prefix-policy", self.mutated(borrow))
+
+    def test_customer_record_borrowing_a_provider_global_vrf_is_reported(self):
+        def borrow(plan, objects):
+            objects["prefix/off-summit-legal-01/staff"]["refs"]["vrf"] = "vrf/management"
+        self.assertLessEqual({"msp-tenant-isolation", "msp-prefix-policy"}, self.mutated(borrow))
+
+    def test_noc_reservation_moved_into_a_customer_vrf_is_reported(self):
+        def borrow(plan, objects):
+            objects["prefix/noc-01/management/reservation"]["refs"]["vrf"] = \
+                "vrf/customer/summit-legal/management"
+        self.assertIn("msp-tenant-isolation", self.mutated(borrow))
+
+    def test_ap_desk_retargeted_across_customers_is_reported(self):
+        def retarget(plan, objects):
+            assignments = [o for o in plan["objects"] if o["kind"] == "contact_assignment"
+                           and "/ap-" in o["key"] and "off-summit-legal" in o["key"]]
+            assert assignments
+            for record in assignments:
+                record["refs"]["contact"] = "contact/operations/tenant/harbor-dental"
+        self.assertIn("msp-managed-by", self.mutated(retarget))
+
+    def test_missing_shared_operations_owner_is_reported(self):
+        def strip_office(plan, objects):
+            del objects["site/off-summit-legal-01"]["refs"]["owner"]
+        def strip_noc(plan, objects):
+            del objects["site/noc-01"]["refs"]["owner"]
+        self.assertIn("msp-shared-owner", self.mutated(strip_office))
+        self.assertIn("msp-shared-owner", self.mutated(strip_noc))
+
     def test_guest_segment_without_visitor_demand_is_rejected(self):
         def drop_demand(plan, objects):
             for item in plan["recipe"]["customers"]:

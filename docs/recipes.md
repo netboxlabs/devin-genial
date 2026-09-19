@@ -88,10 +88,11 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `university-campus` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `msp` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 
-Data centers per profile: every profile builds `dc-01`; the bank and retail
-chain always add `dc-02` (the shared two-DC pair), and the enterprise profile
-builds `data_centers` of them (1–8). School, hospital, provider and university
-have exactly one — there is no `dc-02` to override or attach demand to.
+Data centers per profile: the bank and retail chain always build the shared
+two-DC pair (`dc-01`, `dc-02`), the enterprise profile builds `data_centers`
+of them (1–8), and school, hospital, provider and university build exactly one
+`dc-01` — there is no `dc-02` to override or attach demand to. The MSP's only
+data-center site is its NOC, `noc-01`.
 
 Default `namespace` / `name`: bank `cedar` / `Cedar Regional Bank`; enterprise
 `summit` / `Summit Enterprise Infrastructure`; school `maple` / `Maple School
@@ -368,7 +369,7 @@ configured anywhere.
 
 ## Managed service provider
 
-Allowlist: `estates/msp.py:185`, with `COMMON` at `estates/msp.py:31`.
+Allowlist and `COMMON` set: `estates/msp.py`.
 Accepts every common key **except `headquarters_staff`**, which is an
 office-sizing input for the bank and retail profiles; `reservation_user` must be
 empty. One operations site is fixed. There is no `design_mix`, `site_designs` or
@@ -404,9 +405,8 @@ shared data-center aggregation.
 Client segments per managed office are `management`, `staff`, `wireless` and
 `security`, plus `guest` only where that customer declared visitor devices; a
 `wan` segment addresses the carrier handoffs and has no client or gateway SVI.
-Zone budget defaults apply at first resolution and are then frozen, so growing
-`staff` from a frozen recipe fills the last pod without raising its recorded
-device budget. Each
+Default zone budgets are recomputed from the current `staff` on every
+generation; only an explicitly supplied zone value is sticky. Each
 customer is its own tenant inside one `<namespace> customers` tenant group, with
 its own per-segment routing contexts. See the
 [profile guide](../profiles/msp.md) for the ownership-versus-operation split and

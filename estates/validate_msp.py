@@ -241,6 +241,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             elif key.startswith("vrf/customer/"):
                 candidate = f"tenant/{key.split('/')[2]}"
                 owners[key] = candidate if candidate in customer_tenants else None
+            elif kind_of(key) == "vrf":
+                # The provider's own global routing contexts. A managed
+                # customer's record may never borrow one, so they carry a
+                # distinct owner sentinel rather than None.
+                owners[key] = "provider"
             elif kind_of(key) == "wireless_lan_group":
                 owners[key] = group_owner.get(key)
             else:
@@ -259,8 +264,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if len(named) > 1:
             report("msp-tenant-isolation", key, "No record may join two managed customers or borrow another "
                                                 "customer's tenant, routing context or equipment.")
-        if site_of(key) == "site/noc-01" and refs(key).get("tenant") in customer_tenants:
-            report("msp-tenant-isolation", key, "The provider's own operations site carries no customer tenancy.")
+        if site_of(key) == "site/noc-01" and (refs(key).get("tenant") in customer_tenants or
+                any(owner(target) in customer_tenants for value in refs(key).values()
+                    for target in (value if isinstance(value, list) else [value]))):
+            report("msp-tenant-isolation", key, "The provider's own operations site carries no customer tenancy "
+                                                "or customer routing context.")
         if held is not None and obj["kind"] in TENANT_BEARING and refs(key).get("tenant") != held:
             report("msp-tenant-ownership", key, "Every record at a managed office is owned by that office's customer tenant.")
         if obj["kind"] == "cable":
@@ -484,9 +492,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                         refs(prefix).get("vrf") != f"vrf/customer/{item['key']}/{network}" or
                         refs(prefix).get("vlan") != f"vlan/{sid}/{network}" or
                         attrs(f"vlan/{sid}/{network}").get("vid") != 10*(offset+1) or
-                        refs(f"vlan/{sid}/{network}").get("site") != site):
-                    report("msp-prefix-policy", prefix, "Office role /24 must retain its fixed offset, site VLAN and "
-                                                         "own-customer VRF inside the reserved /16.")
+                        refs(f"vlan/{sid}/{network}").get("site") != site or
+                        refs(f"{prefix}/reservation").get("vrf") != f"vrf/customer/{item['key']}/{network}"):
+                    report("msp-prefix-policy", prefix, "Office role /24 and its reservation container must retain "
+                                                         "the fixed offset, site VLAN and own-customer VRF inside "
+                                                         "the reserved /16.")
 
         # --- the operating relationship, on records that already carry it -------
         assignment = f"contact-assignment/{site}"
@@ -496,10 +506,14 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 "contact-group/operations" not in refs(desk).get("groups", [])):
             report("msp-managed-by", site, "A managed office must escalate to the provider's own technical desk for "
                                             "that customer, in the provider's operations group.")
-        for device in roles["role/access"] + roles["role/distribution"] + roles["role/wan-edge"]:
+        for device in (roles["role/access"] + roles["role/distribution"] + roles["role/wan-edge"]
+                       + roles["role/ap"]):
             if refs(f"contact-assignment/{device}").get("contact") != desk:
                 report("msp-managed-by", device, "Operated equipment must carry the provider's technical desk for its "
                                                   "actual owning customer.")
+        if refs(site).get("owner") != "owner/operations":
+            report("msp-shared-owner", site, "Every managed site references the provider's shared operations owner; "
+                                              "the operating relationship is a record, not an assumption.")
         comments = attrs(site).get("comments", "")
         segment = attrs(f"prefix/{sid}/management").get("prefix")
         if (not isinstance(comments, str) or not segment or segment not in comments or
@@ -558,6 +572,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                                        poe_watts=poe_watts, optics_watts=optics_watts))
 
     # --- independently sized shared managed services ---------------------------
+    if refs("site/noc-01").get("owner") != "owner/operations":
+        report("msp-shared-owner", "site/noc-01", "The provider's own operations site references the shared "
+                                                   "operations owner like every managed site.")
     endpoints = 0
     for _, item in premises:
         zone_budgets = item["wireless"] if isinstance(item.get("wireless"), dict) else _zones(item)
