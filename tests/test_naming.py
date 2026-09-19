@@ -56,6 +56,33 @@ class NamingTests(unittest.TestCase):
                                          "br-s0002": {"name": "Twin"}}))
         self.assertIn("globally unique", str(caught.exception))
 
+    def test_growth_appends_site_names_but_never_changes_existing_entries(self):
+        named = {"br-s0001": {"name": "350 East Cermak"}}
+        baseline = generate(_recipe(site_names=named))
+        # appending an entry for a brand-new site is ordinary growth
+        grown = generate(_recipe(branches={"small": 3, "medium": 0, "large": 0},
+                                 site_names=named | {"br-s0003": {"name": "Harbor Annex"}}),
+                         previous=baseline)
+        sites = _sites(grown)
+        self.assertEqual(sites["site/br-s0001"]["name"], "350 East Cermak")
+        self.assertEqual(sites["site/br-s0003"]["name"], "Harbor Annex")
+        # growth must not renumber: the named baseline site keeps its slot
+        self.assertEqual(grown["allocations"]["br-s0001"],
+                         baseline["allocations"]["br-s0001"])
+        # changing or removing an existing entry stays a rebaseline
+        with self.assertRaises(DesignError) as caught:
+            generate(_recipe(site_names={"br-s0001": {"name": "Renamed"}}),
+                     previous=baseline)
+        self.assertIn("append entries for new sites only", str(caught.exception))
+        with self.assertRaises(DesignError):
+            generate(_recipe(site_names={}), previous=baseline)
+
+    def test_unknown_override_lists_the_estates_real_site_ids(self):
+        with self.assertRaises(DesignError) as caught:
+            generate(_recipe(site_names={"no-such-site": {"name": "Ghost"}}))
+        self.assertIn("this estate's site ids are:", str(caught.exception))
+        self.assertIn("br-s0001", str(caught.exception))
+
     def test_growth_never_renames_an_existing_site(self):
         baseline = generate(_recipe())
         before = _sites(baseline)

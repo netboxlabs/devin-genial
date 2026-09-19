@@ -31,8 +31,11 @@ Open **`build/my-bank/report.md`**. It walks through the topology, address plan,
 rack elevations, service placement and questions to explore. The default bank
 has two data centers, a headquarters and seven branches.
 
-Copy a recipe and change its demand to create your own estate. Use a new output
-directory for each build; existing artifacts are never overwritten. The
+Copy a recipe and change its demand to create your own estate. Sites carry
+readable authored names, facility codes and map coordinates by default, and
+`[site_names]` overrides any site with the customer's real names — see the
+[recipe reference](docs/recipes.md#common-keys). Use a new output directory for
+each build; existing artifacts are never overwritten. The
 [generation guide](docs/usage.md) covers recipe options, repeatable growth and
 optional devenv/Just setup. All commands run from the repository root.
 

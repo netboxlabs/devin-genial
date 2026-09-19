@@ -80,6 +80,9 @@ just load-check build/my-estate
 No target or token needed. It reports whether every emitted kind and
 reference fits the TurboBulk compiler contract, lists the gaps when not, and
 names the NetBox 4.7 requirement when the artifact carries module bay types.
+(This is also the moment to make the estate carry the customer's real site
+names — the `[site_names]` recipe key in the
+[recipe reference](recipes.md#common-keys) — before anything goes live.)
 Run this before asking anyone for tenant access — and when it names a version
 requirement, confirm the target's `/api/status/` version before creating a
 branch on it.
@@ -170,6 +173,10 @@ just branch https://target.example demo-acme-v2
 just load build/v2 https://target.example demo-acme-v2
 just verify-target build/v2 https://target.example demo-acme-v2
 ```
+
+An estate using `[site_names]` (the customer's real site names) grows the same
+way: append entries for the new sites in the same recipe change. Changing or
+removing an *existing* entry is a rename and needs a new baseline.
 
 **Retiring v1 is a deliberate, destructive step.** The namespace's
 `owner`/`owner_group` rows on main block the v2 load; deleting them (the

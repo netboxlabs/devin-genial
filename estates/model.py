@@ -162,9 +162,19 @@ class World:
                 raise DesignError("Previous plan has a different schema/generator version; explicit rebaseline required")
             if previous.get("hardware_digest") != digest(self.catalog):
                 raise DesignError("Hardware catalog changed since previous plan; explicit rebaseline required")
-            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming", "site_names"):
+            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming"):
                 if previous["recipe"].get(k) != self.recipe.get(k):
                     raise DesignError(f"Changing {k} requires a new estate; omit --previous for an explicit rebaseline")
+            # site_names is append-only under growth: the freeze exists to stop
+            # renaming existing sites, never to stop naming a brand-new one.
+            before = previous["recipe"].get("site_names", {})
+            changed = sorted(sid for sid, entry in before.items()
+                             if self.recipe.get("site_names", {}).get(sid) != entry)
+            if changed:
+                raise DesignError(
+                    "Changing or removing existing site_names entries requires a new estate "
+                    f"(renames break Diode matching identities): {', '.join(changed)}. "
+                    "Growth may append entries for new sites only.")
             self.allocations = dict(previous["allocations"])
             self.design_assignments = dict(previous.get("design_assignments", {}))
             if any(v not in ("modern", "inherited", "refreshed") for v in self.design_assignments.values()):
@@ -240,9 +250,11 @@ class World:
     def finish(self):
         unused = set(self.recipe.get("site_names", {})) - self.consumed_site_names
         if unused:
+            valid = sorted(self.allocations)
+            shown = ", ".join(valid[:40]) + (f", … ({len(valid)} total)" if len(valid) > 40 else "")
             raise DesignError("site_names overrides reference unknown site ids: "
-                              + ", ".join(sorted(unused)) + "; keys are site ids such as "
-                              "br-s0002, dc-01, school-oak or pop-chicago-lakeview")
+                              + ", ".join(sorted(unused))
+                              + f"; this estate's site ids are: {shown}")
         names = defaultdict(list)
         for obj in self.objects.values():
             if obj["kind"] == "site":
