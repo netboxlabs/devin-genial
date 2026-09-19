@@ -35,7 +35,8 @@ def recipe_from_file(path):
         return resolve_recipe(tomllib.load(handle))
 
 
-def resolve_recipe(raw):
+def resolve_recipe(raw, growth=False):
+    # growth only sharpens error text (frozen-key exits); it never changes resolved output.
     if not isinstance(raw, dict):
         raise DesignError("Recipe must be an object")
     if raw.get("profile") == "enterprise-data-center":
@@ -55,7 +56,7 @@ def resolve_recipe(raw):
         return resolve(raw)
     if raw.get("profile") == "university-campus":
         from .university import resolve
-        return resolve(raw)
+        return resolve(raw, growth=growth)
     return resolve_bank_recipe(raw)
 
 

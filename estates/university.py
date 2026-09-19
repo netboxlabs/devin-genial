@@ -218,7 +218,7 @@ def _library_mounts(item, floor=None):
     return [m for m in mounts if floor is None or m[3] == floor]
 
 
-def resolve(raw):
+def resolve(raw, growth=False):
     if unknown := raw.keys() - (COMMON | {"profile", "buildings", "residences", "library",
                                           "wan_peak_mbps", "demo"}):
         raise DesignError(f"Unknown university recipe fields: {', '.join(sorted(unknown))}; "
@@ -276,8 +276,14 @@ def resolve(raw):
     if type(wan) is not int or not 1 <= wan <= 16000:
         raise DesignError("wan_peak_mbps must be an integer between 1 and 16000 for the campus edge")
     if wan < campus_peak:
-        raise DesignError(f"wan_peak_mbps {wan} does not cover the {campus_peak} Mbps campus building peak; "
-                          "raise the campus edge or reduce building demand")
+        # During growth the frozen campus edge cannot be raised: name the real exit.
+        hint = ("the grown campus exceeds the frozen campus edge, and campus WAN renewal requires "
+                "a new baseline — regenerate without the previous plan, sizing wan_peak_mbps with "
+                "headroom for future growth" if growth
+                else "raise the campus edge (leave headroom for future growth; it is frozen after "
+                     "the baseline) or reduce building demand")
+        raise DesignError(f"wan_peak_mbps {wan} does not cover the {campus_peak} Mbps campus peak "
+                          f"(academic buildings, residence halls and the library); {hint}")
     recipe["wan_peak_mbps"] = wan
     return recipe
 
@@ -318,7 +324,7 @@ def workloads(recipe):
 
 
 def generate(recipe, previous=None):
-    recipe = resolve(recipe)
+    recipe = resolve(recipe, growth=previous is not None)
     if previous is not None:
         if previous.get("recipe", {}).get("profile") != recipe["profile"]:
             raise DesignError("Changing profile requires a new baseline")

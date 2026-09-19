@@ -310,6 +310,52 @@ Segments per site are `management`, `backoffice`, `pos` (stores only),
 [profile guide](../profiles/retail-chain.md) for what is physically represented
 and what is explicitly not asserted.
 
+## University campus
+
+Allowlist: `estates/university.py:217`, with `COMMON` at `estates/university.py:24`.
+Accepts every common key **except `headquarters_staff`**, which is an office-sizing
+input for the bank and retail profiles; `reservation_user` must be empty. One
+campus data center is fixed. There is no `design_mix`, `site_designs` or
+`acquired_sites` key: every building is modern, and no acquisition, refresh or
+remodel transition exists in this profile.
+
+| Key | Type | Default | Accepted values and bounds | Growth |
+| --- | --- | --- | --- | --- |
+| `buildings` | array of tables | four authored buildings | `1`–`16` entries; each needs a unique lowercase `key` matching `[a-z][a-z0-9-]{0,19}`, also distinct with hyphens removed | grow-only (append entries) |
+| `buildings[].classrooms` | integer | `8` | `0`–`40` lecture halls | grow-only |
+| `buildings[].lab_seats` | integer | `48` | `0`–`200`, filling 24-seat teaching and research labs | grow-only |
+| `buildings[].offices` | integer | `24` | `0`–`60` desks, filling twelve-desk faculty pods | grow-only |
+| `buildings[].wireless` | table of tables | authored per zone | Existing zones only (`lecture-<nnn>`, `lab-<nn>`, `office-<nn>`); each `managed`/`guest` an integer `0`–`128` with a per-zone total of at most `128` | grow-only |
+| `residences` | array of tables | three authored halls | `0`–`16` entries with the same key rules | grow-only (append entries) |
+| `residences[].rooms` | integer | `120` | `10`–`400` | grow-only |
+| `residences[].wired_ports_per_room` | integer | `1` | `0`–`2` | **rebaseline** |
+| `residences[].wireless` | table of tables | authored per floor | Existing `floor-<nn>` zones only; same managed/guest rules | grow-only |
+| `library` | table | `{reading_seats = 160, aps = 8}` | Only `reading_seats` (`24`–`300`) and `aps` (`1`–`16`). `aps` must fit the entrance mount plus four mounts per reading room | grow-only |
+| `wan_peak_mbps` | integer | `4000` | `1`–`16000` for the campus data center edge; must be at least the combined peak of every academic building, residence hall and the library | **rebaseline** — frozen during growth while appended buildings and halls raise the required peak, so size it with headroom, never to today's exact demand |
+
+An academic building needs at least one of `classrooms`, `lab_seats` or
+`offices`. Site ids are `dc-01`, `bldg-<key>`, `hall-<key>` and `library-01`.
+Each site reserves a `/16` and each of its segments is a `/22`.
+
+Per-building peak demand is authored policy, not a recipe input:
+
+| Building | Peak Mbps |
+| --- | --- |
+| Academic | `4 × classrooms + 2 × lab_seats + 2 × offices + 10` |
+| Residence | `rooms + 100` |
+| Library | `2 × reading_seats + 50` |
+
+Each building's own peak must fit `1000 × (1 − reserve_fraction)`, each building
+must stay inside eight floors, and its floors together must need at most 38
+access switches. All three fail with the exact arithmetic.
+
+Segments per site are `management`, `staff`, `students`, `wireless`, `security`
+and `guest`, plus `research` in academic buildings only. See the
+[profile guide](../profiles/university-campus.md) for what is physically
+represented and what is explicitly not asserted — in particular that identity
+and WLAN records use eduroam-style naming only, with no authentication protocol
+configured anywhere.
+
 ## Worked example
 
 Start from a shipped profile and edit a copy — never the shipped file, and never a
@@ -404,49 +450,3 @@ Recipes size demand. They do not select:
 All of the above are code-level changes in `estates/` or `catalog/`, and each one
 changes the hardware digest or generated identities, so each needs a new baseline.
 Do not work around any of them by renaming or editing objects in a running estate.
-
-## University campus
-
-Allowlist: `estates/university.py:217`, with `COMMON` at `estates/university.py:24`.
-Accepts every common key **except `headquarters_staff`**, which is an office-sizing
-input for the bank and retail profiles; `reservation_user` must be empty. One
-campus data center is fixed. There is no `design_mix`, `site_designs` or
-`acquired_sites` key: every building is modern, and no acquisition, refresh or
-remodel transition exists in this profile.
-
-| Key | Type | Default | Accepted values and bounds | Growth |
-| --- | --- | --- | --- | --- |
-| `buildings` | array of tables | four authored buildings | `1`–`16` entries; each needs a unique lowercase `key` matching `[a-z][a-z0-9-]{0,19}`, also distinct with hyphens removed | grow-only (append entries) |
-| `buildings[].classrooms` | integer | `8` | `0`–`40` lecture halls | grow-only |
-| `buildings[].lab_seats` | integer | `48` | `0`–`200`, filling 24-seat teaching and research labs | grow-only |
-| `buildings[].offices` | integer | `24` | `0`–`60` desks, filling twelve-desk faculty pods | grow-only |
-| `buildings[].wireless` | table of tables | authored per zone | Existing zones only (`lecture-<nnn>`, `lab-<nn>`, `office-<nn>`); each `managed`/`guest` an integer `0`–`128` with a per-zone total of at most `128` | grow-only |
-| `residences` | array of tables | three authored halls | `0`–`16` entries with the same key rules | grow-only (append entries) |
-| `residences[].rooms` | integer | `120` | `10`–`400` | grow-only |
-| `residences[].wired_ports_per_room` | integer | `1` | `0`–`2` | **rebaseline** |
-| `residences[].wireless` | table of tables | authored per floor | Existing `floor-<nn>` zones only; same managed/guest rules | grow-only |
-| `library` | table | `{reading_seats = 160, aps = 8}` | Only `reading_seats` (`24`–`300`) and `aps` (`1`–`16`). `aps` must fit the entrance mount plus four mounts per reading room | grow-only |
-| `wan_peak_mbps` | integer | `4000` | `1`–`16000` for the campus data center edge; must be at least the sum of the building peaks | **rebaseline** |
-
-An academic building needs at least one of `classrooms`, `lab_seats` or
-`offices`. Site ids are `dc-01`, `bldg-<key>`, `hall-<key>` and `library-01`.
-Each site reserves a `/16` and each of its segments is a `/22`.
-
-Per-building peak demand is authored policy, not a recipe input:
-
-| Building | Peak Mbps |
-| --- | --- |
-| Academic | `4 × classrooms + 2 × lab_seats + 2 × offices + 10` |
-| Residence | `rooms + 100` |
-| Library | `2 × reading_seats + 50` |
-
-Each building's own peak must fit `1000 × (1 − reserve_fraction)`, each building
-must stay inside eight floors, and its floors together must need at most 38
-access switches. All three fail with the exact arithmetic.
-
-Segments per site are `management`, `staff`, `students`, `wireless`, `security`
-and `guest`, plus `research` in academic buildings only. See the
-[profile guide](../profiles/university-campus.md) for what is physically
-represented and what is explicitly not asserted — in particular that identity
-and WLAN records use eduroam-style naming only, with no authentication protocol
-configured anywhere.

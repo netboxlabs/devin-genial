@@ -124,7 +124,11 @@ because a resume against its existing receipt is unaffected by them — read
 then strictly reads the estate back — attribute-exact, reference-exact, with
 native cable traces and component-placement checks. Expect on the order of a
 minute or two per few thousand objects on a local target; the streaming row
-and `finalize:` progress lines are normal. The final summary line is the
+and `finalize:` progress lines are normal. After the last `phase-` line the
+cable-path and counter finalizers run silently on the target — on a 25k-object
+estate expect several minutes with **no output** before the `finalize:` lines
+appear in one burst; the target's job queue showing pending jobs during this
+window is normal, not a hang. The final summary line is the
 acceptance evidence — objects matched, mismatches, create-ChangeDiff and
 cable-trace counts, components checked — plus `ui_url`, the branch-activated
 NetBox page the demo starts from.

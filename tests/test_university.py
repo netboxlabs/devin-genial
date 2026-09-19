@@ -295,6 +295,22 @@ class UniversityCompositionTests(unittest.TestCase):
         with self.assertRaisesRegex(DesignError, "new estate|new baseline"):
             generate(deepcopy(before["recipe"]) | {"namespace": "other"}, previous=before)
 
+    def test_growth_beyond_the_frozen_campus_edge_names_the_rebaseline_exit(self):
+        from estates.university import resolve, total_peak
+        exact = deepcopy(SMALL) | {"profile": "university-campus"}
+        exact["wan_peak_mbps"] = total_peak(resolve(exact))
+        before = generate(exact)
+        recipe = deepcopy(before["recipe"])
+        recipe["residences"].append(dict(key="willow", rooms=100))
+        with self.assertRaises(DesignError) as caught:
+            generate(recipe, previous=before)
+        self.assertIn("new baseline", str(caught.exception))
+        self.assertIn("regenerate without the previous plan", str(caught.exception))
+        self.assertNotIn("raise the campus edge", str(caught.exception))
+        # The same shortfall at baseline keeps the actionable raise-it advice.
+        with self.assertRaisesRegex(DesignError, "raise the campus edge"):
+            generate(recipe)
+
     def test_damaged_previous_ledger_is_rejected_before_allocation(self):
         before = small()
         damaged = deepcopy(before)

@@ -13,8 +13,9 @@ just verify build/campus-demo/plan.json
 just load-check build/campus-demo
 ```
 
-This profile is offline-checked and fits the TurboBulk contract; it has no
-separately recorded live qualification receipt.
+This profile is offline-checked, fits the TurboBulk contract, and holds a
+recorded live qualification receipt on the pinned local 4.7.1 stack
+(see [docs/qualification.md](../docs/qualification.md)).
 
 ## Demand and supported boundaries
 
@@ -24,13 +25,13 @@ separately recorded live qualification receipt.
 | `buildings[].classrooms` | integer | `8` | `0`–`40` lecture halls | grow-only |
 | `buildings[].lab_seats` | integer | `48` | `0`–`200`, filling 24-seat teaching/research labs | grow-only |
 | `buildings[].offices` | integer | `24` | `0`–`60` desks, filling twelve-desk faculty pods | grow-only |
-| `buildings[].wireless` | table of tables | authored per zone | Existing zones only, each `managed`/`guest` `0`–`128` with a zone total of `128` | grow-only |
+| `buildings[].wireless` | table of tables | authored per zone | Existing zones only, each `managed`/`guest` `0`–`128` with a zone total of at most `128` | grow-only |
 | `residences` | array of tables | three authored halls | `0`–`16` entries, each with a unique lowercase `key` | grow-only |
 | `residences[].rooms` | integer | `120` | `10`–`400` | grow-only |
 | `residences[].wired_ports_per_room` | integer | `1` | `0`–`2` | **rebaseline** |
 | `residences[].wireless` | table of tables | authored per floor | Same zone rules as buildings | grow-only |
 | `library` | table | `{reading_seats = 160, aps = 8}` | `reading_seats` `24`–`300`; `aps` `1`–`16` | grow-only |
-| `wan_peak_mbps` | integer | `4000` | `1`–`16000`; must cover the sum of the building peaks | **rebaseline** |
+| `wan_peak_mbps` | integer | `4000` | `1`–`16000`; must cover the combined peak of academic buildings, residence halls **and** the library | **rebaseline** — size with headroom, not to today's demand: it is frozen during growth, and every appended hall or building raises the required peak |
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Increasing unique integers `1`–`1000`, last exactly `1000` | **rebaseline** |
 
 Every [common key](../docs/recipes.md#common-keys) is accepted except
@@ -149,6 +150,12 @@ them, because each room holds a permanent reserved position.
 A new baseline is required to reduce any count, remove a building or hall,
 change `wired_ports_per_room`, renew `wan_peak_mbps` or `wan_tiers_mbps`, or
 reduce a wireless zone.
+
+Because `wan_peak_mbps` is frozen while every appended building or hall raises
+the required campus peak, size it at baseline with headroom for the growth you
+expect — a value sized exactly to today's demand makes ordinary growth
+impossible without a new baseline (regenerate, retire the live estate, and
+reload from scratch).
 
 ## Scale ceiling
 

@@ -4,7 +4,7 @@ from .model import resolve_recipe
 
 
 def generate(recipe, previous=None):
-    recipe = resolve_recipe(recipe)
+    recipe = resolve_recipe(recipe, growth=previous is not None)
     if recipe["profile"] == "enterprise-data-center":
         from .enterprise import generate as build
     elif recipe["profile"] == "school-district":
