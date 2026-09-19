@@ -446,6 +446,19 @@ NetBox 4.7.1 + Branching 1.2.1 + TurboBulk 0.4.0 stack
 (`build/turbobulk-repro47/`), with strict readback and exact per-model
 create-ChangeDiff verification
 (`build/load-receipts/provider-demo-Rich-Provider-2-e16f817d7f53.json`).
+On September 19, 2026 the retail-chain profile's first live load completed on
+the same pinned local 4.7.1 stack: 13,005/13,005 objects and 15,535/15,535
+create ChangeDiffs with zero mismatches, 1,265/1,265 cable traces, 7,874
+component placements, plus a clean zero-write verify and an idempotent repeat
+(receipts `harvest-v1-Harvest-Retail-Group-0b5aba744352.json` and its
+`verify-` sibling). The same day the full 98-kind bank artifact passed the
+identical gate (11,801 objects, receipt
+`bank-probe-Cedar-Bank-Final-357baeecb74e.json`), as did school
+(`wireless-probe-Maple-School-District-…`) and hospital
+(`stclair-v1-St-Clair-Health-…`) after the wireless kinds landed — every
+current profile now holds a local live-qualification receipt. Cloud and
+Enterprise remain unqualified.
+
 "TurboBulk 0.4.0" here means a source build of TurboBulk main carrying the
 opportunistic reaper (TRB-23); the receipts' target contract records the locally
 built plugin as `0.0.0`. The version is publicly released:
