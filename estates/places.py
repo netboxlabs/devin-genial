@@ -37,10 +37,19 @@ CAMPUSES = {
 }
 GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers", "school": "Schools",
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
-          "store": "Retail stores", "distribution": "Distribution centers"}
+          "store": "Retail stores", "distribution": "Distribution centers",
+          "academic": "Academic buildings", "residence": "Residence halls", "library": "Libraries"}
 MAX_CHANNEL_M = 80
 FLOOR_HEIGHT_M = 4
 OFFICE_DESKS = 12
+# Authored university building grammar. Eight rooms per academic or library
+# floor, fifty residence rooms per floor, and eight floors per building: the
+# same ceiling the shared eight-block management uplink pool supports.
+ACADEMIC_ROOMS_PER_FLOOR = 8
+DORM_ROOMS_PER_FLOOR = 50
+LAB_SEATS_PER_ROOM = 24
+READING_SEATS_PER_ROOM = 24
+MAX_BUILDING_FLOORS = 8
 SPACE_DESCRIPTIONS = {
     "building": "Banking and business operations premises",
     "floor": "Customer or staff floor with assigned equipment-room service",
@@ -61,6 +70,10 @@ SPACE_DESCRIPTIONS = {
     "stockroom": "Receiving and stock storage area",
     "warehouse_floor": "Distribution warehouse floor with handheld scanner positions",
     "shipping_dock": "Shipping and receiving dock",
+    "lecture_hall": "Teaching room with an installed instructor position and coverage radio",
+    "teaching_lab": "Instructional and research computing lab with installed workstation seats",
+    "dorm_room": "Residence room with installed wired data ports; no resident-owned device is represented",
+    "reading_room": "Library reading area with installed study workstation positions",
 }
 
 
@@ -105,11 +118,20 @@ def _authored_identity(site, city):
         # The di- ordinal is unique among distribution centers by construction,
         # so two same-metro campuses cannot resolve to one display name.
         return f"{pick(CAMPUSES[city])} Distribution Center {int(sid.rsplit('-', 1)[-1] or 0):02}"
+    if kind in {"academic", "residence"}:
+        # Building keys are unique within the recipe and frozen by growth, and
+        # the two kinds use different suffixes, so one key cannot name two sites.
+        title = sid.split("-", 1)[1].replace("-", " ").title()
+        return f"{title} {'Hall' if kind == 'academic' else 'House'}"
+    if kind == "library":
+        return f"{pick(CAMPUSES[city])} Library"
     if kind == "hq":
         return f"{city} Headquarters"
     if kind == "dc":
         if profile == "provider-backbone":
             return f"{city} NOC Campus"
+        if profile == "university-campus":
+            return f"{city} Campus Data Center"
         return f"{pick(CAMPUSES[city])} Data Center"
     if kind in {"school", "hospital", "clinic"}:
         title = sid.split("-", 1)[1].replace("-", " ").title()
@@ -175,7 +197,7 @@ def foundation(w, *, site_kinds=None):
               {"name": f"{ns} {state}", "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
     for kind, name in GROUPS.items():
         if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
-                                           "store", "distribution"}:
+                                           "store", "distribution", "academic", "residence", "library"}:
             continue
         if site_kinds is not None and kind not in site_kinds:
             continue
@@ -198,6 +220,8 @@ def _location(site, suffix, name, space_type, floor, position, parent=None, capa
             description = "Education and district services building" if space_type == "building" else "Teaching, staff and equipment floor"
         elif site.w.recipe["profile"] == "hospital-clinics":
             description = "Care and health-system services building" if space_type == "building" else "Care, clinical staff and equipment floor"
+        elif site.w.recipe["profile"] == "university-campus":
+            description = "Campus teaching, residential and services building" if space_type == "building" else "Teaching, residential and equipment floor"
     if site.contract["kind"] == "dc" and space_type == "equipment_room":
         description = "Restricted data hall with compute, network and power distribution"
     site.w.add("location", key,
@@ -226,6 +250,10 @@ def locate(site):
         metro_index = site.w.choose("district", "metro", range(len(METROS)))
     elif site.w.recipe["profile"] == "hospital-clinics":
         metro_index = site.w.choose("health-system", "metro", range(len(METROS)))
+    elif site.w.recipe["profile"] == "university-campus":
+        # One campus, one metro: every building, hall, library and the campus
+        # DC share it. This is a single-site estate, not a multi-metro fleet.
+        metro_index = site.w.choose("campus", "metro", range(len(METROS)))
     elif site.id in {"dc-01", "dc-02"}:
         metro_index = int(site.id[-2:]) - 1
     else:
@@ -234,13 +262,15 @@ def locate(site):
     node = site.w.obj(site.key)
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
-    if kind in {"school", "hospital", "clinic", "store", "distribution"}:
+    if kind in {"school", "hospital", "clinic", "store", "distribution",
+                "academic", "residence", "library"}:
         number = 100 + 4 * site.w.allocations[site.id]
     streets = {"br-s": "Market Street", "br-m": "Commerce Drive", "br-l": "Harbor Avenue",
                "hq": "Lakefront Boulevard", "dc": "Technology Way", "school-": "Learning Way",
                "hospital-": "Care Avenue", "clinic-": "Community Way",
                "st-s": "Market Square", "st-m": "Retail Parkway", "st-l": "Galleria Drive",
-               "di-": "Distribution Parkway"}
+               "di-": "Distribution Parkway", "bldg-": "University Quadrangle",
+               "hall-": "Residence Row", "library-": "Library Green"}
     street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
     node["attrs"].update(time_zone=zone,
                          physical_address=f"{number} {street}\n{city}, {state}\nUnited States")
@@ -528,6 +558,129 @@ def retail_endpoint(site, key, room, cohort, ordinal):
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
+
+
+def _campus_floor(site, floor):
+    """Create one building floor and, above ground, the IDF that serves it."""
+    parent = _floor(site, floor)
+    rooms = site.contract["placement"]["equipment_locations"]
+    if floor > 1 and str(floor) not in rooms:
+        rooms[str(floor)] = _location(site, f"idf-{floor:02}", f"IDF {floor:02}", "equipment_room",
+                                      floor, (24, 18, (floor-1)*FLOOR_HEIGHT_M), parent)
+    return parent
+
+
+def university_floors(item, kind):
+    """Authored floor count for one campus building; no surveyed premises."""
+    if kind == "residence":
+        return max(1, math.ceil(item["rooms"] / DORM_ROOMS_PER_FLOOR))
+    if kind == "library":
+        rooms = math.ceil(item["reading_seats"] / READING_SEATS_PER_ROOM)
+    else:
+        rooms = (item["classrooms"] + math.ceil(item["lab_seats"] / LAB_SEATS_PER_ROOM)
+                 + math.ceil(item["offices"] / OFFICE_DESKS))
+    return max(1, math.ceil(rooms / ACADEMIC_ROOMS_PER_FLOOR))
+
+
+def university_spaces(item, kind):
+    """Ordered (suffix, name, space_type, bucket, capacity) rooms of one building.
+
+    The order is creation order, which is what binds a room to its permanent
+    reserved building position. New rooms append; existing rooms never move.
+    """
+    if kind == "residence":
+        return [(f"room-{n+1:03}", f"Residence room {n+1:03}", "dorm_room", "residence",
+                 {"workstations": item["wired_ports_per_room"]} if item["wired_ports_per_room"] else None)
+                for n in range(item["rooms"])]
+    if kind == "library":
+        return [(f"reading-{n+1:02}", f"Reading room {n+1:02}", "reading_room", "reading",
+                 {"workstations": min(READING_SEATS_PER_ROOM, item["reading_seats"] - READING_SEATS_PER_ROOM*n)})
+                for n in range(math.ceil(item["reading_seats"] / READING_SEATS_PER_ROOM))]
+    spaces = [(f"lecture-{n+1:03}", f"Lecture hall {n+1:03}", "lecture_hall", "halls",
+               {"workstations": 1}) for n in range(item["classrooms"])]
+    spaces += [(f"lab-{n+1:02}", f"Teaching lab {n+1:02}", "teaching_lab", "labs",
+                {"workstations": min(LAB_SEATS_PER_ROOM, item["lab_seats"] - LAB_SEATS_PER_ROOM*n)})
+               for n in range(math.ceil(item["lab_seats"] / LAB_SEATS_PER_ROOM))]
+    spaces += [(f"office-{n+1:02}", f"Faculty office pod {n+1:02}", "office", "offices",
+                {"workstations": min(OFFICE_DESKS, item["offices"] - OFFICE_DESKS*n)})
+               for n in range(math.ceil(item["offices"] / OFFICE_DESKS))]
+    return spaces
+
+
+def university_slot(kind, slot):
+    """Map one permanent room reservation to its floor and local position."""
+    if kind == "residence":
+        floor, place = slot // DORM_ROOMS_PER_FLOOR + 1, slot % DORM_ROOMS_PER_FLOOR
+        return floor, (2 + 2*(place % 25), 2 + 10*(place//25), (floor-1)*FLOOR_HEIGHT_M)
+    floor, place = slot // ACADEMIC_ROOMS_PER_FLOOR + 1, slot % ACADEMIC_ROOMS_PER_FLOOR
+    return floor, (6 + 12*(place % 4), 4 + 24*(place//4), (floor-1)*FLOOR_HEIGHT_M)
+
+
+def university_rooms(site, item):
+    """Finite campus building grammar with permanent rooms, IDFs and corridors.
+
+    Every room holds a reserved building position for the life of the estate, so
+    adding lecture halls appends new rooms above the existing labs and offices
+    instead of renumbering the building underneath them.
+
+    ponytail: eight rooms per academic or library floor, fifty rooms per
+    residence floor, and eight floors per building — the ceiling the shared
+    eight-block management uplink pool supports. Raise that reviewed pool
+    before admitting a taller building.
+    """
+    kind = site.contract["kind"]
+    if kind not in {"academic", "residence", "library"}:
+        raise DesignError(f"{site.id}: campus rooms require an academic, residence or library building")
+    per_floor = DORM_ROOMS_PER_FLOOR if kind == "residence" else ACADEMIC_ROOMS_PER_FLOOR
+    spaces = university_spaces(item, kind)
+    placed = [(space, site.w.reserve(f"campus-rooms/{site.id}", space[0], MAX_BUILDING_FLOORS*per_floor))
+              for space in spaces]
+    floors = max((slot for _, slot in placed), default=0) // per_floor + 1
+    if floors > MAX_BUILDING_FLOORS:
+        raise DesignError(f"{site.id}: {floors} floors exceed the reviewed {MAX_BUILDING_FLOORS}-floor "
+                          "building layout and its management attachment pool; split the demand across buildings")
+    rooms = dict(halls=[], labs=[], offices=[], residence=[], reading=[], corridors={},
+                 reception=None, floors=floors)
+    for floor in range(1, floors + 1):
+        _campus_floor(site, floor)
+    for (suffix, name, space_type, bucket, capacity), slot in placed:
+        floor, position = university_slot(kind, slot)
+        rooms[bucket].append(_location(site, suffix, name, space_type, floor, position,
+                                       _floor(site, floor), capacity))
+    for floor in range(1, floors + 1):
+        origin = (24, 8, (floor-1)*FLOOR_HEIGHT_M) if kind == "residence" else (24, 40, (floor-1)*FLOOR_HEIGHT_M)
+        rooms["corridors"][floor] = _location(site, f"corridor-{floor:02}", f"Floor {floor:02} corridor",
+                                              "corridor", floor, origin, _floor(site, floor))
+    if kind == "library":
+        rooms["reception"] = _location(site, "reception", "Library entrance", "reception", 1,
+                                       (6, 40, 0), _floor(site, 1))
+    return rooms
+
+
+def university_endpoint(site, key, room, cohort, ordinal):
+    """Place one campus endpoint on its permanent mount and floor-local route."""
+    space, node = site.w.obj(room), site.w.obj(key)
+    origin, role = space["meta"]["position_m"], node["refs"]["role"]
+    height = 2.8 if role == "role/ap" else 2.5 if role == "role/camera" else 0.8
+    if role == "role/ap":
+        offset = _ap_offset(cohort, ordinal)
+    elif type(ordinal) is not int or ordinal < 1:
+        raise DesignError(f"{key}: campus endpoint ordinal must be a positive integer")
+    elif role == "role/camera":
+        offset = (1 + 8*(ordinal-1), 0)
+    else:
+        offset = (1 + 1.2*((ordinal-1) % 6), 1 + 1.2*((ordinal-1)//6))
+    point = [origin[0]+offset[0], origin[1]+offset[1], origin[2]+height]
+    serving = site.contract["placement"]["equipment_locations"][str(space["meta"]["floor"])]
+    route = math.ceil(sum(abs(a-b) for a, b in zip(point, site.w.obj(serving)["meta"]["position_m"]))+10)
+    if route > MAX_CHANNEL_M:
+        raise DesignError(f"{key}: campus access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
+    node["refs"]["location"] = room
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
+    if role == "role/ap":
+        node["attrs"]["description"] += "; staff on wlan0, students on wlan1; RF coverage unverified"
+    node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
+        "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving}, access_channel_length_m=route)
 
 
 def hospital_rooms(site, demand):

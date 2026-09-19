@@ -24,6 +24,16 @@ def validate(plan, catalog=None):
             zones = entry.get("wireless", {})
             if isinstance(zones, dict) and any(isinstance(zone, dict) and type(zone.get("guest")) is int and zone["guest"] > 0 for zone in zones.values()):
                 guest_sites.add(f"site/{prefix}-{entry['key']}")
+    if recipe.get("profile") == "university-campus":
+        # Visitor service is authored policy for every campus building; the
+        # campus data center never offers it.
+        guest_sites = set()
+        for field, prefix in (("buildings", "bldg"), ("residences", "hall")):
+            entries = recipe.get(field, [])
+            for entry in entries if isinstance(entries, list) else []:
+                if isinstance(entry, dict) and isinstance(entry.get("key"), str):
+                    guest_sites.add(f"site/{prefix}-{entry['key']}")
+        guest_sites.add("site/library-01")
     if recipe.get("profile") == "retail-chain":
         # Public guest service is authored policy for every store and the
         # support centre; a distribution centre never offers it.

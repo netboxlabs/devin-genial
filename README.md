@@ -49,6 +49,7 @@ optional devenv/Just setup. All commands run from the repository root.
 | Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | **Yes** (NetBox 4.7+) |
 | Provider backbone | [provider-backbone.toml](profiles/provider-backbone.toml) · [guide](profiles/provider-backbone.md) | PoPs, customer premises, private-L3 services and purchased transport | **Yes** (NetBox 4.7+) |
 | Retail chain | [retail-chain.toml](profiles/retail-chain.toml) · [guide](profiles/retail-chain.md) | Store formats, point-of-sale lanes, distribution centres and shared commerce services | **Yes** (NetBox 4.7+) |
+| University campus | [university-campus.toml](profiles/university-campus.toml) · [guide](profiles/university-campus.md) | Academic buildings, residence halls, a library, dense per-zone wireless and shared campus services | **Yes** (NetBox 4.7+) |
 
 Every profile generates, validates and reports offline. "Loadable" means the
 whole estate loads into a live NetBox through TurboBulk today — run

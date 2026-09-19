@@ -297,6 +297,48 @@ The [hospital/provider coverage review](../COVERAGE.md) distinguishes included, 
 intentionally omitted and unsupported capabilities. It ranks useful additions
 and explains where wireless belongs; it is a backlog, not implemented scope.
 
+## University campus
+
+`university-campus` composes **one** university campus: keyed academic
+buildings, keyed residence halls, a library and the single campus data center
+they depend on. Unlike the school district's many small campuses, this is a
+single large estate, and wireless is the centre of it — every building carries
+per-zone managed and visitor device budgets at campus density.
+
+```sh
+just plan profiles/university-campus.toml
+just generate profiles/university-campus.toml build/campus-demo
+just load-check build/campus-demo
+just power-scenario build/campus-demo/plan.json build/campus-power
+```
+
+This profile is offline-checked and fits the TurboBulk contract; it has no
+separately recorded live qualification receipt.
+
+Edit the `[[buildings]]`, `[[residences]]` and `[library]` tables and the campus
+`wan_peak_mbps`. Ordinary growth appends buildings, halls, rooms, seats, desks
+and wireless budgets while preserving every existing room position, rack, port,
+address, cable and journal: each room holds a permanent reserved building
+position, so adding lecture halls appends rooms above the existing labs and
+offices instead of renumbering the building underneath them.
+
+Reducing any count, removing a building or hall, changing
+`wired_ports_per_room`, or renewing `wan_peak_mbps` or the WAN tiers requires a
+new baseline. There is no acquisition, refresh or remodel transition here, and
+`headquarters_staff` is rejected: it is a bank and retail office-sizing input.
+
+Each site reserves a `/16` and each segment inside it is a `/22`, because a
+400-room hall with two ports per room addresses 800 installed ports on one
+student segment. Eight floors per building is the ceiling, matching the eight
+management-uplink blocks the shared allocator supports; a building whose floors
+would need more than 38 access switches is rejected with the exact arithmetic.
+
+The [profile guide](../profiles/university-campus.md) owns the complete limits,
+the per-zone wireless table and the service sizing thresholds. It also records
+what is explicitly not asserted: no enrollment or occupancy, eduroam-style
+naming only with no authentication protocol configured, no resident-owned
+devices behind the room ports, no RF survey and no campus-owned fiber.
+
 ## Retail chain
 
 `retail-chain` composes a fleet of stores, an optional support centre, 0–6

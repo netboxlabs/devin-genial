@@ -32,7 +32,8 @@ def validate(plan):
     recipe = plan.get("recipe", {})
     guest_demand = {}
     demand_fields = {"school-district": (("schools", "school"),),
-                     "hospital-clinics": (("hospitals", "hospital"), ("clinics", "clinic"))}.get(recipe.get("profile"), ())
+                     "hospital-clinics": (("hospitals", "hospital"), ("clinics", "clinic")),
+                     "university-campus": (("buildings", "bldg"), ("residences", "hall"))}.get(recipe.get("profile"), ())
     for field, prefix in demand_fields:
         facilities = recipe.get(field, [])
         for facility in facilities if isinstance(facilities, list) else []:

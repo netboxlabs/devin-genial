@@ -1,0 +1,61 @@
+# One university campus: four academic buildings, three residence halls, a
+# library and the campus data center they depend on. Room counts, radio budgets
+# and service thresholds are fictional planning assumptions, not enrollment,
+# occupancy or a surveyed RF design.
+profile = "university-campus"
+namespace = "lakemont"
+name = "Lakemont University"
+address_pool = "10.0.0.0/8"
+as_of = "2026-09-01"
+seed = 42
+reserve_fraction = 0.2
+
+# The campus data center edge. It must cover the sum of the building peaks
+# below; generation fails with the exact arithmetic when it does not.
+wan_peak_mbps = 4000
+
+# Academic buildings: lecture halls, 24-seat teaching/research labs and
+# twelve-desk faculty office pods. Site ids are bldg-<key>.
+[[buildings]]
+key = "science"
+classrooms = 8
+lab_seats = 96
+offices = 24
+
+[[buildings]]
+key = "humanities"
+classrooms = 16
+lab_seats = 0
+offices = 40
+
+[[buildings]]
+key = "engineering"
+classrooms = 10
+lab_seats = 120
+offices = 32
+
+[[buildings]]
+key = "business"
+classrooms = 12
+lab_seats = 24
+offices = 36
+
+# Residence halls: fifty rooms per corridor floor, one installed wired data
+# port per room and dense per-floor coverage. Site ids are hall-<key>.
+[[residences]]
+key = "aspen"
+rooms = 180
+
+[[residences]]
+key = "willow"
+rooms = 240
+
+[[residences]]
+key = "juniper"
+rooms = 120
+
+# The campus library (site id library-01). Keep this table last: bare keys
+# written after it would become part of it.
+[library]
+reading_seats = 160
+aps = 8

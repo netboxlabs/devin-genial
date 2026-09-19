@@ -103,12 +103,15 @@ class Site:
         self.tenant = tenant or ("tenant/inherited" if self.lineage == "birch" and not self.acquired else "tenant")
         self.equipment_prefix = f"{w.recipe['namespace']}-birch-{site_id}" if self.lineage == "birch" else self.name
         self.racks, self.rack_members, self.devices, self.nets = {}, {}, [], {}
-        self.rack_grid = (kind == "dc" and w.recipe["profile"] in {"enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain"}
+        self.rack_grid = (kind == "dc" and w.recipe["profile"] in {"enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus"}
                           or kind == "pop" and w.recipe["profile"] == "provider-backbone")
         self.rack_domains = self.rack_grid
         self.network_prefixlen = {"regional-bank": 24, "enterprise-data-center": 20, "school-district": 20,
                                   "hospital-clinics": 20, "provider-backbone": 20 if kind == "dc" else 26,
-                                  "retail-chain": 20 if kind == "dc" else 24}[w.recipe["profile"]]
+                                  "retail-chain": 20 if kind == "dc" else 24,
+                                  # Residence halls address every installed room
+                                  # data port, so campus buildings need a /22.
+                                  "university-campus": 20 if kind == "dc" else 22}[w.recipe["profile"]]
         self.network_offsets = {name: index for index, name in enumerate(NETWORKS)}
         if w.recipe["profile"] == "school-district":
             self.network_offsets.pop("users")
@@ -122,6 +125,10 @@ class Site:
             self.network_offsets = dict(management=0, backoffice=1, pos=2, wireless=3, security=4,
                                         applications=5, database=6, backup=7, wan=8, storage=9,
                                         guest=12)
+        elif w.recipe["profile"] == "university-campus":
+            self.network_offsets = dict(management=0, staff=1, students=2, research=3, wireless=4,
+                                        security=5, applications=6, database=7, backup=8, wan=9,
+                                        storage=10, guest=12)
         self.links = set()
         self.contract = dict(site=self.key, kind=kind, required_device_roles={}, redundant_uplinks=[],
                              required_connections=[], compute=[], assumptions=[])
@@ -350,9 +357,12 @@ class Site:
             cohort = "health-system-standard"
         elif not dc and self.w.recipe["profile"] == "retail-chain":
             cohort = "chain-standard"
+        elif not dc and self.w.recipe["profile"] == "university-campus":
+            cohort = "campus-standard"
         ages = {"dc-aggregation": range(1460, 1826), "retained-birch": range(2190, 2921),
                 "cedar-standard": range(365, 1096), "district-standard": range(365, 1096),
-                "health-system-standard": range(365, 1096), "chain-standard": range(365, 1096)}
+                "health-system-standard": range(365, 1096), "chain-standard": range(365, 1096),
+                "campus-standard": range(365, 1096)}
         key = f"circuit/{self.id}/{side}/{number}"
         try:
             installed = (date.fromisoformat(self.w.recipe["as_of"]) -

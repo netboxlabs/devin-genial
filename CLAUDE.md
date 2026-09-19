@@ -2,7 +2,8 @@
 
 An offline, deterministic generator of believable connected estates for NetBox,
 exported through Diode. Regional bank, enterprise DC, school district,
-hospital/clinic, provider backbone and retail chain have generation profiles. No LLM calls belong
+hospital/clinic, provider backbone, retail chain and university campus have
+generation profiles. No LLM calls belong
 in generation, allocation, validation, or export.
 
 The product goal is a believable whole estate. Demo stories are views into that
@@ -155,6 +156,9 @@ for the separately recorded pinned-target live qualification.
   NOC handoffs; `validate_provider.py`: independent topology, ownership and flow checks.
 - `estates/retail.py`: store-format fleet, distribution centres and shared commerce
   services; `validate_retail.py`: independent format, segment, radio and WAN checks.
+- `estates/university.py`: one campus of keyed academic buildings, residence halls
+  and a library with permanent room positions and dense per-zone wireless;
+  `validate_university.py`: independent room-ledger, endpoint, radio and WAN checks.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
 - `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
@@ -216,6 +220,15 @@ for the separately recorded pinned-target live qualification.
   School radio channels use stable AP keys. Growth must not reroute existing
   endpoints or reroll channels. Reductions, classroom design changes and campus
   WAN renewal need a new baseline; classroom/admin/lab counts can grow.
+- One university campus is one estate: buildings, halls and the library are
+  separate sites inside a single authored metro, served by one campus DC, not the
+  shared two-DC pair. Each building room holds a permanent reserved position, so
+  appending lecture halls never renumbers existing labs or offices. Eight floors
+  and 38 access switches per building are the reviewed ceilings. Residence-room
+  ports are installed capacity, never resident-owned devices; identity and WLAN
+  records use eduroam-style naming only, with no authentication protocol
+  configured. Growth may append buildings, halls, rooms, seats and radio budgets;
+  reductions, room-port design changes and campus WAN renewal need a new baseline.
 - Facility kind controls rack geometry; school campuses must not inherit DC
   cabinet grids. District sites share one authored metro. Explicit role offsets
   distinguish staff, students and AP management without changing bank addresses.

@@ -14,7 +14,8 @@ def enrich(world):
     if not wlans:
         return
     demand_fields = {"school-district": (("schools", "school"),),
-                     "hospital-clinics": (("hospitals", "hospital"), ("clinics", "clinic"))}.get(world.recipe["profile"], ())
+                     "hospital-clinics": (("hospitals", "hospital"), ("clinics", "clinic")),
+                     "university-campus": (("buildings", "bldg"), ("residences", "hall"))}.get(world.recipe["profile"], ())
     guest_demand = {f"wireless-lan/{prefix}-{facility['key']}/guest": sum(zone["guest"] for zone in facility["wireless"].values())
                     for field, prefix in demand_fields for facility in world.recipe[field]}
     prefixes, contacts, occupied, services = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)

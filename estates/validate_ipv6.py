@@ -12,7 +12,8 @@ from ipaddress import IPv6Network, IPv6Address, ip_interface, ip_network
 def validate(plan):
     recipe = plan.get("recipe", {})
     if recipe.get("profile") not in {"regional-bank", "enterprise-data-center", "school-district",
-                                      "hospital-clinics", "provider-backbone", "retail-chain"}:
+                                      "hospital-clinics", "provider-backbone", "retail-chain",
+                                      "university-campus"}:
         return []
     objects = {o["key"]: o for o in plan.get("objects", [])}
     findings = []
