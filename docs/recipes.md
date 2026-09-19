@@ -58,7 +58,7 @@ are enforced by the loop in `World.__init__` (`estates/model.py`).
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
 | `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`, `university-campus`. Omitting the key selects the bank. | **rebaseline** |
-| `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. | **rebaseline** |
+| `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. On a shared target check `GET /api/users/owners/` first: one live estate per namespace, and this key is frozen after baseline. | **rebaseline** |
 | `name` | string | per profile | 1–80 characters. Participates in Diode matching identities for the provider. | **rebaseline** |
 | `seed` | integer | `42` | `0` ≤ seed < 2^63. Drives bounded local variation (serials, procurement dates, design-pool choices) only. | **rebaseline** |
 | `as_of` | string | `2026-09-01` | ISO date. Observation date for authored history. | **rebaseline** |
@@ -70,7 +70,7 @@ are enforced by the loop in `World.__init__` (`estates/model.py`).
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Strictly increasing unique integers, each 1–1000, last element exactly `1000`. Purchased tiers; the physical handoff stays 1 Gb/s. Not accepted by the enterprise profile. | **rebaseline** |
 | `max_objects` | integer | `500000` | `100`–`2000000`. Generation fails when the budget is exceeded. | mutable |
 | `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
-| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-general`, `clinic-riverside`, `pop-chicago-lakeview`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). An unknown site id fails generation and the error lists the estate's real ids. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
+| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-central`, `clinic-west`, `pop-chicago-west`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). **`just plan RECIPE` prints the estate's real site ids** — check there before writing overrides; an unknown site id fails generation and the error lists them too. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
 | `hardware` | table | `{}` | Vendor line per role family. Families are exactly `access`, `leaf` and `ap`. Values: `access` = `cisco` (default, Cisco Catalyst 9200L-24P-4X) or `juniper` (Juniper EX3400-24P); `leaf` = `arista` (default, Arista DCS-7050SX3-48C8-F) or `juniper` (Juniper QFX5120-48Y-AFO2); `ap` = `reference` (default, Reference PoE access point) or `aruba` (HPE Aruba AP-505). Omitted families keep their default. An unknown family or vendor fails generation and the error lists the real choices. This is "they're a Juniper shop" — the alternates meet or beat the models they replace on every port, PSU, PoE and optics quantity, so all those checks still hold. One visible modeling difference: `ap = "aruba"` declares the AP-505's real 5 GHz + 2.4 GHz radio split (the reference AP models two 5 GHz radios), so whichever WLAN rides `wlan1` — students in the school and university profiles — carries 2.4 GHz channels on that line. Written as its own `[hardware]` header, so place it AFTER every top-level scalar key: TOML scoping otherwise swallows them. See [the catalog](../catalog/README.md#selectable-vendor-lines). | **rebaseline** |
 
@@ -85,6 +85,11 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `provider-backbone` | `/8`–`/12` | `/24` (first `/16` NOC, last `/16` infrastructure) | `10.0.0.0/8` |
 | `retail-chain` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `university-campus` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
+
+Data centers per profile: every profile builds `dc-01`; the bank and retail
+chain always add `dc-02` (the shared two-DC pair), and the enterprise profile
+builds `data_centers` of them (1–8). School, hospital, provider and university
+have exactly one — there is no `dc-02` to override or attach demand to.
 
 Default `namespace` / `name`: bank `cedar` / `Cedar Regional Bank`; enterprise
 `summit` / `Summit Enterprise Infrastructure`; school `maple` / `Maple School
