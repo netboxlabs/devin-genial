@@ -28,6 +28,7 @@ rather than silently renumbering the estate.
 - [School district](#school-district)
 - [Hospital and clinics](#hospital-and-clinics)
 - [Provider backbone](#provider-backbone)
+- [Retail chain](#retail-chain)
 - [Worked example](#worked-example)
 - [Not expressible in a recipe](#not-expressible-in-a-recipe)
 

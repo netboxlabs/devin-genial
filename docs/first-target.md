@@ -185,7 +185,9 @@ removing an *existing* entry is a rename and needs a new baseline.
 `owner`/`owner_group` rows on main block the v2 load; deleting them (the
 refusal names the exact rows) also nulls `owner` across the already-loaded v1
 branch and permanently invalidates its receipt — v1 becomes display-only and
-can no longer pass `verify-target`. One command performs the whole retirement
+can no longer pass `verify-target`. (That display-only state only arises if
+you delete the rows by hand; `just retire` below deletes the v1 branch in the
+same step, which is the normal path.) One command performs the whole retirement
 (the branch and the rows):
 
 ```

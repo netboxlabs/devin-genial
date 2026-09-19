@@ -116,6 +116,8 @@ template below. Prefer `model: opus` for fan-out.
 | 2026-09-19 | Regional bank with merger + named sites, full lifecycle (Pinnacle) | 4.7.1 local, shared with 12 namespaces | All three acts yes; yes-with-papercuts overall (17,302 objects; zero S1; depth kinds confirmed via API) | Birch lineage brand undocumented where recipes are written; site_designs error hid a TOML-scoping trap; blocking's endpoint row count read as "rows blocking you" |
 | 2026-09-19 | School district, named campuses, full lifecycle (Cedarbrook) | 4.7.1 local, shared with 11 namespaces | Acts 1 & 3 yes; Act 2 yes-with-papercuts | a CONCURRENT neighbour load failed the final readback (fixed: allowlist re-assessed at readback); branch-scoped API reads undocumented; site ids not discoverable pre-generate (fixed: plan prints them); §8 grep rationale unexplained with authored names |
 
+| 2026-09-19 | Retail grocery chain, full lifecycle (Bluebird, day-one profile) | 4.7.1 local, shared with 14 branches | **CLEAN: yes / yes / yes, zero S1/S2** (16,098→18,243 objects; POS/guest segmentation confirmed; target byte-identical after) | S3 only: recipes.md TOC missed the retail section; §7 display-only clause needed scoping |
+
 **Exit bar met 2026-09-18** after 13 runs (2 no → 5 yes-with-papercuts → mixed
 → 2 consecutive clean). The wireless/naming surface change of 2026-09-19
 restarted the count (run #14 above). Keep running this skill after any change
