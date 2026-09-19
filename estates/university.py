@@ -37,7 +37,7 @@ DEFAULT_BUILDINGS = [dict(key="science", classrooms=8, lab_seats=96, offices=24)
                      dict(key="engineering", classrooms=10, lab_seats=120, offices=32),
                      dict(key="business", classrooms=12, lab_seats=24, offices=36)]
 DEFAULT_RESIDENCES = [dict(key="aspen", rooms=180), dict(key="willow", rooms=240),
-                      dict(key="juniper", rooms=120)]
+                      dict(key="cypress", rooms=120)]
 # Authored per-zone concurrent device budgets. These are planning envelopes for
 # AP mount counts, not RF capacity, association evidence or headcounts.
 LECTURE_MANAGED, LECTURE_GUEST = 28, 4

@@ -125,8 +125,10 @@ Hardware is a versioned JSON catalog at `catalog/hardware.json`: top-level
 Each model indexed by alias has `manufacturer`,
 `model`, `slug`, `u_height`, `is_full_depth`, `interfaces` (list of `{name,type,
 mgmt_only?,speed?}`), `power_ports` (list of `{name,type}`), and optional `description`.
-Access models additionally declare ordered `access_ports`, `uplink_ports` and
-`stack_ports` lists, and fabric models ordered `fabric_ports` and `uplink_ports`
+Access models additionally declare ordered `access_ports` and `uplink_ports`
+lists — plus `stack_ports` (exactly two stacking-medium entries) on the
+selectable stackable lines; the inherited access model predates stacking and
+declares none — and fabric models ordered `fabric_ports` and `uplink_ports`
 lists, naming unique entries in `interfaces`. Capacity and every port lookup use
 these lists rather than a hardcoded port count or vendor numbering scheme.
 `hardware_lines` maps each selectable role family (`access`, `leaf`, `ap`) to its

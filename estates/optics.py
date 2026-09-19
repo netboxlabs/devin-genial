@@ -41,7 +41,7 @@ def enrich(world):
             for name in names:
                 factor = _CAGES[cages[name]["type"]][0]
                 bay_type = f"optics-bay-type/{host['manufacturer']}/{factor}"
-                supported.add(bay_type)
+                supported.add((bay_type, alias))
                 bay_types[bay_type] = (host["manufacturer"], factor)
                 lookup = (alias, name, part["rate_kbps"], part["medium"])
                 if lookup in selections:
@@ -72,9 +72,14 @@ def enrich(world):
     # type definitions follow the profile's fixed hardware-type library.
     for part_id in sorted(key for key, part in parts.items()
                           if any(f"hardware/{alias}" in objects for alias in part["compatible_interfaces"])):
-        part, part_bays = parts[part_id], part_bay_types[part_id]
-        # Definitions must not depend on which compatible hosts exist today.
-        # Otherwise growing the estate would mutate shared ModuleType records.
+        part = parts[part_id]
+        # Definitions follow the estate's fixed device-type library, never cage
+        # occupancy: the type set is frozen under growth, so shared ModuleType
+        # records stay stable, while a cage form factor no present device type
+        # carries (e.g. a Juniper SFP28 cage in an all-Cisco estate) is not
+        # published at all.
+        part_bays = sorted({bay_type for bay_type, alias in part_bay_types[part_id]
+                            if f"hardware/{alias}" in objects})
         for bay_type in part_bays:
             if bay_type not in objects:
                 manufacturer, factor = bay_types[bay_type]

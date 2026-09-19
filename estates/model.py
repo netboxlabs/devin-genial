@@ -40,7 +40,9 @@ def resolve_hardware(raw, catalog=None):
     for family, vendor in sorted(raw.items()):
         if family not in lines:
             raise DesignError(f"hardware.{family} is not a selectable role family; "
-                              f"this version selects lines for: {', '.join(sorted(lines))}")
+                              f"this version selects lines for: {', '.join(sorted(lines))}. "
+                              "(A top-level key placed AFTER the [hardware] header is "
+                              "swallowed into that table by TOML scoping — move it above the header.)")
         if not isinstance(vendor, str) or vendor not in lines[family]["lines"]:
             choices = ", ".join(f"{name} ({catalog['models'][alias]['manufacturer']} "
                                 f"{catalog['models'][alias]['model']})"

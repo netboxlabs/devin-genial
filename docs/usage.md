@@ -37,7 +37,10 @@ and `[site_names]` overrides any site with the customer's real names — see the
 (`access = "juniper"`, `leaf = "juniper"`, `ap = "aruba"`) when the audience is
 a Juniper or Aruba shop; omitted families keep the shipped defaults. It is
 rebaseline-frozen too, and the alternates meet or beat the models they replace,
-so every power, PoE, optics and port check still applies.
+so every power, PoE, optics and port check still applies. Note that
+`ap = "aruba"` models a real 5 GHz + 2.4 GHz radio split, so the WLAN riding
+`wlan1` moves to 2.4 GHz channels on that line — see the
+[recipe reference](recipes.md#common-keys).
 
 Python 3.11+ and `just` are all generation needs — devenv and direnv are
 optional, used only for the pinned Diode SDK checks. From this directory:

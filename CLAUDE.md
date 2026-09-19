@@ -340,9 +340,13 @@ for the separately recorded pinned-target live qualification.
   default and alternates; an unknown family or vendor is a hard error listing the
   real choices. Resolution happens in one place — `World.hardware_alias` for
   builders, `selected_alias` for independent checkers — so profiles keep naming
-  families and never a vendor. Builders and checkers must read port, PSU, PoE,
-  stacking and optical-cage names from the resolved catalog entry, never from a
-  literal vendor interface name. An alternate line must meet or beat the model it
+  families and never a vendor. Builders and checkers must read switch port, PSU,
+  PoE, stacking and optical-cage names from the resolved catalog entry, never
+  from a literal vendor interface name. The `ap` family is the exception: shared
+  builders address every AP line as `eth0`/`wlan0`/`wlan1`, a declared
+  normalization of vendor labels pinned by test, and `ap = "aruba"` carries the
+  AP-505's real 5 GHz + 2.4 GHz split, so the `wlan1` WLAN moves bands — say so
+  at every operator decision point. An alternate line must meet or beat the model it
   substitutes on every quantity a resolver binds, proven from the catalog in
   `tests/test_hardware_lines.py`, and must carry complete equivalent PSU, PoE and
   reviewed-optics data. The selection is rebaseline-frozen; adding a line changes

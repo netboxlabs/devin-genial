@@ -101,7 +101,7 @@ class UniversityResolverTests(unittest.TestCase):
         recipe = plan_for()["recipe"]
         self.assertEqual([item["key"] for item in recipe["buildings"]],
                          ["business", "engineering", "humanities", "science"])
-        self.assertEqual([item["key"] for item in recipe["residences"]], ["aspen", "juniper", "willow"])
+        self.assertEqual([item["key"] for item in recipe["residences"]], ["aspen", "cypress", "willow"])
         self.assertEqual(recipe["library"], {"reading_seats": 160, "aps": 8})
         self.assertEqual(recipe["namespace"], "lakemont")
         self.assertEqual(recipe["wan_peak_mbps"], 4000)

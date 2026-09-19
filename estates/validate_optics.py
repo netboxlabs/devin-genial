@@ -161,6 +161,10 @@ def analyze(plan, catalog=None):
                 report("optics-part-details", module_type, "Installed part's native JSON must accurately describe catalog protocol, media, reach, integer power reservation, basis and source URLs; those claims do not establish physical fit.")
             expected_bays = set()
             for host, names in part["compatible_interfaces"].items():
+                # Cage definitions follow the estate's own device-type library:
+                # a compatible host type absent from this plan publishes nothing.
+                if f"hardware/{host}" not in objects:
+                    continue
                 vendor = models[host].get("manufacturer")
                 for name in names:
                     cage = _CAGES.get(catalog_ports[host].get(name, {}).get("type"))

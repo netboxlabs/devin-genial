@@ -14,7 +14,9 @@ The new catalog digest requires a fresh baseline; phase 4 and older saved plans
 retain their historical catalog.
 The named vendor models preserve the interface names, types, management
 flags, rack height, and depth classification from the community device-type
-library at commit `72cc49fbb445f1e2f310d3b8dfef55e12d0b7138`. Each source entry
+library at commit `72cc49fbb445f1e2f310d3b8dfef55e12d0b7138`, except where a
+model's own section below declares a deliberate deviation (the EX3400 VCP
+type, the QFX management port, the Aruba interface normalization). Each source entry
 records its immutable URL, SHA-256, and CC0-1.0 license. The upstream license is
 included in [LICENSE-upstream](LICENSE-upstream). Console ports also preserve the pinned source names/types. Images, fans,
 and unused source fields remain outside this catalog's scope.
@@ -37,7 +39,7 @@ hardware is not duplicated for a different role. The Fortinet source selects the
 for shared-media `port17`–`port20`; the catalog does not add duplicate copper
 ports. No breakout interfaces or automatic speed negotiation are assumed.
 
-Both access-switch aliases have ordered `access_ports` and `uplink_ports` lists
+All three access-switch aliases have ordered `access_ports` and `uplink_ports` lists
 of interface names. Builders use these attachment maps instead of inferring a
 vendor's numbering scheme. The management port is the interface marked
 `mgmt_only`; it is not available for access or uplink allocation.
@@ -95,8 +97,10 @@ line here changes the hardware digest, so every profile needs a new baseline.
 `ge-0/0/0`–`23` at 1G with `poe_mode: pse` and `type2-ieee802.3at`; the four
 shared uplink cages selected at 10G as `xe-0/2/0`–`3`; `me0` management at 1G;
 1U. The two rear QSFP+ ports `et-0/1/0` and `et-0/1/1` are the platform's
-default Virtual Chassis ports and carry NetBox type `juniper-vcp`, so the DC
-service stack builds from real stacking ports rather than Cisco StackWise ones.
+default Virtual Chassis ports and carry NetBox type `juniper-vcp` — a
+deliberate deviation from the pinned library's `40gbase-x-qsfpp`, declared
+here because Juniper ships these ports as VCPs by default and the DC service
+stack must classify them as stacking media, not optical cages.
 Two installed `JPSU-600-AC-AFO` supplies occupy bays `PSU0`/`PSU1`, producing
 C14 inlets `Power Supply 0` and `Power Supply 1`.
 
@@ -115,8 +119,10 @@ members are not modeled.
 48 SFP28 cages `et-0/0/0`–`47` and eight QSFP28 uplinks `et-0/0/48`–`55`; one
 management port `em0` at 1G; one RJ45 `Console`; 1U full depth. Two installed
 `JPSU-650W-AC-AO` supplies occupy bays `PSU 0`/`PSU 1`, producing C14 inlets `0`
-and `1` — the same 650 W module the MX204 uses, so its existing pinned module
-source is reused.
+and `1` — the 650 W module this catalog already pins. Juniper's QFX5120 power
+page names `JPSU-650W-AC-AO` explicitly; the module's MX204 attribution is this
+catalog's earlier assumption, so the shared source is reused on the QFX's own
+evidence, not the MX204's.
 
 Two deliberate deviations are recorded rather than hidden. First, the SFP28
 cages keep the platform's documented default 10-Gbps port mode, written as an
@@ -280,7 +286,7 @@ too, which is why selecting the Juniper access line moves no endpoint. Losing on
 reserved loses redundancy margin without itself exceeding remaining delivery
 capacity. These calculations are policy limits, not live outage observations.
 
-Both PSE entries declare `type: type2-ieee802.3at`,
+All three PSE entries declare `type: type2-ieee802.3at`,
 `per_port_max_mw: 30000`, and `policy_source: reference-poe-v1`.
 The common `upstream_ac_allowance_multiplier: "1.25"` is a decimal string
 for exact arithmetic. It is an authored conservative planning multiplier,
@@ -292,7 +298,7 @@ Power demand must consume its own budget without reducing available wired-only
 ports, relocating existing endpoints or claiming RF coverage survives a fault.
 
 Native `poe_mode`/`poe_type` attributes occur only on AP `eth0` (`pd`) and
-the two switch models' actual access ports (`pse`), all using the declared
+the three switch models' actual access ports (`pse`), all using the declared
 Type 2 value. Management/uplink/stacking interfaces and AP radios have no PoE
 attributes. These spellings exist in the pinned
 [NetBox 4.7 choices](https://raw.githubusercontent.com/netbox-community/netbox/v4.7.0/netbox/dcim/choices.py);

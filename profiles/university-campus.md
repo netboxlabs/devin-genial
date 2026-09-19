@@ -98,7 +98,9 @@ measured throughput or observed associations.
 | `office-<nn>` | 12 | 0 |
 | `floor-<nn>` (residence) | 2 per room on that floor | 2 |
 
-Staff WLANs ride `wlan0` and student WLANs `wlan1`; visitor service rides
+Staff WLANs ride `wlan0` and student WLANs `wlan1` (2.4 GHz channels when the
+recipe selects `ap = "aruba"`, whose model declares a real dual-band split);
+visitor service rides
 `wlan0` at every campus building and never at the data center. Planned visitor
 devices must fit the building's own guest `/22`.
 

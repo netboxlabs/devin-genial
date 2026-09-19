@@ -22,7 +22,7 @@ from .validate_wireless_context import validate as validate_wireless_context
 from .validate_datacenter import validate as validate_datacenter
 from .validate_school import validate as validate_school
 from .equipment import validate as validate_equipment
-from .model import selected_alias
+from .model import DesignError, resolve_hardware, selected_alias
 
 
 # Independent expectations for the authored bank services. These are demo intent,
@@ -277,6 +277,14 @@ def validate(plan):
         declared_lines = _full_catalog()
     except (OSError, ValueError, KeyError):
         declared_lines = {}
+    if declared_lines:
+        # selected_alias falls back to the default line on nonsense, so a
+        # hand-edited declaration must fail here rather than silently validate
+        # the plan against the wrong model.
+        try:
+            resolve_hardware(plan.get("recipe", {}).get("hardware", {}), declared_lines)
+        except DesignError as exc:
+            report("hardware-declaration", "recipe", str(exc))
 
     def line(family):
         """Catalog model the recipe's declared vendor selection binds to a family."""

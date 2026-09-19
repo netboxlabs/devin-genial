@@ -51,7 +51,7 @@ key = "willow"
 rooms = 240
 
 [[residences]]
-key = "juniper"
+key = "cypress"
 rooms = 120
 
 # The campus library (site id library-01). Keep this table last: bare keys

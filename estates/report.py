@@ -201,7 +201,7 @@ def _wireless_walkthrough(plan, objects, kinds):
         normal = sum(p["attrs"].get("allocated_draw", 0) for p in inlets[pse])
         rows.append((name(ap["refs"]["site"]), name(ap["key"]), name(pse),
                      port.get("attrs", {}).get("name", "Unresolved"), f"{loads[pse]/1000:g}", normal))
-    _table(lines, ["Site", "Open AP eth0 cable trace", "Serving PSE", "Source port", "PSE reserved PD W", "PSE normal AC allowance W"], rows)
+    _table(lines, ["Site", "Open AP uplink cable trace", "Serving PSE", "Source port", "PSE reserved PD W", "PSE normal AC allowance W"], rows)
     if len(aps) > len(rows):
         lines += [f"Showing {len(rows)} of {len(aps)} APs; all records remain in the plan and Diode package.", ""]
     zones = []

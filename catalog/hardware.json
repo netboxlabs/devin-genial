@@ -116,7 +116,7 @@
     },
     "reference-poe-v1": {
       "url": "README.md#poe-planning-policy",
-      "purpose": "Authored reference operating and allocation policy: two 5 GHz AP radios; Type 2 PD maximum input 25500 mW and PSE reservation 30000 mW; one-supply-loss planning for the installed dual-supply Cisco, none for the fixed-supply Juniper; upstream AC planning allowance multiplier 1.25. These are design assumptions, not measured consumption, vendor efficiency or interoperability certification."
+      "purpose": "Authored reference operating and allocation policy: the portable AP envelope (wlan0/wlan1 radios; the reference AP declares both 5 GHz, the Aruba line a real 5 GHz + 2.4 GHz split); Type 2 PD maximum input 25500 mW and PSE reservation 30000 mW; one-supply-loss planning for every installed dual-supply access switch (Cisco C9200L, Juniper EX3400), none for the fixed-supply inherited EX3300; upstream AC planning allowance multiplier 1.25. These are design assumptions, not measured consumption, vendor efficiency or interoperability certification."
     },
     "cisco-optics-host-json": {
       "url": "https://tmgmatrix.cisco.com/public/api/networkdevice/search",
@@ -227,7 +227,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+      "purpose": "Authored policy: 3–100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host × 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -244,18 +244,24 @@
     "juniper-ex3400-ports": {
       "url": "https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-system-overview.html",
       "checked": "2026-09-19",
-      "purpose": "EX3400-24P front panel: 24 Gigabit Ethernet RJ-45 ports labeled 0-23 as PIC 0 and four SFP/SFP+ uplink cages as PIC 2; two rear QSFP+ ports are configured as Virtual Chassis ports by default; RJ-45 console on the rear panel and Mini-USB Type-B console on the front panel. This catalog selects the four shared uplink cages at 10G as xe-0/2/0 through xe-0/2/3 and models the two default VCPs as stacking ports."
+      "purpose": "EX3400-24P front panel: 24 Gigabit Ethernet RJ-45 ports labeled 0-23 as PIC 0 and four SFP/SFP+ uplink cages as PIC 2; two rear QSFP+ ports are configured as Virtual Chassis ports by default; RJ-45 console on the rear panel and Mini-USB Type-B console on the front panel. This catalog selects the four shared uplink cages at 10G as xe-0/2/0 through xe-0/2/3 and models the two default VCPs as stacking ports.",
+      "response_sha256": "0c4142eba68a667eac95e343a1d8844c8a09a978cd3b6eeab42464ae2cb8ea1e",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/juniper-ex3400-ports.html"
     },
     "juniper-ex3400-power-poe": {
       "url": "https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-power-system.html",
       "checked": "2026-09-19",
-      "purpose": "Table 1: EX3400-24P has 24 PoE-enabled ports; maximum system power available for PoE is 370 W with one 600 W power supply installed and 720 W with two. The maximum power available on a PoE+ port is 30 W. Table 2: JPSU-600-AC-AFO is the 600 W AC supply, minimum one and maximum two per chassis, installed in slots PSU 0 and PSU 1; the AC cord coupler is IEC 60320 type C13, which mates a C14 chassis inlet. Delivered PoE budget is distinct from PSU output rating."
+      "purpose": "Table 1: EX3400-24P has 24 PoE-enabled ports; maximum system power available for PoE is 370 W with one 600 W power supply installed and 720 W with two. The maximum power available on a PoE+ port is 30 W. Table 2: JPSU-600-AC-AFO is the 600 W AC supply, minimum one and maximum two per chassis, installed in slots PSU 0 and PSU 1; the AC cord coupler is IEC 60320 type C13, which mates a C14 chassis inlet. Delivered PoE budget is distinct from PSU output rating.",
+      "response_sha256": "ff63ab43646ace29a68de9cbba0b1f0bb97e83d50246886b9683ca62dd42bf26",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/juniper-ex3400-power-poe.html"
     },
     "juniper-ex3400-optics": {
       "url": "https://apps.juniper.net/hct/product/EX3400/100001",
       "checked": "2026-09-19",
       "representation": "parsed-primary-html",
-      "purpose": "EX3400 Hardware Compatibility Tool transceiver list includes EX-SFP-10GE-LR (Juniper part 740-021309) from Junos OS 15.1X53-D50. Catalog installs it only in the four selected 10G uplink cages."
+      "purpose": "EX3400 Hardware Compatibility Tool transceiver list includes EX-SFP-10GE-LR (Juniper part 740-021309) from Junos OS 15.1X53-D50. Catalog installs it only in the four selected 10G uplink cages.",
+      "response_sha256": "ae1e18c3c63d8d9fb77d07466980bcb661c9aec4f4dec46fcedb8f6a8cadb398",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/juniper-ex3400-optics.html"
     },
     "leaf-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/QFX5120-48Y-AFO2.yaml",
@@ -266,29 +272,39 @@
     "qfx5120-port-modes": {
       "url": "https://www.juniper.net/documentation/us/en/hardware/qfx5120/topics/topic-map/qfx5120-system-overview.html",
       "checked": "2026-09-19",
-      "purpose": "QFX5120-48Y front panel has 48 SFP28 ports and 8 QSFP28 ports. The SFP28 ports are grouped in quads and are configured to operate at 10-Gbps speed by default; this catalog keeps that default and records it as an explicit interface speed. Junos surfaces a 10G port with the xe- prefix; the pinned device-type library names all 48 cages et-0/0/0 through et-0/0/47 and this catalog keeps the pinned names. The rear panel has two RJ-45 management ports labeled C0 and C1 and one RJ-45 console port labeled CON."
+      "purpose": "QFX5120-48Y front panel has 48 SFP28 ports and 8 QSFP28 ports. The SFP28 ports are grouped in quads and are configured to operate at 10-Gbps speed by default; this catalog keeps that default and records it as an explicit interface speed. Junos surfaces a 10G port with the xe- prefix; the pinned device-type library names all 48 cages et-0/0/0 through et-0/0/47 and this catalog keeps the pinned names. The rear panel has two RJ-45 management ports labeled C0 and C1 and one RJ-45 console port labeled CON.",
+      "response_sha256": "bfaf2dab0f5eec5e82574454c427724614f259d3dab7b6ae457f298f7a3e960b",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/qfx5120-port-modes.html"
     },
     "qfx5120-management-names": {
       "url": "https://www.juniper.net/documentation/us/en/day-one-plus/qfx5120/id-step-2-up-and-running.html",
       "checked": "2026-09-19",
-      "purpose": "The management ports em0 (labeled C0) and em1 (labeled C1) are on the rear panel of the QFX5120-48Y. This catalog models only em0; the pinned device-type library instead declares a single fxp0, which is not the documented name for this platform. The unused second management port is not modeled."
+      "purpose": "The management ports em0 (labeled C0) and em1 (labeled C1) are on the rear panel of the QFX5120-48Y. This catalog models only em0; the pinned device-type library instead declares a single fxp0, which is not the documented name for this platform. The unused second management port is not modeled.",
+      "response_sha256": "70657da9da76697d99ee24945b969235db55ff638c7bb0d7d42fb550eabe1722",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/qfx5120-management-names.html"
     },
     "qfx5120-ac-power": {
       "url": "https://www.juniper.net/documentation/us/en/hardware/qfx5120/topics/topic-map/qfx5120-power-system.html",
       "checked": "2026-09-19",
-      "purpose": "QFX5120-48Y supports two 650 W AC power supplies, model JPSU-650W-AC-AO (airflow out) or JPSU-650W-AC-AI, installed in slots labeled 0 and 1; the AC cord coupler is IEC 60320 type C13, which mates a C14 chassis inlet. The AFO2 SKU ships two AC supplies with front-to-back airflow. PSU output rating is distinct from the authored chassis allowance."
+      "purpose": "QFX5120-48Y supports two 650 W AC power supplies, model JPSU-650W-AC-AO (airflow out) or JPSU-650W-AC-AI, installed in slots labeled 0 and 1; the AC cord coupler is IEC 60320 type C13, which mates a C14 chassis inlet. The AFO2 SKU ships two AC supplies with front-to-back airflow. PSU output rating is distinct from the authored chassis allowance.",
+      "response_sha256": "d27483a873c3a2a87003b1ca539ba8032548339c51cd67869ba52161f829fe01",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/qfx5120-ac-power.html"
     },
     "qfx5120-optics-host": {
       "url": "https://apps.juniper.net/hct/product/QFX5120-48Y/transceivers",
       "checked": "2026-09-19",
       "representation": "parsed-primary-html",
-      "purpose": "Exact QFX5120-48Y HCT transceiver list includes EX-SFP-10GE-LR (740-021309), JNP-QSFP-100G-LR4 (740-061409) and JNP-100G-AOC-3M (740-065631), each from Junos OS 18.3R1 and none end-of-life. No breakout or channelized mode is modeled."
+      "purpose": "Exact QFX5120-48Y HCT transceiver list includes EX-SFP-10GE-LR (740-021309), JNP-QSFP-100G-LR4 (740-061409) and JNP-100G-AOC-3M (740-065631), each from Junos OS 18.3R1 and none end-of-life. No breakout or channelized mode is modeled.",
+      "response_sha256": "bf091be17b9f84dd5bfc8872aca16f37da0e3f8db9159735b62e854dc0ad6e8b",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/qfx5120-optics-host.html"
     },
     "juniper-jnp-100g-aoc-3m": {
       "url": "https://apps.juniper.net/hct/model/JNP-100G-AOC-3M/hwspecs",
       "checked": "2026-09-19",
       "representation": "parsed-primary-html",
-      "purpose": "QSFP28 100G active optical cable, 3 m, maximum power consumption 3.5 W. The published figure does not distinguish whole assembly from individual captive end; reserving 3500 mW at each end is an authored conservative interpretation, matching the existing Arista AOC policy."
+      "purpose": "QSFP28 100G active optical cable, 3 m, maximum power consumption 3.5 W. The published figure does not distinguish whole assembly from individual captive end; reserving 3500 mW at each end is an authored conservative interpretation, matching the existing Arista AOC policy.",
+      "response_sha256": "ddd80f4a9d19e44759153c7e37f31304e0e3433dd6992a7c2cdf6146e0da2528",
+      "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/juniper-jnp-100g-aoc-3m.html"
     },
     "ap-aruba-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/HPE/Aruba-AP-505.yaml",

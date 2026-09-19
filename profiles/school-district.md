@@ -58,7 +58,8 @@ coordinates are equipment planning rules, not RF survey or throughput ratings.
 
 Any nonzero guest demand creates a local guest VLAN 130, its separate /20 and
 VRF, two gateway SVIs, and a guest WLAN on `wlan0` alongside staff. Students
-remain on `wlan1`. AP copper and upstream trunks carry the required VLANs while
+remain on `wlan1` — which carries 2.4 GHz channels when the recipe selects
+`ap = "aruba"`, whose catalog model declares a real 5 GHz + 2.4 GHz radio split. AP copper and upstream trunks carry the required VLANs while
 AP management keeps its native VLAN. Managed WLANs have RADIUS service intent;
 the guest WLAN uses open authentication, with no portal, guest credentials or
 authentication outcome modeled. Segmentation does not establish enforced

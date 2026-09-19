@@ -227,7 +227,12 @@ Depth backlog (from cold-start run #16, bank): FHRP groups, VPN tunnels and
 inventory items are modeled as single instances in a DC pair — enough to show
 the object type, not a per-branch redundancy *pattern*. Candidate enrichment:
 per-branch FHRP gateway pairs, per-acquired-site tunnels, per-host inventory.
-Not scheduled; weigh against phases 3–9.
+From the phase-5 adversarial review: WLANs attach to one radio slot each, so a
+dual-band AP line puts the `wlan1` cohort on 2.4 GHz only — dual-band WLAN
+membership (one SSID on both radios) is the honest upgrade; and no check mates
+PDU outlet connectors to chassis inlets (the default bank cables C13 outlets to
+the C9200L's C16 inlets, a pre-existing physical impossibility the Juniper line
+does not share). Not scheduled; weigh against phases 3–9.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and

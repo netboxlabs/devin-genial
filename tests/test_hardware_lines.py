@@ -193,6 +193,29 @@ class CatalogFitTests(unittest.TestCase):
                 self.assertEqual((port["type"], port["poe_mode"], port["poe_type"]),
                                  ("1000base-t", "pse", "type2-ieee802.3at"))
 
+        def rate(model, name):
+            port = next(p for p in model["interfaces"] if p["name"] == name)
+            return port.get("speed", {"10gbase-x-sfpp": 10000000,
+                                      "25gbase-x-sfp28": 25000000}[port["type"]])
+
+        for index, name in enumerate(base["uplink_ports"]):
+            self.assertGreaterEqual(rate(variant, variant["uplink_ports"][index]),
+                                    rate(base, name), index)
+        for model in (base, variant):
+            # The DC service stack cables exactly two stacking-medium ports.
+            self.assertEqual(len(model["stack_ports"]), 2)
+            for name in model["stack_ports"]:
+                port_type = next(p for p in model["interfaces"] if p["name"] == name)["type"]
+                self.assertTrue("stack" in port_type or port_type == "juniper-vcp", name)
+        # One rj-45 console (the console builder cables only rj-45), the same
+        # management-port count (each consumes a management block slot) and the
+        # same rack height, so no room or console ledger moves between lines.
+        self.assertEqual(len([p for p in variant["console_ports"] if p["type"] == "rj-45"]),
+                         len([p for p in base["console_ports"] if p["type"] == "rj-45"]))
+        self.assertEqual(len([p for p in variant["interfaces"] if p.get("mgmt_only")]),
+                         len([p for p in base["interfaces"] if p.get("mgmt_only")]))
+        self.assertEqual(variant["u_height"], base["u_height"])
+
     def test_leaf_line_matches_or_beats_the_default(self):
         base, variant = (self.models[self.alias("leaf", v)] for v in ("arista", "juniper"))
         self.assertEqual((variant["manufacturer"], variant["model"]), VARIANT["leaf"])
@@ -228,6 +251,37 @@ class CatalogFitTests(unittest.TestCase):
             self.assertEqual(powered["type"], "1000base-t")
             self.assertEqual([p["name"] for p in model["interfaces"] if p["type"].startswith("ieee802.11")],
                              sorted(model["radio_bands"]))
+
+    def test_tampered_hardware_declaration_fails_validation(self):
+        # selected_alias silently falls back to the default line, so a
+        # hand-edited plan must be caught by the independent check instead.
+        plan = generate(deepcopy(SMALL["regional-bank"]))
+        self.assertEqual(validate(plan), [])
+        tampered = deepcopy(plan)
+        tampered["recipe"]["hardware"]["access"] = "brocade"
+        self.assertTrue(any(f["code"] == "hardware-declaration"
+                            for f in validate(tampered)), validate(tampered)[:3])
+
+    def test_foreign_cage_bay_types_stay_out_of_default_estates(self):
+        # The QFX's SFP28 cages must not publish a Juniper SFP28 bay type into
+        # an estate whose device types carry no SFP28 cage at all.
+        default = generate(deepcopy(SMALL["regional-bank"]))
+        keys = {o["key"] for o in default["objects"] if o["kind"] == "module_bay_type"}
+        self.assertNotIn("optics-bay-type/Juniper/sfp28", keys)
+        variant = generate(deepcopy(SMALL["regional-bank"]) | {"hardware": dict(CHOICE)})
+        keys = {o["key"] for o in variant["objects"] if o["kind"] == "module_bay_type"}
+        self.assertIn("optics-bay-type/Juniper/sfp28", keys)
+
+    def test_ap_lines_follow_the_portable_endpoint_convention(self):
+        # Shared builders and checkers address every AP line as eth0/wlan0/wlan1
+        # (a declared normalization of vendor labels, never a vendor claim).
+        # This pins that contract: a future line could satisfy the envelope test
+        # and still break the ~15 call sites that name these ports literally.
+        for vendor, alias in self.catalog["hardware_lines"]["ap"]["lines"].items():
+            model = self.models[alias]
+            self.assertEqual(model["poe_pd"]["interface"], "eth0", alias)
+            self.assertEqual(set(model["radio_bands"]), {"wlan0", "wlan1"}, alias)
+            self.assertIn("eth0", {p["name"] for p in model["interfaces"]}, alias)
 
     def test_every_variant_optical_cage_has_a_reviewed_part(self):
         cages = {"1000base-x-sfp", "10gbase-x-sfpp", "25gbase-x-sfp28", "100gbase-x-qsfp28"}
