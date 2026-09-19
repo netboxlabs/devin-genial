@@ -13,6 +13,8 @@ def generate(recipe, previous=None):
         from .hospital import generate as build
     elif recipe["profile"] == "provider-backbone":
         from .provider import generate as build
+    elif recipe["profile"] == "retail-chain":
+        from .retail import generate as build
     else:
         from .bank import generate as build
     return build(recipe, previous=previous)

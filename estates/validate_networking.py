@@ -24,6 +24,15 @@ def validate(plan, catalog=None):
             zones = entry.get("wireless", {})
             if isinstance(zones, dict) and any(isinstance(zone, dict) and type(zone.get("guest")) is int and zone["guest"] > 0 for zone in zones.values()):
                 guest_sites.add(f"site/{prefix}-{entry['key']}")
+    if recipe.get("profile") == "retail-chain":
+        # Public guest service is authored policy for every store and the
+        # support centre; a distribution centre never offers it.
+        formats = recipe.get("stores", {})
+        counts = {size: formats.get(size, 0) if isinstance(formats, dict) else 0 for size in ("small", "medium", "large")}
+        offices = recipe.get("headquarters", 0)
+        guest_sites = {f"site/st-{size[0]}{n+1:04}" for size, count in counts.items()
+                       if type(count) is int for n in range(max(0, count))}
+        guest_sites |= {f"site/hq-{n+1:02}" for n in range(max(0, offices if type(offices) is int else 0))}
     objects = {o["key"]: o for o in plan.get("objects", [])}
     by_kind, children = defaultdict(list), defaultdict(list)
     findings = []

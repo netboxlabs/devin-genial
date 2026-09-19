@@ -48,6 +48,7 @@ optional devenv/Just setup. All commands run from the repository root.
 | School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | **Yes** (NetBox 4.7+) |
 | Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | **Yes** (NetBox 4.7+) |
 | Provider backbone | [provider-backbone.toml](profiles/provider-backbone.toml) · [guide](profiles/provider-backbone.md) | PoPs, customer premises, private-L3 services and purchased transport | **Yes** (NetBox 4.7+) |
+| Retail chain | [retail-chain.toml](profiles/retail-chain.toml) · [guide](profiles/retail-chain.md) | Store formats, point-of-sale lanes, distribution centres and shared commerce services | **Yes** (NetBox 4.7+) |
 
 Every profile generates, validates and reports offline. "Loadable" means the
 whole estate loads into a live NetBox through TurboBulk today — run
@@ -84,7 +85,7 @@ devenv-managed SDK environment described in the [loading guide](docs/loading.md)
 New to loading? [First target](docs/first-target.md) is the start-to-finish
 runbook: prerequisites, token shape, branch creation, load, verify.
 
-All five profiles load completely on a NetBox 4.7+ target (module bay types
+Every profile loads completely on a NetBox 4.7+ target (module bay types
 are unconditional), and `just load-check` remains the required first step —
 it verifies your exact artifact against the compiler contract offline. Check
 the artifact, then inspect the target without writing:

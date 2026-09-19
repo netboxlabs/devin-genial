@@ -1,0 +1,24 @@
+# Retail chain: a store fleet, one support centre, one distribution centre and
+# two paired commerce data centers. Store formats, service thresholds and
+# premises are fictional planning assumptions, not surveyed retail property.
+profile = "retail-chain"
+namespace = "harvest"
+name = "Harvest Retail Group"
+address_pool = "10.0.0.0/8"
+as_of = "2026-09-01"
+seed = 42
+reserve_fraction = 0.2
+
+# headquarters accepts 0 or 1; headquarters_staff sizes its office pods.
+headquarters = 1
+headquarters_staff = 180
+
+# distribution_centers accepts 0 through 6.
+distribution_centers = 1
+
+# 0-2000 of each format; at least one store overall. Keep this table last:
+# bare keys written after it would become part of it.
+[stores]
+small = 4
+medium = 2
+large = 1

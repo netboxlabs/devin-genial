@@ -297,6 +297,40 @@ The [hospital/provider coverage review](../COVERAGE.md) distinguishes included, 
 intentionally omitted and unsupported capabilities. It ranks useful additions
 and explains where wireless belongs; it is a backlog, not implemented scope.
 
+## Retail chain
+
+`retail-chain` composes a fleet of stores, an optional support centre, 0–6
+distribution centres and the paired commerce data centers they depend on. Store
+formats are authored equipment profiles: back-office workstations, point-of-sale
+lanes, coverage radios and security cameras. Distribution centres replace the
+lanes with handheld scanner stations. This profile is offline-checked and fits
+the TurboBulk contract; it has no separately recorded live qualification receipt.
+
+```sh
+just plan profiles/retail-chain.toml
+just generate profiles/retail-chain.toml build/retail-demo
+just load-check build/retail-demo
+just power-scenario build/retail-demo/plan.json build/retail-power
+```
+
+Edit the `[stores]` counts, `headquarters`, `headquarters_staff` and
+`distribution_centers`. Ordinary growth appends stores and distribution centres
+while preserving every existing room, rack, port, address, cable and journal.
+Reducing any count, changing `headquarters_staff` or renewing WAN tiers requires
+a new baseline: there is no acquisition, refresh or store-remodel transition in
+this profile, and every site is modern.
+
+Each site reserves a `/16`, so a `/8` pool holds 256 reservations; a very large
+fleet exhausts addressing before reaching the 2,000-per-format input bound and
+fails with the exact reservation arithmetic. The
+[profile guide](../profiles/retail-chain.md) owns the complete limits, the
+per-format equipment table and the service sizing thresholds.
+
+Segmentation separates back-office, transaction, wireless, security, guest and
+management traffic. That is intent only: no firewall policy, payment
+application, card-data scope or compliance state is demonstrated or certified,
+and no RF survey, captive portal or authentication result is represented.
+
 ## Repeatability and growth
 
 An identical resolved recipe, seed, generator version, hardware catalog and

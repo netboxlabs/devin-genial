@@ -36,7 +36,8 @@ CAMPUSES = {
     "Milwaukee": ("Third Ward", "Menomonee Valley", "Walkers Point", "Bay View"),
 }
 GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers", "school": "Schools",
-          "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises"}
+          "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
+          "store": "Retail stores", "distribution": "Distribution centers"}
 MAX_CHANNEL_M = 80
 FLOOR_HEIGHT_M = 4
 OFFICE_DESKS = 12
@@ -55,6 +56,11 @@ SPACE_DESCRIPTIONS = {
     "exam_room": "Outpatient examination room with an installed clinical workstation",
     "imaging_room": "Reference imaging modality and diagnostic workstation; no clinical function is executed",
     "corridor": "Circulation space with access-point and security-camera locations",
+    "sales_floor": "Customer sales floor with point-of-sale lane positions",
+    "back_office": "Store back office with staff workstation positions",
+    "stockroom": "Receiving and stock storage area",
+    "warehouse_floor": "Distribution warehouse floor with handheld scanner positions",
+    "shipping_dock": "Shipping and receiving dock",
 }
 
 
@@ -91,6 +97,14 @@ def _authored_identity(site, city):
         # "and", not "&": report tables HTML-escape ampersands, and every name
         # must appear verbatim in the rendered report.
         return f"{pick(STREETS[city])} and {_ordinal(getattr(w, 'allocations', {}).get(sid, 0))} Branch"
+    if kind == "store":
+        # Same construction as a branch: the address-allocation slot is unique
+        # across every site and frozen by growth, so no store can be renamed.
+        return f"{pick(STREETS[city])} and {_ordinal(getattr(w, 'allocations', {}).get(sid, 0))} Store"
+    if kind == "distribution":
+        # The di- ordinal is unique among distribution centers by construction,
+        # so two same-metro campuses cannot resolve to one display name.
+        return f"{pick(CAMPUSES[city])} Distribution Center {int(sid.rsplit('-', 1)[-1] or 0):02}"
     if kind == "hq":
         return f"{city} Headquarters"
     if kind == "dc":
@@ -160,7 +174,8 @@ def foundation(w, *, site_kinds=None):
         w.add("region", f"{root}/{code.lower()}",
               {"name": f"{ns} {state}", "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
     for kind, name in GROUPS.items():
-        if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer"}:
+        if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
+                                           "store", "distribution"}:
             continue
         if site_kinds is not None and kind not in site_kinds:
             continue
@@ -219,11 +234,13 @@ def locate(site):
     node = site.w.obj(site.key)
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
-    if kind in {"school", "hospital", "clinic"}:
+    if kind in {"school", "hospital", "clinic", "store", "distribution"}:
         number = 100 + 4 * site.w.allocations[site.id]
     streets = {"br-s": "Market Street", "br-m": "Commerce Drive", "br-l": "Harbor Avenue",
                "hq": "Lakefront Boulevard", "dc": "Technology Way", "school-": "Learning Way",
-               "hospital-": "Care Avenue", "clinic-": "Community Way"}
+               "hospital-": "Care Avenue", "clinic-": "Community Way",
+               "st-s": "Market Square", "st-m": "Retail Parkway", "st-l": "Galleria Drive",
+               "di-": "Distribution Parkway"}
     street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
     node["attrs"].update(time_zone=zone,
                          physical_address=f"{number} {street}\n{city}, {state}\nUnited States")
@@ -463,6 +480,54 @@ def school_endpoint(site, key, room, cohort, ordinal):
         node["attrs"]["description"] += "; staff on wlan0, students on wlan1; RF coverage unverified"
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving}, access_channel_length_m=route)
+
+
+def retail_rooms(site):
+    """Permanent single-floor trading or warehouse grammar; no surveyed premises.
+
+    ponytail: one authored floor per store and distribution centre. A multi-level
+    store needs a reviewed riser and closet layout before demand can exceed it.
+    """
+    kind = site.contract["kind"]
+    if kind not in {"store", "distribution"}:
+        raise DesignError(f"{site.id}: retail rooms require a store or distribution centre")
+    ground = _floor(site, 1)
+    if kind == "store":
+        return dict(
+            selling=_location(site, "sales-floor", "Sales floor", "sales_floor", 1, (6, 4, 0), ground),
+            office=_location(site, "back-office", "Back office", "back_office", 1, (6, 30, 0), ground,
+                             {"workstations": OFFICE_DESKS}),
+            storage=_location(site, "stockroom", "Stockroom", "stockroom", 1, (30, 30, 0), ground))
+    return dict(
+        selling=_location(site, "warehouse-floor", "Warehouse floor", "warehouse_floor", 1, (6, 4, 0), ground),
+        office=_location(site, "office-01", "Distribution office", "office", 1, (6, 30, 0), ground,
+                         {"workstations": OFFICE_DESKS}),
+        storage=_location(site, "shipping-dock", "Shipping dock", "shipping_dock", 1, (30, 30, 0), ground))
+
+
+def retail_endpoint(site, key, room, cohort, ordinal):
+    """Place one store or warehouse endpoint on its bounded local copper route."""
+    space, node = site.w.obj(room), site.w.obj(key)
+    origin, role = space["meta"]["position_m"], node["refs"]["role"]
+    height = 2.8 if role == "role/ap" else 2.5 if role == "role/camera" else 0.8
+    # Mount pitches: sparse ceiling grids for radios and cameras, dense lanes
+    # for floor equipment. These are authored layouts, not a surveyed plan.
+    span, columns = (8, 2) if role == "role/ap" else (4, 4) if role == "role/camera" else (1.2, 6)
+    if type(ordinal) is not int or ordinal < 1:
+        raise DesignError(f"{key}: retail endpoint ordinal must be a positive integer")
+    point = [origin[0] + 1 + span*((ordinal-1) % columns), origin[1] + 1 + span*((ordinal-1)//columns),
+             origin[2] + height]
+    serving = site.contract["placement"]["equipment_locations"][str(space["meta"]["floor"])]
+    route = math.ceil(sum(abs(a-b) for a, b in zip(point, site.w.obj(serving)["meta"]["position_m"]))+10)
+    if route > MAX_CHANNEL_M:
+        raise DesignError(f"{key}: retail access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
+    node["refs"]["location"] = room
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
+    if role == "role/ap":
+        node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
+    node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
+        "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
+        access_channel_length_m=route)
 
 
 def hospital_rooms(site, demand):
