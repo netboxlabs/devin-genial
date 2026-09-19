@@ -446,6 +446,12 @@ NetBox 4.7.1 + Branching 1.2.1 + TurboBulk 0.4.0 stack
 (`build/turbobulk-repro47/`), with strict readback and exact per-model
 create-ChangeDiff verification
 (`build/load-receipts/provider-demo-Rich-Provider-2-e16f817d7f53.json`).
+The university-campus profile followed the same day: 21,970/21,970 objects
+and 26,730/26,730 create ChangeDiffs with zero mismatches, 2,380/2,380 cable
+traces and 12,101 component placements, plus clean verify and idempotent
+repeat (receipt `blackwell-v1-Blackwell-University-d250776f4ffe.json`) — the
+largest single estate loaded to date.
+
 On September 19, 2026 the retail-chain profile's first live load completed on
 the same pinned local 4.7.1 stack: 13,005/13,005 objects and 15,535/15,535
 create ChangeDiffs with zero mismatches, 1,265/1,265 cable traces, 7,874

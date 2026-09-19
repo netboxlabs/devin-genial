@@ -29,6 +29,7 @@ rather than silently renumbering the estate.
 - [Hospital and clinics](#hospital-and-clinics)
 - [Provider backbone](#provider-backbone)
 - [Retail chain](#retail-chain)
+- [University campus](#university-campus)
 - [Worked example](#worked-example)
 - [Not expressible in a recipe](#not-expressible-in-a-recipe)
 
