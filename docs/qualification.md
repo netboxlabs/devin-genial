@@ -465,11 +465,13 @@ identical gate (11,801 objects, receipt
 profile implemented at that date now holds a local live-qualification receipt.
 Cloud and Enterprise remain unqualified.
 
-The managed-service-provider profile, added afterwards, has **no** live
-qualification receipt. It is offline-checked only: its 56-kind artifact reports
-`turbobulk_loadable` with no uncovered kinds or unsupported refs, and its widest
-accepted recipe (24 accounts, 97 sites, 104,793 objects) passes generation and
-offline validation. Neither result establishes live NetBox acceptance.
+The managed-service-provider profile followed on the same pinned local 4.7.1
+stack later that day: a four-customer estate loaded 7,068/7,068 objects and
+8,340/8,340 create ChangeDiffs with zero mismatches, 636/636 cable traces and
+4,351 component placements, plus clean zero-write verify and idempotent repeat
+(receipt `v1-Northstar-Managed-Networks-d2448cc76d8d.json` and its `verify-`
+sibling). Its widest accepted recipe (24 accounts, 97 sites, 104,793 objects)
+remains offline-checked only.
 
 Also on September 19, 2026 the `[hardware]` vendor lever passed the same gate
 live: an all-alternate bank estate (Juniper EX3400-24P access, QFX5120-48Y
