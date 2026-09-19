@@ -1,4 +1,5 @@
-"""Branch creation must refuse existing names and wait for actual readiness."""
+"""Branch creation must refuse existing names, wait for actual readiness, and
+clean up its own stuck branch so the name is never burned."""
 
 import unittest
 
@@ -11,13 +12,20 @@ class Stub:
         self.existing = list(existing)
         self.states = list(states)
         self.posted = 0
+        self.deleted = False
 
     def request(self, path, *, method="GET", **_kwargs):
         if method == "POST":
             self.posted += 1
             return 201, {"id": 7, "name": "demo", "schema_id": "abc", "status": "new"}
+        if method == "DELETE":
+            self.deleted = True
+            # a 204 empty body surfaces as a parse failure in Client.request
+            raise LoadError("DELETE failed without retry because the request could write")
         if "?" in path:
             return 200, {"results": [{"name": name} for name in self.existing]}
+        if self.deleted:
+            raise LoadError("GET returned HTTP 404")
         return 200, {"id": 7, "name": "demo", "status": self.states.pop(0)}
 
 
@@ -34,12 +42,25 @@ class BranchTests(unittest.TestCase):
         row = create_branch(stub, "demo", sleep=lambda _s: None)
         self.assertEqual(row["status"], "ready")
         self.assertEqual(stub.posted, 1)
+        self.assertFalse(stub.deleted)
 
-    def test_failed_provisioning_is_a_loud_error(self):
+    def test_failed_provisioning_deletes_the_stuck_branch(self):
         stub = Stub(states=["failed"])
         with self.assertRaises(LoadError) as caught:
             create_branch(stub, "demo", sleep=lambda _s: None)
         self.assertIn("provisioning failed", str(caught.exception))
+        self.assertIn("the branch was deleted so the name is free", str(caught.exception))
+        self.assertTrue(stub.deleted)
+
+    def test_timeout_deletes_the_stuck_branch_and_names_the_worker(self):
+        stub = Stub(states=["new"] * 5)
+        with self.assertRaises(LoadError) as caught:
+            create_branch(stub, "demo", timeout=0, sleep=lambda _s: None)
+        message = str(caught.exception)
+        self.assertIn("is still 'new'", message)
+        self.assertIn("name is free", message)
+        self.assertIn("RQ worker", message)
+        self.assertTrue(stub.deleted)
 
 
 if __name__ == "__main__":

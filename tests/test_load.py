@@ -370,7 +370,7 @@ class FreshLoadOccupancyTests(unittest.TestCase):
         self.assertEqual(result["allowlisted"], {"owner": [3]})
         self.assertEqual(result["blocking"],
                          {"site": {"rows": 2, "endpoint": "/api/dcim/sites/"}})
-        self.assertIn("clear the listed endpoints", result["note"])
+        self.assertIn("delete exactly the conflicting_rows", result["note"])
 
     def test_probe_reports_absent_endpoints_instead_of_crashing(self):
         # module bay types return a rendered HTML 404 before NetBox 4.7; the

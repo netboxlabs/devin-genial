@@ -928,6 +928,19 @@ class TurboBulkLoaderTests(unittest.TestCase):
         allowed = _bootstrap_allowlist(plan, inventory, extras_only=True)
         self.assertEqual(allowed["target_ids"], {"module_type_profile": [1]})
 
+    def test_merge_allowlists_unions_ids_and_identities(self):
+        from estates.turbobulk import _merge_allowlists
+        prior = {"success": True, "target_ids": {"owner": [3]},
+                 "target_identities": {"owner": ["lakes-fiber ops"]}}
+        fresh = {"success": True, "target_ids": {"owner": [3, 9], "owner_group": [4]},
+                 "target_identities": {"owner": ["lakes-fiber ops", "riverbend ops"],
+                                       "owner_group": ["riverbend teams"]}}
+        merged = _merge_allowlists(prior, fresh)
+        self.assertEqual(merged["target_ids"], {"owner": [3, 9], "owner_group": [4]})
+        self.assertEqual(merged["target_identities"]["owner"],
+                         ["lakes-fiber ops", "riverbend ops"])
+        self.assertEqual(_merge_allowlists({}, {}), {})
+
     def test_render_semantics_are_pinned_to_the_compiler_version(self):
         # Rendered payloads are receipt-bound: changing what _render emits for
         # the same artifact must reject stale receipts, so this golden digest

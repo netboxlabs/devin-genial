@@ -44,12 +44,33 @@ def create_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
         state = _state(current)
         if state == "ready":
             return current
-        if state == "failed":
-            raise LoadError(f"branch {name!r} provisioning failed on the target")
-        if time.monotonic() >= deadline:
-            raise LoadError(f"branch {name!r} is still {state!r} after {timeout}s; "
-                            "inspect the target before retrying")
+        if state == "failed" or time.monotonic() >= deadline:
+            _abandon(client, row["id"], name, state, timeout)
         sleep(poll_interval)
+
+
+def _abandon(client, branch_id, name, state, timeout):
+    """Delete the branch this invocation created, so its name is not burned.
+
+    A branch stuck in 'new' usually means the target's RQ worker never ran the
+    provisioning job; neither retrying this command nor just reset can clear
+    that state, so clean up our own row and point at the real problem.
+    """
+    hint = ("a branch stuck before 'ready' usually means the target's RQ worker "
+            "is dead or backlogged; check /api/core/jobs/ for a pending "
+            "'Provision branch' job and restore the worker before retrying")
+    problem = (f"branch {name!r} provisioning failed on the target" if state == "failed"
+               else f"branch {name!r} is still {state!r} after {timeout}s")
+    try:
+        client.request(f"{BRANCHES}{branch_id}/", method="DELETE", branch=False)
+    except LoadError:
+        pass  # a 204 empty body reads as a parse failure; confirm by readback
+    try:
+        client.request(f"{BRANCHES}{branch_id}/", branch=False)
+    except LoadError:
+        raise LoadError(f"{problem}; the branch was deleted so the name is free — {hint}") from None
+    raise LoadError(f"{problem}; deleting it also failed, so remove it manually with "
+                    f"DELETE {BRANCHES}{branch_id}/ before reusing the name — {hint}")
 
 
 def main(argv=None):

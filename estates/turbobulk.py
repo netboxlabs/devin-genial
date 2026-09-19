@@ -1852,6 +1852,20 @@ MAIN_SCOPED_KINDS = {"owner", "owner_group"}
 ALLOWLISTED_KINDS = ALLOWLISTED_BUILTIN_KINDS | MAIN_SCOPED_KINDS
 
 
+def _merge_allowlists(prior, fresh):
+    """Union two allowlists per kind, keeping ids and identities aligned."""
+    kinds = set(prior.get("target_ids") or {}) | set(fresh.get("target_ids") or {})
+    if not kinds:
+        return {}
+    def union(field):
+        return {kind: sorted(set((prior.get(field) or {}).get(kind, []))
+                             | set((fresh.get(field) or {}).get(kind, [])))
+                for kind in kinds}
+    return {"success": True, "target_ids": union("target_ids"),
+            "target_identities": {kind: values for kind, values
+                                  in union("target_identities").items() if values}}
+
+
 def _bootstrap_allowlist(plan, inventory, extras_only=False):
     """Allow pre-existing rows that provably cannot collide with the artifact.
 
@@ -2213,8 +2227,16 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     readback_started = time.monotonic()
     inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]),
                                 client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
+    # The receipt's allowlist is a load-time snapshot; another namespace may
+    # have added its own main-scoped rows since (they are not branch-isolated).
+    # Excuse current foreign extras exactly like verify_target does — plan-
+    # matched rows keep full strictness — and keep the union as evidence.
+    allowed_now = _merge_allowlists((receipt or {}).get("allowed_existing") or {},
+                                    _bootstrap_allowlist(plan, inventory, extras_only=True))
     existing = verify_plan(plan, inventory, strict_inventory=True,
-                           allow_existing_receipt=(receipt or {}).get("allowed_existing") or None)
+                           allow_existing_receipt=allowed_now or None)
+    if receipt is not None and allowed_now:
+        receipt["allowed_existing"] = allowed_now
     preflight_readback_seconds = round(time.monotonic() - readback_started, 6)
     if existing["success"]:
         if receipt is not None:
@@ -2350,10 +2372,19 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         occupied = {kind: len(rows) for kind, rows in inventory.items()
                     if rows and kind not in allowed_existing.get("target_ids", {})}
         if occupied:
-            detail = ", ".join(f"{kind}={count} (at {SPECS[kind][1]})"
-                               for kind, count in sorted(occupied.items()))
+            parts = []
+            for kind, count in sorted(occupied.items()):
+                part = f"{kind}={count} (at {SPECS[kind][1]})"
+                if kind in ALLOWLISTED_KINDS:
+                    allowed_ids = set((allowed_existing.get("target_ids") or {}).get(kind, []))
+                    conflicts = {row["id"]: row.get("name") for row in inventory.get(kind, [])
+                                 if row.get("id") not in allowed_ids}
+                    part += f"; colliding rows {conflicts}"
+                parts.append(part)
             raise LoadError("fresh load requires empty inventories for every emitted kind; "
-                            + detail + "; clear the listed endpoints or use a fresh target")
+                            + ", ".join(parts)
+                            + "; delete only the colliding rows where named (other rows "
+                            "belong to other namespaces), or use a fresh target")
         ids = {}
         receipt = {**binding, "started_at": started_at, "success": False, "target_status": status,
                    "offline_checks": offline, "jobs": [], "rest_batches": [], "resolved_ids": {},

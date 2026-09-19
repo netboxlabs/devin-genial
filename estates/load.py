@@ -189,13 +189,23 @@ def _fresh_load_occupancy(client, plan, objects):
     inventory = (fetch_inventory(client.base, client.token, candidates, client.branch_id)
                  if candidates else {})
     allowed = _bootstrap_allowlist(plan, inventory).get("target_ids", {})
-    blocking = {kind: value for kind, value in occupied.items() if kind not in allowed}
+    blocking = {kind: dict(value) for kind, value in occupied.items() if kind not in allowed}
+    for kind in blocking:
+        # For allowlist-eligible kinds name the exact colliding rows: the other
+        # rows on the endpoint belong to other namespaces and must stay.
+        if kind in inventory:
+            conflicts = [row for row in inventory[kind]
+                         if row["id"] not in set(allowed.get(kind, []))]
+            blocking[kind]["conflicting_rows"] = {
+                row["id"]: row.get("name") for row in conflicts}
     result = {"occupied": occupied,
               "allowlisted": {kind: allowed[kind] for kind in occupied if kind in allowed},
               "blocking": blocking,
-              "note": ("a fresh load refuses while blocking kinds hold rows; clear the "
-                       "listed endpoints or use a fresh target (a resume with its "
-                       "receipt is unaffected)") if blocking else None}
+              "note": ("a fresh load refuses while blocking kinds hold rows; delete "
+                       "exactly the conflicting_rows where listed (other rows on those "
+                       "endpoints belong to other namespaces and are allowlisted), clear "
+                       "kinds listed without them, or use a fresh target (a resume with "
+                       "its receipt is unaffected)") if blocking else None}
     if unreadable:
         result["unreadable"] = unreadable
     return result
@@ -703,6 +713,11 @@ def main(argv=None):
             caches = result.get("component_caches") or {}
             if caches.get("components_expected") is not None:
                 summary["components_checked"] = caches.get("components_expected")
+            # The next thing an operator needs after "loaded" is the estate on
+            # screen: the branch-activating UI URL (Branching's _branch param).
+            schema = ((result.get("preflight") or {}).get("branch") or {}).get("schema_id")
+            if schema:
+                summary["ui_url"] = f"{args.target.rstrip('/')}/dcim/sites/?_branch={schema}"
             print(json.dumps(summary, sort_keys=True))
         return 0
     except (LoadError, ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:

@@ -24,14 +24,16 @@ detail and [seeding](seeding.md) the database-restore alternative.
   setting — request it through your account or support channel. On
   **Enterprise / self-hosted**, an administrator installs them like any other
   plugin.
-- **Sharing a target with other estates works, with one rule.** On NetBox
-  4.7, each estate's `owner`/`owner_group` rows live on main (they are not
-  branch-isolated and survive branch deletion). Rows from a *different*
-  namespace are automatically allowlisted and recorded in the receipt;
-  reloading the *same* namespace after deleting its branch is blocked until
-  its leftovers are cleared through REST at `/api/users/owners/` and
-  `/api/users/owner-groups/`. `just load-explain` (below) reports exactly
-  this before any write.
+- **Sharing a target with other estates works, with one rule: one live
+  namespace, one branch.** On NetBox 4.7, each estate's `owner`/`owner_group`
+  rows live on main (they are not branch-isolated and survive branch
+  deletion). Rows from a *different* namespace are automatically allowlisted
+  and recorded in the receipt. The *same* namespace cannot fresh-load a
+  second time — into a new branch or after deleting the old one — until its
+  own rows are removed (`/api/users/owners/`, `/api/users/owner-groups/`;
+  delete only the colliding rows, which the refusal and `just load-explain`
+  name exactly). For a before/after two-branch demo, use two namespaces or
+  the scenario snapshot flow.
 
 ## 2. The API token
 
@@ -47,6 +49,9 @@ resolved on the next resume instead of within ~66 seconds.
 Put credentials in `.env` (see `.env.example`) or export them. Justfile
 recipes source `.env` only when `NETBOX_TOKEN` is not already exported, so an
 exported environment always wins.
+
+The token drives every command here, but the demo itself (§6) is the NetBox
+web UI — you also need a UI login on the target for the screen share.
 
 ## 3. Check the artifact offline
 
@@ -70,9 +75,14 @@ asynchronous:
 just branch https://target.example demo-acme
 ```
 
-This creates the branch and waits until it is ready, refusing a name that
-already exists. `just reset TARGET BRANCH` is the separate command that
-*replaces* an existing disposable branch.
+This creates the branch and waits until it is ready (default 300 s; a third
+argument changes the bound), refusing a name that already exists. If the
+branch never leaves `new` — which means the target's RQ worker is dead or
+backlogged, not that you did anything wrong — the command deletes its own
+stuck branch so the name stays free, and tells you to check
+`/api/core/jobs/` for a pending `Provision branch` job before retrying.
+`just reset TARGET BRANCH` is the separate command that *replaces* an
+existing ready disposable branch.
 
 ## 5. Preflight, then load
 
@@ -87,7 +97,12 @@ prints every transport blocker if no faithful loader fits, and reports
 which of those the loader will allowlist, and the exact endpoints to clear
 for any that block a fresh load. `just load` loads and
 then strictly reads the estate back — attribute-exact, reference-exact, with
-native cable traces and component-placement checks.
+native cable traces and component-placement checks. Expect on the order of a
+minute or two per few thousand objects on a local target; the streaming row
+and `finalize:` progress lines are normal. The final summary line is the
+acceptance evidence — objects matched, mismatches, create-ChangeDiff and
+cable-trace counts, components checked — plus `ui_url`, the branch-activated
+NetBox page the demo starts from.
 
 **The receipt, in five sentences.** Every load writes a private receipt under
 `build/load-receipts/`, bound to the artifact, target, branch, delivery

@@ -42,8 +42,8 @@ load-check artifact:
     python3 -m estates.load {{quote(artifact)}} --load-check
 
 # Create one named ready branch on the target (the prerequisite for just load)
-branch target name:
-    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}}
+branch target name timeout='300':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --timeout {{quote(timeout)}}
 
 # Strictly verify a target against an artifact with zero writes (any seeding path)
 verify-target artifact target branch='':
