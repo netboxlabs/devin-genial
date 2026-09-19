@@ -29,12 +29,16 @@ READ_ATTEMPTS = 4
 
 
 def _read_json(opener, request, timeout):
+    # GET-only reader (see the single call site): a 5xx retries like a dropped
+    # connection; any 4xx stays an immediate error.
     for attempt in range(READ_ATTEMPTS):
         try:
             with opener.open(request, timeout=timeout) as response:
                 return json.load(response)
-        except urllib.error.HTTPError:
-            raise
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt + 1 == READ_ATTEMPTS:
+                raise
+            time.sleep(0.5 * 2 ** attempt)
         except (urllib.error.URLError, TimeoutError, ConnectionError,
                 http.client.HTTPException, json.JSONDecodeError, EOFError):
             if attempt + 1 == READ_ATTEMPTS:

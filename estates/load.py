@@ -154,7 +154,41 @@ def _probe_endpoints(client, kinds):
     return missing
 
 
-def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="reviewable"):
+def _fresh_load_occupancy(client, plan, objects):
+    """Read-only probe: which emitted kinds already hold rows, and whether the
+    loader's allowlist would excuse them on a fresh load.
+
+    Advisory only — a resume with its receipt is unaffected — but it turns the
+    most common mid-journey refusal (leftover rows on a shared target) into an
+    actionable preflight answer with the exact endpoints to inspect.
+    """
+    from .turbobulk import ALLOWLISTED_KINDS, _bootstrap_allowlist
+    from .turbobulk import SPECS as TB_SPECS
+    kinds = sorted({obj["kind"] for obj in objects.values()} & TB_SPECS.keys())
+    occupied = {}
+    for kind in kinds:
+        endpoint = TB_SPECS[kind][1]
+        _, page = client.request(f"{endpoint}?brief=1&limit=1")
+        count = page.get("count", 0)
+        if count:
+            occupied[kind] = {"rows": count, "endpoint": endpoint}
+    if not occupied:
+        return {"occupied": {}, "blocking": {}, "allowlisted": {}}
+    candidates = [kind for kind in occupied if kind in ALLOWLISTED_KINDS]
+    inventory = (fetch_inventory(client.base, client.token, candidates, client.branch_id)
+                 if candidates else {})
+    allowed = _bootstrap_allowlist(plan, inventory).get("target_ids", {})
+    blocking = {kind: value for kind, value in occupied.items() if kind not in allowed}
+    return {"occupied": occupied,
+            "allowlisted": {kind: allowed[kind] for kind in occupied if kind in allowed},
+            "blocking": blocking,
+            "note": ("a fresh load refuses while blocking kinds hold rows; clear the "
+                     "listed endpoints or use a fresh target (a resume with its "
+                     "receipt is unaffected)") if blocking else None}
+
+
+def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="reviewable",
+            occupancy=False):
     """Read target capabilities and return one deterministic transport decision."""
     if delivery_policy not in DELIVERY_POLICIES:
         raise LoadError(f"unsupported delivery policy {delivery_policy!r}")
@@ -243,6 +277,8 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
             key: branch_row.get(key) for key in ("id", "name", "schema_id", "status")},
         "candidates": candidates,
     }
+    if occupancy and branch_row is not None:
+        decision["fresh_load_occupancy"] = _fresh_load_occupancy(client, plan, objects)
     return decision
 
 
@@ -514,7 +550,7 @@ def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=
 def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeout=900,
          explain=False, delivery_policy="reviewable", turbobulk_job_rows=DEFAULT_JOB_ROWS):
     decision = inspect(artifact, url=url, token=token, branch=branch, transport=transport,
-                       delivery_policy=delivery_policy)
+                       delivery_policy=delivery_policy, occupancy=explain)
     if explain:
         return {"success": True, "result": "explained", "decision": decision}
     if decision["selected"] is None:
@@ -568,35 +604,44 @@ def main(argv=None):
     parser.add_argument("--load-check", action="store_true",
                         help="offline: report whether the artifact fits the TurboBulk compiler contract")
     args = parser.parse_args(argv)
-    if args.load_check:
-        from .turbobulk import REST_CREATE_KINDS
-        _, _raw, _plan, objects, _offline = _artifact(args.artifact)
-        kinds = sorted({obj["kind"] for obj in objects.values()})
-        uncovered = sorted(set(kinds) - set(SPECS))
-        rest_kinds = sorted(set(kinds) & REST_CREATE_KINDS)
-        print(json.dumps({"artifact": args.artifact, "kinds": len(kinds),
-                          "turbobulk_loadable": not uncovered,
-                          "turbobulk_uncovered": uncovered,
-                          "rest_create_kinds": rest_kinds}, indent=2, sort_keys=True))
-        if uncovered:
-            print(f"NOT loadable via TurboBulk: {len(uncovered)} of {len(kinds)} kinds are "
-                  "outside the compiler contract (listed above).", file=os.sys.stderr)
-            return 2
-        note = ("; module bay types require a NetBox 4.7 target"
-                if "module_bay_type" in rest_kinds else "")
-        print("Loadable via TurboBulk+REST" + note +
-              ". Run just load-explain against the target for the binding preflight.",
-              file=os.sys.stderr)
-        return 0
     if not 1 <= args.turbobulk_job_rows <= MAX_JOB_ROWS:
         parser.error(f"--turbobulk-job-rows must be between 1 and {MAX_JOB_ROWS}: TurboBulk's "
                      f"JSONL reader fixes the column set from the first {MAX_JOB_ROWS} rows, so "
                      "a sparse payload spanning chunks can silently drop columns")
     token = os.environ.get("NETBOX_TOKEN")
-    if not args.target or not token:
+    if not args.load_check and (not args.target or not token):
         parser.error("target/NETBOX_URL and NETBOX_TOKEN are required")
     receipt = args.receipt
     try:
+        if args.load_check:
+            from .turbobulk import REST_CREATE_KINDS, SUPPORTED_REFS
+            _, _raw, _plan, objects, _offline = _artifact(args.artifact)
+            kinds = sorted({obj["kind"] for obj in objects.values()})
+            uncovered = sorted(set(kinds) - set(SPECS))
+            unsupported_refs = sorted(
+                f"{obj['kind']}.{ref}" for obj in objects.values()
+                for ref in set(obj["refs"]) - SUPPORTED_REFS.get(obj["kind"], set())
+                if obj["kind"] in SPECS)
+            rest_kinds = sorted(set(kinds) & REST_CREATE_KINDS)
+            loadable = not uncovered and not unsupported_refs
+            print(json.dumps({"artifact": args.artifact, "kinds": len(kinds),
+                              "turbobulk_loadable": loadable,
+                              "turbobulk_uncovered": uncovered,
+                              "turbobulk_unsupported_refs": unsupported_refs,
+                              "rest_create_kinds": rest_kinds}, indent=2, sort_keys=True))
+            if not loadable:
+                print("NOT loadable via TurboBulk: "
+                      + (f"{len(uncovered)} of {len(kinds)} kinds are outside the compiler "
+                         "contract" if uncovered else
+                         f"{len(unsupported_refs)} references have no compiler translation")
+                      + " (listed above).", file=os.sys.stderr)
+                return 2
+            note = ("; module bay types require a NetBox 4.7 target"
+                    if "module_bay_type" in rest_kinds else "")
+            print("Loadable via TurboBulk+REST" + note +
+                  ". Run just load-explain against the target for the binding preflight.",
+                  file=os.sys.stderr)
+            return 0
         if args.verify_only:
             from .turbobulk import verify_target
             if receipt is None:
@@ -628,7 +673,12 @@ def main(argv=None):
                               "transport": result.get("transport"), "receipt": str(receipt)}, sort_keys=True))
         return 0
     except (LoadError, ValueError, OSError, KeyError, TypeError) as exc:
-        detail = f"; receipt: {receipt}" if receipt is not None and not args.explain else ""
+        if args.explain or receipt is None:
+            detail = ""
+        elif isinstance(receipt, Path) and not receipt.exists():
+            detail = "; no receipt was written (the load stopped before target writes)"
+        else:
+            detail = f"; receipt: {receipt}"
         print(f"Load failed: {exc}{detail}", file=os.sys.stderr)
         return 2
 

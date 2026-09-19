@@ -21,6 +21,14 @@ detail and [seeding](seeding.md) the database-restore alternative.
   setting — request it through your account or support channel. On
   **Enterprise / self-hosted**, an administrator installs them like any other
   plugin.
+- **Sharing a target with other estates works, with one rule.** On NetBox
+  4.7, each estate's `owner`/`owner_group` rows live on main (they are not
+  branch-isolated and survive branch deletion). Rows from a *different*
+  namespace are automatically allowlisted and recorded in the receipt;
+  reloading the *same* namespace after deleting its branch is blocked until
+  its leftovers are cleared through REST at `/api/users/owners/` and
+  `/api/users/owner-groups/`. `just load-explain` (below) reports exactly
+  this before any write.
 
 ## 2. The API token
 
@@ -69,7 +77,10 @@ just load        build/my-estate https://target.example demo-acme
 ```
 
 `load-explain` is read-only: it inspects the target, chooses the transport,
-and prints every blocker if no faithful loader fits. `just load` loads and
+prints every transport blocker if no faithful loader fits, and reports
+`fresh_load_occupancy` — which emitted kinds already hold rows on the target,
+which of those the loader will allowlist, and the exact endpoints to clear
+for any that block a fresh load. `just load` loads and
 then strictly reads the estate back — attribute-exact, reference-exact, with
 native cable traces and component-placement checks.
 
@@ -95,8 +106,8 @@ screen share:
   pattern is branch-per-demo, then `just reset` or branch deletion.
 - On NetBox 4.7, `owner`/`owner_group` rows are **not branch-isolated**: a
   branch load writes them to main and branch deletion does not remove them.
-  A later fresh load of the same estate name will refuse until they are
-  removed.
+  Other namespaces coexist over them automatically (§1); re-loading the
+  *same* namespace fresh refuses until its leftovers are removed.
 
 ## 7. Verify anytime, write nothing
 

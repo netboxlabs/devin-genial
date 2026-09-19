@@ -900,12 +900,21 @@ class TurboBulkLoaderTests(unittest.TestCase):
         self.assertEqual(_bootstrap_allowlist(plan, inventory), {})
 
     def test_bootstrap_allowlist_never_adopts_undeclared_kinds(self):
-        # leftover population of any other kind (for example owner rows NetBox
-        # 4.7 keeps on main) must stay a hard empty-inventory block
+        # leftover population of any undeclared kind must stay a hard
+        # empty-inventory block
         plan = {"objects": []}
         inventory = {"tag": [{"id": 1, "name": "leftover", "slug": "leftover"}],
-                     "owner": [{"id": 3, "name": "stale-owner"}]}
+                     "manufacturer": [{"id": 4, "name": "Stray", "slug": "stray"}]}
         self.assertEqual(_bootstrap_allowlist(plan, inventory), {})
+
+    def test_main_scoped_owner_rows_coexist_by_disjoint_identity(self):
+        # NetBox 4.7 keeps owner/owner_group on main across branches: another
+        # namespace's rows are allowlisted, an identity collision never is
+        plan = {"objects": [{"kind": "owner", "attrs": {"name": "northwind ops"}, "refs": {}}]}
+        foreign = {"owner": [{"id": 3, "name": "lakes-fiber Infrastructure operations"}]}
+        self.assertEqual(_bootstrap_allowlist(plan, foreign)["target_ids"], {"owner": [3]})
+        colliding = {"owner": [{"id": 3, "name": "northwind ops"}]}
+        self.assertEqual(_bootstrap_allowlist(plan, colliding), {})
 
     def test_bootstrap_allowlist_extras_mode_allows_only_unplanned_rows(self):
         plan = {"objects": [{"kind": "module_type_profile",

@@ -346,5 +346,43 @@ class LoaderSelectionTests(unittest.TestCase):
             self.assertFalse((root / "receipt.json").exists())
 
 
+class FreshLoadOccupancyTests(unittest.TestCase):
+    def test_probe_reports_blocking_and_allowlisted_kinds(self):
+        from estates.load import _fresh_load_occupancy
+
+        plan = {"objects": [
+            {"kind": "site", "attrs": {"name": "s1", "slug": "s1"}, "refs": {}},
+            {"kind": "owner", "attrs": {"name": "northwind ops"}, "refs": {}},
+        ]}
+        objects = {f"k{i}": obj for i, obj in enumerate(plan["objects"])}
+        counts = {"/api/dcim/sites/": 2, "/api/users/owners/": 1}
+
+        class Probe(Target):
+            def request(self, path, **_kwargs):
+                endpoint = path.split("?")[0]
+                return 200, {"count": counts.get(endpoint, 0)}
+
+        foreign = {"owner": [{"id": 3, "name": "lakes-fiber Infrastructure operations"}]}
+        with patch("estates.load.fetch_inventory", return_value=foreign):
+            result = _fresh_load_occupancy(Probe(), plan, objects)
+        # the foreign owner row is allowlisted by disjoint identity; the
+        # occupied site rows block a fresh load and carry their endpoint
+        self.assertEqual(result["allowlisted"], {"owner": [3]})
+        self.assertEqual(result["blocking"],
+                         {"site": {"rows": 2, "endpoint": "/api/dcim/sites/"}})
+        self.assertIn("clear the listed endpoints", result["note"])
+
+    def test_probe_is_quiet_on_an_empty_target(self):
+        from estates.load import _fresh_load_occupancy
+
+        class Empty(Target):
+            def request(self, path, **_kwargs):
+                return 200, {"count": 0}
+
+        plan = {"objects": [{"kind": "site", "attrs": {"name": "s"}, "refs": {}}]}
+        result = _fresh_load_occupancy(Empty(), plan, {"k": plan["objects"][0]})
+        self.assertEqual(result, {"occupied": {}, "blocking": {}, "allowlisted": {}})
+
+
 if __name__ == "__main__":
     unittest.main()

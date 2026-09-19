@@ -414,13 +414,20 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _read_json(opener, request, timeout):
-    """Retry transient failures only for caller-authorized read requests."""
+    """Retry transient failures only for caller-authorized read requests.
+
+    A 5xx on a GET is a transient server condition (observed as sporadic 500s
+    on the small shared-container targets under concurrent readback) and
+    retries like a dropped connection; any 4xx stays an immediate error.
+    """
     for attempt in range(READ_ATTEMPTS):
         try:
             with opener.open(request, timeout=timeout) as response:
                 return response.status, json.load(response)
-        except urllib.error.HTTPError:
-            raise
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 or attempt + 1 == READ_ATTEMPTS:
+                raise
+            time.sleep(0.5 * 2 ** attempt)
         except (urllib.error.URLError, TimeoutError, ConnectionError,
                 http.client.HTTPException, json.JSONDecodeError, EOFError):
             if attempt + 1 == READ_ATTEMPTS:
@@ -1830,37 +1837,45 @@ def _trace_contains_cable(value, cable_id, label):
     return False
 
 
-# The only kinds whose target-native factory rows may be allowlisted past the
-# hard empty-inventory rule. Kinds here must have a plain-attribute readback
+# The only kinds whose pre-existing rows may be allowlisted past the hard
+# empty-inventory rule. Kinds here must have a plain-attribute readback
 # identity (never a reference) so disjointness needs no resolution. Keeping
-# this an explicit set prevents the allowlist from silently adopting leftover
-# population of arbitrary kinds (for example owner/owner_group rows that
-# NetBox 4.7 writes to main and branch deletion does not remove).
-ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile"}
+# these explicit sets prevents the allowlist from silently adopting leftover
+# population of arbitrary kinds.
+ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile"}  # factory rows (4.7 profiles)
+# NetBox 4.7 owner/owner_group rows live on main and are not branch-isolated:
+# another estate's rows are always visible to a fresh branch load on a shared
+# target, and branch deletion does not remove them. Their names carry the
+# estate namespace, so the same disjoint-identity machinery lets multiple
+# namespaces share one target; an identity collision stays a hard block.
+MAIN_SCOPED_KINDS = {"owner", "owner_group"}
+ALLOWLISTED_KINDS = ALLOWLISTED_BUILTIN_KINDS | MAIN_SCOPED_KINDS
 
 
 def _bootstrap_allowlist(plan, inventory, extras_only=False):
-    """Allow target-native builtin rows that cannot collide with the artifact.
+    """Allow pre-existing rows that provably cannot collide with the artifact.
 
-    NetBox versions ship factory rows for some catalog kinds (for example the
-    eight ModuleTypeProfiles on 4.7.1). A fresh load may proceed over them
-    only for kinds in ALLOWLISTED_BUILTIN_KINDS when every existing identity
-    is disjoint from the plan's — the exact ids are recorded and allowlisted
+    Two declared groups qualify: target-native factory rows (for example the
+    eight ModuleTypeProfiles on 4.7.1) and main-scoped owner/owner_group rows
+    another estate left on a shared 4.7 target. A fresh load may proceed over
+    them only for kinds in ALLOWLISTED_KINDS when every existing identity is
+    disjoint from the plan's — the exact ids are recorded and allowlisted
     through strict readback, mirroring the lab bootstrap receipt. Anything
     else keeps the hard empty-inventory rule.
 
     With extras_only=True (verifying an already-loaded target, where planned
     rows are legitimately present) the allowlist is instead the per-row set of
-    builtin rows whose identities are not planned.
+    allowlistable rows whose identities are not planned.
     """
     from lab.verify import IDENTITIES
 
     allowed = {}
+    identities = {}
     plan_kinds = defaultdict(list)
     for obj in plan["objects"]:
         plan_kinds[obj["kind"]].append(obj)
     for kind, rows in inventory.items():
-        if kind not in ALLOWLISTED_BUILTIN_KINDS or not rows:
+        if kind not in ALLOWLISTED_KINDS or not rows:
             continue
         identity = IDENTITIES.get(kind, ("name",))
         objs = plan_kinds.get(kind, [])
@@ -1875,9 +1890,13 @@ def _bootstrap_allowlist(plan, inventory, extras_only=False):
             continue  # identity collision on a fresh load stays a hard block
         if extras:
             allowed[kind] = sorted(row["id"] for row in extras)
+            # Record the excused identities alongside the ids so the receipt
+            # is auditable: which exact rows were left in place, by name.
+            identities[kind] = sorted(
+                " ".join(str(row[field]) for field in identity) for row in extras)
     if not allowed:
         return {}
-    return {"success": True, "target_ids": allowed}
+    return {"success": True, "target_ids": allowed, "target_identities": identities}
 
 
 def _readback_fields(plan):
@@ -2212,11 +2231,18 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                 if _is_worker_death_row(job):
                     # The exact strict readback above is the strongest signal;
                     # arbitration still proves the orphaned insert committed
-                    # before the entry is adopted as verified.
-                    if not _resolve_worker_death(client, entry, receipt, receipt_path, job):
+                    # before the entry is adopted as verified. This path never
+                    # resubmits, so a rolled-back verdict must refuse without
+                    # persisting a supersede a rerun would silently skip.
+                    verdict, evidence = _arbitrate_worker_death(client, receipt, entry)
+                    if verdict != "committed":
                         raise LoadError(
-                            f"orphaned job for {entry['model']} rolled back yet the target "
-                            "matches the artifact exactly; use a fresh branch and receipt")
+                            f"orphaned job for {entry['model']} reads rolled back yet the "
+                            "target matches the artifact exactly; use a fresh branch and receipt")
+                    _record_observed(entry, job)
+                    entry["adopted_after_worker_death"] = evidence
+                    entry["request_verified"] = True
+                    _write_receipt(receipt_path, receipt)
                     continue
                 try:
                     _record_terminal(entry, job)
@@ -2324,8 +2350,10 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         occupied = {kind: len(rows) for kind, rows in inventory.items()
                     if rows and kind not in allowed_existing.get("target_ids", {})}
         if occupied:
-            detail = ", ".join(f"{kind}={count}" for kind, count in sorted(occupied.items()))
-            raise LoadError("fresh load requires empty inventories for every emitted kind; " + detail)
+            detail = ", ".join(f"{kind}={count} (at {SPECS[kind][1]})"
+                               for kind, count in sorted(occupied.items()))
+            raise LoadError("fresh load requires empty inventories for every emitted kind; "
+                            + detail + "; clear the listed endpoints or use a fresh target")
         ids = {}
         receipt = {**binding, "started_at": started_at, "success": False, "target_status": status,
                    "offline_checks": offline, "jobs": [], "rest_batches": [], "resolved_ids": {},

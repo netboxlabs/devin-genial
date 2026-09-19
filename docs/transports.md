@@ -183,15 +183,17 @@ gate; a provably rolled-back job is superseded and its rows resubmitted as a new
 job — never a resend — and only after RQ's record fails to report the job alive.
 Anything else is unexplained state and requires a fresh branch.
 For a new receipt, every inventory represented by the artifact must be empty,
-with one recorded exception: rows of a declared builtin kind (currently
-`module_type_profile`; for example NetBox's factory ModuleTypeProfiles — eight on
-4.7.1, seven on 4.7.0) are allowlisted when every existing plain-attribute identity
-is disjoint from the plan's. Their exact ids are stored in the receipt and honored
-by strict readback. An identity collision is a hard block, and leftover
-`owner`/`owner_group` rows on 4.7 main are not an allowlisted kind: they block a
-fresh load until REST cleanup or a different namespace removes the conflict.
-Anything else stops the command before writes. Treat the branch as exclusively owned
-by that receipt until loading and verification finish.
+with two recorded exceptions, both requiring every existing plain-attribute
+identity to be disjoint from the plan's: rows of a declared builtin kind
+(currently `module_type_profile`; NetBox's factory ModuleTypeProfiles — eight on
+4.7.1, seven on 4.7.0), and main-scoped `owner`/`owner_group` rows another
+estate left on a shared 4.7 target (they are not branch-isolated and carry
+their estate's namespace in their names, so distinct namespaces coexist).
+The exact ids and identities are stored in the receipt and honored by strict
+readback. An identity collision — the same namespace's leftovers — is a hard
+block until REST cleanup at `/api/users/owners/` and `/api/users/owner-groups/`
+clears it. Anything else stops the command before writes. Treat the branch as
+exclusively owned by that receipt until loading and verification finish.
 Never pass a token on the command line or store one in a recipe, artifact,
 receipt, source file or shell history.
 

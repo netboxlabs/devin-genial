@@ -27,8 +27,11 @@ def create_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
     _, page = client.request(
         BRANCHES + "?" + urllib.parse.urlencode({"name": name}), branch=False)
     if any(row.get("name") == name for row in page.get("results", [])):
-        raise LoadError(f"branch {name!r} already exists; pick a new name, or use "
-                        "just reset to replace a disposable branch")
+        raise LoadError(
+            f"branch {name!r} already exists. If your own create attempt just lost its "
+            "response, inspect it: a ready branch with zero ChangeDiffs is yours to use "
+            "directly. Otherwise pick a new name, or use just reset to replace a "
+            "disposable branch")
     body = json.dumps({"name": name}).encode()
     _, row = client.request(BRANCHES, method="POST", body=body,
                             headers={"Content-Type": "application/json"}, branch=False)

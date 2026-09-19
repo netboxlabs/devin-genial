@@ -386,13 +386,16 @@ which a branch-scoped load writes to main and which survive branch deletion and
 upsert depends on target database constraints, and some generated identities do
 not have a suitable unique constraint. Resume only from verified completed-job
 receipts; restart an ambiguous phase on a fresh branch. A new receipt requires all
-emitted-kind inventories to be empty, with one recorded exception: rows of a
-declared builtin kind (currently `module_type_profile`) whose plain-attribute
-identities are all disjoint from the plan's are allowlisted by exact id in the
-receipt and honored by strict readback. An identity collision is still a hard
-block, and leftover `owner`/`owner_group` rows on main are not allowlisted — clear
-them through REST or load into a different namespace. The loader assumes exclusive
-use of that disposable branch while the receipt is active.
+emitted-kind inventories to be empty, with two recorded exceptions whose
+plain-attribute identities must all be disjoint from the plan's: declared builtin
+kinds (currently `module_type_profile`) and main-scoped `owner`/`owner_group`
+rows another estate left on a shared 4.7 target. Both are allowlisted by exact
+id and identity in the receipt and honored by strict readback, so distinct
+namespaces coexist on one target. An identity collision is still a hard block —
+clear the same namespace's leftovers through REST at `/api/users/owners/` and
+`/api/users/owner-groups/`. `just load-explain` reports the target's occupancy
+with this exact allowlist assessment before any write. The loader assumes
+exclusive use of that disposable branch while the receipt is active.
 
 The September 12, 2026 Cloud qualification found TurboBulk 0.3.0 and 165
 discoverable models on NetBox 4.6.8. After writes were enabled, all 8,432

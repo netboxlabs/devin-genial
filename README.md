@@ -68,7 +68,8 @@ artifact offline, then inspect a target without writing:
 ```sh
 just load-check build/my-bank        # offline: does it fit the TurboBulk contract?
 cp .env.example .env
-# Put the raw nbt_... value in NETBOX_TOKEN; do not include "Bearer".
+# Put the raw token value in NETBOX_TOKEN (Cloud tokens look like nbt_...;
+# self-hosted tokens are plain hex). Do not include "Bearer".
 just branch https://netbox.example "Generator Review"   # create the ready branch
 just load-explain build/my-bank https://netbox.example "Generator Review"
 ```

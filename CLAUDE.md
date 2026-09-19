@@ -95,12 +95,12 @@ also requires a TurboBulk-only artifact with no REST create or completion writes
 the explain and load preflights reject other artifacts before target writes.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
-Target-native builtins may be allowlisted only for declared builtin kinds
-(`ALLOWLISTED_BUILTIN_KINDS`, currently `module_type_profile`) with plain-attribute
-identities disjoint from the plan, recorded exactly in the receipt; a collision stays
-a hard block. NetBox 4.7 owner/owner_group rows are not branch-isolated, branch
-deletion does not remove them, and they are not allowlisted: leftovers block a fresh
-load until a different namespace or REST cleanup clears them.
+Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
+builtin `module_type_profile` plus main-scoped `owner`/`owner_group`) with
+plain-attribute identities disjoint from the plan, recorded exactly in the receipt;
+a collision stays a hard block. NetBox 4.7 owner/owner_group rows are not
+branch-isolated and branch deletion does not remove them: disjoint namespaces
+coexist on one target, and same-namespace leftovers need REST cleanup.
 The loader supplies three model defaults the raw bulk path would otherwise
 manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`);
 strict readback compares only emitted fields and does not verify them.
