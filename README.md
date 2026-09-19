@@ -163,8 +163,12 @@ one exact zero-row finalizer from unique core-job evidence.
 These setup steps should take less than ten minutes; target processing time is
 separate and is recorded in the private receipt.
 
-To empty a disposable Cloud branch for another run, replace that branch and wait
-for its new schema to become ready:
+To retire a finished demo — delete its branch and its namespace's main-scoped
+owner rows, leaving the target as found — use
+`just retire https://netbox.example "Demo branch" NAMESPACE`
+(see [first target §8](docs/first-target.md#8-retiring-a-demo)).
+To instead empty a disposable Cloud branch for another run, replace that
+branch and wait for its new schema to become ready:
 
 ```sh
 just reset https://netbox.example "Disposable branch"

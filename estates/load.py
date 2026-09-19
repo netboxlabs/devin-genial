@@ -717,7 +717,7 @@ def main(argv=None):
         receipt = receipt or default_receipt(args.artifact, args.target, args.branch,
                                              args.delivery_policy)
         if not args.explain:
-            print(f"Receipt (written at first target write): {receipt}",
+            print(f"Receipt (not yet written; appears at first target write): {receipt}",
                   file=os.sys.stderr, flush=True)
             if args.delivery_policy == "disposable-baseline":
                 print("DISPOSABLE BASELINE: this branch cannot be reviewed, merged, or reverted; delete it after use.",

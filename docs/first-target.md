@@ -53,9 +53,10 @@ recipes source `.env` only when `NETBOX_TOKEN` is not already exported, so an
 exported environment always wins.
 
 Writes are separately gated: TurboBulk loads require `TURBOBULK_WRITES=1`
-alongside the token (`export NETBOX_TOKEN=… TURBOBULK_WRITES=1`, or set it in
-`.env` — the shipped `.env.example` deliberately has it off). Exporting the
-token suppresses `.env`, so an exported environment must carry both.
+alongside the token (`export NETBOX_TOKEN=… TURBOBULK_WRITES=1` in bash/zsh;
+`set -x` in fish — or set both in `.env`; the shipped `.env.example`
+deliberately has the gate off). Exporting the token suppresses `.env`, so an
+exported environment must carry both.
 
 The token drives every command here, but the demo itself (§6) is the NetBox
 web UI — you also need a UI login on the target for the screen share.
@@ -163,9 +164,15 @@ just verify-target build/v2 https://target.example demo-acme-v2
 `owner`/`owner_group` rows on main block the v2 load; deleting them (the
 refusal names the exact rows) also nulls `owner` across the already-loaded v1
 branch and permanently invalidates its receipt — v1 becomes display-only and
-can no longer pass `verify-target`. Delete the v1 branch once the demo moves
-on with `just branch-delete TARGET "Demo v1"` (`just reset` is not the
-retirement command: it *replaces* the branch with a fresh empty one).
+can no longer pass `verify-target`. One command performs the whole retirement
+(the branch and the rows):
+
+```
+just retire https://target.example demo-acme acme
+```
+
+(`just branch-delete` removes only the branch; `just reset` is not a
+retirement command at all — it *replaces* the branch with a fresh empty one.)
 One namespace has one verifiable branch at a time; a side-by-side
 before/after demo therefore needs **two namespaces planned from the start**
 (or the scenario snapshot flow on fresh targets).
