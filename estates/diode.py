@@ -507,9 +507,15 @@ def verify_export(output_dir):
     matching, and completed ingestion still require live qualification.
     """
     from importlib.metadata import version
-    from google.protobuf.json_format import ParseDict
-    from netboxlabs.diode.sdk.diode.v1 import ingester_pb2
-    from netboxlabs.diode.sdk.validate import validate_pb2
+    try:
+        from google.protobuf.json_format import ParseDict
+        from netboxlabs.diode.sdk.diode.v1 import ingester_pb2
+        from netboxlabs.diode.sdk.validate import validate_pb2
+    except ImportError as exc:
+        raise ValueError(
+            "the pinned Diode SDK is not installed in this environment; run the "
+            "check inside the SDK shell: devenv --profile diode shell -- "
+            "just sdk-check DIRECTORY") from exc
 
     installed = version("netboxlabs-diode-sdk")
     if installed != SDK_VERSION:

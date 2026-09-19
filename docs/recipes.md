@@ -291,7 +291,9 @@ wan_peak_mbps = 400
 ```
 
 ```sh
-just generate profiles/greenfield-district.toml build/district-v2 build/district-v1/plan.json
+just generate build/greenfield-district.toml build/district-v1
+# …later, after appending the campus above:
+just generate build/greenfield-district.toml build/district-v2 build/district-v1/plan.json
 ```
 
 **2. Grow an existing campus (grow-only).** Raise `classrooms`, `administrative_staff`
@@ -318,7 +320,7 @@ Generate it without `--previous`, into a fresh output directory and against a fr
 target — the previous estate's identities are not carried forward:
 
 ```sh
-just generate profiles/greenfield-district.toml build/district-v6
+just generate build/greenfield-district.toml build/district-v6
 ```
 
 The same applies to scaling the bank by changing `headquarters_staff`, retiering

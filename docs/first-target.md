@@ -102,8 +102,11 @@ overwrite.
 
 ## 6. What a demo looks like
 
-The demo lives in its branch. Activate the branch in the NetBox UI and the
-whole estate is there; main stays clean. Two boundaries to know before a
+The demo lives in its branch. Activate it in the NetBox UI with the branch
+selector in the top bar, or open any page with `?_branch=<schema_id>` appended
+— the schema id is printed by `just branch` and recorded in the load receipt —
+and Branching keeps it active for the session (an `active_branch` cookie).
+The whole estate is there; main stays clean. Two boundaries to know before a
 screen share:
 
 - **Merging a TurboBulk-loaded branch to main is currently blocked** by

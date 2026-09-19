@@ -686,8 +686,24 @@ def main(argv=None):
         if args.explain:
             print(json.dumps(result["decision"], indent=2, sort_keys=True))
         else:
-            print(json.dumps({"success": result.get("success", False), "result": result.get("result"),
-                              "transport": result.get("transport"), "receipt": str(receipt)}, sort_keys=True))
+            summary = {"success": result.get("success", False), "result": result.get("result"),
+                       "transport": result.get("transport"), "receipt": str(receipt)}
+            # Surface the receipt's acceptance evidence so the operator sees
+            # what "loaded" was verified against without opening the file.
+            verification = result.get("verification") or {}
+            if verification:
+                summary["objects_matched"] = verification.get("matched_objects")
+                summary["mismatches"] = verification.get("mismatch_count")
+            history = result.get("review_history") or {}
+            if history.get("expected") is not None:
+                summary["create_changediffs"] = f"{history.get('observed')}/{history.get('expected')}"
+            paths = result.get("computed_paths") or {}
+            if paths.get("cables_expected") is not None:
+                summary["cables_traced"] = f"{paths.get('cables_traced')}/{paths.get('cables_expected')}"
+            caches = result.get("component_caches") or {}
+            if caches.get("components_expected") is not None:
+                summary["components_checked"] = caches.get("components_expected")
+            print(json.dumps(summary, sort_keys=True))
         return 0
     except (LoadError, ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
         # RuntimeError covers readback fetch failures (lab.verify) so every

@@ -28,11 +28,10 @@ Generated artifacts, credentials and recorded qualification evidence under
 receipt paths below refer to those preserved local runs. Use the recipes and
 checks to reproduce a build; the local lab guide covers target qualification.
 
-From this directory, with devenv and direnv installed:
+Python 3.11+ and `just` are all generation needs — devenv and direnv are
+optional, used only for the pinned Diode SDK checks. From this directory:
 
 ```sh
-direnv allow
-devenv shell
 just plan
 just generate
 ```
