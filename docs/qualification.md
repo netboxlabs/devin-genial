@@ -432,6 +432,37 @@ The final verification invocation took 277.451 seconds, including 34.647 seconds
 for cable traces and 151.328 seconds for component placement queries. These
 timings qualify correctness and recovery, not clean-run throughput.
 
+## Rich-contract live qualification and merge findings
+
+On September 19, 2026 the 59-kind rich provider artifact (`build/provider-demo`,
+3,037 objects) completed its first live load anywhere, on a disposable local
+NetBox 4.7.1 + Branching 1.2.1 + TurboBulk 0.4.0 stack
+(`build/turbobulk-repro47/`), with strict readback and exact per-model
+create-ChangeDiff verification
+(`build/load-receipts/provider-demo-Rich-Provider-2-e16f817d7f53.json`).
+Getting there added six compiler kinds (asn, asn_range, route_target and the
+virtual-circuit family), routed the new M2M references (site/provider `asns`,
+VRF route targets) through REST completion, supplied model defaults the raw
+bulk path otherwise manufactures invalidly (location/power-outlet status, rack
+starting_unit), recorded a bootstrap allowlist for 4.7's factory
+ModuleTypeProfiles, and worked around a TurboBulk 0.4.0 defect that renders any
+NOT NULL column whose name contains "count" (such as `provideraccount.account`)
+unloadable, by creating provider accounts through REST. This is local
+capability evidence for the enterprise contract, not Cloud qualification.
+
+Merging a TurboBulk-loaded branch to main was investigated and is not currently
+possible. Three independent blockers were demonstrated: every TurboBulk create
+ChangeDiff carries a non-null empty `conflicts` array, which Branching's merge
+gate treats as an unacknowledged conflict; TurboBulk's SQL-built changelog
+payloads use column names (`device_id`) where NetBox's replay deserializer
+requires field names, so every device component fails "Components cannot be
+moved to a different device"; and even with both corrected experimentally, the
+replay's own ordering semantics reject valid estates (VM-interface VLAN site
+checks). The branch-per-demo pattern therefore works without merge; a
+pre-seeded main requires upstream fixes. Separately, NetBox 4.7's core
+owner/owner_group models proved not branch-isolated: a branch-scoped load
+writes them to main, and deleting the branch does not remove them.
+
 ## Cloud worker-death investigation and loader hardening
 
 Between September 12 and 17, 2026, seven TurboBulk jobs on the Cloud tenant were

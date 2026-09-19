@@ -16,6 +16,8 @@ from estates.turbobulk import (COMPILER_VERSION, DEFAULT_JOB_ROWS, POST_HOOKS, R
                                JobTimeout, LoadError, WorkerDied,
                                _arbitrate_worker_death, _resolve_worker_death,
                                _bounded_readback, _readback_fields,
+                               _bootstrap_allowlist, _render, _render_rest_create,
+                               _rendered_columns, _rest_create_fields,
                                _adopt_finalizer_job, _artifact, _batch_request_settings,
                                _complete_rest, _job_result,
                                _component_cache_ids, _component_filter_preflight,
@@ -874,6 +876,48 @@ class TurboBulkLoaderTests(unittest.TestCase):
             _poll(Target(), "job-1", 0)
         self.assertIs(caught.exception.job, running)
         self.assertIn("resume only after it progresses", str(caught.exception))
+
+    def test_bootstrap_allowlist_permits_disjoint_builtins_only(self):
+        plan = {"objects": [
+            {"kind": "module_type_profile", "attrs": {"name": "Custom PSU"}, "refs": {}},
+            {"kind": "device", "attrs": {"name": "d1"}, "refs": {"site": "s"}},
+        ]}
+        inventory = {
+            "module_type_profile": [{"id": 1, "name": "CPU"}, {"id": 2, "name": "Memory"}],
+            "device": [{"id": 9, "name": "stray"}],
+        }
+        allowed = _bootstrap_allowlist(plan, inventory)
+        # plain-attr identity, names disjoint -> allowlisted with exact ids
+        self.assertEqual(allowed["target_ids"], {"module_type_profile": [1, 2]})
+        # device identity includes refs -> never allowlisted, stays a hard block
+        self.assertNotIn("device", allowed["target_ids"])
+
+    def test_bootstrap_allowlist_refuses_identity_collisions(self):
+        plan = {"objects": [{"kind": "module_type_profile", "attrs": {"name": "CPU"}, "refs": {}}]}
+        inventory = {"module_type_profile": [{"id": 1, "name": "CPU"}]}
+        self.assertEqual(_bootstrap_allowlist(plan, inventory), {})
+
+    def test_render_defaults_supply_model_defaults_without_overriding(self):
+        rack = {"kind": "rack", "key": "r", "attrs": {"name": "r1", "status": "active"},
+                "refs": {}, "meta": {}}
+        row = _render(rack, {"r": rack}, {}, {})
+        self.assertEqual(row["starting_unit"], 1)  # supplied
+        explicit = {"kind": "rack", "key": "r2",
+                    "attrs": {"name": "r2", "status": "active", "starting_unit": 3},
+                    "refs": {}, "meta": {}}
+        self.assertEqual(_render(explicit, {"r2": explicit}, {}, {})["starting_unit"], 3)
+        outlet_columns = _rendered_columns({"kind": "power_outlet", "key": "p",
+                                            "attrs": {"name": "p1"}, "refs": {}, "meta": {}})
+        self.assertIn("status", outlet_columns)  # schedule stays aligned with render
+
+    def test_provider_account_rest_create_payload(self):
+        obj = {"kind": "provider_account", "key": "pa",
+               "attrs": {"account": "acct-1", "name": "Account 1"},
+               "refs": {"provider": "prov"}, "meta": {}}
+        payload = _render_rest_create(obj, {"prov": 7})
+        self.assertEqual(payload, {"account": "acct-1", "name": "Account 1", "provider": 7})
+        self.assertEqual(_rest_create_fields("provider_account", obj),
+                         {"account", "name", "provider"})
 
     def test_readback_projection_covers_only_plain_kinds_and_all_compared_fields(self):
         plan = {"objects": [

@@ -224,9 +224,22 @@ SPECS = {
     "vlan_group": ("ipam.vlangroup", "/api/ipam/vlan-groups/"),
     "vm_interface": ("virtualization.vminterface", "/api/virtualization/interfaces/"),
     "cable": ("dcim.cable", "/api/dcim/cables/"),
+    "asn": ("ipam.asn", "/api/ipam/asns/"),
+    "asn_range": ("ipam.asnrange", "/api/ipam/asn-ranges/"),
+    "route_target": ("ipam.routetarget", "/api/ipam/route-targets/"),
+    "virtual_circuit": ("circuits.virtualcircuit", "/api/circuits/virtual-circuits/"),
+    "virtual_circuit_termination": ("circuits.virtualcircuittermination",
+                                    "/api/circuits/virtual-circuit-terminations/"),
+    "virtual_circuit_type": ("circuits.virtualcircuittype", "/api/circuits/virtual-circuit-types/"),
 }
 
 CONTENT_TYPES = {
+    "asn": ("ipam", "asn"),
+    "asn_range": ("ipam", "asnrange"),
+    "route_target": ("ipam", "routetarget"),
+    "virtual_circuit": ("circuits", "virtualcircuit"),
+    "virtual_circuit_termination": ("circuits", "virtualcircuittermination"),
+    "virtual_circuit_type": ("circuits", "virtualcircuittype"),
     "circuit": ("circuits", "circuit"),
     "cluster": ("virtualization", "cluster"),
     "console_port": ("dcim", "consoleport"),
@@ -243,7 +256,19 @@ CONTENT_TYPES = {
     "virtual_machine": ("virtualization", "virtualmachine"),
 }
 
-REST_CREATE_KINDS = {"module_bay_type"}
+# TurboBulk 0.4.0 manufactures an integer NOT NULL default for any column whose
+# name merely contains "count" (engine/merge.py _get_sql_default), so every
+# circuits.provideraccount insert emits COALESCE("account", 0) and fails with a
+# varchar/integer type error. Create those few rows through REST until upstream
+# matches the default to the column type.
+REST_CREATE_KINDS = {"module_bay_type", "provider_account"}
+# Model-default values REST/Diode apply server-side but TurboBulk's raw path
+# would otherwise manufacture as invalid '' (choice columns have no CHECK
+# constraint, so the row inserts and only surfaces at the next full_clean —
+# observed as a branching-merge failure on location/power_outlet status).
+RENDER_DEFAULTS = {"location": {"status": "active"}, "power_outlet": {"status": "enabled"},
+                   "rack": {"starting_unit": 1}}
+
 ATTRIBUTE_RENAMES = {("module_type", "attributes"): "attribute_data"}
 
 DIRECT_REFS = {
@@ -258,13 +283,17 @@ DIRECT_REFS = {
     "module_bay": "module_bay_id", "module_type": "module_type_id",
     "owner": "owner_id", "parent": "parent_id", "platform": "platform_id",
     "profile": "profile_id", "provider_account": "provider_account_id",
-    "region": "region_id", "rir": "rir_id",
+    "region": "region_id", "rir": "rir_id", "interface": "interface_id",
+    "provider_network": "provider_network_id", "virtual_circuit": "virtual_circuit_id",
 }
 
 DEFERRED = {"primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address",
-            "tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses"}
+            "tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
+            "asns", "export_targets", "import_targets"}
 SUPPORTED_REFS = {
     "aggregate": {"rir", "tenant"},
+    "asn": {"rir", "tenant"},
+    "asn_range": {"rir", "tenant"},
     "cable": {"a", "b"},
     "circuit": {"owner", "provider", "provider_account", "tenant", "type"},
     "circuit_termination": {"circuit", "termination"},
@@ -280,7 +309,7 @@ SUPPORTED_REFS = {
     "device": {"cluster", "device_type", "location", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant"},
     "device_role": set(),
     "device_type": {"manufacturer"},
-    "interface": {"device", "module", "primary_mac_address", "tagged_vlans", "untagged_vlan", "vrf"},
+    "interface": {"device", "module", "parent", "primary_mac_address", "tagged_vlans", "untagged_vlan", "vrf"},
     "ip_address": {"assigned_object", "tenant", "vrf"},
     "journal_entry": {"assigned_object"},
     "location": {"parent", "site", "tenant"},
@@ -298,8 +327,12 @@ SUPPORTED_REFS = {
     "power_outlet": {"device", "power_port"},
     "power_panel": {"location", "site"},
     "power_port": {"device", "module"},
+    "route_target": {"tenant"},
+    "virtual_circuit": {"provider_account", "provider_network", "tenant", "type"},
+    "virtual_circuit_termination": {"interface", "virtual_circuit"},
+    "virtual_circuit_type": set(),
     "prefix": {"scope_site", "tenant", "vlan", "vrf"},
-    "provider": set(),
+    "provider": {"asns"},
     "provider_account": {"owner", "provider"},
     "provider_network": {"provider"},
     "rack": {"location", "role", "site", "tenant"},
@@ -307,7 +340,7 @@ SUPPORTED_REFS = {
     "region": {"parent"},
     "rir": set(),
     "service": {"ipaddresses", "virtual_machine"},
-    "site": {"group", "owner", "region", "tags", "tenant"},
+    "site": {"asns", "group", "owner", "region", "tags", "tenant"},
     "site_group": set(),
     "tag": set(),
     "tenant": set(),
@@ -316,7 +349,7 @@ SUPPORTED_REFS = {
     "vlan": {"group", "site", "tenant"},
     "vlan_group": {"scope_site", "tenant"},
     "vm_interface": {"primary_mac_address", "untagged_vlan", "virtual_machine", "vrf"},
-    "vrf": {"tenant"},
+    "vrf": {"export_targets", "import_targets", "tenant"},
 }
 
 
@@ -588,6 +621,16 @@ def _matches(obj, row, ids, objects=None):
                 and _content_type_name(row.get("assigned_object_type")) == API_CONTENT_TYPES.get(target_kind))
     if kind == "cable":
         return row.get("label") == attrs["label"]
+    if kind == "asn":
+        return row.get("asn") == attrs["asn"]
+    if kind in {"asn_range", "route_target", "virtual_circuit_type"}:
+        return row.get("name") == attrs["name"]
+    if kind == "virtual_circuit":
+        return (row.get("cid") == attrs["cid"]
+                and _nested_id(row.get("provider_network")) == _ref_id(obj, "provider_network", ids))
+    if kind == "virtual_circuit_termination":
+        return (_nested_id(row.get("virtual_circuit")) == _ref_id(obj, "virtual_circuit", ids)
+                and _nested_id(row.get("interface")) == _ref_id(obj, "interface", ids))
     raise LoadError(f"no target identity matcher for {kind}")
 
 
@@ -650,6 +693,15 @@ def _candidate_bucket_key(obj, ids, objects=None):
                 API_CONTENT_TYPES[target_kind])
     if kind == "cable":
         return "label", attrs["label"]
+    if kind == "asn":
+        return "asn", attrs["asn"]
+    if kind in {"asn_range", "route_target", "virtual_circuit_type"}:
+        return "name", attrs["name"]
+    if kind == "virtual_circuit":
+        return "cid-provider-network", attrs["cid"], _ref_id(obj, "provider_network", ids)
+    if kind == "virtual_circuit_termination":
+        return ("vc-interface", _ref_id(obj, "virtual_circuit", ids),
+                _ref_id(obj, "interface", ids))
     raise LoadError(f"no target identity index for {kind}")
 
 
@@ -717,6 +769,14 @@ def _row_bucket_keys(kind, row):
                  _content_type_name(row.get("assigned_object_type")))]
     if kind == "cable":
         return [("label", row.get("label"))]
+    if kind == "asn":
+        return [("asn", row.get("asn"))]
+    if kind in {"asn_range", "route_target", "virtual_circuit_type"}:
+        return [("name", row.get("name"))]
+    if kind == "virtual_circuit":
+        return [("cid-provider-network", row.get("cid"), nested(row.get("provider_network")))]
+    if kind == "virtual_circuit_termination":
+        return [("vc-interface", nested(row.get("virtual_circuit")), nested(row.get("interface")))]
     raise LoadError(f"no target identity index for {kind}")
 
 
@@ -759,6 +819,8 @@ def _service_port_mappings(obj):
 
 def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     row = dict(obj["attrs"])
+    for name, value in RENDER_DEFAULTS.get(obj["kind"], {}).items():
+        row.setdefault(name, value)
     for (kind, source), target in ATTRIBUTE_RENAMES.items():
         if obj["kind"] == kind and source in row:
             row[target] = row.pop(source)
@@ -794,7 +856,7 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
 
 def _rendered_columns(obj, service_shape="protocol_ports"):
     """Return database columns without needing resolved target IDs."""
-    columns = set(obj["attrs"]) - DEFERRED
+    columns = (set(obj["attrs"]) | set(RENDER_DEFAULTS.get(obj["kind"], ()))) - DEFERRED
     if obj["kind"] == "service":
         _service_port_mappings(obj)
         if service_shape == "port_mappings":
@@ -1545,15 +1607,22 @@ def _rest_patch_preflight(client, objects):
 
 
 def _rest_create_fields(kind, obj):
-    if kind != "module_bay_type":
-        raise LoadError(f"no REST create compiler for {kind}")
-    return set(obj["attrs"]) | {"manufacturer"}
+    if kind == "module_bay_type":
+        return set(obj["attrs"]) | {"manufacturer"}
+    if kind == "provider_account":
+        return set(obj["attrs"]) | {"provider"} | ({"owner"} if "owner" in obj["refs"] else set())
+    raise LoadError(f"no REST create compiler for {kind}")
 
 
 def _render_rest_create(obj, ids):
-    if obj["kind"] != "module_bay_type":
-        raise LoadError(f"no REST create compiler for {obj['kind']}")
-    return {**obj["attrs"], "manufacturer": ids[obj["refs"]["manufacturer"]]}
+    if obj["kind"] == "module_bay_type":
+        return {**obj["attrs"], "manufacturer": ids[obj["refs"]["manufacturer"]]}
+    if obj["kind"] == "provider_account":
+        payload = {**obj["attrs"], "provider": ids[obj["refs"]["provider"]]}
+        if "owner" in obj["refs"]:
+            payload["owner"] = ids[obj["refs"]["owner"]]
+        return payload
+    raise LoadError(f"no REST create compiler for {obj['kind']}")
 
 
 def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=None):
@@ -1593,7 +1662,8 @@ def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=N
         _write_receipt(receipt_path, receipt)
 
 
-REST_PATCH_LIST_FIELDS = {"tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses"}
+REST_PATCH_LIST_FIELDS = {"tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
+                          "asns", "export_targets", "import_targets"}
 
 
 def _patch_state(actual, desired, purpose):
@@ -1735,6 +1805,42 @@ def _trace_contains_cable(value, cable_id, label):
     if isinstance(value, list):
         return any(_trace_contains_cable(item, cable_id, label) for item in value)
     return False
+
+
+def _bootstrap_allowlist(plan, inventory):
+    """Allow target-native builtin rows that cannot collide with the artifact.
+
+    NetBox versions ship factory rows for some catalog kinds (for example the
+    eight ModuleTypeProfiles on 4.7). A fresh load may proceed over them only
+    when the kind's readback identity is a plain attribute (never a reference,
+    so no resolution ambiguity) and every existing identity is disjoint from
+    the plan's — the exact ids are recorded and allowlisted through strict
+    readback, mirroring the lab bootstrap receipt. Anything else keeps the
+    hard empty-inventory rule.
+    """
+    from lab.verify import IDENTITIES
+
+    allowed = {}
+    plan_kinds = defaultdict(list)
+    for obj in plan["objects"]:
+        plan_kinds[obj["kind"]].append(obj)
+    for kind, rows in inventory.items():
+        if not rows:
+            continue
+        identity = IDENTITIES.get(kind, ("name",))
+        objs = plan_kinds.get(kind, [])
+        if any(field in obj["refs"] for obj in objs for field in identity):
+            continue
+        if any(field not in row for row in rows for field in identity):
+            continue
+        existing = {tuple(row[field] for field in identity) for row in rows}
+        planned = {tuple(obj["attrs"].get(field) for field in identity) for obj in objs}
+        if existing & planned:
+            continue
+        allowed[kind] = sorted(row["id"] for row in rows)
+    if not allowed:
+        return {}
+    return {"success": True, "target_ids": allowed}
 
 
 def _readback_fields(plan):
@@ -2135,13 +2241,16 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         receipt.setdefault("rest_creates", [])
         receipt.setdefault("attempts", []).append({"started_at": started_at, "success": False})
     else:
-        occupied = {kind: len(rows) for kind, rows in inventory.items() if rows}
+        allowed_existing = _bootstrap_allowlist(plan, inventory)
+        occupied = {kind: len(rows) for kind, rows in inventory.items()
+                    if rows and kind not in allowed_existing.get("target_ids", {})}
         if occupied:
             detail = ", ".join(f"{kind}={count}" for kind, count in sorted(occupied.items()))
             raise LoadError("fresh load requires empty inventories for every emitted kind; " + detail)
         ids = {}
         receipt = {**binding, "started_at": started_at, "success": False, "target_status": status,
                    "offline_checks": offline, "jobs": [], "rest_batches": [], "resolved_ids": {},
+                   "allowed_existing": allowed_existing,
                    "rest_creates": [],
                    "review_history_preflight": history_preflight,
                    "attempts": [{"started_at": started_at, "success": False}]}
@@ -2191,7 +2300,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         readback_started = time.monotonic()
         inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]),
                                 client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
-        verification = verify_plan(plan, inventory, strict_inventory=True)
+        verification = verify_plan(plan, inventory, strict_inventory=True,
+                                   allow_existing_receipt=receipt.get("allowed_existing") or None)
         receipt["verification"] = verification
         receipt["readback_seconds"] = round(time.monotonic() - readback_started, 6)
         if not verification["success"]:

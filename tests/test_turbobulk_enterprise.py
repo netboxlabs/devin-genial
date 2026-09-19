@@ -47,6 +47,9 @@ class SchemaClient:
                 raise LoadError("HTTP 404")
             return 200, {"actions": {"POST": {
                 "name": {}, "slug": {}, "color": {}, "manufacturer": {}}}}
+        if path == SPECS["provider_account"][1]:
+            return 200, {"actions": {"POST": {
+                "account": {}, "name": {}, "description": {}, "provider": {}, "owner": {}}}}
         if method == "OPTIONS":
             return 200, {"actions": {"PATCH": {field: {} for field in (
                 "groups", "ipaddresses", "module_bay_types", "oob_ip", "primary_ip4",
@@ -76,7 +79,7 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
                          {"circuit_termination", "console_port", "console_server_port", "interface",
                           "power_feed", "power_outlet", "power_port"})
         result = _schema_preflight(SchemaClient(self.objects), self.objects)
-        self.assertEqual(result["rest_create_fields"], {"module_bay_type": 4})
+        self.assertEqual(result["rest_create_fields"], {"module_bay_type": 4, "provider_account": 5})
         ids = {key: position for position, key in enumerate(self.objects, 1)}
         content_types = {kind: position for position, kind in
                          enumerate(sorted(_required_content_types(self.objects)), 1)}
@@ -116,7 +119,7 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         with self.assertRaisesRegex(LoadError, "no writable REST model.*module_bay_type"):
             _schema_preflight(client, self.objects)
         self.assertEqual(client.calls, [("OPTIONS", SPECS["module_bay_type"][1])])
-        self.assertEqual(REST_CREATE_KINDS, {"module_bay_type"})
+        self.assertEqual(REST_CREATE_KINDS, {"module_bay_type", "provider_account"})
 
     def test_missing_rest_completion_field_fails_preflight(self):
         client = SchemaClient(self.objects)

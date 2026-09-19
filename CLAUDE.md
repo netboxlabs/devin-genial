@@ -87,6 +87,9 @@ also requires a TurboBulk-only artifact with no REST create or completion writes
 the explain and load preflights reject other artifacts before target writes.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
+Target-native builtins may be allowlisted only for plain-attribute identities with
+identities disjoint from the plan, recorded exactly in the receipt. NetBox 4.7
+owner/owner_group rows are not branch-isolated; branch deletion does not remove them.
 Write each bounded REST completion payload to the receipt before PATCH. Recover a
 lost response only from exact target readback; never resend an unresolved mutation.
 A lost zero-row finalizer response may adopt one exact core-job match inside its

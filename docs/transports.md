@@ -157,8 +157,12 @@ receipt, the command refuses to adopt data-bearing work. It may adopt a zero-row
 finalizer only from one exact, otherwise-unbound core job inside the recorded
 request window with the same branch, model, mode, and zero-row result. Zero or
 multiple matches require a fresh branch.
-For a new receipt, every inventory represented by the artifact must be empty;
-otherwise the command stops before writes. Treat the branch as exclusively owned
+For a new receipt, every inventory represented by the artifact must be empty,
+with one recorded exception: target-native builtin rows (for example NetBox
+4.7's eight factory ModuleTypeProfiles) are allowlisted when the kind's
+readback identity is a plain attribute and every existing identity is disjoint
+from the plan's; their exact ids are stored in the receipt and honored by
+strict readback. Anything else stops the command before writes. Treat the branch as exclusively owned
 by that receipt until loading and verification finish.
 Never pass a token on the command line or store one in a recipe, artifact,
 receipt, source file or shell history.
