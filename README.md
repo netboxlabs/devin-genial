@@ -43,7 +43,7 @@ optional devenv/Just setup. All commands run from the repository root.
 
 | Estate | Start with | What shapes it | Loadable to a target today? |
 | --- | --- | --- | --- |
-| Regional bank | [bank.toml](profiles/bank.toml) · [guide](docs/modeling.md#what-makes-it-a-bank) | Branch mix, headquarters staffing, inherited equipment and shared DC services | No — 39 kinds beyond the TurboBulk contract |
+| Regional bank | [bank.toml](profiles/bank.toml) · [guide](docs/modeling.md#what-makes-it-a-bank) | Branch mix, headquarters staffing, inherited equipment and shared DC services | **Yes** (NetBox 4.7+) |
 | Enterprise data center | [enterprise-dc.toml](profiles/enterprise-dc.toml) · [guide](docs/usage.md#enterprise-data-center) | Workload demand, replicas, placement and compute capacity | **Yes** (NetBox 4.7+) |
 | School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | **Yes** (NetBox 4.7+) |
 | Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | **Yes** (NetBox 4.7+) |
@@ -84,11 +84,10 @@ devenv-managed SDK environment described in the [loading guide](docs/loading.md)
 New to loading? [First target](docs/first-target.md) is the start-to-finish
 runbook: prerequisites, token shape, branch creation, load, verify.
 
-Not every profile is loadable today: the bank estate emits 39 kinds beyond the
-TurboBulk compiler contract, so `just load-check` is the required first step
-when picking a demo profile — the other four profiles load completely, and every
-current profile requires a NetBox 4.7+ target (module bay types). Check the
-artifact offline, then inspect the target without writing:
+All five profiles load completely on a NetBox 4.7+ target (module bay types
+are unconditional), and `just load-check` remains the required first step —
+it verifies your exact artifact against the compiler contract offline. Check
+the artifact, then inspect the target without writing:
 
 ```sh
 just generate profiles/enterprise-dc.toml build/my-dc
@@ -189,7 +188,7 @@ Use the printed replacement name for the next load and future reset. If Diode ro
 to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
 configuration attestation before loading.
 The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
-compiles the full 61-kind contract (wireless included), which covers the current 53-kind enterprise
+compiles the full 98-kind contract — every kind any current profile emits, the complete bank included — which covers the current 53-kind enterprise
 data center artifact. The configured NetBox 4.6.8 tenant cannot represent the
 4.7-only module-bay compatibility model, so preflight rejects that exact rich
 artifact before writes. The complete 4.7 path is live-qualified only on the pinned

@@ -31,9 +31,10 @@ detail and [seeding](seeding.md) the database-restore alternative.
   plugin.
 - **Sharing a target with other estates works, with one rule: one live
   namespace, one branch.** On NetBox 4.7, each estate's `owner`/`owner_group`
-  rows live on main (they are not branch-isolated and survive branch
-  deletion). Rows from a *different* namespace are automatically allowlisted
-  and recorded in the receipt. The *same* namespace cannot fresh-load a
+  rows — and its custom-field, choice-set and custom-link definitions — live
+  on main (Branching exempts them; they survive branch deletion). Rows from a *different* namespace are automatically allowlisted
+  and recorded in the receipt — assessed at preflight and again at the final
+  readback, so a neighbour loading concurrently does not fail your run. The *same* namespace cannot fresh-load a
   second time — into a new branch or after deleting the old one — until its
   own rows are removed (`/api/users/owners/`, `/api/users/owner-groups/`;
   delete only the colliding rows, which the refusal and `just load-explain`
@@ -146,6 +147,8 @@ The demo lives in its branch. Activate it in the NetBox UI with the branch
 selector in the top bar, or open any page with `?_branch=<schema_id>` appended
 — the schema id is printed by `just branch` and recorded in the load receipt —
 and Branching keeps it active for the session (an `active_branch` cookie).
+The same parameter works on the REST API for post-load confirmation:
+`curl …/api/dcim/sites/?_branch=<schema_id>`.
 The whole estate is there; main stays clean. Two boundaries to know before a
 screen share:
 
@@ -205,8 +208,9 @@ removes both:
 just retire https://target.example demo-acme acme
 ```
 
-It deletes the named branch, then deletes exactly the main-scoped ownership
-rows whose names begin with your namespace, reporting each. (Separately,
+It deletes the named branch, then deletes exactly the main-scoped rows
+carrying your namespace — custom links, custom fields, choice sets, owners
+and owner groups, in that dependency order — reporting each. (Separately,
 `just branch-delete` removes only the branch — and if the branch is already
 gone, `just retire` still clears the namespace's owner rows, reporting the
 branch as already absent. `just reset` *replaces* a branch with a fresh empty
@@ -222,8 +226,10 @@ curl -s -H "Authorization: Token $NETBOX_TOKEN" \
 ```
 
 and a main-side search (`/api/dcim/sites/?q=acme`) returns none of your
-objects. (The changelog keeps the branch create/delete audit rows; that is
-NetBox's audit trail, not estate data.)
+objects. Grepping for the namespace stays sound even with customer-named
+sites: slugs keep the `namespace-…` form, and `?q=` matches slugs. (The
+changelog keeps the branch create/delete audit rows; that is NetBox's audit
+trail, not estate data.)
 
 ## 9. Verify anytime, write nothing
 
@@ -238,7 +244,7 @@ receipt when the target differs.
 
 ## 10. When a load fails
 
-Every refusal is one of three shapes, and each names itself:
+Every refusal is one of these shapes, and each names itself:
 
 - **Transport blocker** ("no faithful loader is available…"): fix what the
   per-transport reasons name, re-check with `just load-explain`. Nothing was
@@ -252,6 +258,12 @@ Every refusal is one of three shapes, and each names itself:
   job exceeded one. Nothing resumes past it: ask the operator what is
   configured, or lower the job row bound (the fourth `just load` argument)
   and start a fresh branch.
+- **Readback mismatch** ("strict readback found N mismatches"): the loaded
+  data did not verify. When the mismatches are `unmatched_target_objects` on
+  `owner`/`owner_group` names that are not your namespace, another estate
+  loaded onto the shared target *during* your run; the loader excuses current
+  foreign rows at readback, so rerunning the same command resumes and
+  verifies. Any other mismatch is real: the receipt holds the list.
 - **Worker death** ("abandoned by a dead worker…"): the *target's* background
   worker died mid-job — commonly resource exhaustion (memory, database
   connections) on the target, which loading again will not fix and which an

@@ -1009,6 +1009,30 @@ class TurboBulkLoaderTests(unittest.TestCase):
         self.assertTrue(_matches(obj, {"slug": "maple-campus"}, {}))
         self.assertFalse(_matches(obj, {"slug": "other"}, {}))
 
+    def test_cable_rows_carry_their_bundle_reference(self):
+        from estates.turbobulk import _cable_row, _rendered_columns
+        obj = {"kind": "cable", "key": "c", "attrs": {"label": "L1", "type": "cat6"},
+               "refs": {"a": "x", "b": "y", "bundle": "bundle/1"}, "meta": {}}
+        row = _cable_row(obj, {"bundle/1": 6})
+        self.assertEqual(row["bundle_id"], 6)
+        self.assertIn("bundle_id", _rendered_columns(obj))
+        bare = {"kind": "cable", "key": "c2", "attrs": {"label": "L2", "type": "cat6"},
+                "refs": {"a": "x", "b": "y"}, "meta": {}}
+        self.assertNotIn("bundle_id", _cable_row(bare, {}))
+
+    def test_branch_exempt_extras_create_no_expected_diffs(self):
+        from estates.turbobulk import _expected_change_diff_counts
+        objects = {
+            "cf": {"kind": "custom_field", "key": "cf", "attrs": {"name": "n"}, "refs": {}, "meta": {}},
+            "cl": {"kind": "custom_link", "key": "cl", "attrs": {"name": "n"}, "refs": {}, "meta": {}},
+            "s": {"kind": "site", "key": "s", "attrs": {"name": "s"}, "refs": {}, "meta": {}},
+        }
+        expected = _expected_change_diff_counts(objects)
+        # Branching's EXEMPT_MODELS never diff; the site still counts
+        self.assertNotIn("extras.customfield", expected)
+        self.assertNotIn("extras.customlink", expected)
+        self.assertEqual(expected["dcim.site"], 1)
+
     def test_patch_state_normalizes_choice_and_fk_readback_shapes(self):
         from estates.turbobulk import _patch_state
         actual = {"primary_ip4": {"id": 363, "address": "10.0.96.12/20"},

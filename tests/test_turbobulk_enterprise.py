@@ -119,7 +119,8 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         with self.assertRaisesRegex(LoadError, "no writable REST model.*module_bay_type"):
             _schema_preflight(client, self.objects)
         self.assertEqual(client.calls, [("OPTIONS", SPECS["module_bay_type"][1])])
-        self.assertEqual(REST_CREATE_KINDS, {"module_bay_type", "provider_account"})
+        self.assertEqual(REST_CREATE_KINDS, {"module_bay_type", "provider_account",
+                                             "custom_field", "custom_field_choice_set", "custom_link"})
 
     def test_missing_rest_completion_field_fails_preflight(self):
         client = SchemaClient(self.objects)

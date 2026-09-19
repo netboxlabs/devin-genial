@@ -281,6 +281,11 @@ def main(argv=None):
             print(f"{result['name']}: {result['objects']:,} objects; offline checks passed")
             for kind in ("site", "rack", "device", "interface", "cable", "circuit", "virtual_machine"):
                 print(f"  {kind}: {result['counts'].get(kind, 0):,}")
+            site_ids = sorted(o["key"].removeprefix("site/")
+                              for o in plan["objects"] if o["kind"] == "site")
+            shown = ", ".join(site_ids[:24]) + (f", … ({len(site_ids)} total)"
+                                                if len(site_ids) > 24 else "")
+            print(f"  site ids (the [site_names] keys): {shown}")
             if "intent" in result:
                 intent = result["intent"]
                 print("Defaulted inputs: " + ", ".join(key for key,value in intent["resolved"].items() if value["source"] == "default"))

@@ -70,8 +70,10 @@ dependency barriers, inspect post hooks, and finish relationships the advertised
 model schema cannot write. Each job is transactional; the full estate is not one
 transaction.
 A disposable [NetBox branch](https://netboxlabs.com/docs/turbobulk/branching/) is
-the practical whole-run rollback boundary, except NetBox 4.7 `owner`/`owner_group`
-rows: those are written to main and survive branch deletion and `just reset`.
+the practical whole-run rollback boundary, except the Branching-exempt
+main-scoped rows — NetBox 4.7 `owner`/`owner_group` plus custom-field,
+choice-set and custom-link definitions: those are written to main and survive
+branch deletion and `just reset` (`just retire` removes them).
 
 REST is the compatibility layer and the universal fallback. NetBox supports
 [atomic bulk updates within one model](https://netbox.readthedocs.io/en/stable/integrations/rest-api/#updating-multiple-objects), so Genial should batch bounded completion
@@ -221,7 +223,7 @@ execute Assurance-review mode. A standalone REST loader is not implemented yet,
 so the selector reports that gap rather than silently omitting unsupported objects.
 
 The frozen v0.2 bank qualifies 29 canonical kinds through TurboBulk on Cloud.
-The compiler now covers 61 kinds (wireless LANs and groups included), including all 53 in the current enterprise data
+The compiler now covers 98 kinds — every kind any current profile emits, the complete bank included — with all 53 in the current enterprise data
 center artifact, with REST relationship completion and resumable REST creation for
 models absent from TurboBulk. The configured NetBox 4.6.8 target lacks the 4.7
 module-bay model entirely, so it rejects that artifact before any write. The

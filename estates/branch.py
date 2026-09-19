@@ -102,34 +102,55 @@ def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
         sleep(poll_interval)
 
 
-OWNER_ENDPOINTS = ("/api/users/owners/", "/api/users/owner-groups/")
+# Main-scoped rows a namespace leaves behind, in deletion-dependency order:
+# links and fields reference choice sets and owners. custom_field names use
+# the namespace's underscore form; the rest are "<namespace> " prefixed.
+RETIREMENT_ENDPOINTS = (
+    ("/api/extras/custom-links/", "prefix"),
+    ("/api/extras/custom-fields/", "underscore"),
+    ("/api/extras/custom-field-choice-sets/", "prefix"),
+    ("/api/users/owners/", "prefix"),
+    ("/api/users/owner-groups/", "prefix"),
+)
+OWNER_ENDPOINTS = tuple(endpoint for endpoint, _ in RETIREMENT_ENDPOINTS)
 
 
-def retire_namespace_rows(client, namespace, *, endpoints=OWNER_ENDPOINTS):
+def retire_namespace_rows(client, namespace, *, endpoints=OWNER_ENDPOINTS,
+                          attempts=8, poll_interval=3, sleep=time.sleep):
     """Delete the namespace's own main-scoped owner/owner_group rows.
 
     These rows are not branch-isolated, so branch deletion leaves them behind
     and they block the namespace's next fresh load. Names are authored as
     "<namespace> …", so an exact prefix match selects only this estate's rows.
+    A just-deleted branch's schema drop can briefly hold PROTECT references to
+    these rows, so a still-present row is retried within a bounded window.
     """
+    matchers = dict(RETIREMENT_ENDPOINTS)
     deleted = []
     for endpoint in endpoints:
+        underscore = matchers.get(endpoint) == "underscore"
+        marker = (namespace.replace("-", "_") + "_") if underscore else (namespace + " ")
         _, page = client.request(endpoint + "?limit=200", branch=False)
         for row in page.get("results", []):
             name = row.get("name") or ""
-            if not name.startswith(namespace + " "):
+            if not name.startswith(marker):
                 continue
-            try:
-                client.request(f"{endpoint}{row['id']}/", method="DELETE", branch=False)
-            except LoadError:
-                pass  # a 204 empty body reads as a parse failure; confirm below
-            try:
-                client.request(f"{endpoint}{row['id']}/", branch=False)
-            except LoadError:
-                deleted.append({"endpoint": endpoint, "id": row["id"], "name": name})
-                continue
-            raise LoadError(f"row {row['id']} ({name!r}) at {endpoint} survived deletion; "
-                            "inspect the target")
+            for attempt in range(attempts):
+                try:
+                    client.request(f"{endpoint}{row['id']}/", method="DELETE", branch=False)
+                except LoadError:
+                    pass  # a 204 empty body reads as a parse failure; confirm below
+                try:
+                    client.request(f"{endpoint}{row['id']}/", branch=False)
+                except LoadError:
+                    deleted.append({"endpoint": endpoint, "id": row["id"], "name": name})
+                    break
+                if attempt + 1 == attempts:
+                    raise LoadError(
+                        f"row {row['id']} ({name!r}) at {endpoint} survived deletion "
+                        f"after {attempts} attempts — a branch schema drop may still "
+                        "reference it; wait for the drop to finish and retry")
+                sleep(poll_interval)
     return deleted
 
 

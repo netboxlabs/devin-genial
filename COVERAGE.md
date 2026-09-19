@@ -197,3 +197,33 @@ with no manual target renaming.
 The proposed order prioritizes questions an SE can answer by following real
 relationships. It deliberately leaves specialized cooling, every available VPN
 model, runtime audit rows and images out of the default expansion backlog.
+
+## Expansion campaign roadmap (adopted 2026-09-19)
+
+The Top-10 industry set below was adopted from pipeline/won-revenue evidence
+(HubSpot industry aggregates, Pylon active accounts, public case studies) and is
+being executed in least-resistance order. This section is the campaign's durable
+state: update the Status column as phases complete, and record decisions here.
+
+Existing profiles: enterprise DC, provider backbone, regional bank, hospital,
+K-12 school district. New: retail chain, university campus, MSP/managed
+services, manufacturing/industrial, utility/energy. Deliberate folds, not
+profiles: GPU/AI cloud (an enterprise-DC workload/hardware flavor) and
+government/defense (enterprise/campus plus `site_names`).
+
+| Phase | Work | Status |
+| --- | --- | --- |
+| 1 | Close the cold-start loop on the wireless/naming surface (two consecutive cleans) | in progress — runs #14/#15 fixes applied; count restarts with the phase-2 surface change |
+| 2 | Bank kinds (loader-only) | **complete 2026-09-19** — all 37 remaining kinds + 12 refs landed in one wave; full 98-kind bank loaded/verified/repeated live (11,801 objects, 0 mismatches). No hard residual. |
+| 3 | Retail chain profile (stores/DCs/POS/guest wifi; loadable by construction) | pending |
+| 4 | University campus profile (buildings/dorms/research/dense wifi) | pending |
+| 5 | Vendor lever (role-family hardware selection + catalog alternates; one rebaseline wave) | pending |
+| 6 | MSP profile (one NOC operating N customer tenants) | pending |
+| 7 | Bank hard-kinds decision point | **dissolved** — phase 2 left no residual; the extras trio went via REST-create and the exempt-count gate |
+| 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | pending |
+| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | pending |
+
+Standing gates per phase: full offline suite, live load/verify/repeat on the
+pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
+cold-start-se runs to two consecutive cleans whenever the loading surface or
+operator docs change. The "no other teams" gate remains closed.

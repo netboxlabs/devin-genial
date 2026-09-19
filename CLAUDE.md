@@ -98,11 +98,15 @@ the explain and load preflights reject other artifacts before target writes.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
-builtin `module_type_profile` plus main-scoped `owner`/`owner_group`) with
-plain-attribute identities disjoint from the plan, recorded exactly in the receipt;
-a collision stays a hard block. NetBox 4.7 owner/owner_group rows are not
-branch-isolated and branch deletion does not remove them: disjoint namespaces
-coexist on one target, and same-namespace leftovers need REST cleanup.
+builtin `module_type_profile` plus the Branching-exempt main-scoped kinds —
+`owner`/`owner_group` and the custom_field/choice_set/custom_link definitions)
+with plain-attribute identities disjoint from the plan, recorded exactly in the
+receipt; a collision stays a hard block. The allowlist is assessed at preflight
+and again at final readback, so concurrent neighbour loads are excused. Those
+main-scoped rows survive branch deletion and create no branch ChangeDiffs
+(`BRANCH_EXEMPT_KINDS` excludes the extras trio from the exact-count gate,
+verified against Branching 1.2.1 EXEMPT_MODELS): disjoint namespaces coexist on
+one target, and same-namespace leftovers need `just retire`.
 The loader supplies three model defaults the raw bulk path would otherwise
 manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`);
 strict readback compares only emitted fields and does not verify them.
@@ -168,7 +172,8 @@ for the separately recorded pinned-target live qualification.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
   `estates/turbobulk.py`: the bounded TurboBulk/REST adapter, including the
-  29-kind Cloud qualification and the 61-kind contract (wireless included), live-qualified
+  29-kind Cloud qualification and the full 98-kind contract (every current profile,
+  the complete bank included), live-qualified
   only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
 

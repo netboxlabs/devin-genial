@@ -74,7 +74,14 @@ READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
     "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
 }
-SEARCH_FINALIZER_EXCLUDED_KINDS = {"contact_assignment", "owner", "owner_group"}
+# Models NetBox registers no search indexer for (verified against the pinned
+# 4.7.1 source via netbox.search.get_indexer): a rebuild_search_index hook on
+# them errors instead of no-opping.
+SEARCH_FINALIZER_EXCLUDED_KINDS = {
+    "contact_assignment", "owner", "owner_group",
+    "circuit_group_assignment", "custom_field_choice_set", "custom_link",
+    "fhrp_group_assignment", "l2vpn_termination", "tunnel_termination",
+}
 
 DELIVERY_POLICIES = ("reviewable", "disposable-baseline")
 POST_HOOKS = {
@@ -234,6 +241,43 @@ SPECS = {
     "virtual_circuit_termination": ("circuits.virtualcircuittermination",
                                     "/api/circuits/virtual-circuit-terminations/"),
     "virtual_circuit_type": ("circuits.virtualcircuittype", "/api/circuits/virtual-circuit-types/"),
+    "cable_bundle": ("dcim.cablebundle", "/api/dcim/cable-bundles/"),
+    "circuit_group": ("circuits.circuitgroup", "/api/circuits/circuit-groups/"),
+    "circuit_group_assignment": ("circuits.circuitgroupassignment", "/api/circuits/circuit-group-assignments/"),
+    "cluster_group": ("virtualization.clustergroup", "/api/virtualization/cluster-groups/"),
+    "cooling_feed": ("dcim.coolingfeed", "/api/dcim/cooling-feeds/"),
+    "cooling_intake": ("dcim.coolingintake", "/api/dcim/cooling-intakes/"),
+    "cooling_outflow": ("dcim.coolingoutflow", "/api/dcim/cooling-outflows/"),
+    "cooling_source": ("dcim.coolingsource", "/api/dcim/cooling-sources/"),
+    "custom_field": ("extras.customfield", "/api/extras/custom-fields/"),
+    "custom_field_choice_set": ("extras.customfieldchoiceset", "/api/extras/custom-field-choice-sets/"),
+    "custom_link": ("extras.customlink", "/api/extras/custom-links/"),
+    "device_bay": ("dcim.devicebay", "/api/dcim/device-bays/"),
+    "fhrp_group": ("ipam.fhrpgroup", "/api/ipam/fhrp-groups/"),
+    "fhrp_group_assignment": ("ipam.fhrpgroupassignment", "/api/ipam/fhrp-group-assignments/"),
+    "ike_policy": ("vpn.ikepolicy", "/api/vpn/ike-policies/"),
+    "ike_proposal": ("vpn.ikeproposal", "/api/vpn/ike-proposals/"),
+    "inventory_item": ("dcim.inventoryitem", "/api/dcim/inventory-items/"),
+    "inventory_item_role": ("dcim.inventoryitemrole", "/api/dcim/inventory-item-roles/"),
+    "ip_range": ("ipam.iprange", "/api/ipam/ip-ranges/"),
+    "ip_sec_policy": ("vpn.ipsecpolicy", "/api/vpn/ipsec-policies/"),
+    "ip_sec_profile": ("vpn.ipsecprofile", "/api/vpn/ipsec-profiles/"),
+    "ip_sec_proposal": ("vpn.ipsecproposal", "/api/vpn/ipsec-proposals/"),
+    "l2vpn": ("vpn.l2vpn", "/api/vpn/l2vpns/"),
+    "l2vpn_termination": ("vpn.l2vpntermination", "/api/vpn/l2vpn-terminations/"),
+    "rack_group": ("dcim.rackgroup", "/api/dcim/rack-groups/"),
+    "rack_type": ("dcim.racktype", "/api/dcim/rack-types/"),
+    "role": ("ipam.role", "/api/ipam/roles/"),
+    "tenant_group": ("tenancy.tenantgroup", "/api/tenancy/tenant-groups/"),
+    "tunnel": ("vpn.tunnel", "/api/vpn/tunnels/"),
+    "tunnel_group": ("vpn.tunnelgroup", "/api/vpn/tunnel-groups/"),
+    "tunnel_termination": ("vpn.tunneltermination", "/api/vpn/tunnel-terminations/"),
+    "virtual_chassis": ("dcim.virtualchassis", "/api/dcim/virtual-chassis/"),
+    "virtual_device_context": ("dcim.virtualdevicecontext", "/api/dcim/virtual-device-contexts/"),
+    "virtual_machine_type": ("virtualization.virtualmachinetype", "/api/virtualization/virtual-machine-types/"),
+    "vlan_translation_policy": ("ipam.vlantranslationpolicy", "/api/ipam/vlan-translation-policies/"),
+    "vlan_translation_rule": ("ipam.vlantranslationrule", "/api/ipam/vlan-translation-rules/"),
+    "wireless_link": ("wireless.wirelesslink", "/api/wireless/wireless-links/"),
     "wireless_lan": ("wireless.wirelesslan", "/api/wireless/wireless-lans/"),
     "wireless_lan_group": ("wireless.wirelesslangroup", "/api/wireless/wireless-lan-groups/"),
 }
@@ -259,6 +303,9 @@ CONTENT_TYPES = {
     "power_outlet": ("dcim", "poweroutlet"),
     "power_feed": ("dcim", "powerfeed"),
     "virtual_machine": ("virtualization", "virtualmachine"),
+    "fhrp_group": ("ipam", "fhrpgroup"),
+    "vlan": ("ipam", "vlan"),
+    "cooling_intake": ("dcim", "coolingintake"),
 }
 
 # TurboBulk 0.4.0 manufactures an integer NOT NULL default for any column whose
@@ -266,7 +313,10 @@ CONTENT_TYPES = {
 # circuits.provideraccount insert emits COALESCE("account", 0) and fails with a
 # varchar/integer type error. Create those few rows through REST until upstream
 # matches the default to the column type.
-REST_CREATE_KINDS = {"module_bay_type", "provider_account"}
+REST_CREATE_KINDS = {"module_bay_type", "provider_account",
+                     # extras rows carry object_types M2Ms and choice lists that
+                     # the raw bulk path cannot express; they are singletons.
+                     "custom_field", "custom_field_choice_set", "custom_link"}
 # Model-default values REST/Diode apply server-side but TurboBulk's raw path
 # would otherwise manufacture as invalid '' (choice columns have no CHECK
 # constraint, so the row inserts and only surfaces at the next full_clean —
@@ -287,6 +337,15 @@ DIRECT_REFS = {
     "contact": "contact_id", "group": "group_id", "module": "module_id",
     "module_bay": "module_bay_id", "module_type": "module_type_id",
     "owner": "owner_id", "parent": "parent_id", "platform": "platform_id",
+    "bundle": "bundle_id", "rack_type": "rack_type_id", "virtual_chassis": "virtual_chassis_id",
+    "bridge": "bridge_id", "vlan_translation_policy": "vlan_translation_policy_id",
+    "policy": "policy_id", "choice_set": "choice_set_id", "ipsec_profile": "ipsec_profile_id",
+    "ike_policy": "ike_policy_id", "ipsec_policy": "ipsec_policy_id",
+    "cooling_outflow": "cooling_outflow_id", "cooling_intake": "cooling_intake_id",
+    "cooling_source": "cooling_source_id", "installed_device": "installed_device_id",
+    "interface_a": "interface_a_id", "interface_b": "interface_b_id",
+    "outside_ip": "outside_ip_id", "default_platform": "default_platform_id",
+    "l2vpn": "l2vpn_id", "tunnel": "tunnel_id", "virtual_machine_type": "virtual_machine_type_id",
     "profile": "profile_id", "provider_account": "provider_account_id",
     "region": "region_id", "rir": "rir_id", "interface": "interface_id",
     "provider_network": "provider_network_id", "virtual_circuit": "virtual_circuit_id",
@@ -294,16 +353,17 @@ DIRECT_REFS = {
 
 DEFERRED = {"primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address",
             "tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
-            "asns", "export_targets", "import_targets", "wireless_lans"}
+            "asns", "export_targets", "import_targets", "wireless_lans",
+            "proposals", "master"}
 SUPPORTED_REFS = {
     "aggregate": {"rir", "tenant"},
     "asn": {"rir", "tenant"},
     "asn_range": {"rir", "tenant"},
-    "cable": {"a", "b"},
+    "cable": {"a", "b", "bundle"},
     "circuit": {"owner", "provider", "provider_account", "tenant", "type"},
     "circuit_termination": {"circuit", "termination"},
     "circuit_type": set(),
-    "cluster": {"owner", "scope_site", "tenant", "type"},
+    "cluster": {"group", "owner", "scope_site", "tenant", "type"},
     "cluster_type": set(),
     "console_port": {"device"},
     "console_server_port": {"device"},
@@ -311,11 +371,11 @@ SUPPORTED_REFS = {
     "contact_assignment": {"contact", "object", "role"},
     "contact_group": set(),
     "contact_role": set(),
-    "device": {"cluster", "device_type", "location", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant"},
+    "device": {"cluster", "device_type", "location", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant", "virtual_chassis"},
     "device_role": set(),
     "device_type": {"manufacturer"},
-    "interface": {"device", "module", "parent", "primary_mac_address", "tagged_vlans",
-                  "untagged_vlan", "vrf", "wireless_lans"},
+    "interface": {"bridge", "device", "module", "parent", "primary_mac_address", "tagged_vlans",
+                  "untagged_vlan", "vlan_translation_policy", "vrf", "wireless_lans"},
     "ip_address": {"assigned_object", "tenant", "vrf"},
     "journal_entry": {"assigned_object"},
     "location": {"parent", "site", "tenant"},
@@ -337,11 +397,11 @@ SUPPORTED_REFS = {
     "virtual_circuit": {"provider_account", "provider_network", "tenant", "type"},
     "virtual_circuit_termination": {"interface", "virtual_circuit"},
     "virtual_circuit_type": set(),
-    "prefix": {"scope_site", "tenant", "vlan", "vrf"},
+    "prefix": {"role", "scope_site", "tenant", "vlan", "vrf"},
     "provider": {"asns"},
     "provider_account": {"owner", "provider"},
     "provider_network": {"provider"},
-    "rack": {"location", "role", "site", "tenant"},
+    "rack": {"group", "location", "rack_type", "role", "site", "tenant"},
     "rack_role": set(),
     "region": {"parent"},
     "rir": set(),
@@ -349,13 +409,50 @@ SUPPORTED_REFS = {
     "site": {"asns", "group", "owner", "region", "tags", "tenant"},
     "site_group": set(),
     "tag": set(),
-    "tenant": set(),
-    "virtual_disk": {"virtual_machine"},
-    "virtual_machine": {"cluster", "device", "platform", "primary_ip4", "primary_ip6", "role", "tags", "tenant"},
-    "vlan": {"group", "site", "tenant"},
+    "tenant": {"group"},
+    "virtual_disk": {"owner", "virtual_machine"},
+    "virtual_machine": {"cluster", "device", "platform", "primary_ip4", "primary_ip6", "role", "tags", "tenant", "virtual_machine_type"},
+    "vlan": {"group", "role", "site", "tenant"},
     "vlan_group": {"scope_site", "tenant"},
     "vm_interface": {"primary_mac_address", "untagged_vlan", "virtual_machine", "vrf"},
     "vrf": {"export_targets", "import_targets", "tenant"},
+    "cable_bundle": {"owner"},
+    "circuit_group": {"owner", "tenant"},
+    "circuit_group_assignment": {"group", "member"},
+    "cluster_group": {"owner"},
+    "cooling_feed": {"cooling_source", "rack", "tenant"},
+    "cooling_intake": {"cooling_outflow", "device"},
+    "cooling_outflow": {"cooling_intake", "device"},
+    "cooling_source": {"location", "site"},
+    "custom_field": {"choice_set", "owner"},
+    "custom_field_choice_set": {"owner"},
+    "custom_link": {"owner"},
+    "device_bay": {"device", "installed_device"},
+    "fhrp_group": set(),
+    "fhrp_group_assignment": {"group", "interface"},
+    "ike_policy": {"proposals"},
+    "ike_proposal": set(),
+    "inventory_item": {"component", "device", "manufacturer", "parent", "role"},
+    "inventory_item_role": set(),
+    "ip_range": {"role", "tenant", "vrf"},
+    "ip_sec_policy": {"proposals"},
+    "ip_sec_profile": {"ike_policy", "ipsec_policy"},
+    "ip_sec_proposal": set(),
+    "l2vpn": {"export_targets", "import_targets", "tenant"},
+    "l2vpn_termination": {"assigned_object", "l2vpn"},
+    "rack_group": {"owner"},
+    "rack_type": {"manufacturer", "owner"},
+    "role": set(),
+    "tenant_group": {"owner"},
+    "tunnel": {"group", "ipsec_profile", "tenant"},
+    "tunnel_group": set(),
+    "tunnel_termination": {"outside_ip", "termination", "tunnel"},
+    "virtual_chassis": {"master"},
+    "virtual_device_context": {"device", "tenant"},
+    "virtual_machine_type": {"default_platform", "owner"},
+    "vlan_translation_policy": set(),
+    "vlan_translation_rule": {"policy"},
+    "wireless_link": {"interface_a", "interface_b", "tenant"},
     "wireless_lan": {"group", "scope_site", "tenant", "vlan"},
     "wireless_lan_group": {"parent"},
 }
@@ -550,7 +647,8 @@ def _matches(obj, row, ids, objects=None):
                 "device_role", "site", "device_type", "contact_group", "contact_role",
                 "platform", "rack_role", "rir", "site_group", "wireless_lan_group"}:
         return row.get("slug") == attrs["slug"]
-    if kind in {"contact", "module_type_profile", "owner", "owner_group"}:
+    if kind in {"contact", "module_type_profile", "owner", "owner_group",
+                "cable_bundle", "circuit_group", "cluster_group", "custom_field", "custom_field_choice_set", "custom_link", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy"}:
         return row.get("name") == attrs["name"]
     if kind == "region":
         return (row.get("slug") == attrs["slug"]
@@ -593,7 +691,8 @@ def _matches(obj, row, ids, objects=None):
         side = row.get("term_side")
         side = side.get("value") if isinstance(side, dict) else side
         return side == attrs["term_side"] and _nested_id(row.get("circuit")) == _ref_id(obj, "circuit", ids)
-    if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet", "interface"}:
+    if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
+                "interface", "cooling_intake", "cooling_outflow", "device_bay", "virtual_device_context"}:
         return row.get("name") == attrs["name"] and _nested_id(row.get("device")) == _ref_id(obj, "device", ids)
     if kind == "module":
         return _nested_id(row.get("module_bay")) == _ref_id(obj, "module_bay", ids)
@@ -651,6 +750,50 @@ def _matches(obj, row, ids, objects=None):
                 and _nested_id(row.get("group")) == _ref_id(obj, "group", ids)
                 and ("vlan" not in obj["refs"]
                      or _nested_id(row.get("vlan")) == _ref_id(obj, "vlan", ids)))
+    if kind in {"cooling_feed", "cooling_source"}:
+        anchor = "cooling_source" if kind == "cooling_feed" else "site"
+        return (row.get("name") == attrs["name"]
+                and _nested_id(row.get(anchor)) == _ref_id(obj, anchor, ids))
+    if kind == "inventory_item":
+        return (row.get("name") == attrs["name"]
+                and _nested_id(row.get("device")) == _ref_id(obj, "device", ids)
+                and ("parent" not in obj["refs"]
+                     or _nested_id(row.get("parent")) == _ref_id(obj, "parent", ids)))
+    if kind == "ip_range":
+        return (row.get("start_address") == attrs["start_address"]
+                and row.get("end_address") == attrs["end_address"]
+                and ("vrf" not in obj["refs"] or _nested_id(row.get("vrf")) == _ref_id(obj, "vrf", ids)))
+    if kind == "rack_type":
+        return (row.get("model") == attrs["model"]
+                and _nested_id(row.get("manufacturer")) == _ref_id(obj, "manufacturer", ids))
+    if kind == "fhrp_group":
+        return row.get("group_id") == attrs["group_id"]
+    if kind == "vlan_translation_rule":
+        return (row.get("local_vid") == attrs["local_vid"]
+                and _nested_id(row.get("policy")) == _ref_id(obj, "policy", ids))
+    if kind == "wireless_link":
+        return (_nested_id(row.get("interface_a")) == _ref_id(obj, "interface_a", ids)
+                and _nested_id(row.get("interface_b")) == _ref_id(obj, "interface_b", ids))
+    if kind == "circuit_group_assignment":
+        member = objects[obj["refs"]["member"]]
+        return (_nested_id(row.get("group")) == _ref_id(obj, "group", ids)
+                and _nested_id(row.get("member", row.get("member_id"))) == ids[member["key"]]
+                and _content_type_name(row.get("member_type")) == API_CONTENT_TYPES[member["kind"]])
+    if kind == "fhrp_group_assignment":
+        target = objects[obj["refs"]["interface"]]
+        return (_nested_id(row.get("group")) == _ref_id(obj, "group", ids)
+                and _nested_id(row.get("interface", row.get("interface_id"))) == ids[target["key"]]
+                and _content_type_name(row.get("interface_type")) == API_CONTENT_TYPES[target["kind"]])
+    if kind == "tunnel_termination":
+        target = objects[obj["refs"]["termination"]]
+        return (_nested_id(row.get("tunnel")) == _ref_id(obj, "tunnel", ids)
+                and _nested_id(row.get("termination", row.get("termination_id"))) == ids[target["key"]]
+                and _content_type_name(row.get("termination_type")) == API_CONTENT_TYPES[target["kind"]])
+    if kind == "l2vpn_termination":
+        target = objects[obj["refs"]["assigned_object"]]
+        return (_nested_id(row.get("l2vpn")) == _ref_id(obj, "l2vpn", ids)
+                and _nested_id(row.get("assigned_object", row.get("assigned_object_id"))) == ids[target["key"]]
+                and _content_type_name(row.get("assigned_object_type")) == API_CONTENT_TYPES[target["kind"]])
     raise LoadError(f"no target identity matcher for {kind}")
 
 
@@ -662,7 +805,8 @@ def _candidate_bucket_key(obj, ids, objects=None):
                 "platform", "rack_role", "rir", "site_group", "region", "wireless_lan_group"}:
         return "slug", attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
-                "virtual_machine"}:
+                "virtual_machine",
+                "cable_bundle", "circuit_group", "cluster_group", "custom_field", "custom_field_choice_set", "custom_link", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy"}:
         return "name", attrs["name"]
     if kind == "aggregate":
         return "prefix-rir", attrs["prefix"], _ref_id(obj, "rir", ids)
@@ -683,8 +827,8 @@ def _candidate_bucket_key(obj, ids, objects=None):
         return "prefix-vrf", attrs["prefix"], _ref_id(obj, "vrf", ids)
     if kind == "circuit_termination":
         return "side-circuit", attrs["term_side"], _ref_id(obj, "circuit", ids)
-    if kind in {"console_port", "console_server_port", "module_bay", "power_port",
-                "power_outlet", "interface"}:
+    if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
+                "interface", "cooling_intake", "cooling_outflow", "device_bay", "virtual_device_context"}:
         return "name-device", attrs["name"], _ref_id(obj, "device", ids)
     if kind == "module":
         return "module-bay", _ref_id(obj, "module_bay", ids)
@@ -724,6 +868,37 @@ def _candidate_bucket_key(obj, ids, objects=None):
                 _ref_id(obj, "interface", ids))
     if kind == "wireless_lan":
         return "ssid-group", attrs["ssid"], _ref_id(obj, "group", ids)
+    if kind in {"cooling_feed", "cooling_source"}:
+        anchor = "cooling_source" if kind == "cooling_feed" else "site"
+        return "name-anchor", attrs["name"], _ref_id(obj, anchor, ids)
+    if kind == "inventory_item":
+        return "name-device", attrs["name"], _ref_id(obj, "device", ids)
+    if kind == "ip_range":
+        return "range", attrs["start_address"], attrs["end_address"]
+    if kind == "rack_type":
+        return "name-manufacturer", attrs["model"], _ref_id(obj, "manufacturer", ids)
+    if kind == "fhrp_group":
+        return "group-id", attrs["group_id"]
+    if kind == "vlan_translation_rule":
+        return "policy-vid", _ref_id(obj, "policy", ids), attrs["local_vid"]
+    if kind == "wireless_link":
+        return "link", _ref_id(obj, "interface_a", ids), _ref_id(obj, "interface_b", ids)
+    if kind == "circuit_group_assignment":
+        member = objects[refs["member"]]
+        return ("assignment", _ref_id(obj, "group", ids), ids[member["key"]],
+                API_CONTENT_TYPES[member["kind"]])
+    if kind == "fhrp_group_assignment":
+        target = objects[refs["interface"]]
+        return ("assignment", _ref_id(obj, "group", ids), ids[target["key"]],
+                API_CONTENT_TYPES[target["kind"]])
+    if kind == "tunnel_termination":
+        target = objects[refs["termination"]]
+        return ("assignment", _ref_id(obj, "tunnel", ids), ids[target["key"]],
+                API_CONTENT_TYPES[target["kind"]])
+    if kind == "l2vpn_termination":
+        target = objects[refs["assigned_object"]]
+        return ("assignment", _ref_id(obj, "l2vpn", ids), ids[target["key"]],
+                API_CONTENT_TYPES[target["kind"]])
     raise LoadError(f"no target identity index for {kind}")
 
 
@@ -734,7 +909,8 @@ def _row_bucket_keys(kind, row):
                 "platform", "rack_role", "rir", "site_group", "region", "wireless_lan_group"}:
         return [("slug", row.get("slug"))]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
-                "virtual_machine"}:
+                "virtual_machine",
+                "cable_bundle", "circuit_group", "cluster_group", "custom_field", "custom_field_choice_set", "custom_link", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy"}:
         return [("name", row.get("name"))]
     if kind == "aggregate":
         return [("prefix-rir", row.get("prefix"), nested(row.get("rir")))]
@@ -759,8 +935,8 @@ def _row_bucket_keys(kind, row):
         side = row.get("term_side")
         side = side.get("value") if isinstance(side, dict) else side
         return [("side-circuit", side, nested(row.get("circuit")))]
-    if kind in {"console_port", "console_server_port", "module_bay", "power_port",
-                "power_outlet", "interface"}:
+    if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
+                "interface", "cooling_intake", "cooling_outflow", "device_bay", "virtual_device_context"}:
         return [("name-device", row.get("name"), nested(row.get("device")))]
     if kind == "module":
         return [("module-bay", nested(row.get("module_bay")))]
@@ -801,6 +977,37 @@ def _row_bucket_keys(kind, row):
         return [("vc-interface", nested(row.get("virtual_circuit")), nested(row.get("interface")))]
     if kind == "wireless_lan":
         return [("ssid-group", row.get("ssid"), nested(row.get("group")))]
+    if kind in {"cooling_feed", "cooling_source"}:
+        anchor = "cooling_source" if kind == "cooling_feed" else "site"
+        return [("name-anchor", row.get("name"), nested(row.get(anchor)))]
+    if kind == "inventory_item":
+        return [("name-device", row.get("name"), nested(row.get("device")))]
+    if kind == "ip_range":
+        return [("range", row.get("start_address"), row.get("end_address"))]
+    if kind == "rack_type":
+        return [("name-manufacturer", row.get("model"), nested(row.get("manufacturer")))]
+    if kind == "fhrp_group":
+        return [("group-id", row.get("group_id"))]
+    if kind == "vlan_translation_rule":
+        return [("policy-vid", nested(row.get("policy")), row.get("local_vid"))]
+    if kind == "wireless_link":
+        return [("link", nested(row.get("interface_a")), nested(row.get("interface_b")))]
+    if kind == "circuit_group_assignment":
+        return [("assignment", nested(row.get("group")),
+                 nested(row.get("member", row.get("member_id"))),
+                 _content_type_name(row.get("member_type")))]
+    if kind == "fhrp_group_assignment":
+        return [("assignment", nested(row.get("group")),
+                 nested(row.get("interface", row.get("interface_id"))),
+                 _content_type_name(row.get("interface_type")))]
+    if kind == "tunnel_termination":
+        return [("assignment", nested(row.get("tunnel")),
+                 nested(row.get("termination", row.get("termination_id"))),
+                 _content_type_name(row.get("termination_type")))]
+    if kind == "l2vpn_termination":
+        return [("assignment", nested(row.get("l2vpn")),
+                 nested(row.get("assigned_object", row.get("assigned_object_id"))),
+                 _content_type_name(row.get("assigned_object_type")))]
     raise LoadError(f"no target identity index for {kind}")
 
 
@@ -820,11 +1027,13 @@ def _required_content_types(objects):
     for obj in objects.values():
         if "scope_site" in obj["refs"]:
             required.add("site")
-        for field in ("termination", "assigned_object", "object"):
+        for field in ("termination", "assigned_object", "object", "member", "component"):
             if field in obj["refs"]:
                 required.add(objects[obj["refs"][field]]["kind"])
         if obj["kind"] == "service":
             required.add(objects[obj["refs"]["virtual_machine"]]["kind"])
+        if obj["kind"] == "fhrp_group_assignment":
+            required.add(objects[obj["refs"]["interface"]]["kind"])
         if obj["kind"] == "cable":
             required.update(objects[obj["refs"][field]]["kind"] for field in ("a", "b"))
     return required
@@ -841,6 +1050,15 @@ def _service_port_mappings(obj):
     return [f"{protocol}/{port}" for port in ports]
 
 
+def _cable_row(obj, ids):
+    """Cables carry raw attrs plus their optional bundle reference; their
+    terminations travel as separate rows."""
+    row = dict(obj["attrs"])
+    if "bundle" in obj["refs"]:
+        row["bundle_id"] = ids[obj["refs"]["bundle"]]
+    return row
+
+
 def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     row = dict(obj["attrs"])
     for name, value in RENDER_DEFAULTS.get(obj["kind"], {}).items():
@@ -848,6 +1066,12 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     for (kind, source), target in ATTRIBUTE_RENAMES.items():
         if obj["kind"] == kind and source in row:
             row[target] = row.pop(source)
+    if "custom_fields" in row:
+        # Canonical custom-field values carry Diode's single-key type envelope
+        # ({"selection": "tier-1"}); the raw custom_field_data column stores the
+        # bare value, and REST readback returns it re-wrapped for verification.
+        row["custom_field_data"] = {name: next(iter(typed.values()))
+                                    for name, typed in row.pop("custom_fields").items()}
     if obj["kind"] == "virtual_machine" and "start_on_boot" not in row:
         row["start_on_boot"] = "off"
     if obj["kind"] == "service":
@@ -859,13 +1083,17 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
         elif service_shape != "protocol_ports":
             raise LoadError(f"unknown TurboBulk service shape {service_shape!r}")
     for name, column in DIRECT_REFS.items():
-        if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine"):
+        if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine") \
+                and not (obj["kind"] == "fhrp_group_assignment" and name == "interface"):
             row[column] = ids[obj["refs"][name]]
+    if obj["kind"] == "fhrp_group_assignment":
+        target = objects[obj["refs"]["interface"]]
+        row["interface_type_id"], row["interface_id"] = content_types[target["kind"]], ids[target["key"]]
     if obj["kind"] in DEVICE_COMPONENT_KINDS:
         row.update(_component_cache_ids(obj, objects, ids))
     if "scope_site" in obj["refs"]:
         row["scope_type_id"], row["scope_id"] = content_types["site"], ids[obj["refs"]["scope_site"]]
-    for field in ("termination", "assigned_object", "object"):
+    for field in ("termination", "assigned_object", "object", "member", "component"):
         if field in obj["refs"]:
             target = objects[obj["refs"][field]]
             row[field + "_type_id"], row[field + "_id"] = content_types[target["kind"]], ids[target["key"]]
@@ -881,6 +1109,8 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
 def _rendered_columns(obj, service_shape="protocol_ports"):
     """Return database columns without needing resolved target IDs."""
     columns = (set(obj["attrs"]) | set(RENDER_DEFAULTS.get(obj["kind"], ()))) - DEFERRED
+    if obj["kind"] == "cable" and "bundle" in obj["refs"]:
+        columns.add("bundle_id")
     if obj["kind"] == "service":
         _service_port_mappings(obj)
         if service_shape == "port_mappings":
@@ -888,6 +1118,9 @@ def _rendered_columns(obj, service_shape="protocol_ports"):
             columns.add("port_mappings")
         elif service_shape != "protocol_ports":
             raise LoadError(f"unknown TurboBulk service shape {service_shape!r}")
+    if "custom_fields" in columns:
+        columns.remove("custom_fields")
+        columns.add("custom_field_data")
     for (kind, source), target in ATTRIBUTE_RENAMES.items():
         if obj["kind"] == kind and source in columns:
             columns.remove(source)
@@ -898,7 +1131,7 @@ def _rendered_columns(obj, service_shape="protocol_ports"):
         columns.update(("_site_id", "_location_id", "_rack_id"))
     if "scope_site" in obj["refs"]:
         columns.update(("scope_type_id", "scope_id"))
-    for field in ("termination", "assigned_object", "object"):
+    for field in ("termination", "assigned_object", "object", "member", "component"):
         if field in obj["refs"]:
             columns.update((field + "_type_id", field + "_id"))
     if obj["kind"] == "service":
@@ -1067,9 +1300,17 @@ def _change_diff_count(client, branch_id, *, object_type_id=None, action=None):
     return count
 
 
+# Branching explicitly disables support for these models (netbox_branching
+# constants.EXEMPT_MODELS, verified against the pinned 1.2.1 source): their
+# writes land on main and create no ChangeDiffs, so the exact-count gate must
+# not expect any.
+BRANCH_EXEMPT_KINDS = {"custom_field", "custom_field_choice_set", "custom_link"}
+
+
 def _expected_change_diff_counts(objects):
     expected = Counter(SPECS[obj["kind"]][0] or "dcim.modulebaytype"
-                       for obj in objects.values())
+                       for obj in objects.values()
+                       if obj["kind"] not in BRANCH_EXEMPT_KINDS)
     expected["dcim.cabletermination"] += 2 * sum(
         obj["kind"] == "cable" for obj in objects.values())
     return +expected
@@ -1359,7 +1600,7 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                     _write_receipt(receipt_path, receipt)
         if prior is None and not all(obj["key"] in ids for obj in batch):
             pending = [obj for obj in batch if obj["key"] not in ids]
-            rows = ([obj["attrs"] for obj in pending] if kind == "cable" else
+            rows = ([_cable_row(obj, ids) for obj in pending] if kind == "cable" else
                     [_render(obj, objects, ids, content_types, service_shape) for obj in pending])
             _submit(client, branch_name, SPECS[kind][0], rows, batch_purpose,
                     [obj["key"] for obj in pending], receipt, receipt_path, timeout,
@@ -1649,6 +1890,8 @@ def _rest_create_fields(kind, obj):
         return set(obj["attrs"]) | {"manufacturer"}
     if kind == "provider_account":
         return set(obj["attrs"]) | {"provider"} | ({"owner"} if "owner" in obj["refs"] else set())
+    if kind in {"custom_field", "custom_field_choice_set", "custom_link"}:
+        return set(obj["attrs"]) | set(obj["refs"])
     raise LoadError(f"no REST create compiler for {kind}")
 
 
@@ -1659,6 +1902,15 @@ def _render_rest_create(obj, ids):
         payload = {**obj["attrs"], "provider": ids[obj["refs"]["provider"]]}
         if "owner" in obj["refs"]:
             payload["owner"] = ids[obj["refs"]["owner"]]
+        return payload
+    if obj["kind"] in {"custom_field", "custom_field_choice_set", "custom_link"}:
+        payload = {**obj["attrs"],
+                   **{name: ids[key] for name, key in obj["refs"].items()}}
+        if "extra_choices" in payload:
+            # Canonical choices use Diode's "value:label" strings; REST wants
+            # [value, label] pairs.
+            payload["extra_choices"] = [choice.split(":", 1)
+                                        for choice in payload["extra_choices"]]
         return payload
     raise LoadError(f"no REST create compiler for {obj['kind']}")
 
@@ -1701,7 +1953,7 @@ def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=N
 
 
 REST_PATCH_LIST_FIELDS = {"tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
-                          "asns", "export_targets", "import_targets", "wireless_lans"}
+                          "asns", "export_targets", "import_targets", "wireless_lans", "proposals"}
 
 
 def _observed_patch_value(value):
@@ -1864,7 +2116,11 @@ ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile"}  # factory rows (4.7 profile
 # target, and branch deletion does not remove them. Their names carry the
 # estate namespace, so the same disjoint-identity machinery lets multiple
 # namespaces share one target; an identity collision stays a hard block.
-MAIN_SCOPED_KINDS = {"owner", "owner_group"}
+MAIN_SCOPED_KINDS = {"owner", "owner_group",
+                     # extras definitions are not branch-isolated either; their
+                     # names carry the namespace (custom_field uses its
+                     # underscore form), so disjoint estates coexist.
+                     "custom_field", "custom_field_choice_set", "custom_link"}
 ALLOWLISTED_KINDS = ALLOWLISTED_BUILTIN_KINDS | MAIN_SCOPED_KINDS
 
 
@@ -2056,7 +2312,7 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
             if obj["kind"] != kind:
                 continue
             row = {"id": ids[obj["key"]]}
-            for field in ("primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address"):
+            for field in ("primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address", "master"):
                 if field in obj["refs"]:
                     row[field] = ids[obj["refs"][field]]
             for field in REST_PATCH_LIST_FIELDS:
@@ -2466,6 +2722,13 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         readback_started = time.monotonic()
         inventory = fetch_inventory(client.base, client.token, (obj["kind"] for obj in plan["objects"]),
                                 client.branch_id, fields_by_kind=_readback_fields(plan), workers=4)
+        # Main-scoped rows another namespace loads DURING this run are visible
+        # at readback but absent from the preflight snapshot: excuse current
+        # foreign extras exactly like the preflight and verify_target do, and
+        # keep the union as receipt evidence. Plan-matched rows stay strict.
+        receipt["allowed_existing"] = _merge_allowlists(
+            receipt.get("allowed_existing") or {},
+            _bootstrap_allowlist(plan, inventory, extras_only=True))
         verification = verify_plan(plan, inventory, strict_inventory=True,
                                    allow_existing_receipt=receipt.get("allowed_existing") or None)
         receipt["verification"] = verification
