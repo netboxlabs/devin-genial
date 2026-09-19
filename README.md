@@ -219,6 +219,7 @@ once the tenant runs a TurboBulk build with the reaper; see the
 | I want to… | Read |
 | --- | --- |
 | Load my first estate into a target, start to finish | [First target](docs/first-target.md) |
+| Grow a loaded estate and get the new version live | [First target §7](docs/first-target.md#7-growing-a-loaded-estate) |
 | Generate, configure or grow an estate | [Usage](docs/usage.md) · [Recipe reference](docs/recipes.md) |
 | Understand the rules and connected detail | [Modeling](docs/modeling.md) |
 | Run a change or defect demonstration | [Scenarios](docs/scenarios.md) |

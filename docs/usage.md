@@ -133,7 +133,10 @@ workload groups, site count and WAN demand may increase, and new workload keys m
 be added without reallocating existing equipment, cables or addresses. Removed
 workloads, reduced demand, changed resource/listener/replica policy and changes to
 the network rack-diversity policy require a new baseline. An artifact with fewer
-objects is not a deletion instruction for Diode.
+objects is not a deletion instruction for Diode. Putting a grown artifact on a
+live target is a full fresh load into a new branch, and it retires the previous
+branch — see [growing a loaded estate](first-target.md#7-growing-a-loaded-estate)
+before touching the target.
 
 Baseline and power-diversity demo intent, direct fabric cabling and no rack-user reservation are
 implemented for this profile. Unsupported requests fail with an explanation.

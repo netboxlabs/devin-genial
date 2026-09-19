@@ -198,14 +198,29 @@ def _fresh_load_occupancy(client, plan, objects):
         if kind in inventory:
             from .turbobulk import _colliding_rows
             blocking[kind]["conflicting_rows"] = _colliding_rows(plan, inventory[kind], kind)
+    # A colliding allowlisted-kind row plus occupied estate kinds means this
+    # branch (or target) already holds this namespace's estate — the answer is
+    # a fresh branch, never deleting the estate the note would otherwise list.
+    from .turbobulk import _colliding_rows as _collisions
+    same_namespace = any(_collisions(plan, inventory.get(kind, []), kind)
+                         for kind in candidates)
+    estate_kinds = [kind for kind in blocking if kind not in ALLOWLISTED_KINDS]
+    if blocking and same_namespace and estate_kinds:
+        note = ("this branch or target already holds this namespace's estate; a changed "
+                "or grown artifact needs a fresh branch, with the namespace's ownership "
+                "rows retired first — see docs/first-target.md, growing a loaded estate")
+    elif blocking:
+        note = ("a fresh load refuses while blocking kinds hold rows; delete "
+                "exactly the conflicting_rows where listed (other rows on those "
+                "endpoints belong to other namespaces and are allowlisted), clear "
+                "kinds listed without them, or use a fresh target (a resume with "
+                "its receipt is unaffected)")
+    else:
+        note = None
     result = {"occupied": occupied,
               "allowlisted": {kind: allowed[kind] for kind in occupied if kind in allowed},
               "blocking": blocking,
-              "note": ("a fresh load refuses while blocking kinds hold rows; delete "
-                       "exactly the conflicting_rows where listed (other rows on those "
-                       "endpoints belong to other namespaces and are allowlisted), clear "
-                       "kinds listed without them, or use a fresh target (a resume with "
-                       "its receipt is unaffected)") if blocking else None}
+              "note": note}
     if unreadable:
         result["unreadable"] = unreadable
     return result
@@ -699,7 +714,8 @@ def main(argv=None):
         receipt = receipt or default_receipt(args.artifact, args.target, args.branch,
                                              args.delivery_policy)
         if not args.explain:
-            print(f"Receipt: {receipt}", file=os.sys.stderr, flush=True)
+            print(f"Receipt (written at first target write): {receipt}",
+                  file=os.sys.stderr, flush=True)
             if args.delivery_policy == "disposable-baseline":
                 print("DISPOSABLE BASELINE: this branch cannot be reviewed, merged, or reverted; delete it after use.",
                       file=os.sys.stderr, flush=True)

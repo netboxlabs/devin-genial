@@ -32,8 +32,10 @@ detail and [seeding](seeding.md) the database-restore alternative.
   second time — into a new branch or after deleting the old one — until its
   own rows are removed (`/api/users/owners/`, `/api/users/owner-groups/`;
   delete only the colliding rows, which the refusal and `just load-explain`
-  name exactly). For a before/after two-branch demo, use two namespaces or
-  the scenario snapshot flow.
+  name exactly). **Deleting them retires any branch already loaded under the
+  namespace**: its objects lose their owner and its receipt can never verify
+  again (§7). For a before/after two-branch demo, use two namespaces or the
+  scenario snapshot flow.
 
 ## 2. The API token
 
@@ -132,7 +134,33 @@ screen share:
   Other namespaces coexist over them automatically (§1); re-loading the
   *same* namespace fresh refuses until its leftovers are removed.
 
-## 7. Verify anytime, write nothing
+## 7. Growing a loaded estate
+
+Growth is a generator feature, not a target feature: `just generate RECIPE
+build/v2 build/v1/plan.json` reuses the frozen plan as the allocation ledger,
+so every existing identity survives — but **the grown artifact is a full
+fresh load of the whole estate into a new branch, not an incremental update
+of the live one**. There is no in-place load mode. The sequence:
+
+```
+just generate RECIPE build/v2 build/v1/plan.json
+just load-check build/v2
+just branch https://target.example demo-acme-v2
+# retire v1 (below), then:
+just load build/v2 https://target.example demo-acme-v2
+just verify-target build/v2 https://target.example demo-acme-v2
+```
+
+**Retiring v1 is a deliberate, destructive step.** The namespace's
+`owner`/`owner_group` rows on main block the v2 load; deleting them (the
+refusal names the exact rows) also nulls `owner` across the already-loaded v1
+branch and permanently invalidates its receipt — v1 becomes display-only and
+can no longer pass `verify-target`. Delete the v1 branch once the demo moves
+on. One namespace has one verifiable branch at a time; a side-by-side
+before/after demo therefore needs **two namespaces planned from the start**
+(or the scenario snapshot flow on fresh targets).
+
+## 8. Verify anytime, write nothing
 
 ```
 just verify-target build/my-estate https://target.example demo-acme

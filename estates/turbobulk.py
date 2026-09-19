@@ -1144,7 +1144,9 @@ def _review_history_preflight(client, branch_row, objects):
     count = _change_diff_count(client, branch_row["id"])
     if count:
         raise LoadError(
-            f"reviewable delivery requires a fresh branch with no ChangeDiffs; found {count}"
+            f"reviewable delivery requires a fresh branch with no ChangeDiffs; found {count} "
+            "— this branch already holds a load, and a changed or grown artifact needs a "
+            "fresh branch (see docs/first-target.md, growing a loaded estate)"
         )
     object_types = {}
     for label in sorted(_expected_change_diff_counts(objects)):
