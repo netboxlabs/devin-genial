@@ -69,27 +69,41 @@ standard library; the pinned Diode SDK is an optional export-verification tool.
 The Justfile is the human CLI. Run `just check` before committing.
 The target-aware loader is `just load ARTIFACT TARGET [BRANCH]`;
 the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
+`just load-check ARTIFACT` reports TurboBulk contract fit offline; `just branch
+TARGET NAME` creates the ready branch a load requires and refuses existing names.
+`just verify-target ARTIFACT TARGET [BRANCH]` runs the final strict gate with zero writes.
+Target recipes source `.env` only when `NETBOX_TOKEN` is not already exported.
 TurboBulk jobs default to at most 2,000 rows. Keep deterministic batch purposes,
 receipt-bound request settings, one ID-resolution read per completed model, and
 all global hooks out of data-bearing jobs. Run required maintenance, cable, and
 search hooks as separate zero-row finalizers after data and REST completion. A
 fourth `just load` argument changes the bound for measured qualification runs.
+`estates.turbobulk.load` itself rejects a bound outside 1..10,000: TurboBulk's JSONL
+reader fixes the column set from the first 10,000 rows, so a sparse payload spanning
+chunks would silently drop later columns.
 Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
 the parent device in the original TurboBulk row; derive the device location from
 its rack when NetBox would inherit it on save. Require the corresponding REST
 filters during preflight and prove exact component IDs by kind and placement at
 final readback, including null location/rack placements. Do not add a repair
 upsert: reviewable history must remain one create ChangeDiff per canonical object.
-Those commands retain review and merge history. `just load-disposable ARTIFACT
+Those commands retain review and revert history; merging a TurboBulk branch to
+main is currently blocked upstream. `just load-disposable ARTIFACT
 TARGET BRANCH` is the explicit scale-only path: it requires a fresh empty branch
 which cannot be reviewed, merged, or reverted and must be deleted after use. It
 also requires a TurboBulk-only artifact with no REST create or completion writes;
 the explain and load preflights reject other artifacts before target writes.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
-Target-native builtins may be allowlisted only for plain-attribute identities with
-identities disjoint from the plan, recorded exactly in the receipt. NetBox 4.7
-owner/owner_group rows are not branch-isolated; branch deletion does not remove them.
+Target-native builtins may be allowlisted only for declared builtin kinds
+(`ALLOWLISTED_BUILTIN_KINDS`, currently `module_type_profile`) with plain-attribute
+identities disjoint from the plan, recorded exactly in the receipt; a collision stays
+a hard block. NetBox 4.7 owner/owner_group rows are not branch-isolated, branch
+deletion does not remove them, and they are not allowlisted: leftovers block a fresh
+load until a different namespace or REST cleanup clears them.
+The loader supplies three model defaults the raw bulk path would otherwise
+manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`);
+strict readback compares only emitted fields and does not verify them.
 Write each bounded REST completion payload to the receipt before PATCH. Recover a
 lost response only from exact target readback; never resend an unresolved mutation.
 A lost zero-row finalizer response may adopt one exact core-job match inside its
@@ -115,6 +129,8 @@ for the separately recorded pinned-target live qualification.
 - [docs/modeling.md](docs/modeling.md): construction rules and connected detail.
 - [docs/scenarios.md](docs/scenarios.md): change/defect walkthroughs and boundaries.
 - [docs/loading.md](docs/loading.md): artifacts and Diode handoff.
+- [docs/first-target.md](docs/first-target.md): operator runbook from empty target to loaded branch.
+- [docs/recipes.md](docs/recipes.md): complete recipe key reference per profile.
 - [docs/seeding.md](docs/seeding.md): zero-write target verification and restore-based seeding.
 - [docs/qualification.md](docs/qualification.md): scale, limits and preserved history.
 - [CONTRACT.md](CONTRACT.md): canonical graph, ledgers, units and module interfaces.
@@ -150,7 +166,8 @@ for the separately recorded pinned-target live qualification.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
   `estates/turbobulk.py`: the bounded TurboBulk/REST adapter, including the
-  29-kind Cloud qualification and live-unqualified 53-kind enterprise contract.
+  29-kind Cloud qualification and the 59-kind enterprise contract, live-qualified
+  only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
 
 ## Design boundaries

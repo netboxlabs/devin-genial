@@ -18,7 +18,7 @@ import time
 
 from .diode import _PRIMARY_IPS, _deferred_fields, _phases
 from .model import digest
-from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, Client, LoadError, SPECS, _artifact, _branch,
+from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, MAX_JOB_ROWS, Client, LoadError, SPECS, _artifact, _branch,
                         _numeric_ids, _schema_preflight, _verify_paths, _write_receipt,
                         disposable_rest_blocker, load as load_turbobulk)
 from lab.verify import ENDPOINTS, fetch_inventory, verify_plan
@@ -565,11 +565,33 @@ def main(argv=None):
     parser.add_argument("--explain", action="store_true", help="inspect and explain without writing")
     parser.add_argument("--verify-only", action="store_true",
                         help="strictly verify the target against the artifact with zero writes")
+    parser.add_argument("--load-check", action="store_true",
+                        help="offline: report whether the artifact fits the TurboBulk compiler contract")
     args = parser.parse_args(argv)
-    if not 1 <= args.turbobulk_job_rows <= 10_000:
-        parser.error("--turbobulk-job-rows must be between 1 and 10000: TurboBulk's JSONL "
-                     "reader fixes the column set from the first 10000 rows, so a sparse "
-                     "payload spanning chunks can silently drop columns")
+    if args.load_check:
+        from .turbobulk import REST_CREATE_KINDS
+        _, _raw, _plan, objects, _offline = _artifact(args.artifact)
+        kinds = sorted({obj["kind"] for obj in objects.values()})
+        uncovered = sorted(set(kinds) - set(SPECS))
+        rest_kinds = sorted(set(kinds) & REST_CREATE_KINDS)
+        print(json.dumps({"artifact": args.artifact, "kinds": len(kinds),
+                          "turbobulk_loadable": not uncovered,
+                          "turbobulk_uncovered": uncovered,
+                          "rest_create_kinds": rest_kinds}, indent=2, sort_keys=True))
+        if uncovered:
+            print(f"NOT loadable via TurboBulk: {len(uncovered)} of {len(kinds)} kinds are "
+                  "outside the compiler contract (listed above).", file=os.sys.stderr)
+            return 2
+        note = ("; module bay types require a NetBox 4.7 target"
+                if "module_bay_type" in rest_kinds else "")
+        print("Loadable via TurboBulk+REST" + note +
+              ". Run just load-explain against the target for the binding preflight.",
+              file=os.sys.stderr)
+        return 0
+    if not 1 <= args.turbobulk_job_rows <= MAX_JOB_ROWS:
+        parser.error(f"--turbobulk-job-rows must be between 1 and {MAX_JOB_ROWS}: TurboBulk's "
+                     f"JSONL reader fixes the column set from the first {MAX_JOB_ROWS} rows, so "
+                     "a sparse payload spanning chunks can silently drop columns")
     token = os.environ.get("NETBOX_TOKEN")
     if not args.target or not token:
         parser.error("target/NETBOX_URL and NETBOX_TOKEN are required")

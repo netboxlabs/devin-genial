@@ -61,13 +61,20 @@ NetBox/Diode environment. Generation itself does not write to NetBox.
 The Justfile is also the loading interface. The public recipes require `just`;
 a Diode load additionally requires the
 devenv-managed SDK environment described in the [loading guide](docs/loading.md).
-Inspect a target without writing:
+New to loading? [First target](docs/first-target.md) is the start-to-finish
+runbook: prerequisites, token shape, branch creation, load, verify. Check an
+artifact offline, then inspect a target without writing:
 
 ```sh
+just load-check build/my-bank        # offline: does it fit the TurboBulk contract?
 cp .env.example .env
 # Put the raw nbt_... value in NETBOX_TOKEN; do not include "Bearer".
+just branch https://netbox.example "Generator Review"   # create the ready branch
 just load-explain build/my-bank https://netbox.example "Generator Review"
 ```
+
+The target recipes read `.env` only when `NETBOX_TOKEN` is not already exported, so
+an exported caller environment wins over the file.
 
 The target is the NetBox root URL, without `/api/`, a plugin path, credentials,
 query parameters or fragments. In `.env`, enable `TURBOBULK_WRITES=1` or fill
@@ -78,8 +85,10 @@ read-only schema/package preflight, then load it and write the default private
 receipt under `build/`. That second preflight can find additional blockers and
 still stops before target writes.
 
-`just load` uses the reviewable policy. TurboBulk retains ObjectChanges and
-ChangeDiffs needed to review and merge the branch and to revert it after merge.
+`just load` uses the reviewable policy. TurboBulk retains the ObjectChanges and
+ChangeDiffs needed to review the branch and to revert it. Merging a TurboBulk
+branch to main is currently blocked upstream; see the
+[merge findings](docs/qualification.md#rich-contract-live-qualification-and-merge-findings).
 It requires a dedicated branch with zero initial ChangeDiffs. After strict graph
 readback, the loader verifies the exact total and create-ChangeDiff counts by
 model, including cable terminations, and records that evidence in the receipt.
@@ -107,7 +116,10 @@ only when it reports the exact enabled or explicitly skipped hook results and,
 for reviewable inserts, one changelog per inserted row. The policy, row bound,
 and exact per-job settings are bound to the receipt, so changing them requires a
 new receipt and fresh branch. Keep the default unless a measured qualification
-run justifies the optional fourth `turbobulk_job_rows` argument to `just load`.
+run justifies the optional fourth `turbobulk_job_rows` argument to `just load`;
+the loader rejects a bound outside 1..10,000 because TurboBulk's JSONL reader fixes
+the column set from the first 10,000 rows and would silently drop later sparse
+columns.
 Device-component placement caches are compiled into the original insert from
 the parent device, including the location inherited from its rack, so each
 component row is valid as soon as it is inserted,
@@ -117,7 +129,7 @@ component kind. Final readback then compares exact component IDs with one query
 per distinct component-kind and site/location/rack placement, including explicit
 null location and rack placement. This adds bounded readback requests without
 adding repair rows, jobs, ObjectChanges, or ChangeDiffs.
-REST completion writes its exact intent before each ten-row PATCH. A lost response
+REST completion writes its exact intent before each 100-row PATCH. A lost response
 resumes only when readback proves the batch committed; unresolved batches stop
 with a fresh-branch instruction. Receipts preserve failed attempts and can recover
 one exact zero-row finalizer from unique core-job evidence.
@@ -143,10 +155,12 @@ Use the printed replacement name for the next load and future reset. If Diode ro
 to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
 configuration attestation before loading.
 The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
-compiles the current 53-kind enterprise data center contract. The configured
-NetBox 4.6.8 tenant cannot represent the 4.7-only module-bay compatibility model,
-so preflight rejects that exact rich artifact before writes; its complete 4.7
-path still needs live qualification. The remote Diode adapter is implemented for
+compiles the full 59-kind contract, which covers the current 53-kind enterprise
+data center artifact. The configured NetBox 4.6.8 tenant cannot represent the
+4.7-only module-bay compatibility model, so preflight rejects that exact rich
+artifact before writes. The complete 4.7 path is live-qualified only on the pinned
+local 4.7.1 stack; Cloud and Enterprise remain unqualified. The remote Diode
+adapter is implemented for
 externally confirmed direct auto-apply, with request checkpoints and strict REST
 visibility barriers, but still needs a live qualification run. Assurance review
 is not executable because the ingestion
@@ -162,19 +176,23 @@ For a worked customer story, try [Harbor Supply](profiles/harbor-supply.md).
 
 **Scale has separate generation and loading proofs.** Recorded offline generation
 reaches 239,058 objects. A 12,702-object estate has passed local Diode qualification,
-and an 8,432-object estate has passed strict readback after a Cloud TurboBulk load.
-Larger live loads and Enterprise targets remain unqualified. See the
+an 8,432-object estate has passed strict readback after a Cloud TurboBulk load, and
+a 128,932-object reviewable TurboBulk load has passed strict readback and exact
+ChangeDiff verification on the pinned local stack. Cloud and Enterprise remain
+unqualified at that size. See the
 [scale measurements](docs/qualification.md#current-offline-scale-evidence) and
 [live results](lab/README.md#current-v09-qualification) for scope and limits.
-The next gate is resolving the observed stuck-job behavior and obtaining a clean
-one-command Cloud run, followed by an estate above 50,000 objects; see the
+The stuck-job behavior that blocked the earlier Cloud attempts is diagnosed and
+handled in the loader; the next gate is a clean one-command Cloud run at that size
+once the tenant runs a TurboBulk build with the reaper; see the
 [qualification plan](docs/loading.md#cloud-qualification-plan).
 
 ## Documentation
 
 | I want to… | Read |
 | --- | --- |
-| Generate, configure or grow an estate | [Usage](docs/usage.md) |
+| Load my first estate into a target, start to finish | [First target](docs/first-target.md) |
+| Generate, configure or grow an estate | [Usage](docs/usage.md) · [Recipe reference](docs/recipes.md) |
 | Understand the rules and connected detail | [Modeling](docs/modeling.md) |
 | Run a change or defect demonstration | [Scenarios](docs/scenarios.md) |
 | Choose Diode, TurboBulk or REST | [Transport model](docs/transports.md) · [Loading](docs/loading.md) |

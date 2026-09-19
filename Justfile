@@ -26,29 +26,40 @@ report plan='build/bank-v9/plan.json':
 sdk-check directory='build/bank-v9/diode':
     python3 -m estates sdk-check {{quote(directory)}}
 
+# Target recipes source .env only when NETBOX_TOKEN is not already exported,
+# so a caller-supplied environment (for example a local lab token) always wins.
+
 # Inspect the target, choose a faithful transport, load, and strictly verify
 load artifact target branch='' turbobulk_job_rows='2000':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
 
 # Faster baseline for a fresh throwaway branch; it cannot be reviewed, merged, or reverted
 load-disposable artifact target branch turbobulk_job_rows='2000':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
+
+# Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
+load-check artifact:
+    python3 -m estates.load {{quote(artifact)}} --load-check
+
+# Create one named ready branch on the target (the prerequisite for just load)
+branch target name:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}}
 
 # Strictly verify a target against an artifact with zero writes (any seeding path)
 verify-target artifact target branch='':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --verify-only
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --verify-only
 
 # Explain the transport choice and compatibility blockers without writing
 load-explain artifact target branch='':
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --explain
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --explain
 
 # Explain disposable-baseline selection without writing
 load-explain-disposable artifact target branch:
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --explain
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --explain
 
 # Permanently replace one named disposable branch with a uniquely named branch
 reset target branch:
-    @set -a; [ ! -f .env ] || . ./.env; set +a; python3 -m estates.reset {{quote(target)}} {{quote(branch)}}
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.reset {{quote(target)}} {{quote(branch)}}
 
 # Review an inherited branch's acquisition and refresh; no target writes
 scenario plan='build/bank-v9/plan.json' site='br-s0002' output='build/acquisition-refresh':

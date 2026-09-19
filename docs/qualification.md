@@ -2,7 +2,7 @@
 
 [Back to the quick start](../README.md) · [Documentation map](../README.md#documentation)
 
-This reference preserves implementation notes and recorded qualification history. The [local lab guide](../lab/README.md#current-v09-qualification) owns the latest local-target results; Cloud evidence lives here. Older version-specific passages below are historical, not instructions to reproduce them with current code.
+This reference preserves implementation notes and recorded qualification history. The [local lab guide](../lab/README.md#current-v09-qualification) owns local Diode results; Cloud evidence and local TurboBulk loader qualification live here. Older version-specific passages below are historical, not instructions to reproduce them with current code.
 
 Run commands from the repository root. Paths in code blocks are relative to that root.
 Generated `build/` artifacts and qualification receipts are local outputs, not included in a clone.
@@ -327,9 +327,10 @@ state above in 435.128 seconds. This qualifies write recovery and final state,
 not a clean end-to-end timing. A separate clean branch attempt stopped safely at
 919.739 seconds when the first one-row TurboBulk job stayed `running`, with zero
 rows processed, for the 900-second polling bound. A later one-shot inspection
-stored the unchanged server observation in its receipt; that branch now requires
-service-side cleanup or replacement rather than repeated polling. Version-specific
-failures and the implementation path are recorded in the
+stored the unchanged server observation in its receipt. That strand was later
+traced to worker death; the loader now diagnoses it from the target's RQ record
+and arbitrates the dead job on resume, so the branch is no longer written off.
+Version-specific failures and the implementation path are recorded in the
 [transport study](transports.md#what-the-first-cloud-run-taught-us).
 
 The first live 128,932-object scale attempt began on September 12, 2026 from the
@@ -385,8 +386,12 @@ performs branch-row deletion and `DROP SCHEMA ... CASCADE` in one synchronous
 transaction. This branch now needs service-side cleanup; the
 failed proxy responses are not evidence that deletion committed.
 
-This proves that client-side row bounds prevent the earlier oversized submission
-but do not bound a model-wide post-hook. The TurboBulk 0.3.1 public guide advises
+This was read at the time as proof that client-side row bounds prevent the earlier
+oversized submission but do not bound a model-wide post-hook; the later
+[worker-death investigation](#cloud-worker-death-investigation-and-loader-hardening)
+disproved that reading. Genial nevertheless adopted the zero-row finalizer split
+described next, for the independent reason that follows. The TurboBulk 0.3.1
+public guide advises
 disabling search reindexing during imports above 100,000 rows and running NetBox's
 management command once afterward. NetBox Cloud customers cannot run that command,
 and the documented API exposes no hook-only finalization operation. The stranded
@@ -421,7 +426,8 @@ all 1,041 native cable traces; all 5,513 components across 64 cache placements;
 and exactly 10,514 Branching create diffs, including 2,082 cable terminations.
 
 The qualification also exercised recovery. A legacy 50-device PATCH and a
-receipt-bound 10-interface PATCH both committed after the client timed out;
+receipt-bound interface PATCH at the then-current ten-row batch size both
+committed after the client timed out;
 exact readback recovered all 60 rows without resubmission. A finalizer POST lost
 its response, and the loader adopted the single matching zero-row core job by
 branch, model, mode, request window, and result. Five recorded invocations failed
@@ -434,12 +440,17 @@ timings qualify correctness and recovery, not clean-run throughput.
 
 ## Rich-contract live qualification and merge findings
 
-On September 19, 2026 the 59-kind rich provider artifact (`build/provider-demo`,
+On September 18, 2026 the 59-kind rich provider artifact (`build/provider-demo`,
 3,037 objects) completed its first live load anywhere, on a disposable local
 NetBox 4.7.1 + Branching 1.2.1 + TurboBulk 0.4.0 stack
 (`build/turbobulk-repro47/`), with strict readback and exact per-model
 create-ChangeDiff verification
 (`build/load-receipts/provider-demo-Rich-Provider-2-e16f817d7f53.json`).
+"TurboBulk 0.4.0" here means a source build of TurboBulk main carrying the
+opportunistic reaper (TRB-23); the receipts' target contract records the locally
+built plugin as `0.0.0`.
+Two of the artifact's 59 kinds — `owner` and `owner_group` — are not branch-isolated
+on NetBox 4.7 (see below), so this branch-scoped load wrote them to main.
 Getting there added six compiler kinds (asn, asn_range, route_target and the
 virtual-circuit family), routed the new M2M references (site/provider `asns`,
 VRF route targets) through REST completion, supplied model defaults the raw
@@ -475,11 +486,13 @@ re-registration after Redis loses its schedule entries
 Each stranded job also blocked deleting its branch. Pod-heartbeat gaps, RQ
 registry state, and replacement-worker births pinned the diagnosis; the byte-identical
 batch that stranded one run completed in 1.5 seconds on a fresh branch, ruling
-out the data. The September 17 attempts are preserved in
+out the data. The two attempts that failed on September 17 are preserved in
 `build/load-receipts/scale-v2-Genial-Scale-128932-rows-1000-5aa0974c1b27.json`
-(42 verified jobs, stranded at `phase-5:ip_address`) and
+(42 verified jobs, last job `phase-5:ip_address`) and
 `build/load-receipts/scale-v2-Genial-Scale-128932-probe-2-cfcf46ddf3a9.json`
-(161 verified jobs, stranded at `phase-7:power_outlet`). The upstream record is
+(161 verified jobs, last job `phase-7:power_outlet`; that receipt's recorded error
+is an ambiguous poll failure — the strand was confirmed by later target
+inspection). The upstream record is
 Linear TRB-23; TurboBulk 0.4.0 ships a scheduler-independent opportunistic reap
 at job start that marks such rows errored, verified against this failure
 sequence on a local replica before release.
@@ -496,18 +509,27 @@ NetBox 4.6.8 + Branching 1.1.2 + TurboBulk 0.4.0 stack
 readback (`build/load-receipts/bank-v2-Local-Clean-Cert-1555404d720b.json`), and
 a run killed mid-job resumed on the same branch, arbitrated the dead job as
 rolled back, resubmitted, and completed with exact ChangeDiff verification
-(`build/load-receipts/bank-v2-Local-Oracle-Cert-a91789fa3495.json`). This local
-harness develops loader behavior only; it does not qualify Cloud. On that
-harness the full 128,932-object reviewable load first completed in 47.6
-minutes with 28.8 seconds of summed server work; receipt-measured client fixes
-(single-serialization receipt writes, a bounded preflight mismatch sample,
-100-row REST batches, one pre-PATCH durability write, pooled readback with an
-interface field projection) brought the identical load to 13.5 minutes with
-identical verification: 128,932/128,932 objects, zero mismatches, exactly
-155,698 create ChangeDiffs, 13,383/13,383 cable traces, readback 223 to 76
-seconds, 1,242 to 126 REST batches. Receipts are the two
-`scale-v2-Local-Scale-*` files under `build/load-receipts/`. The 128,932-object
-Cloud qualification remains blocked until the tenant runs TurboBulk 0.4.0, after
+(`build/load-receipts/bank-v2-Local-Oracle-Cert-a91789fa3495.json`). The opposite
+verdict was certified on the same harness: in
+`build/load-receipts/bank-v2-Adopt-Cert-4-0647e6a7b219.json` a killed 2,000-row
+`dcim.interface` job was arbitrated as committed from 2,480 observed create
+ChangeDiffs against 480 verified rows, adopted read-only, and audited by the final
+exact count gate (`bank-v2-Adopt-Cert-04d86dfc087c.json` is its clean predecessor).
+This local harness develops loader behavior only; it does not qualify Cloud. On that
+harness the full 128,932-object reviewable load first completed in 47.6 minutes,
+of which only 28.8 seconds was TurboBulk server time across the data-bearing jobs
+(155.7 seconds including the zero-row finalizers) and 337 seconds was REST request
+wall time; the remaining ~33 minutes was client-side receipt ceremony. Receipt-measured
+client fixes — chiefly single-serialization receipt writes and a bounded preflight
+mismatch sample, plus 100-row REST batches, one pre-PATCH durability write, and
+pooled readback with an interface field projection — brought the identical load to
+13.5 minutes with identical verification: 128,932/128,932 objects, zero mismatches,
+exactly 155,698 create ChangeDiffs, 13,383/13,383 cable traces, readback 223 to 76
+seconds, 1,242 to 126 REST batches. About 87% of the saving was client-side.
+Receipts are `build/load-receipts/scale-v2-Local-Scale-128932-8d2f0bbc227d.json`
+and `build/load-receipts/scale-v2-Local-Scale-AB2-18033d746162.json`
+(`scale-v2-Local-Scale-AB-b5740b505306.json` is a failed run of the same series).
+The 128,932-object Cloud qualification remains blocked until the tenant runs TurboBulk 0.4.0, after
 which the stranded jobs self-heal on the first submission, the blocked branches
 become resettable, and the campaign can restart.
 
@@ -533,7 +555,9 @@ RF coverage, measured PoE/electrical consumption, application replication, and r
 are not simulated. Management switches and endpoints are single-homed; modeled
 network and power redundancy applies only to the contracted infrastructure.
 One local NetBox/Diode version combination and one mixed Cloud TurboBulk/REST
-combination have been checked. Cloud Diode completion, Enterprise loading, and
+combination have been checked, plus two local TurboBulk stacks: NetBox 4.6.8 with
+Branching 1.1.2 and NetBox 4.7.1 with Branching 1.2.1, both against a source-built
+TurboBulk carrying the reaper. Cloud Diode completion, Enterprise loading, and
 transitions other than the documented local provider status sequence remain unqualified. Live growth
 has been checked only for the documented additive branch/DC-capacity expansion.
 Use a disposable tenant to qualify the intended workflow before relying on a demo.

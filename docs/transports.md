@@ -58,7 +58,8 @@ dependency barriers, inspect post hooks, and finish relationships the advertised
 model schema cannot write. Each job is transactional; the full estate is not one
 transaction.
 A disposable [NetBox branch](https://netboxlabs.com/docs/turbobulk/branching/) is
-the practical whole-run rollback boundary.
+the practical whole-run rollback boundary, except NetBox 4.7 `owner`/`owner_group`
+rows: those are written to main and survive branch deletion and `just reset`.
 
 REST is the compatibility layer and the universal fallback. NetBox supports
 [atomic bulk updates within one model](https://netbox.readthedocs.io/en/stable/integrations/rest-api/#updating-multiple-objects), so Genial should batch bounded completion
@@ -84,9 +85,16 @@ This is preliminary target and transport discovery. The selected adapter perform
 its complete package/schema preflight again before submission; that deeper check
 can still reject the run without target writes.
 
+`just verify-target ARTIFACT TARGET [BRANCH]` runs the same final strict gate with
+zero writes and is the acceptance check for a target populated some other way; see
+the [loading guide](loading.md#verify-without-loading) and the
+[seeding guide](seeding.md).
+
 `just load` defaults to a reviewable delivery. TurboBulk creates ObjectChanges
-and ChangeDiffs so Branching has the records required for review, merge, conflict
-detection, and post-merge revert. This remains the normal demo path. The loader
+and ChangeDiffs so Branching has the records required for review, conflict
+detection, and revert. Merging such a branch to main is currently blocked upstream
+(see the [merge findings](qualification.md#rich-contract-live-qualification-and-merge-findings));
+the branch-per-demo pattern works without it. This remains the normal demo path. The loader
 requires a dedicated branch with zero initial ChangeDiffs, then verifies the exact
 branch total and per-model create-ChangeDiff counts, including cable terminations, after final
 graph readback. Branching's public ChangeDiff API has no TurboBulk job identifier,
@@ -132,6 +140,15 @@ branch, prints it before loading, and reuses it when the same operation resumes.
 Advanced troubleshooting can invoke `python3 -m estates.load --help` to override
 the receipt, transport, timeout, or TurboBulk row bound. The ordinary `just load`
 command uses 2,000; a fourth argument changes it only for a measured experiment.
+The loader rejects a bound outside 1..10,000 because TurboBulk's JSONL reader fixes
+the column set from the first 10,000 rows and would silently drop later sparse
+columns.
+
+Rendering is exact for every emitted field, with one qualification: the loader
+also supplies three model defaults the raw bulk path would otherwise manufacture
+as invalid empty strings — `location.status`, `power_outlet.status`, and
+`rack.starting_unit`. REST and Diode apply these server-side, and strict readback
+compares only emitted fields, so it does not verify them.
 
 The frozen `build/bank-v2` artifact is preserved local qualification evidence;
 it is not shipped in a fresh clone. `TARGET` is the non-secret NetBox root origin;
@@ -157,12 +174,23 @@ receipt, the command refuses to adopt data-bearing work. It may adopt a zero-row
 finalizer only from one exact, otherwise-unbound core job inside the recorded
 request window with the same branch, model, mode, and zero-row result. Zero or
 multiple matches require a fresh branch.
+A *bound* data-bearing job whose worker died is the one exception to abandoning the
+branch. Polling reaches that diagnosis from the target's RQ record after 60
+seconds; once the orphaned-job reaper marks the row errored, a resume arbitrates it
+from the branch's exact per-model create-ChangeDiff counts. A provably committed job
+is adopted read-only as a verified checkpoint and audited by the final exact count
+gate; a provably rolled-back job is superseded and its rows resubmitted as a new
+job — never a resend — and only after RQ's record fails to report the job alive.
+Anything else is unexplained state and requires a fresh branch.
 For a new receipt, every inventory represented by the artifact must be empty,
-with one recorded exception: target-native builtin rows (for example NetBox
-4.7's eight factory ModuleTypeProfiles) are allowlisted when the kind's
-readback identity is a plain attribute and every existing identity is disjoint
-from the plan's; their exact ids are stored in the receipt and honored by
-strict readback. Anything else stops the command before writes. Treat the branch as exclusively owned
+with one recorded exception: rows of a declared builtin kind (currently
+`module_type_profile`; for example NetBox's factory ModuleTypeProfiles — eight on
+4.7.1, seven on 4.7.0) are allowlisted when every existing plain-attribute identity
+is disjoint from the plan's. Their exact ids are stored in the receipt and honored
+by strict readback. An identity collision is a hard block, and leftover
+`owner`/`owner_group` rows on 4.7 main are not an allowlisted kind: they block a
+fresh load until REST cleanup or a different namespace removes the conflict.
+Anything else stops the command before writes. Treat the branch as exclusively owned
 by that receipt until loading and verification finish.
 Never pass a token on the command line or store one in a recipe, artifact,
 receipt, source file or shell history.
@@ -179,11 +207,12 @@ execute Assurance-review mode. A standalone REST loader is not implemented yet,
 so the selector reports that gap rather than silently omitting unsupported objects.
 
 The frozen v0.2 bank qualifies 29 canonical kinds through TurboBulk on Cloud.
-The compiler now covers all 53 kinds in the current enterprise data center,
-including REST relationship completion and resumable REST creation for a model
-absent from TurboBulk. The configured NetBox 4.6.8 target lacks that 4.7 model
-entirely, so it rejects the artifact before any write. The complete rich path
-needs live qualification on a target that exposes the model. The remote Diode
+The compiler now covers 59 kinds, including all 53 in the current enterprise data
+center artifact, with REST relationship completion and resumable REST creation for
+models absent from TurboBulk. The configured NetBox 4.6.8 target lacks the 4.7
+module-bay model entirely, so it rejects that artifact before any write. The
+complete rich path is live-qualified only on the pinned local 4.7.1 stack; Cloud
+and Enterprise remain unqualified. The remote Diode
 adapter can execute the richer generated package, checkpoint each dependency
 phase, wait for target visibility, and strictly read back the final graph. Its
 live remote run also remains unqualified. A general REST-only loader remains
@@ -276,12 +305,12 @@ TurboBulk job started immediately but remained `running` with zero rows processe
 The loader stopped after its configured 900-second polling window; total attempt
 time was 919.739 seconds including preflight. A later single API inspection,
 stored in the receipt, still reported `running` and zero rows; a live OPTIONS
-response advertised no job actions. The loader now records the last observation,
-uses a capped polling backoff, and tells the operator to inspect once. A job that
-remains stuck requires service-side cleanup or a new branch and receipt. The
-compiler contract changed after this experiment, so this old branch is retained
-as failure evidence rather than resumed. This is why clean end-to-end throughput
-remains unqualified.
+response advertised no job actions. This class of strand was later traced to
+worker death, and the loader now reaches that diagnosis from the target's RQ
+record in about 66 seconds and arbitrates the dead job on resume. The compiler
+contract changed after this experiment, so this old branch is retained as failure
+evidence rather than resumed. Clean end-to-end throughput has since been measured
+on the pinned local stack; it remains unqualified on Cloud.
 
 These results prove that a faithful mixed TurboBulk/REST load and safe checkpoint
 recovery are feasible. They do
@@ -301,7 +330,8 @@ Remaining work is to:
 
 - expand compiled model coverage from v0.2 to current rich artifacts;
 - add explicit coexistence allowlists if customer POC branches must retain
-  existing objects; the prototype requires empty emitted-kind inventories;
+  existing objects; the loader requires empty emitted-kind inventories apart from
+  the declared builtin kinds recorded in the receipt;
 - make individual REST batches independently resumable instead of repeating the
   already idempotent completion comparison after interruption;
 - retain clean-run evidence for compilation, upload, queue, job, REST completion,
@@ -309,18 +339,21 @@ Remaining work is to:
 - qualify the rich TurboBulk/REST and remote Diode direct/recovery paths on a matching 4.7 target;
 - implement canonical REST creation for targets without a qualified plugin path.
 
-Qualification should next resolve or operationally handle the stuck TurboBulk
-job and prove a clean 8,432-object run, then a current rich
-estate, then a believable estate above 50,000 canonical objects. Scale success is
-the time to a verified usable organization, not a table-row rate.
+Qualification should next prove a clean one-command Cloud run of the 8,432-object
+estate, then a current rich estate, then a believable estate above 50,000 canonical
+objects on Cloud. Scale success is the time to a verified usable organization, not a
+table-row rate.
 
 The subsequent bounded scale attempt advanced the same 128,932-object artifact
 through 73 verified jobs and 104,119 accepted canonical objects. Its next job
-committed 52 power ports but stranded before recording post-hook results. This
-narrows the unresolved problem from bulk row insertion to safe large-estate
-finalization: a small final batch may still launch work over an entire model.
-TurboBulk's public large-import guidance recommends one manual search rebuild at
-the end, but that management command is unavailable to a NetBox Cloud customer
-and the public API documents no hook-only endpoint. Genial must therefore prove a
-retry-safe API composition for finalization or obtain a supported Cloud operation;
-it must not infer hook completion from committed row counters.
+committed 52 power ports but stranded before recording post-hook results. That was
+read at the time as a small final batch launching work over an entire model; the
+[worker-death investigation](qualification.md#cloud-worker-death-investigation-and-loader-hardening)
+disproved it — the worker container was killed mid-job, and the byte-identical
+batch completed in 1.5 seconds on a fresh branch. Genial retained the zero-row
+finalizer split regardless, because TurboBulk's public large-import guidance
+recommends a manual search rebuild that a NetBox Cloud customer cannot run and the
+public API documents no hook-only endpoint. The loader must not infer hook
+completion from committed row counters. The 128,932-object load now completes with
+strict readback and exact ChangeDiff verification on the pinned local stack; the
+Cloud run is blocked until that tenant runs a TurboBulk build carrying the reaper.

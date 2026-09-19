@@ -14,6 +14,7 @@ The ordinary target workflow is:
 ```sh
 cp .env.example .env
 # Add the raw NETBOX_TOKEN and the documented write-mode settings to .env.
+# The recipes source .env only when NETBOX_TOKEN is not already exported.
 just load-explain build/my-estate https://netbox.example "Generator Review"
 just load build/my-estate https://netbox.example "Generator Review"
 ```
@@ -35,23 +36,34 @@ guidance is the same as a timeout: never resubmit, use a new branch and receipt,
 resume only after the row reaches a terminal state (for example once TurboBulk
 0.4.0's opportunistic reaper marks it errored).
 
-Once the reaper has marked such a job's row errored (its error begins with the
-reaper's "Job orphaned" message), a resume arbitrates the dead job from exact
-branch evidence instead of abandoning the branch. Reviewable inserts create one
-create-ChangeDiff per row in the same transaction as the rows, and no other
-writer touches these models on the branch, so the model's create-diff count
-equals the rows of previously verified entries plus this job's rows exactly when
-its transaction committed before the kill. A committed job is adopted read-only
-as a verified checkpoint (the final exact total and per-model count gate still
-applies); a rolled-back job is marked superseded in the receipt and its rows are
-submitted as a fresh job — a new mutation, never a resend of the dead one. Any
-other count is unexplained state and still requires a fresh branch, as does an
-orphaned job on a receipt without the reviewable history preflight. Orphaned
-zero-row finalizers follow the existing retry-once rule. Write requests are never retried after an ambiguous
-transport failure; their recorded intent must be inspected or resumed instead.
+Arbitration runs on a resume, and only after the reaper has marked the row: the run
+in which the worker dies always aborts, and reruns keep aborting until the row is
+terminal. Once its row is `errored` and its error contains the reaper's `Job
+orphaned:` message, a resume arbitrates the dead job from exact branch evidence
+instead of abandoning the branch. Reviewable inserts create one create-ChangeDiff
+per row in the same transaction as the rows, and the receipt's exclusive ownership
+of the branch means no other writer touches these models — an invariant the
+preflight establishes rather than one arbitration re-checks — so the model's
+create-diff count equals the rows of previously verified entries plus this job's
+rows exactly when its transaction committed before the kill. A committed job is
+adopted read-only as a verified checkpoint; an adopted entry skips the per-job
+request contract, so its rows are proven only by ID resolution and the final exact
+total and per-model ChangeDiff gate. A rolled-back job is marked superseded in the
+receipt and its rows are submitted as a fresh job — a new mutation, never a resend
+of the dead one; before that resubmit the loader cross-checks RQ's own record and
+refuses when RQ affirmatively reports the job still alive. Any other count is
+unexplained state and still requires a fresh branch, as does an orphaned job on a
+receipt without the reviewable history preflight. The same arbitration runs on the
+already-matched fast path, so an exactly matching target is not failed by a dead
+job row. Orphaned zero-row finalizers follow the existing retry-once rule. Write
+requests are never retried after an ambiguous transport failure; their recorded
+intent must be inspected or resumed instead.
 
 The default `just load` policy retains the TurboBulk changelogs and branch diffs
-needed for review, merge, and post-merge revert. It requires zero ChangeDiffs on
+needed for review and revert; merging a TurboBulk branch to main is currently
+blocked upstream (see the
+[merge findings](qualification.md#rich-contract-live-qualification-and-merge-findings)).
+It requires zero ChangeDiffs on
 the branch before the first write. Final success requires an exact total and exact
 create-ChangeDiff counts for every artifact model plus cable terminations after strict graph
 readback; the receipt records the initial-zero and final count evidence. For an
@@ -82,13 +94,23 @@ job or hook result fails its contract is recorded and retried once; a second fai
 requires a new receipt and fresh branch. A nonterminal job remains the exclusive
 checkpoint and is never duplicated.
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
-and reject a resume under different settings.
+and reject a resume under different settings, including the compiler version: a
+receipt written by an older compiler is refused with "different compiler_version;
+choose a new receipt and fresh branch" rather than resumed under changed render
+semantics.
 
-REST completion uses 100-row synchronous PATCH batches (NetBox's bulk PATCH is a single atomic transaction with no row cap) on the qualified NetBox 4.6
-Cloud target. Before each request, the receipt stores its endpoint, target IDs, exact
-payload, hash, and an attempt record. After a lost response, a resume reads the target
-before doing more work. An exact match marks the existing batch recovered without
-another write. An unchanged, partial, or conflicting target remains ambiguous and
+Rendering is exact for every emitted field, with one qualification: the loader
+additionally supplies three model defaults the raw bulk path would otherwise
+manufacture as invalid empty strings — `location.status`, `power_outlet.status`,
+and `rack.starting_unit`. REST and Diode apply these server-side. Strict readback
+compares only the plan's emitted fields, so it does not verify them.
+
+REST completion uses 100-row synchronous PATCH batches (NetBox's bulk PATCH is one
+atomic transaction; 100 rows is a client choice measured on the local NetBox 4.6.8
+harness, not a documented server limit). Before each request, the receipt stores
+its endpoint, target IDs, exact payload, hash, and an attempt record. After a lost
+response, a resume reads the target before doing more work. An exact match marks
+the existing batch recovered without another write. An unchanged, partial, or conflicting target remains ambiguous and
 requires a fresh branch because the request might still be executing. HTTP 4xx
 responses are recorded as definite rejections and are never replayed. The receipt
 reports completed logical rows, write-intent rows, and readback-recovered rows
@@ -112,9 +134,18 @@ reviewable ChangeDiff counts remain exactly one create per canonical object.
 ## Verify without loading
 
 `just verify-target ARTIFACT TARGET [BRANCH]` runs the loader's final strict
-gate — inventory comparison, cable traces, component placements — with zero
-writes, against main or one branch. See the [seeding guide](seeding.md) for
-restore-based seeding and its acceptance evidence.
+gate with zero writes, against main or one branch: full inventory comparison
+against the plan's attributes and references, then — only if that comparison
+passes — a native cable trace per generated cable (asserting the cable appears
+in its A-side trace) and component placement queries by kind and placement. It
+applies the same builtin allowlist a load does, computed per row against the
+already-loaded target, and records the allowed ids in the receipt alongside
+`receipt_version`, `compiler_version` and the full mismatch list (not a sample).
+Unlike a load it does not run the component-filter preflight, so it does not
+re-prove that the target honors the `site_id`/`location_id`/`rack_id` filters.
+The command exits 2 on mismatch, and refuses to overwrite anything but a prior
+verify receipt. See the [seeding guide](seeding.md) for restore-based seeding
+and its acceptance evidence.
 
 ## Reset a disposable branch
 
@@ -133,7 +164,8 @@ errored and failed jobs do not block. TurboBulk 0.3.0 accepts a branch string be
 its worker resolves that name, so an original-name job can still enter the queue
 after the final jobs scan. Reset therefore never reuses the original name: after
 the final scan it deletes the quarantined branch by ID and removes its schema,
-archives matching local load receipts under `build/load-receipts/history/`, creates
+archives matching local load receipts under `build/load-receipts/history/`
+(verify-only receipts are re-runnable evidence and are left in place), creates
 a receipt-bound uniquely named replacement, and waits for it to become ready. It refuses
 blank and `main`. The reset receipt under `build/reset-receipts/` allows safe
 inspection or continuation after interruption. A definite HTTP rejection is
@@ -254,18 +286,23 @@ assume that previously open deviations will be applied or replayed automatically
 
 One complete mixed TurboBulk/REST estate has passed strict Cloud readback. Its
 29-kind qualification compiler is callable through `just load`. The compiler now
-also covers all 53 kinds and references in the current enterprise data center,
-including content-type-safe generic relationships, deferred many-to-many fields,
+covers 59 kinds, including all 53 kinds and references in the current enterprise
+data center artifact, with content-type-safe generic relationships, deferred
+many-to-many fields,
 and resumable REST creation when a required model is absent from TurboBulk. A fresh write
 reached all 38 successful TurboBulk jobs, then failed on a REST tag payload; the
 same command and receipt resumed without duplicate jobs and reached exact strict
 readback. A separate clean attempt stopped at the 900-second bound when its first
-one-row TurboBulk job remained `running` with zero rows processed. A clean
-end-to-end timing and the current rich graph remain unqualified. The configured
+one-row TurboBulk job remained `running` with zero rows processed; that behavior
+was later diagnosed as worker death and is now detected and arbitrated. Clean
+end-to-end timing and the rich graph have since been measured on the pinned local
+stack; both remain unqualified on Cloud. The configured
 Cloud tenant runs NetBox 4.6.8. Its API cannot represent `module_bay_type` or the
 related compatibility fields, which NetBox [introduced in 4.7](https://github.com/netbox-community/netbox/discussions/22950).
 Read-only preflight therefore rejects the exact 53-kind artifact before writes.
-The 4.7 rich path is implemented and offline-tested but remains live-unqualified.
+The 4.7 rich path is live-qualified only on the pinned local 4.7.1 stack
+(see [the rich-contract qualification](qualification.md#rich-contract-live-qualification-and-merge-findings));
+Cloud and Enterprise remain unqualified.
 The target-aware selector and checkpointed remote Diode adapter are implemented,
 but Cloud Diode completion remains unqualified. The
 first Diode probe established that the tenant execution mode is a prerequisite
@@ -321,30 +358,41 @@ then become the dependency checkpoint for later models. Table-wide hooks do not 
 on intermediate batches, and cable-link and path rebuilding wait until every
 generated termination is present. For an evidence-driven experiment, the optional
 fourth argument changes the bound: `just load ARTIFACT TARGET BRANCH 1000`. A
-different bound requires a fresh branch and receipt.
+different bound requires a fresh branch and receipt. The loader rejects any bound
+outside 1..10,000: TurboBulk's JSONL reader fixes the column set from the first
+10,000 rows, so a sparse payload spanning chunks would silently drop later columns.
 
 Read-only API requests retry transient disconnects four times with bounded
 backoff. Mutating requests are never retried automatically; their durable intent
 and returned job ID remain the resume boundary.
 
-The first bounded 128,932-object Cloud attempt confirmed that the row limit is
-necessary but insufficient. Seventy-three bounded jobs completed and verified
-104,119 objects. A final 52-row power-port batch committed every row, passed
-validation, and created every requested changelog, then remained `running`
-without post-hook results. A post-hook can operate over the whole target model,
-so reducing the submitted row count does not necessarily reduce that work.
-Genial keeps this state ambiguous and will not advance past it. The current
-Cloud-safe recovery is to preserve the receipt and branch for diagnosis or start
-a new branch with a changed, separately qualified hook strategy; do not mark the
-committed rows complete solely from counters.
+The first bounded 128,932-object Cloud attempt still stranded. Seventy-three
+bounded jobs completed and verified 104,119 objects. A final 52-row power-port
+batch committed every row, passed validation, and created every requested
+changelog, then remained `running` without post-hook results. This was read at
+the time as an unbounded model-wide post-hook; the later
+[worker-death investigation](qualification.md#cloud-worker-death-investigation-and-loader-hardening)
+disproved that — the worker container was killed mid-job, and the byte-identical
+batch completed in 1.5 seconds on a fresh branch. Genial adopted the zero-row
+finalizer split anyway. Recovery no longer means abandoning the branch: polling
+now reaches a worker-death diagnosis from the target's RQ record, and once the
+reaper marks the row a resume arbitrates it from exact create-ChangeDiff counts.
+Do not mark committed rows complete solely from counters.
 
 TurboBulk supports branch-targeted jobs, making a disposable branch the rollback
-boundary for a multi-model estate. It does not make every model idempotent:
+boundary for a multi-model estate — except NetBox 4.7 `owner`/`owner_group` rows,
+which a branch-scoped load writes to main and which survive branch deletion and
+`just reset`. TurboBulk does not make every model idempotent:
 upsert depends on target database constraints, and some generated identities do
 not have a suitable unique constraint. Resume only from verified completed-job
-receipts; restart an ambiguous phase on a fresh branch. The qualification
-prototype requires all emitted-kind inventories to be empty before a new receipt
-and assumes exclusive use of that disposable branch while the receipt is active.
+receipts; restart an ambiguous phase on a fresh branch. A new receipt requires all
+emitted-kind inventories to be empty, with one recorded exception: rows of a
+declared builtin kind (currently `module_type_profile`) whose plain-attribute
+identities are all disjoint from the plan's are allowlisted by exact id in the
+receipt and honored by strict readback. An identity collision is still a hard
+block, and leftover `owner`/`owner_group` rows on main are not allowlisted — clear
+them through REST or load into a different namespace. The loader assumes exclusive
+use of that disposable branch while the receipt is active.
 
 The September 12, 2026 Cloud qualification found TurboBulk 0.3.0 and 165
 discoverable models on NetBox 4.6.8. After writes were enabled, all 8,432
@@ -365,9 +413,10 @@ work, and reached exact readback. That successful recovery invocation took
 all cable traces; it is not a clean fresh-load throughput result. A later fresh
 branch attempt timed out safely after 919.739 seconds because its first one-row
 job remained server-side `running` with zero rows processed for the 900-second
-poll window. A later one-shot inspection stored that state in the receipt. Do not
-blindly repoll a stuck job: inspect it once, and if it has not progressed, arrange
-service-side cleanup or start with a new branch and receipt.
+poll window. A later one-shot inspection stored that state in the receipt. That
+class of strand is now diagnosed from the target's RQ record after 60 seconds and
+arbitrated on resume once the reaper marks the row, so it no longer requires
+service-side cleanup or a new branch by default.
 
 The work exposed target-specific TurboBulk 0.3.0 issues around
 branch dry-run rollback, simultaneous save hooks and changelogs, branch tag
