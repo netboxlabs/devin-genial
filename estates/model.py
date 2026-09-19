@@ -94,6 +94,9 @@ def resolve_recipe(raw, growth=False):
     if raw.get("profile") == "university-campus":
         from .university import resolve
         return resolve(raw, growth=growth)
+    if raw.get("profile") == "msp":
+        from .msp import resolve
+        return resolve(raw)
     return resolve_bank_recipe(raw)
 
 
@@ -122,7 +125,7 @@ def resolve_bank_recipe(raw):
     if "demo" in r:
         r["demo"] = resolve_demo(r["demo"])
     if r["profile"] != "regional-bank":
-        raise DesignError("Supported profiles are 'regional-bank', 'enterprise-data-center', 'school-district', 'hospital-clinics', 'provider-backbone', 'retail-chain' and 'university-campus'. Add a reviewed profile for a new industry.")
+        raise DesignError("Supported profiles are 'regional-bank', 'enterprise-data-center', 'school-district', 'hospital-clinics', 'provider-backbone', 'retail-chain', 'university-campus' and 'msp'. Add a reviewed profile for a new industry.")
     if r["patching"] not in ("direct", "panels"):
         raise DesignError("patching must be 'direct' (continuous channels) or 'panels' (legacy NetBox 4.4.10 mapping)")
     if not isinstance(r["namespace"], str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,18}[a-z0-9]", r["namespace"]):
@@ -242,7 +245,8 @@ class World:
         self.pool = ipaddress.ip_network(self.recipe["address_pool"])
         self.site_prefixlen = {"regional-bank": 20, "enterprise-data-center": 16, "school-district": 16,
                               "hospital-clinics": 16, "provider-backbone": 24,
-                              "retail-chain": 16, "university-campus": 16}[self.recipe["profile"]]
+                              "retail-chain": 16, "university-campus": 16,
+                              "msp": 16}[self.recipe["profile"]]
         self._next = {scope: max(items.values(), default=-1) + 1 for scope, items in self.reservations.items()}
 
     def hardware_alias(self, alias):

@@ -41,6 +41,9 @@ SMALL = {
                               buildings=[dict(key="science", classrooms=1, lab_seats=0, offices=1)],
                               residences=[dict(key="aspen", rooms=10)],
                               library=dict(reading_seats=24, aps=1)),
+    "msp": dict(profile="msp", namespace="tinymsp", name="Tiny Managed Networks",
+                address_pool="10.192.0.0/12",
+                customers=[dict(key="one", offices=1, staff=4)]),
 }
 # The models this repository shipped before the lever existed. A default recipe
 # must still build exactly these.

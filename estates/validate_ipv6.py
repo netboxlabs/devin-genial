@@ -13,7 +13,7 @@ def validate(plan):
     recipe = plan.get("recipe", {})
     if recipe.get("profile") not in {"regional-bank", "enterprise-data-center", "school-district",
                                       "hospital-clinics", "provider-backbone", "retail-chain",
-                                      "university-campus"}:
+                                      "university-campus", "msp"}:
         return []
     objects = {o["key"]: o for o in plan.get("objects", [])}
     findings = []

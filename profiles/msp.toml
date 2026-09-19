@@ -1,0 +1,45 @@
+# One managed service provider: a NOC that contains its own machine room, and
+# four managed customer accounts whose offices it operates under contract.
+#
+# Every customer is a separate NetBox tenant. The office sites, rooms, racks,
+# equipment, VLANs, prefixes and addresses are owned by that customer; the
+# provider shows up as the shared infrastructure owner, the per-customer
+# technical desk on every operated device, and the carrier accounts it holds.
+# Nothing joins two customers. See profiles/msp.md for the complete limits.
+profile = "msp"
+namespace = "arbor"
+name = "Arbor Managed Networks"
+address_pool = "10.0.0.0/8"
+seed = 42
+as_of = "2026-09-01"
+reserve_fraction = 0.2
+
+# Managed accounts. `offices` is how many premises this customer has; `staff` is
+# the installed desk positions in each of them — equipment inventory, never
+# headcount, seat licences or agent counts. Both may grow; neither may shrink
+# without a new baseline.
+[[customers]]
+key = "summit-legal"
+offices = 2
+staff = 24
+
+[[customers]]
+key = "harbor-dental"
+offices = 3
+staff = 12
+
+[[customers]]
+key = "brightline-media"
+offices = 1
+staff = 36
+# Every customer's reception gets visitor wireless by default (6 managed, 12
+# guest). This account raises its own reception budget; its staff pods keep the
+# default of no guest service. Budgets size AP mounts at 32 devices per radio.
+[customers.wireless.reception]
+managed = 10
+guest = 24
+
+[[customers]]
+key = "cornerstone-realty"
+offices = 2
+staff = 16

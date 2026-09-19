@@ -86,21 +86,27 @@ def enrich(world):
             used += min(end, high) - max(start, low) + 1
         external = world.recipe["profile"] == "regional-bank" and tenant == "tenant/inherited"
         managed = wlan["attrs"]["auth_type"] == "wpa-enterprise"
+        # A managed-service estate runs one shared DNS/RADIUS inventory in the
+        # provider's own tenant for every customer WLAN it operates; every other
+        # profile serves each WLAN from the tenant that owns it.
+        serving = "tenant" if world.recipe["profile"] == "msp" else tenant
         entry = dict(wlan=key, prefix=prefix["key"], technical_contact=contact, available_ipv4=high-low+1-used,
                      dns_tcp=[], dns_udp=[], radius_udp=[], external_required=["dns", "radius"] if external and managed else ["dns"] if external else [])
         if key in guest_demand and entry["available_ipv4"] < guest_demand[key]:
             raise DesignError(f"{key}: planned guest demand {guest_demand[key]} exceeds {entry['available_ipv4']} available IPv4 addresses in {network} after allocations and held ranges; reduce demand or revise the address plan")
         if not external:
             for family in ("dns_tcp", "dns_udp") + (("radius_udp",) if managed else ()):
-                entry[family] = list(selected(tenant, family))
+                entry[family] = list(selected(serving, family))
                 if not entry[family]:
-                    raise DesignError(f"{key}: no active {family} listener inventory owned by the WLAN tenant")
+                    raise DesignError(f"{key}: no active {family} listener inventory owned by {objects[serving]['attrs']['name']}")
         entries[site].append(entry)
         lines = [f"Client segment: {network} / {objects[vrf]['attrs']['name']}.",
                  f"Technical support: {objects[contact]['attrs']['name']}."]
         if external:
             lines.append(f"External DNS{' and authentication' if managed else ''} required from {objects[tenant]['attrs']['name']}; service endpoints are unknown in this inventory.")
         else:
+            if serving != tenant:
+                lines.append(f"Service inventory is operated by {world.recipe['name']} under a managed-network contract.")
             for family, label in (("dns_tcp", "DNS TCP/53"), ("dns_udp", "DNS UDP/53"), ("radius_udp", "RADIUS UDP/1812,1813")):
                 if entry[family]:
                     names = [f"{objects[objects[service]['refs']['virtual_machine']]['attrs']['name']} / {objects[service]['attrs']['name']}" for service in entry[family]]

@@ -170,13 +170,17 @@ def validate(plan):
         required_external = (["dns", "radius"] if managed else ["dns"]) if external else []
         if entry["external_required"] != required_external:
             fail("wireless-context-external", wlan, "Independent bank tenants require explicitly unknown external dependencies; owned inventory must not be hidden as external.")
+        # A managed-service estate serves every customer WLAN from one shared
+        # listener inventory in the provider's own tenant; every other profile
+        # serves each WLAN from the tenant that owns it.
+        serving = "tenant" if plan.get("recipe", {}).get("profile") == "msp" else tenant
         for family in signatures:
             selected = entry[family]
             needed = not external and (family != "radius_udp" or managed)
-            wanted = required_services(tenant, family) if needed else []
+            wanted = required_services(serving, family) if needed else []
             if (not isinstance(selected, list) or len(selected) > 2 or any(not isinstance(key, str) for key in selected) or
                     len(selected) != len(set(selected)) or selected != wanted or (needed and not wanted)):
-                fail("wireless-context-service", wlan, f"{family} must bind bounded active same-tenant listener inventory and primary addresses, preferring distinct DCs then replicas; open/external intent cannot borrow authentication.")
+                fail("wireless-context-service", wlan, f"{family} must bind bounded active listener inventory and primary addresses owned by the serving tenant, preferring distinct DCs then replicas; open/external intent cannot borrow authentication.")
         comments = attrs(wlan).get("comments", "")
         facts = [attrs(contact).get("name"), attrs(prefix).get("prefix"), attrs(refs(prefix).get("vrf")).get("name")]
         if external:

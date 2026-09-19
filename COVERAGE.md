@@ -206,8 +206,8 @@ being executed in least-resistance order. This section is the campaign's durable
 state: update the Status column as phases complete, and record decisions here.
 
 Existing profiles: enterprise DC, provider backbone, regional bank, hospital,
-K-12 school district. New: retail chain, university campus, MSP/managed
-services, manufacturing/industrial, utility/energy. Deliberate folds, not
+K-12 school district, retail chain, university campus, MSP/managed services.
+Still new: manufacturing/industrial, utility/energy. Deliberate folds, not
 profiles: GPU/AI cloud (an enterprise-DC workload/hardware flavor) and
 government/defense (enterprise/campus plus `site_names`).
 
@@ -218,7 +218,7 @@ government/defense (enterprise/campus plus `site_names`).
 | 3 | Retail chain profile | **complete 2026-09-19** — 55-kind profile merged (789 tests); first live load on the pinned 4.7.1 stack: 13,005/13,005 objects, 0 mismatches, 1,265/1,265 cables, verify + idempotent repeat clean |
 | 4 | University campus profile | **complete 2026-09-19** — merged (832 tests); first live load: 21,970/21,970 objects, 0 mismatches, 2,380/2,380 cables, 26,730/26,730 ChangeDiffs, verify + repeat clean (largest single estate loaded to date) |
 | 5 | Vendor lever | **complete 2026-09-19** — `[hardware]` selects access/leaf/ap lines (Juniper EX3400/QFX5120, Aruba AP-505); 56-cell fit matrix + adversarial review hardening (854 tests); all-Juniper bank live: 10,587/10,587 objects, 0 mismatches, verify + idempotent repeat clean |
-| 6 | MSP profile (one NOC operating N customer tenants) | pending |
+| 6 | MSP profile (one NOC operating N customer tenants) | **complete 2026-09-19** — merged (902 tests); offline-checked and TurboBulk-loadable (56 kinds), with independent tenancy-isolation and ownership-versus-operation checks. No live qualification receipt yet. |
 | 7 | Bank hard-kinds decision point | **dissolved** — phase 2 left no residual; the extras trio went via REST-create and the exempt-count gate |
 | 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | pending |
 | 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | pending |

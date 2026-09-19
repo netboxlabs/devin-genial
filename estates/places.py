@@ -38,7 +38,8 @@ CAMPUSES = {
 GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers", "school": "Schools",
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
           "store": "Retail stores", "distribution": "Distribution centers",
-          "academic": "Academic buildings", "residence": "Residence halls", "library": "Libraries"}
+          "academic": "Academic buildings", "residence": "Residence halls", "library": "Libraries",
+          "office": "Managed customer offices"}
 MAX_CHANNEL_M = 80
 FLOOR_HEIGHT_M = 4
 OFFICE_DESKS = 12
@@ -50,6 +51,10 @@ DORM_ROOMS_PER_FLOOR = 50
 LAB_SEATS_PER_ROOM = 24
 READING_SEATS_PER_ROOM = 24
 MAX_BUILDING_FLOORS = 8
+# Authored managed-office grammar: one floor, a reception and up to four staff
+# pods of twelve desk positions each. A larger customer premises needs a
+# reviewed riser and closet layout before demand can exceed it.
+MAX_OFFICE_PODS = 4
 SPACE_DESCRIPTIONS = {
     "building": "Banking and business operations premises",
     "floor": "Customer or staff floor with assigned equipment-room service",
@@ -74,6 +79,7 @@ SPACE_DESCRIPTIONS = {
     "teaching_lab": "Instructional and research computing lab with installed workstation seats",
     "dorm_room": "Residence room with installed wired data ports; no resident-owned device is represented",
     "reading_room": "Library reading area with installed study workstation positions",
+    "staff_office": "Customer staff office pod with installed workstation positions",
 }
 
 
@@ -125,6 +131,11 @@ def _authored_identity(site, city):
         return f"{title} {'Hall' if kind == 'academic' else 'House'}"
     if kind == "library":
         return f"{pick(CAMPUSES[city])} Library"
+    if kind == "office":
+        # The customer key and its office ordinal are unique by construction and
+        # frozen by growth, so two managed offices can never resolve to one name.
+        stem, ordinal = sid.removeprefix("off-").rsplit("-", 1)
+        return f"{stem.replace('-', ' ').title()} {pick(CAMPUSES[city])} Office {int(ordinal):02}"
     if kind == "hq":
         return f"{city} Headquarters"
     if kind == "dc":
@@ -132,6 +143,8 @@ def _authored_identity(site, city):
             return f"{city} NOC Campus"
         if profile == "university-campus":
             return f"{city} Campus Data Center"
+        if profile == "msp":
+            return f"{pick(CAMPUSES[city])} Operations Center"
         return f"{pick(CAMPUSES[city])} Data Center"
     if kind in {"school", "hospital", "clinic"}:
         title = sid.split("-", 1)[1].replace("-", " ").title()
@@ -197,7 +210,8 @@ def foundation(w, *, site_kinds=None):
               {"name": f"{ns} {state}", "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
     for kind, name in GROUPS.items():
         if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
-                                           "store", "distribution", "academic", "residence", "library"}:
+                                           "store", "distribution", "academic", "residence", "library",
+                                           "office"}:
             continue
         if site_kinds is not None and kind not in site_kinds:
             continue
@@ -222,6 +236,8 @@ def _location(site, suffix, name, space_type, floor, position, parent=None, capa
             description = "Care and health-system services building" if space_type == "building" else "Care, clinical staff and equipment floor"
         elif site.w.recipe["profile"] == "university-campus":
             description = "Campus teaching, residential and services building" if space_type == "building" else "Teaching, residential and equipment floor"
+        elif site.w.recipe["profile"] == "msp":
+            description = "Managed office or operations building" if space_type == "building" else "Staff and equipment floor"
     if site.contract["kind"] == "dc" and space_type == "equipment_room":
         description = "Restricted data hall with compute, network and power distribution"
     site.w.add("location", key,
@@ -263,14 +279,15 @@ def locate(site):
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
     if kind in {"school", "hospital", "clinic", "store", "distribution",
-                "academic", "residence", "library"}:
+                "academic", "residence", "library", "office"}:
         number = 100 + 4 * site.w.allocations[site.id]
     streets = {"br-s": "Market Street", "br-m": "Commerce Drive", "br-l": "Harbor Avenue",
                "hq": "Lakefront Boulevard", "dc": "Technology Way", "school-": "Learning Way",
                "hospital-": "Care Avenue", "clinic-": "Community Way",
                "st-s": "Market Square", "st-m": "Retail Parkway", "st-l": "Galleria Drive",
                "di-": "Distribution Parkway", "bldg-": "University Quadrangle",
-               "hall-": "Residence Row", "library-": "Library Green"}
+               "hall-": "Residence Row", "library-": "Library Green",
+               "noc-": "Operations Parkway", "off-": "Enterprise Parkway"}
     street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
     node["attrs"].update(time_zone=zone,
                          physical_address=f"{number} {street}\n{city}, {state}\nUnited States")
@@ -555,6 +572,63 @@ def retail_endpoint(site, key, room, cohort, ordinal):
     node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
     if role == "role/ap":
         node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
+    node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
+        "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
+        access_channel_length_m=route)
+
+
+def msp_office_pods(staff):
+    """Authored pod layout for one managed office: twelve desk positions each."""
+    return [(f"pod-{n+1:02}", min(OFFICE_DESKS, staff - OFFICE_DESKS*n))
+            for n in range(math.ceil(staff / OFFICE_DESKS))]
+
+
+def msp_office_rooms(site, staff):
+    """Permanent managed-office rooms: one reception and reserved staff pods.
+
+    Every pod holds a reserved ground-floor position for the life of the estate,
+    so hiring into a customer office appends desks and, when a pod fills, a new
+    pod beside the existing ones instead of renumbering the floor underneath.
+
+    ponytail: one authored floor and four pods per managed office — the finite
+    footprint this profile reviews. A multi-floor customer premises needs a
+    reviewed riser and closet layout before demand can exceed it.
+    """
+    if site.contract["kind"] != "office":
+        raise DesignError(f"{site.id}: managed-office rooms require a customer office site")
+    ground = _floor(site, 1)
+    reception = _location(site, "reception", "Reception", "reception", 1, (6, 6, 0), ground)
+    pods = []
+    for suffix, desks in msp_office_pods(staff):
+        slot = site.w.reserve(f"office-pods/{site.id}", suffix, MAX_OFFICE_PODS)
+        pods.append(_location(site, suffix, f"Staff office pod {suffix.removeprefix('pod-')}",
+                              "staff_office", 1, (8 + 12*slot, 18, 0), ground,
+                              {"workstations": desks}))
+    return dict(reception=reception, pods=pods)
+
+
+def msp_endpoint(site, key, room, cohort, ordinal):
+    """Place one managed-office endpoint on its permanent local copper route."""
+    space, node = site.w.obj(room), site.w.obj(key)
+    origin, role = space["meta"]["position_m"], node["refs"]["role"]
+    height = 2.8 if role == "role/ap" else 2.5 if role == "role/camera" else 0.8
+    if role == "role/ap":
+        offset = _ap_offset(cohort, ordinal)
+    elif type(ordinal) is not int or ordinal < 1:
+        raise DesignError(f"{key}: managed-office endpoint ordinal must be a positive integer")
+    elif role == "role/camera":
+        offset = (1 + 8*(ordinal-1), 0)
+    else:
+        offset = (1 + 1.2*((ordinal-1) % 6), 1 + 1.2*((ordinal-1)//6))
+    point = [origin[0]+offset[0], origin[1]+offset[1], origin[2]+height]
+    serving = site.contract["placement"]["equipment_locations"][str(space["meta"]["floor"])]
+    route = math.ceil(sum(abs(a-b) for a, b in zip(point, site.w.obj(serving)["meta"]["position_m"]))+10)
+    if route > MAX_CHANNEL_M:
+        raise DesignError(f"{key}: managed-office access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
+    node["refs"]["location"] = room
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
+    if role == "role/ap":
+        node["attrs"]["description"] += "; staff and any requested guest WLAN ride wlan0; RF coverage unverified"
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
