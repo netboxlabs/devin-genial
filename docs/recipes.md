@@ -31,6 +31,7 @@ rather than silently renumbering the estate.
 - [Provider backbone](#provider-backbone)
 - [Retail chain](#retail-chain)
 - [University campus](#university-campus)
+- [Managed service provider](#managed-service-provider)
 - [Worked example](#worked-example)
 - [Not expressible in a recipe](#not-expressible-in-a-recipe)
 
@@ -51,13 +52,13 @@ choosing the maximum of every input is not a supported composition.
 ## Common keys
 
 These are top-level keys accepted by more than one profile. They are validated in
-`resolve_bank_recipe` (`estates/model.py`) and re-exported to the other six
+`resolve_bank_recipe` (`estates/model.py`) and re-exported to the other seven
 profiles through each module's `COMMON` set. The fifteen keys frozen for growth
 are enforced by the loop in `World.__init__` (`estates/model.py`).
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
-| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`, `university-campus`. Omitting the key selects the bank. | **rebaseline** |
+| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`, `university-campus`, `msp`. Omitting the key selects the bank. | **rebaseline** |
 | `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. On a shared target check `GET /api/users/owners/` first: one live estate per namespace, and this key is frozen after baseline. | **rebaseline** |
 | `name` | string | per profile | 1–80 characters. Participates in Diode matching identities for the provider. | **rebaseline** |
 | `seed` | integer | `42` | `0` ≤ seed < 2^63. Drives bounded local variation (serials, procurement dates, design-pool choices) only. | **rebaseline** |
@@ -70,7 +71,7 @@ are enforced by the loop in `World.__init__` (`estates/model.py`).
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Strictly increasing unique integers, each 1–1000, last element exactly `1000`. Purchased tiers; the physical handoff stays 1 Gb/s. Not accepted by the enterprise profile. | **rebaseline** |
 | `max_objects` | integer | `500000` | `100`–`2000000`. Generation fails when the budget is exceeded. | mutable |
 | `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
-| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-central`, `clinic-west`, `pop-chicago-west`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). **`just plan RECIPE` prints the estate's real site ids** — check there before writing overrides; an unknown site id fails generation and the error lists them too. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
+| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-central`, `clinic-west`, `pop-chicago-west`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`, `noc-01`, `off-summit-legal-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). **`just plan RECIPE` prints the estate’s real site ids** — check there before writing overrides; an unknown site id fails generation and the error lists them too. The way to show the customer’s real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
 | `hardware` | table | `{}` | Vendor line per role family. Families are exactly `access`, `leaf` and `ap`. Values: `access` = `cisco` (default, Cisco Catalyst 9200L-24P-4X) or `juniper` (Juniper EX3400-24P); `leaf` = `arista` (default, Arista DCS-7050SX3-48C8-F) or `juniper` (Juniper QFX5120-48Y-AFO2); `ap` = `reference` (default, Reference PoE access point) or `aruba` (HPE Aruba AP-505). Omitted families keep their default. An unknown family or vendor fails generation and the error lists the real choices. This is "they're a Juniper shop" — the alternates meet or beat the models they replace on every port, PSU, PoE and optics quantity, so all those checks still hold. One visible modeling difference: `ap = "aruba"` declares the AP-505's real 5 GHz + 2.4 GHz radio split (the reference AP models two 5 GHz radios), so whichever WLAN rides `wlan1` — students in the school and university profiles — carries 2.4 GHz channels on that line. Written as its own `[hardware]` header, so place it AFTER every top-level scalar key: TOML scoping otherwise swallows them. See [the catalog](../catalog/README.md#selectable-vendor-lines). | **rebaseline** |
 
@@ -85,6 +86,7 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `provider-backbone` | `/8`–`/12` | `/24` (first `/16` NOC, last `/16` infrastructure) | `10.0.0.0/8` |
 | `retail-chain` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `university-campus` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
+| `msp` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 
 Data centers per profile: every profile builds `dc-01`; the bank and retail
 chain always add `dc-02` (the shared two-DC pair), and the enterprise profile
@@ -95,7 +97,8 @@ Default `namespace` / `name`: bank `cedar` / `Cedar Regional Bank`; enterprise
 `summit` / `Summit Enterprise Infrastructure`; school `maple` / `Maple School
 District`; hospital `lakeshore` / `Lakeshore Health System`; provider
 `lakes-fiber` / `Great Lakes Fiber`; retail `harvest` / `Harvest Retail Group`;
-university `lakemont` / `Lakemont University`.
+university `lakemont` / `Lakemont University`; MSP `arbor` / `Arbor Managed
+Networks`.
 
 ## Regional bank
 
@@ -362,6 +365,53 @@ and `guest`, plus `research` in academic buildings only. See the
 represented and what is explicitly not asserted — in particular that identity
 and WLAN records use eduroam-style naming only, with no authentication protocol
 configured anywhere.
+
+## Managed service provider
+
+Allowlist: `estates/msp.py:185`, with `COMMON` at `estates/msp.py:31`.
+Accepts every common key **except `headquarters_staff`**, which is an
+office-sizing input for the bank and retail profiles; `reservation_user` must be
+empty. One operations site is fixed. There is no `design_mix`, `site_designs` or
+`acquired_sites` key: every site is modern, and no acquisition, refresh,
+office-remodel or customer-offboarding transition exists in this profile.
+
+| Key | Type | Default | Accepted values and bounds | Growth |
+| --- | --- | --- | --- | --- |
+| `customers` | array of tables | four authored accounts | `1`–`24` entries; each needs a unique hyphen-separated lowercase `key` of at most 20 characters (no leading, trailing or doubled hyphen), also distinct with hyphens removed | grow-only (append entries) |
+| `customers[].offices` | integer | `1` | `1`–`4` managed premises for this customer | grow-only |
+| `customers[].staff` | integer | `24` | `4`–`48` installed desk positions in **each** of that customer's offices, filling twelve-desk pods | grow-only |
+| `customers[].wireless` | table of tables | authored per zone | Existing zones only (`reception`, `pod-<nn>`); each `managed`/`guest` an integer `0`–`128` with a per-zone total of at most `128`, and at most `252` guest devices per office | grow-only |
+
+Site ids are `noc-01` and `off-<customer key>-<nn>`. Each site reserves a `/16`
+and each of its segments is a `/24`.
+
+Per-office demand is authored policy, not a recipe input:
+
+| Quantity | Rule |
+| --- | --- |
+| Staff pods | `ceil(staff / 12)`, at most four, each on a permanent reserved ground-floor position |
+| Workstations | one per installed desk position |
+| Coverage radios | one per zone at 32 devices per radio, at most four mounts per zone |
+| Cameras | one in reception plus one over each staff pod |
+| Peak Mbps | `2 × staff + 20` |
+
+There is no `wan_peak_mbps` key: the operations-site edge is sized from resolved
+managed demand on every generation, so appending customers never collides with a
+frozen purchase. The bounds above cap managed peak at 11,136 Mbps, inside both
+the 1 Gb/s office handoff after the widest supported `reserve_fraction` and the
+shared data-center aggregation.
+
+Client segments per managed office are `management`, `staff`, `wireless` and
+`security`, plus `guest` only where that customer declared visitor devices; a
+`wan` segment addresses the carrier handoffs and has no client or gateway SVI.
+Zone budget defaults apply at first resolution and are then frozen, so growing
+`staff` from a frozen recipe fills the last pod without raising its recorded
+device budget. Each
+customer is its own tenant inside one `<namespace> customers` tenant group, with
+its own per-segment routing contexts. See the
+[profile guide](../profiles/msp.md) for the ownership-versus-operation split and
+what is explicitly not asserted — in particular that no SLA, ticketing, RMM
+execution or remote-access path is represented anywhere.
 
 ## Worked example
 

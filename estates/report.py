@@ -748,6 +748,12 @@ def markdown(plan):
         elif recipe.get("profile") == "university-campus":
             demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
                                     if label != "peak_mbps") or "Shared services"
+        elif recipe.get("profile") == "msp":
+            owner = site["meta"].get("managed_customer")
+            demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
+                                    if label != "peak_mbps") or "Shared managed services"
+            if owner:
+                demand_text = f"Customer {owner}; {demand_text}"
         elif recipe.get("profile") == "retail-chain":
             # The shared staffed-building contract carries an explicit zero for
             # the self-service lobby it does not use; retail has no such lanes.

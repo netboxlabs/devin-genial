@@ -462,8 +462,14 @@ identical gate (11,801 objects, receipt
 `bank-probe-Cedar-Bank-Final-357baeecb74e.json`), as did school
 (`wireless-probe-Maple-School-District-…`) and hospital
 (`stclair-v1-St-Clair-Health-…`) after the wireless kinds landed — every
-current profile now holds a local live-qualification receipt. Cloud and
-Enterprise remain unqualified.
+profile implemented at that date now holds a local live-qualification receipt.
+Cloud and Enterprise remain unqualified.
+
+The managed-service-provider profile, added afterwards, has **no** live
+qualification receipt. It is offline-checked only: its 56-kind artifact reports
+`turbobulk_loadable` with no uncovered kinds or unsupported refs, and its widest
+accepted recipe (24 accounts, 97 sites, 104,793 objects) passes generation and
+offline validation. Neither result establishes live NetBox acceptance.
 
 Also on September 19, 2026 the `[hardware]` vendor lever passed the same gate
 live: an all-alternate bank estate (Juniper EX3400-24P access, QFX5120-48Y

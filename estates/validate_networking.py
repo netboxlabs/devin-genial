@@ -43,6 +43,20 @@ def validate(plan, catalog=None):
         guest_sites = {f"site/st-{size[0]}{n+1:04}" for size, count in counts.items()
                        if type(count) is int for n in range(max(0, count))}
         guest_sites |= {f"site/hq-{n+1:02}" for n in range(max(0, offices if type(offices) is int else 0))}
+    if recipe.get("profile") == "msp":
+        # Visitor wireless is per-customer demand and reaches every office of the
+        # customers that asked for it; the provider's own NOC never offers it.
+        guest_sites = set()
+        entries = recipe.get("customers", [])
+        for entry in entries if isinstance(entries, list) else []:
+            if not isinstance(entry, dict) or not isinstance(entry.get("key"), str):
+                continue
+            count = entry.get("offices")
+            zones = entry.get("wireless", {})
+            if (type(count) is int and isinstance(zones, dict) and
+                    any(isinstance(zone, dict) and type(zone.get("guest")) is int and zone["guest"] > 0
+                        for zone in zones.values())):
+                guest_sites |= {f"site/off-{entry['key']}-{n+1:02}" for n in range(max(0, count))}
     objects = {o["key"]: o for o in plan.get("objects", [])}
     by_kind, children = defaultdict(list), defaultdict(list)
     findings = []

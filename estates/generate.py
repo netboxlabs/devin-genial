@@ -17,6 +17,8 @@ def generate(recipe, previous=None):
         from .retail import generate as build
     elif recipe["profile"] == "university-campus":
         from .university import generate as build
+    elif recipe["profile"] == "msp":
+        from .msp import generate as build
     else:
         from .bank import generate as build
     return build(recipe, previous=previous)

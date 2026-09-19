@@ -2,8 +2,8 @@
 
 An offline, deterministic generator of believable connected estates for NetBox,
 exported through Diode. Regional bank, enterprise DC, school district,
-hospital/clinic, provider backbone, retail chain and university campus have
-generation profiles. No LLM calls belong
+hospital/clinic, provider backbone, retail chain, university campus and managed
+service provider have generation profiles. No LLM calls belong
 in generation, allocation, validation, or export.
 
 The product goal is a believable whole estate. Demo stories are views into that
@@ -160,6 +160,10 @@ for the separately recorded pinned-target live qualification.
 - `estates/university.py`: one campus of keyed academic buildings, residence halls
   and a library with permanent room positions and dense per-zone wireless;
   `validate_university.py`: independent room-ledger, endpoint, radio and WAN checks.
+- `estates/msp.py`: one NOC operating keyed customer accounts, each its own
+  tenant with its own offices, address space and segment routing contexts;
+  `validate_msp.py`: independent pod-ledger, endpoint, tenancy-isolation and
+  ownership-versus-operation checks.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
 - `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
@@ -230,6 +234,26 @@ for the separately recorded pinned-target live qualification.
   records use eduroam-style naming only, with no authentication protocol
   configured. Growth may append buildings, halls, rooms, seats and radio budgets;
   reductions, room-port design changes and campus WAN renewal need a new baseline.
+- One managed service provider is one NOC plus N separate customer estates. The
+  NOC contains its own machine room; a second operations DC is deliberately not
+  modeled, because this grammar has no owned-fiber interconnect to join it
+  honestly. Each customer is one tenant inside one customer tenant group and
+  owns its office sites, rooms, racks, equipment, VLANs, prefixes, addresses,
+  WLANs and access circuits, plus its own per-segment routing contexts. No
+  cable, segment, VLAN, prefix, address, routing context or service may join two
+  customers, and the NOC carries no customer tenancy; validate that isolation
+  independently of emitted contracts. Operation is expressed only through
+  records that already carry it: the direct technical assignment chosen by
+  equipment role and actual tenant, the per-customer management segment, the
+  shared infrastructure owner and the provider-held carrier accounts. Do not add
+  a remote-access path, management overlay, SLA, ticket, agent or entitlement
+  record. Managed-office WLANs depend on the provider's own DNS/RADIUS listener
+  inventory; that serving-tenant indirection is the only cross-tenant reference.
+  Staff pods hold permanent reserved ground-floor positions, so hiring appends
+  desks and then a pod without renumbering. Growth may append customers,
+  offices, desks and radio budgets; reductions and WAN renewal require a new
+  baseline. The NOC edge is sized from resolved demand every generation, so it
+  is never a frozen purchase that blocks growth.
 - Facility kind controls rack geometry; school campuses must not inherit DC
   cabinet grids. District sites share one authored metro. Explicit role offsets
   distinguish staff, students and AP management without changing bank addresses.

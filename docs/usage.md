@@ -12,6 +12,9 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [School district](#school-district)
 - [Hospital and clinics](#hospital-and-clinics)
 - [Provider backbone](#provider-backbone)
+- [University campus](#university-campus)
+- [Retail chain](#retail-chain)
+- [Managed service provider](#managed-service-provider)
 - [Repeatability and growth](#repeatability-and-growth)
 
 ## Start
@@ -381,6 +384,32 @@ Segmentation separates back-office, transaction, wireless, security, guest and
 management traffic. That is intent only: no firewall policy, payment
 application, card-data scope or compliance state is demonstrated or certified,
 and no RF survey, captive portal or authentication result is represented.
+
+## Managed service provider
+
+`msp` composes one managed service provider: a network operations center that
+contains its own machine room, and 1–24 managed customer accounts whose offices
+it operates under contract. Every customer is a separate NetBox tenant inside
+one customer tenant group, with its own sites, equipment, address space and
+per-segment routing contexts — nothing joins two customers. The provider appears
+as the shared infrastructure owner, the per-customer technical desk on every
+operated device, and the carrier accounts it holds. This profile is
+offline-checked and fits the TurboBulk contract; it has no separately recorded
+live qualification receipt.
+
+```sh
+just plan profiles/msp.toml
+just generate profiles/msp.toml build/msp-demo
+just load-check build/msp-demo
+just power-scenario build/msp-demo/plan.json build/msp-power
+```
+
+Growth appends customers and offices and raises staffing and wireless budgets.
+Removing a customer, lowering `offices`, `staff` or a zone budget, and changing
+WAN tiers require a new baseline. The
+[profile guide](../profiles/msp.md) owns the complete limits, the
+ownership-versus-operation split and everything this dataset does not assert —
+no SLA, ticketing, RMM execution or remote-access path.
 
 ## Repeatability and growth
 
