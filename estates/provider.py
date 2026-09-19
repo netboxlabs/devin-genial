@@ -177,8 +177,14 @@ def generate(recipe,previous=None):
         current = {c["key"]:c for c in recipe["customers"]}
         for before in old["customers"]:
             after = current.get(before["key"])
-            if after is None or any(after[k] != before[k] for k in ("service","hub_pop","site_peak_mbps","hub_commit_mbps")):
-                raise DesignError("Removing customers, changing hubs or renewing purchased bandwidth requires a new baseline")
+            if after is None:
+                raise DesignError(f"Removing customer {before['key']} requires a new baseline")
+            changed = [k for k in ("service","hub_pop","site_peak_mbps","hub_commit_mbps")
+                       if after[k] != before[k]]
+            if changed:
+                raise DesignError(
+                    f"Customer {before['key']}: changing {', '.join(changed)} is a hub or "
+                    "purchased-bandwidth change and requires a new baseline")
             counts = {e["pop"]:e["count"] for e in after["sites"]}
             if after["lan_endpoints"] < before["lan_endpoints"] or any(counts.get(e["pop"],0) < e["count"] for e in before["sites"]):
                 raise DesignError("Reducing customer premises or LAN endpoint demand requires a new baseline")

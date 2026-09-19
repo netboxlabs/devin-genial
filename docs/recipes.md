@@ -9,7 +9,8 @@ equipment, ports, addresses, racks and cables; nothing in this file selects a
 vendor, a device model or a rack position.
 
 Every profile hard-rejects unknown keys. A misspelled or unsupported key raises
-`Unknown recipe fields: …` before any object is allocated, and the same rejection
+an `Unknown … fields:` error naming the profile (for example `Unknown provider
+fields: customer_portal`) before any object is allocated, and the same rejection
 applies to nested tables (workloads, schools, wards, customers, wireless zones).
 There is no permissive mode: a key not listed here is not accepted.
 

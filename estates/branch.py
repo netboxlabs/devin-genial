@@ -73,19 +73,55 @@ def _abandon(client, branch_id, name, state, timeout):
                     f"DELETE {BRANCHES}{branch_id}/ before reusing the name — {hint}")
 
 
+def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.sleep):
+    """Permanently delete one named branch — the retirement step of a demo.
+
+    Unlike ``just reset`` this leaves nothing behind: no replacement branch,
+    no receipt archive. The branch's ChangeDiffs go with it.
+    """
+    _, page = client.request(
+        BRANCHES + "?" + urllib.parse.urlencode({"name": name}), branch=False)
+    rows = [row for row in page.get("results", []) if row.get("name") == name]
+    if len(rows) != 1:
+        raise LoadError(f"expected exactly one branch named {name!r}; found {len(rows)}")
+    row = rows[0]
+    try:
+        client.request(f"{BRANCHES}{row['id']}/", method="DELETE", branch=False)
+    except LoadError:
+        pass  # a 204 empty body reads as a parse failure; confirm by readback
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            client.request(f"{BRANCHES}{row['id']}/", branch=False)
+        except LoadError:
+            return {"id": row["id"], "name": name, "schema_id": row.get("schema_id"),
+                    "deleted": True}
+        if time.monotonic() >= deadline:
+            raise LoadError(f"branch {name!r} still exists after the delete request; "
+                            "inspect the target before retrying")
+        sleep(poll_interval)
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Create one named ready Branching branch")
+    parser = argparse.ArgumentParser(description="Create or delete one named Branching branch")
     parser.add_argument("target", help="NetBox http(s) origin")
-    parser.add_argument("name", help="new branch name")
+    parser.add_argument("name", help="branch name")
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--delete", action="store_true",
+                        help="permanently delete the named branch instead of creating one")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not token:
         parser.error("NETBOX_TOKEN is required")
     try:
+        if args.delete:
+            row = delete_branch(Client(args.target, token), args.name, timeout=args.timeout)
+            print(json.dumps(row, sort_keys=True))
+            return 0
         row = create_branch(Client(args.target, token), args.name, timeout=args.timeout)
     except LoadError as exc:
-        print(f"Branch creation failed: {exc}", file=os.sys.stderr)
+        verb = "deletion" if args.delete else "creation"
+        print(f"Branch {verb} failed: {exc}", file=os.sys.stderr)
         return 1
     print(json.dumps({"id": row["id"], "name": row["name"],
                       "schema_id": row.get("schema_id"), "status": _state(row)},

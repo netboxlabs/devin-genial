@@ -23,7 +23,8 @@ class Stub:
             # a 204 empty body surfaces as a parse failure in Client.request
             raise LoadError("DELETE failed without retry because the request could write")
         if "?" in path:
-            return 200, {"results": [{"name": name} for name in self.existing]}
+            return 200, {"results": [{"id": 7, "name": name, "schema_id": "abc"}
+                                     for name in self.existing]}
         if self.deleted:
             raise LoadError("GET returned HTTP 404")
         return 200, {"id": 7, "name": "demo", "status": self.states.pop(0)}
@@ -51,6 +52,21 @@ class BranchTests(unittest.TestCase):
         self.assertIn("provisioning failed", str(caught.exception))
         self.assertIn("the branch was deleted so the name is free", str(caught.exception))
         self.assertTrue(stub.deleted)
+
+    def test_delete_removes_exactly_one_named_branch(self):
+        from estates.branch import delete_branch
+        stub = Stub(existing=["demo"])
+        row = delete_branch(stub, "demo", sleep=lambda _s: None)
+        self.assertEqual(row, {"id": 7, "name": "demo", "schema_id": "abc", "deleted": True})
+        self.assertTrue(stub.deleted)
+
+    def test_delete_refuses_a_missing_branch(self):
+        from estates.branch import delete_branch
+        stub = Stub(existing=[])
+        with self.assertRaises(LoadError) as caught:
+            delete_branch(stub, "demo", sleep=lambda _s: None)
+        self.assertIn("found 0", str(caught.exception))
+        self.assertFalse(stub.deleted)
 
     def test_timeout_deletes_the_stuck_branch_and_names_the_worker(self):
         stub = Stub(states=["new"] * 5)

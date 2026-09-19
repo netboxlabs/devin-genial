@@ -45,6 +45,10 @@ load-check artifact:
 branch target name timeout='300':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --timeout {{quote(timeout)}}
 
+# Permanently delete one named branch and everything in it (demo retirement); reset instead REPLACES a branch
+branch-delete target name:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete
+
 # Strictly verify a target against an artifact with zero writes (any seeding path)
 verify-target artifact target branch='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --verify-only
