@@ -28,11 +28,10 @@ template below. Prefer `model: opus` for fan-out.
 
 ### Variation rules (pick differently each run)
 
-- **Scenario/industry**: rotate through provider backbone, enterprise DC,
-  regional bank, school district, hospital — including at least sometimes a
-  profile that is *not* TurboBulk-loadable (school/hospital emit wireless
-  kinds), because discovering that via `just load-check` is part of the
-  journey being tested.
+- **Scenario/industry**: rotate through every shipped profile (all five load
+  completely as of the 98-kind contract; check README's industry table for
+  the current set). Vary the *journey* too: first load, growth act,
+  retirement act, customer-named sites, merger/acquired lineage.
 - **Customization**: the agent must author its own recipe from
   `docs/recipes.md` (own namespace, name, seed, demand numbers) — never a
   straight copy of a shipped profile.
