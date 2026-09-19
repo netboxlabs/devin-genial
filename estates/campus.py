@@ -98,6 +98,11 @@ def access(site, endpoints, upstreams, network_roles, design, compact=False, sta
     add a new pair after both reach reserved-headroom capacity. The room ledger
     binds endpoint identities to physical switch/port positions. Removing demand
     never recycles slots; profile growth policy must decide whether to reject it.
+
+    An optional ``design["zone"]`` suffix gives a second, independent access
+    population in the same equipment room its own port ledger and its own
+    upstream pair (the manufacturing profile's separated plant-floor tier).
+    Omitting it keeps every existing profile's reservation scope unchanged.
     """
     w = site.w
     hardware = w.hardware(design["access_hardware"])
@@ -115,7 +120,7 @@ def access(site, endpoints, upstreams, network_roles, design, compact=False, sta
     slots = {}
     if stable:
         for room, members in areas.items():
-            scope = f"access-endpoints/{site.id}/{room}"
+            scope = f"access-endpoints/{site.id}/{room}{design.get('zone', '')}"
             slots[room] = _reserve_endpoints(w, scope, members, hardware, usable)
         area_counts = {room: max(2, 2*math.ceil((max(slots[room].values())+1) / (2*usable)))
                        for room in areas}

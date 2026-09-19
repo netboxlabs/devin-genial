@@ -2,8 +2,8 @@
 
 An offline, deterministic generator of believable connected estates for NetBox,
 exported through Diode. Regional bank, enterprise DC, school district,
-hospital/clinic, provider backbone, retail chain, university campus and managed
-service provider have generation profiles. No LLM calls belong
+hospital/clinic, provider backbone, retail chain, university campus, managed
+service provider and manufacturing have generation profiles. No LLM calls belong
 in generation, allocation, validation, or export.
 
 The product goal is a believable whole estate. Demo stories are views into that
@@ -164,6 +164,10 @@ for the separately recorded pinned-target live qualification.
   tenant with its own offices, address space and segment routing contexts;
   `validate_msp.py`: independent pod-ledger, endpoint, tenancy-isolation and
   ownership-versus-operation checks.
+- `estates/manufacturing.py`: keyed plants with separated plant-floor (OT) and
+  corporate (IT) zones, their own distribution tiers and one modeled conduit;
+  `validate_manufacturing.py`: independent room-ledger, endpoint, zone-isolation
+  and conduit checks.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
 - `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
@@ -234,6 +238,26 @@ for the separately recorded pinned-target live qualification.
   records use eduroam-style naming only, with no authentication protocol
   configured. Growth may append buildings, halls, rooms, seats and radio budgets;
   reductions, room-port design changes and campus WAN renewal need a new baseline.
+- One manufacturing plant is one site with two forwarding zones. Plant-floor
+  (OT) endpoints sit on their own `process` and `supervisory` segments, in
+  their own routing contexts, behind their own access pair and their own
+  distribution pair; corporate (IT) endpoints keep the ordinary campus
+  grammar. The only modeled path between the tiers is the `conduit` segment
+  trunked between the two distribution pairs, plus each device's own dedicated
+  management port; validate both independently of emitted contracts, including
+  that no record of any kind outside a zone names that zone's VLANs. Both tiers
+  share the one plant equipment room: the boundary is modeled in the routing
+  and VLAN graph, never physical, never enforced, and never a Purdue-model or
+  IEC 62443 claim. No industrial protocol is configured, carried or asserted
+  anywhere, and plant-floor endpoints are reference inventory with no control
+  function, safety rating, certification or firmware. Line, dock and desk
+  counts are installed capacity, not output, throughput, OEE or takt time.
+  Every line cell, loading dock and office pod holds a permanent reserved
+  ground-floor position, and the two access zones keep separate port ledgers
+  while sharing one finite distribution attachment budget. Growth may append
+  plants, lines, docks and desks; reductions and WAN renewal require a new
+  baseline. The data-center edge is sized from resolved demand every
+  generation, so it is never a frozen purchase that blocks growth.
 - One managed service provider is one NOC plus N separate customer estates. The
   NOC contains its own machine room; a second operations DC is deliberately not
   modeled, because this grammar has no owned-fiber interconnect to join it

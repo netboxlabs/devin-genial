@@ -44,6 +44,10 @@ SMALL = {
     "msp": dict(profile="msp", namespace="tinymsp", name="Tiny Managed Networks",
                 address_pool="10.192.0.0/12",
                 customers=[dict(key="one", offices=1, staff=4)]),
+    "manufacturing": dict(profile="manufacturing", namespace="tinymfg", name="Tiny Manufacturing",
+                          address_pool="10.208.0.0/12",
+                          plants=[dict(key="one", production_lines=1, warehouse_docks=1,
+                                       office_staff=4)]),
 }
 # The models this repository shipped before the lever existed. A default recipe
 # must still build exactly these.

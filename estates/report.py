@@ -748,6 +748,9 @@ def markdown(plan):
         elif recipe.get("profile") == "university-campus":
             demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
                                     if label != "peak_mbps") or "Shared services"
+        elif recipe.get("profile") == "manufacturing":
+            demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
+                                    if label != "peak_mbps") or "Shared corporate services"
         elif recipe.get("profile") == "msp":
             owner = site["meta"].get("managed_customer")
             demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
@@ -786,6 +789,44 @@ def markdown(plan):
                 "native management VLAN and tagged client VLANs. The district identity service exposes modeled RADIUS listeners: "
                 + "; ".join(f"{name(service['refs'].get('virtual_machine'))} / {name(service['key'])} (UDP1812/1813)" for service in radius)
                 + ". This explains authentication intent; a WLAN-to-RADIUS configuration or running session is not represented.", ""])
+    if recipe.get("profile") == "manufacturing":
+        lines.extend(["## Plant zones: corporate and plant floor", "",
+            "Lines, docks and desks are declared installed capacity, not production output, throughput, OEE, takt "
+            "time or shift rosters. The equipment columns below count actual device roles and actual switch "
+            "placement. The plant-floor (OT) endpoints sit on their own process and supervisory segments, behind "
+            "their own access pair and their own distribution pair; the conduit column counts the actual trunks "
+            "between the two distribution tiers. That boundary is modeled inventory — no firewall policy, access "
+            "control list, air gap, Purdue level or IEC 62443 state is demonstrated, and no industrial protocol "
+            "(Modbus, PROFINET, EtherNet/IP, OPC-UA or any other) is configured or claimed anywhere.", ""])
+        conduits = Counter()
+        for cable in kinds["cable"]:
+            ends = [objects.get(objects.get(cable["refs"].get(side), {}).get("refs", {}).get("device"), {})
+                    for side in ("a", "b")]
+            tiers = {"/ot-dist-" in end.get("key", "") for end in ends}
+            if tiers == {True, False} and all("dist-" in end.get("key", "") for end in ends):
+                conduits[ends[0]["refs"].get("site")] += 1
+        rows = []
+        for item in recipe.get("plants", []):
+            key = f"site/pl-{item['key']}"
+            plant_roles = Counter(device["refs"].get("role") for device in devices_by_site[key])
+            switches = Counter("plant-floor" if "/ot-access-" in device["key"] else "corporate"
+                               for device in devices_by_site[key]
+                               if device["refs"].get("role") == "role/access")
+            conduit = conduits[key]
+            rows.append((name(key), item["production_lines"], item["warehouse_docks"], item["office_staff"],
+                         plant_roles["role/plc"], plant_roles["role/hmi"], plant_roles["role/field-device"],
+                         plant_roles["role/scanner"], switches["plant-floor"], switches["corporate"], conduit))
+        _table(lines, ["Plant", "Lines", "Docks", "Office desks", "Line controllers", "Operator panels",
+                       "Field devices", "Scanner stations", "Plant-floor access switches",
+                       "Corporate access switches", "Conduit trunks"], rows)
+        lines.extend(["**Zone walkthrough:** start at a line controller or field device, open its process segment "
+            "and follow its real cable to a plant-floor access switch. Trace that switch's two uplinks to the "
+            "plant-floor distribution pair, then take the conduit trunks to the corporate pair — that is the only "
+            "modeled path between the tiers, apart from each device's own dedicated management port on the plant "
+            "management segment. Continue at the corporate data centers, where the manufacturing execution and "
+            "historian services carry their listener, replica, resource and power tables below. Those services hold "
+            "no production order, recipe, batch record or process tag, and nothing connects them to a plant-floor "
+            "endpoint.", ""])
     if recipe.get("profile") == "hospital-clinics":
         lines.extend(["## Care units and shared services", "",
             "Beds, desks and rooms are declared installed capacity, not patient volume or staff headcount. "
@@ -850,7 +891,11 @@ def markdown(plan):
                        "only when no workstation is present. " if bank else
                        "One classroom workstation per school, selecting the highest occupied teaching floor. "
                        if recipe.get("profile") == "school-district" else
-                       "One medical endpoint per care facility where present, otherwise a workstation; select the highest occupied care floor. ")
+                       "One medical endpoint per care facility where present, otherwise a workstation; select the highest occupied care floor. "
+                       if recipe.get("profile") == "hospital-clinics" else
+                       "One line controller per plant, so the path crosses the plant-floor zone. "
+                       if recipe.get("profile") == "manufacturing" else
+                       "One workstation per site where present; other endpoint roles are used only when no workstation is. ")
                       + "Paths follow actual cables and front/rear mappings; lengths sum cable records.", ""])
         examples = []
         for site_key, devices in sorted(devices_by_site.items()):
@@ -864,6 +909,9 @@ def markdown(plan):
             elif recipe.get("profile") == "hospital-clinics":
                 device = min(candidates, key=lambda d: (d["refs"].get("role") != "role/medical-device",
                              d["refs"].get("role") != "role/workstation", -floor_of(d), d["key"]))
+            elif recipe.get("profile") == "manufacturing":
+                device = min(candidates, key=lambda d: (d["refs"].get("role") != "role/plc",
+                             d["refs"].get("role") != "role/workstation", d["key"]))
             else:
                 device = min(candidates, key=lambda d: (d["meta"].get("purpose") != "workstation", -floor_of(d) if hq else 0, d["key"]))
             switch, cables, passive = endpoint_paths[device["key"]]

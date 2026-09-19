@@ -15,6 +15,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [University campus](#university-campus)
 - [Retail chain](#retail-chain)
 - [Managed service provider](#managed-service-provider)
+- [Manufacturing](#manufacturing)
 - [Repeatability and growth](#repeatability-and-growth)
 
 ## Start
@@ -410,6 +411,42 @@ WAN tiers require a new baseline. The
 [profile guide](../profiles/msp.md) owns the complete limits, the
 ownership-versus-operation split and everything this dataset does not assert —
 no SLA, ticketing, RMM execution or remote-access path.
+
+## Manufacturing
+
+`manufacturing` composes a manufacturer: 1–8 plants and the paired corporate
+data centers behind them. Each plant is one site with three authored areas on
+one ground floor — a production floor of line cells, a warehouse of loading
+docks and an office block — plus the single equipment room that serves them.
+The plant-floor (OT) endpoints (line controllers, operator panels, field-device
+drops) sit on their own `process` and `supervisory` segments, in their own
+routing contexts, behind their own access pair and their own distribution pair.
+The only modeled path to the corporate tier is the `conduit` segment trunked
+between the two distribution pairs, plus each device's own dedicated management
+port. This profile is offline-checked and fits the TurboBulk contract; it has no
+separately recorded live qualification receipt.
+
+```sh
+just plan profiles/manufacturing.toml
+just generate profiles/manufacturing.toml build/manufacturing-demo
+just load-check build/manufacturing-demo
+just power-scenario build/manufacturing-demo/plan.json build/manufacturing-power
+```
+
+That zone separation is **modeled, not enforced**. It is inventory and intended
+boundaries: no firewall policy, access control list, route filter, air gap,
+Purdue-model level or IEC 62443 compliance state is represented, and no
+industrial protocol — Modbus, PROFINET, EtherNet/IP, OPC-UA or any other — is
+configured, carried or claimed anywhere. The controllers, panels and field
+devices are reference endpoint inventory with no control function, safety
+rating, certification or firmware, and both distribution tiers share the one
+plant equipment room, so no hardened or DIN-rail hardware is implied.
+
+Growth appends plants and raises a plant's lines, docks and desks. Removing a
+plant, lowering any count and changing WAN tiers require a new baseline. The
+[profile guide](../profiles/manufacturing.md) owns the complete limits, the
+per-line equipment density, the service sizing thresholds and the full list of
+what the IT/OT boundary does and does not assert.
 
 ## Repeatability and growth
 
