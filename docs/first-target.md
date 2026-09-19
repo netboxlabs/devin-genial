@@ -239,6 +239,12 @@ Every refusal is one of three shapes, and each names itself:
 - **Fresh-load occupancy** ("fresh load requires empty inventories…"): the
   refusal names the exact colliding rows; retire your namespace (§8) or pick
   a new one. Nothing was written.
+- **Guardrail failure** (a failed job whose error names a `guardrail`): the
+  target operator enabled TurboBulk 0.4.0's server-side resource limits
+  (statement/lock timeouts, max rows per operation, concurrency caps) and this
+  job exceeded one. Nothing resumes past it: ask the operator what is
+  configured, or lower the job row bound (the fourth `just load` argument)
+  and start a fresh branch.
 - **Worker death** ("abandoned by a dead worker…"): the *target's* background
   worker died mid-job — commonly resource exhaustion (memory, database
   connections) on the target, which loading again will not fix and which an

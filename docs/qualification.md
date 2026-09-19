@@ -448,7 +448,11 @@ create-ChangeDiff verification
 (`build/load-receipts/provider-demo-Rich-Provider-2-e16f817d7f53.json`).
 "TurboBulk 0.4.0" here means a source build of TurboBulk main carrying the
 opportunistic reaper (TRB-23); the receipts' target contract records the locally
-built plugin as `0.0.0`.
+built plugin as `0.0.0`. The version is publicly released:
+[netbox-turbobulk-public v0.4.0](https://github.com/netboxlabs/netbox-turbobulk-public/releases/tag/v0.4.0)
+(published 2026-09-18) tracks server 0.4.0 and documents its opt-in resource
+guardrails. The deployed plugin is stock, unmodified upstream source on both
+pinned local stacks.
 Two of the artifact's 59 kinds — `owner` and `owner_group` — are not branch-isolated
 on NetBox 4.7 (see below), so this branch-scoped load wrote them to main.
 Getting there added six compiler kinds (asn, asn_range, route_target and the

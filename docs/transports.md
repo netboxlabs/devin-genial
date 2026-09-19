@@ -50,7 +50,19 @@ workflow](https://netboxlabs.com/docs/assurance/deviations/) and the published
 [Diode data flow](https://netboxlabs.com/docs/enterprise/helm/configuration/diode/).
 
 The [TurboBulk API](https://netboxlabs.com/docs/turbobulk/api-reference/) accepts
-JSONL or Parquet for one database model at a time. It bypasses normal per-object
+JSONL or Parquet for one database model at a time. The public reference for the
+API, client, examples and release history is
+[netboxlabs/netbox-turbobulk-public](https://github.com/netboxlabs/netbox-turbobulk-public);
+Genial deliberately does not depend on its client (the loader stays standard
+library) but tracks its documented semantics. Genial runs against **stock,
+unmodified TurboBulk** — every compatibility workaround here is client-side.
+Since server v0.4.0, operators can enable
+[resource guardrails](https://github.com/netboxlabs/netbox-turbobulk-public/blob/main/CHANGELOG.md)
+(statement/lock timeouts, a max-rows-per-operation cap, a per-database
+concurrency cap): a violated guardrail fails the job with a `guardrail` error,
+which this loader surfaces as a terminal job failure with the receipt
+preserved. A server max-rows cap below the artifact's job bound is a target
+configuration question, not a loader defect. It bypasses normal per-object
 REST creation, which makes large table loads attractive, but moves more work into
 Genial. The loader must inspect target schemas, supply target defaults, translate
 foreign keys to IDs, split cables from their terminations, bound each job, run
