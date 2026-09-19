@@ -92,8 +92,8 @@ def validate(plan):
         report("plan-profile", "plan", "recipe must be an object with a supported profile.")
         return findings
     generated = "generator_version" in plan or "hardware_digest" in plan or "profile" in recipe
-    if generated and recipe.get("profile") not in ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone"):
-        report("plan-profile", "plan", "Generated plans require a supported bank, data center, school, hospital or provider profile; missing or unsupported profiles cannot disable domain validation.")
+    if generated and recipe.get("profile") not in ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain"):
+        report("plan-profile", "plan", "Generated plans require a supported bank, data center, school, hospital, provider or retail profile; missing or unsupported profiles cannot disable domain validation.")
         return findings
     objects = {}
     for obj in plan["objects"]:
@@ -988,7 +988,7 @@ def validate(plan):
         bank_campus = site_key in bank_campuses
         if kind(site_key) != "site":
             report("contract-site", site_key, "Contract must reference an existing site.")
-        if contract.get("kind") in {"branch", "hq", "dc", "school", "hospital", "clinic"}:
+        if contract.get("kind") in {"branch", "hq", "dc", "school", "hospital", "clinic", "store", "distribution"}:
             for device in devices_by_site[site_key]:
                 for vlan in needed_vlans[device]:
                     if device not in gateway_reachable.get(vlan, set()):
@@ -1044,6 +1044,11 @@ def validate(plan):
             if contract.get("kind") == "school":
                 allowed_rooms = {f"role/{role}": {"classroom", "office", "computer_lab"}
                                  for role in ("workstation", "ap", "camera")}
+            elif contract.get("kind") in {"store", "distribution"}:
+                allowed_rooms = {"role/workstation": {"back_office", "office"},
+                                 "role/pos-terminal": {"sales_floor"}, "role/scanner": {"warehouse_floor"},
+                                 "role/ap": {"sales_floor", "back_office", "warehouse_floor", "office"},
+                                 "role/camera": {"sales_floor", "stockroom", "warehouse_floor", "shipping_dock"}}
             elif contract.get("kind") in {"hospital", "clinic"}:
                 allowed_rooms = {"role/workstation": {"office", "nurse_station", "exam_room", "imaging_room"},
                                  "role/medical-device": {"patient_room"}, "role/imaging-device": {"imaging_room"},
@@ -1548,6 +1553,11 @@ def validate(plan):
     if recipe.get("profile") == "hospital-clinics":
         from .validate_hospital import validate as validate_hospital
         findings.extend(validate_hospital(plan, catalog, objects=objects, children=children, peers=terminal_peers,
+                        component_of=component_of, component_members=component_members,
+                        cable_of=occupied, path_lengths=path_lengths, poe_watts=poe_watts, optics_watts=optics_watts))
+    if recipe.get("profile") == "retail-chain":
+        from .validate_retail import validate as validate_retail
+        findings.extend(validate_retail(plan, catalog, objects=objects, children=children, peers=terminal_peers,
                         component_of=component_of, component_members=component_members,
                         cable_of=occupied, path_lengths=path_lengths, poe_watts=poe_watts, optics_watts=optics_watts))
     if recipe.get("profile") == "provider-backbone":

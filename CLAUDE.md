@@ -2,7 +2,7 @@
 
 An offline, deterministic generator of believable connected estates for NetBox,
 exported through Diode. Regional bank, enterprise DC, school district,
-hospital/clinic and provider backbone have generation profiles. No LLM calls belong
+hospital/clinic, provider backbone and retail chain have generation profiles. No LLM calls belong
 in generation, allocation, validation, or export.
 
 The product goal is a believable whole estate. Demo stories are views into that
@@ -39,7 +39,7 @@ every gap. Whole-goal reviewer verdicts and completion audit are in
 `build/goal-richness/final-review/`.
 
 Shared MAC policy covers addressed device/VM interfaces except virtual/bridge
-interfaces. All five profiles must validate missing identities independently.
+interfaces. Every profile must validate missing identities independently.
 WAN procurement accounts retain bank design lineage across acquisition/refresh;
 provider customer/NOC/transport accounts keep their separate authored policy.
 Direct technical assignments follow equipment role and actual tenant. Biomedical
@@ -123,8 +123,8 @@ archives its bound private load receipts.
 Keep transport orchestration behind that recipe rather than adding an installed CLI.
 Use `devenv --profile diode shell` to install/run the pinned SDK checks.
 CI runs the full suite on Python 3.11/3.14, then generates and SDK-checks each
-implemented composition, its scenario, and optional dual-stack across all five
-profiles. These offline jobs do not substitute
+implemented composition, its scenario, and optional dual-stack across every
+profile. These offline jobs do not substitute
 for the separately recorded pinned-target live qualification.
 
 ## Navigation
@@ -153,6 +153,8 @@ for the separately recorded pinned-target live qualification.
   `validate_hospital.py`: independent care-unit and actual physical obligations.
 - `estates/provider.py`: finite PoP growth, customer private-L3 services and real
   NOC handoffs; `validate_provider.py`: independent topology, ownership and flow checks.
+- `estates/retail.py`: store-format fleet, distribution centres and shared commerce
+  services; `validate_retail.py`: independent format, segment, radio and WAN checks.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
 - `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
@@ -261,7 +263,7 @@ for the separately recorded pinned-target live qualification.
   recipe and observed inventory. Keep emitted contracts accountable; omissions
   must not disable checks. Inactive required paths cannot count as healthy capacity.
 - Preserve stable identities and reservations when growing an existing plan.
-- Optional `ipv6_pool` is common to all five profiles; absence preserves IPv4-only
+- Optional `ipv6_pool` is common to every profile; absence preserves IPv4-only
   output. Accept aligned documentation /32–/40 pools only. Enabling, disabling
   or changing the pool requires a new baseline. Allocate separate stable IPv6
   slots: /48 sites, /64 LANs, /127 router links, /128 PE loopbacks. Bank radio

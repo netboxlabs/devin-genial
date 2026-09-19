@@ -54,7 +54,7 @@ are enforced at `estates/model.py:146`.
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
-| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`. Omitting the key selects the bank. | **rebaseline** |
+| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`. Omitting the key selects the bank. | **rebaseline** |
 | `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. | **rebaseline** |
 | `name` | string | per profile | 1–80 characters. Participates in Diode matching identities for the provider. | **rebaseline** |
 | `seed` | integer | `42` | `0` ≤ seed < 2^63. Drives bounded local variation (serials, procurement dates, design-pool choices) only. | **rebaseline** |
@@ -67,7 +67,7 @@ are enforced at `estates/model.py:146`.
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Strictly increasing unique integers, each 1–1000, last element exactly `1000`. Purchased tiers; the physical handoff stays 1 Gb/s. Not accepted by the enterprise profile. | **rebaseline** |
 | `max_objects` | integer | `500000` | `100`–`2000000`. Generation fails when the budget is exceeded. | mutable |
 | `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
-| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-general`, `clinic-riverside`, `pop-chicago-lakeview`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). An unknown site id fails generation and the error lists the estate's real ids. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
+| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-general`, `clinic-riverside`, `pop-chicago-lakeview`, `st-s0002`, `di-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). An unknown site id fails generation and the error lists the estate's real ids. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
 
 Per-profile `address_pool` ceilings and per-site reservation sizes:
@@ -79,11 +79,12 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `school-district` | `/8`–`/16` | `/16` | `10.128.0.0/12` |
 | `hospital-clinics` | `/8`–`/16` | `/16` | `10.128.0.0/12` |
 | `provider-backbone` | `/8`–`/12` | `/24` (first `/16` NOC, last `/16` infrastructure) | `10.0.0.0/8` |
+| `retail-chain` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 
 Default `namespace` / `name`: bank `cedar` / `Cedar Regional Bank`; enterprise
 `summit` / `Summit Enterprise Infrastructure`; school `maple` / `Maple School
 District`; hospital `lakeshore` / `Lakeshore Health System`; provider
-`lakes-fiber` / `Great Lakes Fiber`.
+`lakes-fiber` / `Great Lakes Fiber`; retail `harvest` / `Harvest Retail Group`.
 
 ## Regional bank
 
@@ -267,6 +268,43 @@ Each `sites` entry (`estates/provider.py:116`) accepts `pop` (required, a known 
 key, unique within the customer) and `count` (optional, default `1`, `1`–`12`).
 Combined customer and NOC attachments cannot exceed twelve per PoP. Composed site
 identities (`ce-<customer>-<pop>-<nnn>`) must not collide.
+
+## Retail chain
+
+Allowlist: `estates/retail.py:48`, with `COMMON` at `estates/retail.py:18`. Accepts
+every common key including `wan_tiers_mbps` and `headquarters_staff`;
+`reservation_user` must be empty. The two commerce data centers are fixed. There
+is no `design_mix`, `site_designs` or `acquired_sites` key: every site is modern,
+and no acquisition, refresh or remodel transition exists in this profile.
+
+| Key | Type | Default | Accepted values and bounds | Growth |
+| --- | --- | --- | --- | --- |
+| `stores` | table of integers | `{small = 4, medium = 2, large = 1}` | Only `small`, `medium` and `large`, each an integer `0`–`2000`, with at least one store overall | grow-only per format (reducing a format needs a new baseline) |
+| `headquarters` | integer | `1` | `0` or `1` | grow-only |
+| `headquarters_staff` | integer | `180` | `24`–`192`; sizes twelve-desk office pods, one radio per pod and two cameras per floor | **rebaseline** |
+| `distribution_centers` | integer | `1` | `0`–`6` | grow-only |
+
+Store and warehouse equipment demand is fixed authored policy
+(`estates/retail.py:28`), not a recipe input:
+
+| Format | Site ids | Workstations | Lanes / scanners | Radios | Cameras | Peak Mbps |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `small` store | `st-s0001`… | 2 | 4 lanes | 2 | 4 | 20 |
+| `medium` store | `st-m0001`… | 4 | 8 lanes | 3 | 8 | 50 |
+| `large` store | `st-l0001`… | 8 | 16 lanes | 5 | 12 | 100 |
+| Distribution centre | `di-01`…`di-06` | 12 | 24 scanners | 8 | 24 | 200 |
+
+The remaining site ids are `dc-01`, `dc-02` and `hq-01`. Each site reserves a
+`/16`, so a `/8` pool holds 256 reservations: a large fleet exhausts addressing
+before it reaches the per-format bound, and allocation then fails with the exact
+reservation arithmetic. Chain WAN peak across every store, distribution centre
+and the support centre must stay at or under `16000` Mbps, and each site's own
+peak must fit `1000 × (1 − reserve_fraction)`.
+
+Segments per site are `management`, `backoffice`, `pos` (stores only),
+`wireless`, `security` and `guest` (stores and the support centre). See the
+[profile guide](../profiles/retail-chain.md) for what is physically represented
+and what is explicitly not asserted.
 
 ## Worked example
 
