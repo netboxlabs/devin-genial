@@ -104,14 +104,20 @@ def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
 
 # Main-scoped rows a namespace leaves behind, in deletion-dependency order:
 # links and fields reference choice sets and owners. custom_field names use
-# the namespace's underscore form; the rest are "<namespace> " prefixed.
+# the namespace's underscore form, where prefix matching is UNSAFE (namespace
+# "cedar" would prefix-match "cedar_v7_…" belonging to namespace "cedar-v7"),
+# so those rows match by exact generated name; the rest are "<namespace> "
+# prefixed, which is safe because namespaces cannot contain spaces.
 RETIREMENT_ENDPOINTS = (
     ("/api/extras/custom-links/", "prefix"),
-    ("/api/extras/custom-fields/", "underscore"),
+    ("/api/extras/custom-fields/", "exact"),
     ("/api/extras/custom-field-choice-sets/", "prefix"),
     ("/api/users/owners/", "prefix"),
     ("/api/users/owner-groups/", "prefix"),
 )
+# Exact custom-field names the generator emits per namespace; extend alongside
+# estates/operations.py when a profile adds a field.
+CUSTOM_FIELD_NAMES = ("{ns}_operations_tier",)
 OWNER_ENDPOINTS = tuple(endpoint for endpoint, _ in RETIREMENT_ENDPOINTS)
 
 
@@ -126,14 +132,17 @@ def retire_namespace_rows(client, namespace, *, endpoints=OWNER_ENDPOINTS,
     these rows, so a still-present row is retried within a bounded window.
     """
     matchers = dict(RETIREMENT_ENDPOINTS)
+    exact_names = {pattern.format(ns=namespace.replace("-", "_"))
+                   for pattern in CUSTOM_FIELD_NAMES}
     deleted = []
     for endpoint in endpoints:
-        underscore = matchers.get(endpoint) == "underscore"
-        marker = (namespace.replace("-", "_") + "_") if underscore else (namespace + " ")
-        _, page = client.request(endpoint + "?limit=200", branch=False)
-        for row in page.get("results", []):
+        mode = matchers.get(endpoint, "prefix")
+        for row in client.all(endpoint):
             name = row.get("name") or ""
-            if not name.startswith(marker):
+            if mode == "exact":
+                if name not in exact_names:
+                    continue
+            elif not name.startswith(namespace + " "):
                 continue
             for attempt in range(attempts):
                 try:

@@ -79,8 +79,8 @@ DEVICE_COMPONENT_KINDS = {
 # them errors instead of no-opping.
 SEARCH_FINALIZER_EXCLUDED_KINDS = {
     "contact_assignment", "owner", "owner_group",
-    "circuit_group_assignment", "custom_field_choice_set", "custom_link",
-    "fhrp_group_assignment", "l2vpn_termination", "tunnel_termination",
+    "circuit_group_assignment", "fhrp_group_assignment",
+    "l2vpn_termination", "tunnel_termination",
 }
 
 DELIVERY_POLICIES = ("reviewable", "disposable-baseline")
@@ -132,8 +132,6 @@ def _finalizer_request_settings(base, hook):
 def _finalizer_plan(objects):
     """Order global maintenance after all canonical rows and REST completion."""
     kinds = {obj["kind"] for obj in objects.values()}
-    models = sorted({SPECS[obj["kind"]][0] for obj in objects.values()
-                     if obj["kind"] not in REST_CREATE_KINDS})
     result = []
     if kinds & DEVICE_COMPONENT_KINDS:
         result.extend([
@@ -755,10 +753,10 @@ def _matches(obj, row, ids, objects=None):
         return (row.get("name") == attrs["name"]
                 and _nested_id(row.get(anchor)) == _ref_id(obj, anchor, ids))
     if kind == "inventory_item":
+        parent = _ref_id(obj, "parent", ids) if "parent" in obj["refs"] else None
         return (row.get("name") == attrs["name"]
                 and _nested_id(row.get("device")) == _ref_id(obj, "device", ids)
-                and ("parent" not in obj["refs"]
-                     or _nested_id(row.get("parent")) == _ref_id(obj, "parent", ids)))
+                and _nested_id(row.get("parent")) == parent)
     if kind == "ip_range":
         return (row.get("start_address") == attrs["start_address"]
                 and row.get("end_address") == attrs["end_address"]
@@ -872,7 +870,8 @@ def _candidate_bucket_key(obj, ids, objects=None):
         anchor = "cooling_source" if kind == "cooling_feed" else "site"
         return "name-anchor", attrs["name"], _ref_id(obj, anchor, ids)
     if kind == "inventory_item":
-        return "name-device", attrs["name"], _ref_id(obj, "device", ids)
+        return ("name-device-parent", attrs["name"], _ref_id(obj, "device", ids),
+                _ref_id(obj, "parent", ids) if "parent" in refs else None)
     if kind == "ip_range":
         return "range", attrs["start_address"], attrs["end_address"]
     if kind == "rack_type":
@@ -981,7 +980,8 @@ def _row_bucket_keys(kind, row):
         anchor = "cooling_source" if kind == "cooling_feed" else "site"
         return [("name-anchor", row.get("name"), nested(row.get(anchor)))]
     if kind == "inventory_item":
-        return [("name-device", row.get("name"), nested(row.get("device")))]
+        return [("name-device-parent", row.get("name"), nested(row.get("device")),
+                 nested(row.get("parent")))]
     if kind == "ip_range":
         return [("range", row.get("start_address"), row.get("end_address"))]
     if kind == "rack_type":
@@ -1050,15 +1050,6 @@ def _service_port_mappings(obj):
     return [f"{protocol}/{port}" for port in ports]
 
 
-def _cable_row(obj, ids):
-    """Cables carry raw attrs plus their optional bundle reference; their
-    terminations travel as separate rows."""
-    row = dict(obj["attrs"])
-    if "bundle" in obj["refs"]:
-        row["bundle_id"] = ids[obj["refs"]["bundle"]]
-    return row
-
-
 def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     row = dict(obj["attrs"])
     for name, value in RENDER_DEFAULTS.get(obj["kind"], {}).items():
@@ -1070,8 +1061,13 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
         # Canonical custom-field values carry Diode's single-key type envelope
         # ({"selection": "tier-1"}); the raw custom_field_data column stores the
         # bare value, and REST readback returns it re-wrapped for verification.
-        row["custom_field_data"] = {name: next(iter(typed.values()))
-                                    for name, typed in row.pop("custom_fields").items()}
+        values = {}
+        for name, typed in row.pop("custom_fields").items():
+            if not isinstance(typed, dict) or len(typed) != 1:
+                raise LoadError(f"{obj['key']}: custom field {name} must carry exactly "
+                                "one typed value envelope")
+            values[name] = next(iter(typed.values()))
+        row["custom_field_data"] = values
     if obj["kind"] == "virtual_machine" and "start_on_boot" not in row:
         row["start_on_boot"] = "off"
     if obj["kind"] == "service":
@@ -1600,8 +1596,8 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                     _write_receipt(receipt_path, receipt)
         if prior is None and not all(obj["key"] in ids for obj in batch):
             pending = [obj for obj in batch if obj["key"] not in ids]
-            rows = ([_cable_row(obj, ids) for obj in pending] if kind == "cable" else
-                    [_render(obj, objects, ids, content_types, service_shape) for obj in pending])
+            rows = [_render(obj, objects, ids, content_types, service_shape)
+                    for obj in pending]
             _submit(client, branch_name, SPECS[kind][0], rows, batch_purpose,
                     [obj["key"] for obj in pending], receipt, receipt_path, timeout,
                     request_settings=settings)
@@ -1792,8 +1788,7 @@ def _schema_preflight(client, objects):
         if obj["kind"] in REST_CREATE_KINDS:
             continue
         model = SPECS[obj["kind"]][0]
-        columns = (set(obj["attrs"]) if obj["kind"] == "cable" else
-                   _rendered_columns(obj, service_shape or "protocol_ports"))
+        columns = _rendered_columns(obj, service_shape or "protocol_ports")
         if absent := columns - schemas[model]:
             missing_columns.setdefault(model, set()).update(absent)
     if any(obj["kind"] == "cable" for obj in objects.values()):
@@ -2525,6 +2520,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         receipt["allowed_existing"] = allowed_now
     preflight_readback_seconds = round(time.monotonic() - readback_started, 6)
     if existing["success"]:
+        if receipt is not None and allowed_now:
+            receipt["allowed_existing"] = allowed_now
         if receipt is not None:
             recovered = not receipt.get("success")
             receipt.setdefault("attempts", []).append({"started_at": started_at, "success": False})

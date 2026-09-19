@@ -118,6 +118,8 @@ def enrich(w):
 
     choices = add("custom_field_choice_set", "custom-field-choices/operations-tier", {"name": f"{ns} Operations tiers",
                   "extra_choices": ["tier-1:Tier 1", "tier-2:Tier 2"], "order_alphabetically": False}, {"owner": owner})
+    # Custom-field names are matched EXACTLY by estates/branch.py's retirement
+    # (CUSTOM_FIELD_NAMES): adding a field here means extending that tuple too.
     field_name = f"{ns.replace('-', '_')}_operations_tier"
     field = add("custom_field", "custom-field/operations-tier", {"name": field_name, "label": "Operations tier", "type": "select",
                 "object_types": ["dcim.site"], "required": False, "ui_visible": "always", "ui_editable": "yes"},

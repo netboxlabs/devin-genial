@@ -1010,15 +1010,18 @@ class TurboBulkLoaderTests(unittest.TestCase):
         self.assertFalse(_matches(obj, {"slug": "other"}, {}))
 
     def test_cable_rows_carry_their_bundle_reference(self):
-        from estates.turbobulk import _cable_row, _rendered_columns
+        # cables travel through the same _render/_rendered_columns pair as
+        # every other kind, so the schema preflight sees exactly the payload
         obj = {"kind": "cable", "key": "c", "attrs": {"label": "L1", "type": "cat6"},
                "refs": {"a": "x", "b": "y", "bundle": "bundle/1"}, "meta": {}}
-        row = _cable_row(obj, {"bundle/1": 6})
+        row = _render(obj, {"c": obj}, {"bundle/1": 6}, {})
         self.assertEqual(row["bundle_id"], 6)
+        self.assertNotIn("a", row)
         self.assertIn("bundle_id", _rendered_columns(obj))
         bare = {"kind": "cable", "key": "c2", "attrs": {"label": "L2", "type": "cat6"},
                 "refs": {"a": "x", "b": "y"}, "meta": {}}
-        self.assertNotIn("bundle_id", _cable_row(bare, {}))
+        self.assertNotIn("bundle_id", _render(bare, {"c2": bare}, {}, {}))
+        self.assertNotIn("bundle_id", _rendered_columns(bare))
 
     def test_branch_exempt_extras_create_no_expected_diffs(self):
         from estates.turbobulk import _expected_change_diff_counts

@@ -79,6 +79,9 @@ class BranchTests(unittest.TestCase):
             def __init__(self):
                 self.deleted = set()
 
+            def all(self, path):
+                return self.request(path + "?limit=1000")[1]["results"]
+
             def request(self, path, *, method="GET", **_kwargs):
                 if "?limit" in path:
                     return 200, {"results": [{"id": i, "name": n}
@@ -104,14 +107,18 @@ class BranchTests(unittest.TestCase):
             def __init__(self):
                 self.deleted = set()
 
+            def all(self, path):
+                return self.request(path + "?limit=1000")[1]["results"]
+
             def request(self, path, *, method="GET", **_kwargs):
-                if "?limit" in path:
+                if "limit=" in path:
                     if "custom-fields" in path:
                         rows = [{"id": 1, "name": "mercy_north_operations_tier"},
-                                {"id": 2, "name": "mercy_northeast_tier"}]
+                                {"id": 2, "name": "mercy_northeast_tier"},
+                                {"id": 3, "name": "mercy_operations_tier"}]
                     else:
                         rows = []
-                    return 200, {"results": rows}
+                    return 200, {"results": rows, "next": None, "count": len(rows)}
                 row_id = int(path.rstrip("/").rsplit("/", 1)[1])
                 if method == "DELETE":
                     self.deleted.add(row_id)
@@ -122,9 +129,15 @@ class BranchTests(unittest.TestCase):
 
         stub = Extras()
         deleted = retire_namespace_rows(stub, "mercy-north", sleep=lambda _s: None)
-        # mercy_north_… matches; mercy_northeast_… must not
+        # exact generated name only
         self.assertEqual(stub.deleted, {1})
         self.assertEqual([d["name"] for d in deleted], ["mercy_north_operations_tier"])
+        # the inverted (dangerous) direction: namespace "mercy" must NEVER touch
+        # mercy-north's field — prefix matching on the underscore form would have
+        stub2 = Extras()
+        deleted2 = retire_namespace_rows(stub2, "mercy", sleep=lambda _s: None)
+        self.assertEqual(stub2.deleted, {3})
+        self.assertEqual([d["name"] for d in deleted2], ["mercy_operations_tier"])
 
     def test_timeout_deletes_the_stuck_branch_and_names_the_worker(self):
         stub = Stub(states=["new"] * 5)
