@@ -220,7 +220,12 @@ def main(argv=None):
                 checked(previous)
             plan = checked(generate(supplied, previous=previous))
         else:
-            plan = checked(json.loads(args.plan.read_text()))
+            try:
+                plan = checked(json.loads(args.plan.read_text()))
+            except json.JSONDecodeError as exc:
+                raise DesignError(
+                    f"{args.plan} is not a frozen plan.json (a TOML recipe goes to "
+                    "plan/generate, not this command)") from exc
         if args.command == "scenario":
             if args.span is not None and args.kind != "provider-span-maintenance":
                 raise DesignError("--span applies only to provider-span-maintenance; use --site for other scenarios")

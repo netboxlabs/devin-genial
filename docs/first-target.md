@@ -39,8 +39,10 @@ detail and [seeding](seeding.md) the database-restore alternative.
   delete only the colliding rows, which the refusal and `just load-explain`
   name exactly). **Deleting them retires any branch already loaded under the
   namespace**: its objects lose their owner and its receipt can never verify
-  again (§7). For a before/after two-branch demo, use two namespaces or the
-  scenario snapshot flow.
+  again (§7). To see which namespaces a shared target already carries before
+  choosing yours (a **rebaseline**-frozen key), list `/api/users/owners/` —
+  each estate's rows begin with its namespace. For a before/after two-branch
+  demo, use two namespaces or the scenario snapshot flow.
 
 ## 2. The API token
 
@@ -199,9 +201,17 @@ just retire https://target.example demo-acme acme
 It deletes the named branch, then deletes exactly the main-scoped ownership
 rows whose names begin with your namespace, reporting each. (Separately,
 `just branch-delete` removes only the branch, and `just reset` *replaces* a
-branch with a fresh empty one.) End-state check: the branch list and
-`/api/users/owners/` + `/api/users/owner-groups/` show nothing carrying your
-namespace, and main still has none of your objects.
+branch with a fresh empty one.) End-state check — nothing carrying your
+namespace remains:
+
+```
+curl -s -H "Authorization: Token $NETBOX_TOKEN" \
+  "https://target.example/api/plugins/branching/branches/" \
+  "https://target.example/api/users/owners/" \
+  "https://target.example/api/users/owner-groups/" | grep -c acme   # expect 0
+```
+
+and a main-side search (`/api/dcim/sites/?q=acme`) returns none of your objects.
 
 ## 9. Verify anytime, write nothing
 

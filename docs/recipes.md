@@ -2,7 +2,8 @@
 
 [Back to the quick start](../README.md) · [Documentation map](../README.md#documentation)
 
-A recipe is the TOML file passed to `plan`, `generate` and `build`. It expresses
+A recipe is the TOML file passed to `plan` and `generate` (`build` takes a
+frozen `plan.json`, not a recipe). It expresses
 demand: how many branches, workloads, classrooms, wards, PoPs and customers, plus
 the shared identity and addressing settings. Shared builders turn that demand into
 equipment, ports, addresses, racks and cables; nothing in this file selects a
