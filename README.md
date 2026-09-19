@@ -42,14 +42,20 @@ optional devenv/Just setup. All commands run from the repository root.
 | --- | --- | --- | --- |
 | Regional bank | [bank.toml](profiles/bank.toml) · [guide](docs/modeling.md#what-makes-it-a-bank) | Branch mix, headquarters staffing, inherited equipment and shared DC services | No — 39 kinds beyond the TurboBulk contract |
 | Enterprise data center | [enterprise-dc.toml](profiles/enterprise-dc.toml) · [guide](docs/usage.md#enterprise-data-center) | Workload demand, replicas, placement and compute capacity | **Yes** (NetBox 4.7+) |
-| School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | No — wireless kinds beyond the contract |
-| Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | No — wireless kinds beyond the contract |
+| School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | TurboBulk: no (wireless kinds) — Diode path qualified locally* |
+| Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | TurboBulk: no (wireless kinds) — Diode path qualified locally* |
 | Provider backbone | [provider-backbone.toml](profiles/provider-backbone.toml) · [guide](profiles/provider-backbone.md) | PoPs, customer premises, private-L3 services and purchased transport | **Yes** (NetBox 4.7+) |
 
 Every profile generates, validates and reports offline. "Loadable" means the
 whole estate loads into a live NetBox through TurboBulk today — run
 `just load-check build/…` for the exact per-artifact verdict before picking a
 demo profile.
+
+\* School and hospital estates have a complete, locally qualified **Diode**
+load procedure — see the [local lab guide](lab/README.md) — but unlike the
+TurboBulk branch-per-demo pattern it requires a Diode-equipped target and one
+estate per target (a populated target fails its bootstrap capture; no branch
+coexistence).
 
 These are configurable industry models with explicit construction limits.
 Additional industries need reviewed rules and checks. See [how the generator

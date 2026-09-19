@@ -296,6 +296,10 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
             "mergeable": delivery_policy == "reviewable",
             "revertible_after_merge": delivery_policy == "reviewable",
         },
+        # branch_capabilities state the delivery-policy contract; they are not
+        # a claim about upstream merge health.
+        "merge_note": ("merging a TurboBulk-loaded branch to main is currently blocked "
+                       "upstream; demo from the branch (see docs/qualification.md)"),
         "target_contract": {"netbox": status.get("netbox-version"), "plugins": plugins},
         "branch": None if branch_row is None else {
             key: branch_row.get(key) for key in ("id", "name", "schema_id", "status")},
@@ -642,33 +646,34 @@ def main(argv=None):
             _, _raw, _plan, objects, _offline = _artifact(args.artifact)
             kinds = sorted({obj["kind"] for obj in objects.values()})
             uncovered = sorted(set(kinds) - set(SPECS))
-            unsupported_refs = sorted(
+            unsupported_refs = sorted({
                 f"{obj['kind']}.{ref}" for obj in objects.values()
                 for ref in set(obj["refs"]) - SUPPORTED_REFS.get(obj["kind"], set())
-                if obj["kind"] in SPECS)
+                if obj["kind"] in SPECS})
             rest_kinds = sorted(set(kinds) & REST_CREATE_KINDS)
             loadable = not uncovered and not unsupported_refs
+            # Verdict first, on stdout, so `just load-check … | tail` shows the
+            # answer rather than the detail JSON.
+            if not loadable:
+                verdict = ("NOT loadable via TurboBulk: "
+                           + (f"{len(uncovered)} of {len(kinds)} kinds are outside the "
+                              "compiler contract" if uncovered else
+                              f"{len(unsupported_refs)} reference fields have no compiler "
+                              "translation") + " (listed below).")
+            elif "module_bay_type" in rest_kinds:
+                verdict = ("REQUIRES a NetBox 4.7+ target (module bay types do not exist "
+                           "before 4.7). Loadable there via TurboBulk+REST; run just "
+                           "load-explain against the target for the binding preflight.")
+            else:
+                verdict = ("Loadable via TurboBulk+REST. Run just load-explain against "
+                           "the target for the binding preflight.")
+            print(verdict)
             print(json.dumps({"artifact": args.artifact, "kinds": len(kinds),
                               "turbobulk_loadable": loadable,
                               "turbobulk_uncovered": uncovered,
                               "turbobulk_unsupported_refs": unsupported_refs,
                               "rest_create_kinds": rest_kinds}, indent=2, sort_keys=True))
-            if not loadable:
-                print("NOT loadable via TurboBulk: "
-                      + (f"{len(uncovered)} of {len(kinds)} kinds are outside the compiler "
-                         "contract" if uncovered else
-                         f"{len(unsupported_refs)} references have no compiler translation")
-                      + " (listed above).", file=os.sys.stderr)
-                return 2
-            if "module_bay_type" in rest_kinds:
-                print("REQUIRES a NetBox 4.7+ target (module bay types do not exist "
-                      "before 4.7). Loadable there via TurboBulk+REST; run just "
-                      "load-explain against the target for the binding preflight.",
-                      file=os.sys.stderr)
-            else:
-                print("Loadable via TurboBulk+REST. Run just load-explain against the "
-                      "target for the binding preflight.", file=os.sys.stderr)
-            return 0
+            return 0 if loadable else 2
         if args.verify_only:
             from .turbobulk import verify_target
             if receipt is None:
@@ -694,7 +699,16 @@ def main(argv=None):
                       delivery_policy=args.delivery_policy,
                       turbobulk_job_rows=args.turbobulk_job_rows)
         if args.explain:
-            print(json.dumps(result["decision"], indent=2, sort_keys=True))
+            decision = result["decision"]
+            print(json.dumps(decision, indent=2, sort_keys=True))
+            if decision["selected"] is None:
+                names = ([decision["requested"]] if decision["requested"] != "auto"
+                         else ["turbobulk", "diode", "rest"])
+                detail = "; ".join(f"{name}: {', '.join(decision['candidates'][name]['reasons'])}"
+                                   for name in names)
+                print("No faithful loader fits this artifact and target; " + detail,
+                      file=os.sys.stderr)
+                return 2
         else:
             summary = {"success": result.get("success", False), "result": result.get("result"),
                        "transport": result.get("transport"), "receipt": str(receipt)}

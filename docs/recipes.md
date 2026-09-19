@@ -53,7 +53,7 @@ are enforced at `estates/model.py:146`.
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
 | `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`. Omitting the key selects the bank. | **rebaseline** |
-| `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. | **rebaseline** |
+| `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. | **rebaseline** |
 | `name` | string | per profile | 1–80 characters. Participates in Diode matching identities for the provider. | **rebaseline** |
 | `seed` | integer | `42` | `0` ≤ seed < 2^63. Drives bounded local variation (serials, procurement dates, design-pool choices) only. | **rebaseline** |
 | `as_of` | string | `2026-09-01` | ISO date. Observation date for authored history. | **rebaseline** |
