@@ -172,7 +172,8 @@ def _context(plan, objects, kinds):
     for model in hardware_catalog()["models"].values():
         catalog_cages[(model["manufacturer"], model["model"])] = next(
             (p["name"] for p in model["interfaces"]
-             if p["type"] in {"1000base-x-sfp", "10gbase-x-sfpp", "100gbase-x-qsfp28"}), None)
+             if p["type"] in {"1000base-x-sfp", "10gbase-x-sfpp", "25gbase-x-sfp28",
+                              "100gbase-x-qsfp28"}), None)
     optical_ports = {c["refs"].get(side) for c in kinds["cable"] if c["attrs"].get("type") in {"smf", "aoc"}
                      for side in ("a", "b")}
     for port in kinds["interface"]:

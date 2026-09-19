@@ -22,6 +22,7 @@ from .validate_wireless_context import validate as validate_wireless_context
 from .validate_datacenter import validate as validate_datacenter
 from .validate_school import validate as validate_school
 from .equipment import validate as validate_equipment
+from .model import selected_alias
 
 
 # Independent expectations for the authored bank services. These are demo intent,
@@ -43,15 +44,25 @@ BANK_BRANCHES_PER_INSTANCE = {
 # Independent synthetic allowances for the bank's installed DC design. These
 # are planning policy, not measured consumption or vendor performance ratings.
 BANK_HOST_RESOURCES = {"vcpus": 64, "memory_mb": 262144, "disk_mb": 8000000}
-BANK_POWER_WATTS = {"access": 120, "inherited-access": 120, "leaf": 160, "core": 220, "edge": 40,
+BANK_POWER_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
+                    "leaf": 160, "leaf-juniper": 160, "core": 220, "edge": 40,
                     "server": 250, "console-server": 40, "liquid-chassis": 400}
 BANK_BRANCH_ENDPOINTS = {"s": (12, 2, 2, 2), "m": (36, 4, 4, 4), "l": (84, 6, 8, 8)}
 
+# Branch designs name a role family and its required uplink/inlet count. The
+# recipe's selected vendor line decides which catalog model the family resolves
+# to; the design itself never names a vendor.
 BRANCH_DESIGNS = {"modern": ("access", 2), "inherited": ("inherited-access", 1), "refreshed": ("access", 2)}
+# Endpoint families whose devices are wall-powered and never racked.
+ENDPOINT_FAMILIES = ("endpoint", "atm", "ap")
+
+
+def _full_catalog():
+    return json.loads((Path(__file__).resolve().parent.parent / "catalog/hardware.json").read_text())
 
 
 def _catalog():
-    return json.loads((Path(__file__).resolve().parent.parent / "catalog/hardware.json").read_text())["models"]
+    return _full_catalog()["models"]
 
 
 def _medium(kind, port_type):
@@ -61,7 +72,7 @@ def _medium(kind, port_type):
         return None  # The provider handoff does not declare a connector family.
     if kind in {"console_port", "console_server_port"}:
         return "console"
-    if "stack" in port_type:
+    if "stack" in port_type or port_type == "juniper-vcp":
         return "stack"
     if port_type in {"8p8c", "rj-45"} or "base-t" in port_type:
         return "copper"
@@ -262,6 +273,16 @@ def validate(plan):
     except (OSError, ValueError, KeyError) as exc:
         catalog = {}
         report("catalog-unavailable", "catalog", f"Cannot inspect hardware catalog: {exc}")
+    try:
+        declared_lines = _full_catalog()
+    except (OSError, ValueError, KeyError):
+        declared_lines = {}
+
+    def line(family):
+        """Catalog model the recipe's declared vendor selection binds to a family."""
+        return selected_alias(plan.get("recipe", {}), family, declared_lines) if declared_lines else family
+
+    endpoint_aliases = {line(family) for family in ENDPOINT_FAMILIES}
     poe_findings, poe_watts = analyze_poe(plan, catalog)
     findings.extend(poe_findings)
     optics_findings, optics_watts = analyze_optics(plan, catalog)
@@ -904,7 +925,8 @@ def validate(plan):
         site_id = site_key.removeprefix("site/")
         network_roles = {"role/workstation": "users", "role/atm": "atm", "role/ap": "wireless", "role/camera": "security"}
         vlans = {f"vlan/{site_id}/{segment}" for segment in (*network_roles.values(), "management")}
-        alias, minimum = BRANCH_DESIGNS[policy["design"]]
+        family, minimum = BRANCH_DESIGNS[policy["design"]]
+        alias = line(family)
         access = {key for key in devices_by_site[site_key] if refs(key).get("role") == "role/access"}
         edges = {key for key in devices_by_site[site_key] if refs(key).get("role") == "role/wan-edge"}
         dist = {key for key in devices_by_site[site_key] if refs(key).get("role") == "role/distribution"}
@@ -947,7 +969,7 @@ def validate(plan):
         management_vlan = f"vlan/{site_id}/management"
         for device in devices_by_site[site_key]:
             model = catalog.get(meta(device).get("hardware"), {})
-            if meta(device).get("hardware") in {"endpoint", "atm", "ap"} or not model.get("power_ports") or model.get("power_outlets"):
+            if meta(device).get("hardware") in endpoint_aliases or not model.get("power_ports") or model.get("power_outlets"):
                 continue
             primary_address = refs(device).get("primary_ip4")
             primary = refs(primary_address).get("assigned_object")
@@ -1124,7 +1146,7 @@ def validate(plan):
                             report("endpoint-floor", device, "Endpoint mounting height must be inside its assigned floor.")
             if contract.get("kind") == "hq":
                 reserve = plan.get("recipe", {}).get("reserve_fraction", 0.2)
-                model = catalog.get("access", {})
+                model = catalog.get(line("access"), {})
                 usable = math.floor(len(model.get("access_ports", [])) * (1-reserve))
                 access_by_room = Counter(refs(device).get("location") for device in devices_by_site[site_key]
                                          if refs(device).get("role") == "role/access")
@@ -1223,7 +1245,8 @@ def validate(plan):
             if design not in BRANCH_DESIGNS:
                 report("branch-design", site_key, f"Unsupported branch design {design!r}.")
             else:
-                alias, required_paths = BRANCH_DESIGNS[design]
+                family, required_paths = BRANCH_DESIGNS[design]
+                alias = line(family)
                 spec = catalog.get(alias, {})
                 site_id = site_key.removeprefix("site/")
                 if (contract.get("kind") == "branch" and meta(site_key).get("branch_design") != design) or contract.get("access_hardware") != alias:
@@ -1403,7 +1426,7 @@ def validate(plan):
                 device_type = refs(device).get("device_type")
                 alias = device_type.removeprefix("hardware/") if isinstance(device_type, str) else ""
                 model = catalog.get(alias, {})
-                if bank_campus and (alias in {"endpoint", "atm", "ap"} or not model.get("power_ports") or model.get("power_outlets")):
+                if bank_campus and (alias in endpoint_aliases or not model.get("power_ports") or model.get("power_outlets")):
                     continue
                 rack, location = refs(device).get("rack"), refs(device).get("location")
                 if (kind(rack) != "rack" or site(rack) != site_key or kind(location) != "location" or

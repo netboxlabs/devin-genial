@@ -14,6 +14,7 @@ import re
 from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
+from .model import selected_alias
 
 
 NETWORK_OFFSETS = {"management": 0, "staff": 1, "students": 2,
@@ -36,6 +37,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     recipe = plan.get("recipe", {})
     if recipe.get("profile") != "school-district":
         return []
+    access_alias, leaf_alias = (selected_alias(recipe, family) for family in ("access", "leaf"))
     findings = []
 
     def report(code, key, message):
@@ -287,7 +289,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if (kind(address) != "ip_address" or attrs(address).get("status") != "active" or
                     refs(address).get("assigned_object") != port or refs(address).get("vrf") != f"vrf/{network}"):
                 report("school-endpoint-address", device, "Installed endpoint requires its active primary address on eth0 in the intended segment VRF.")
-        capacity = int(Decimal(len(catalog.get("access", {}).get("access_ports", []))) * usable)
+        capacity = int(Decimal(len(catalog.get(access_alias, {}).get("access_ports", []))) * usable)
         access_by_room = Counter(refs(device).get("location") for device in roles["role/access"])
         for room, members in room_endpoints.items():
             scope = f"access-endpoints/{sid}/{room}"
@@ -306,7 +308,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             for device, slot in slots.items():
                 pair, offset = divmod(slot, 2*capacity)
                 switch = f"device/{sid}/{prefix}access-{2*pair+offset%2+1:02}"
-                port = catalog["access"]["access_ports"][offset//2]
+                port = catalog[access_alias]["access_ports"][offset//2]
                 if peers.get(f"{device}/if/eth0") != f"{switch}/if/{port}":
                     report("school-access-allocation", device, "Actual endpoint path must match its reserved switch and catalog copper port.")
         if len(roles["role/access"]) > 38:
@@ -330,7 +332,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for role in ("role/access", "role/wan-edge"):
             for device in roles[role]:
                 upstreams = set()
-                if role == "role/access" and (meta(device).get("hardware") != "access" or switch_counts[device] > capacity):
+                if role == "role/access" and (meta(device).get("hardware") != access_alias or switch_counts[device] > capacity):
                     report("school-access-capacity", device, "Actual attached endpoints must fit this catalog access switch after reserve.")
                 for port in children[("device", device)]:
                     peer = peers.get(port)
@@ -344,7 +346,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     report("school-uplink-path", device, "Access and carrier edges require two connected active MDF distribution uplinks carrying every campus segment.")
         for role in ("role/distribution", "role/wan-edge"):
             if any(refs(device).get("location") != mdf or meta(device).get("hardware") !=
-                    ("leaf" if role == "role/distribution" else "edge") for device in roles[role]):
+                    (leaf_alias if role == "role/distribution" else "edge") for device in roles[role]):
                 report("school-core-placement", site, "Distribution and carrier-edge equipment must remain in the MDF.")
         for network in network_offsets:
             if network == "wan":

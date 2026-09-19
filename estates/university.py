@@ -18,11 +18,11 @@ import re
 
 from . import campus, datacenter, equipment, ipv6, networking, operations, places, poe, optics
 from .blocks import Site, foundation
-from .model import DesignError, World, hardware_catalog, resolve_bank_recipe, resolve_demo
+from .model import DesignError, World, hardware_catalog, resolve_bank_recipe, resolve_demo, selected_alias
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
-          "max_objects", "patching", "reservation_user", "wan_tiers_mbps", "naming", "site_names"}
+          "max_objects", "patching", "reservation_user", "wan_tiers_mbps", "naming", "site_names", "hardware"}
 # Every campus building offers staff, student and visitor service; only academic
 # buildings carry the instructional/research computing segment.
 BUILDING_NETWORKS = ("management", "staff", "students", "wireless", "security", "guest")
@@ -158,9 +158,9 @@ def peak_mbps(item, kind):
     return 4*item["classrooms"] + 2*item["lab_seats"] + 2*item["offices"] + 10
 
 
-def access_switches(item, kind, reserve):
+def access_switches(item, kind, reserve, alias="access"):
     """Restate the shared room-local access pair arithmetic before allocating."""
-    ports = len(hardware_catalog()["models"]["access"]["access_ports"])
+    ports = len(hardware_catalog()["models"][alias]["access_ports"])
     usable = int(ports * (1 - Decimal(str(reserve))))
     if usable < 1:
         raise DesignError("reserve_fraction leaves no usable access ports; lower it or rebaseline")
@@ -266,7 +266,8 @@ def resolve(raw, growth=False):
         if Decimal(peak) > 1000*(1 - Decimal(str(recipe["reserve_fraction"]))):
             raise DesignError(f"{label}: {peak} Mbps peak plus reserve exceeds the supported 1 Gbps building "
                               "handoff; reduce demand or extend the reviewed campus edge")
-        switches = access_switches(item, kind, recipe["reserve_fraction"])
+        switches = access_switches(item, kind, recipe["reserve_fraction"],
+                                   selected_alias(recipe, "access"))
         if switches > 38:
             raise DesignError(f"{label}: its floors need {switches} access switches, over the 38 supported "
                               "distribution attachments; reduce installed ports per building or add a building")
@@ -488,7 +489,7 @@ def _building(site, item, kind):
             add(f"camera-floor-{floor:02}-{side}", "camera", "security", corridor, "corridor-camera", ordinal)
     facts = campus.access(site, endpoints, upstreams, networks,
                           {"access_hardware": "access", "upstreams": 2, "label": "access-"}, stable=True)
-    site.contract.update(endpoint_count=len(endpoints), demand=demand(item, kind), access_hardware="access",
+    site.contract.update(endpoint_count=len(endpoints), demand=demand(item, kind), access_hardware=site.w.hardware_alias("access"),
                          access_devices=facts["access_devices"],
                          access_usable_ports=facts["access_usable_ports"],
                          required_device_roles={"role/wan-edge": 2, "role/distribution": 2,

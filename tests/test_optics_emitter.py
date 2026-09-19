@@ -14,8 +14,13 @@ class OpticsEmitterTests(unittest.TestCase):
     def setUpClass(cls):
         cls.plans = {name: generate(recipe_from_file(f"profiles/{name}.toml")) for name in (
             "bank-depth", "enterprise-dc", "school-wireless", "hospital-wireless", "provider-backbone")}
+        # The alternate vendor lines install their own reviewed parts; without a
+        # variant estate the exhaustive-coverage assertion below could not see them.
+        variant = recipe_from_file("profiles/school-wireless.toml")
+        variant["hardware"] = {"access": "juniper", "leaf": "juniper", "ap": "aruba"}
+        cls.plans["school-wireless-juniper"] = generate(variant)
 
-    def test_all_five_have_only_occupied_cage_inventory_and_resolved_references(self):
+    def test_every_profile_has_only_occupied_cage_inventory_and_resolved_references(self):
         seen = set()
         for name, plan in self.plans.items():
             with self.subTest(profile=name):

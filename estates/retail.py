@@ -17,7 +17,7 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps", "headquarters_staff",
-          "naming", "site_names"}
+          "naming", "site_names", "hardware"}
 STORE_NETWORKS = ("backoffice", "pos", "wireless", "security", "guest", "management")
 DISTRIBUTION_NETWORKS = ("backoffice", "wireless", "security", "management")
 OFFICE_NETWORKS = ("backoffice", "wireless", "security", "guest", "management")
@@ -297,7 +297,7 @@ def _campus(site, demand, networks):
 
 
 def _contract(site, demand, endpoints, facts):
-    site.contract.update(endpoint_count=len(endpoints), demand=dict(demand), access_hardware="access",
+    site.contract.update(endpoint_count=len(endpoints), demand=dict(demand), access_hardware=site.w.hardware_alias("access"),
                          access_devices=facts["access_devices"],
                          access_usable_ports=facts["access_usable_ports"],
                          required_device_roles={"role/wan-edge": 2, "role/distribution": 2,

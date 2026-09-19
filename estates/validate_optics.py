@@ -16,7 +16,11 @@ from .model import hardware_catalog
 
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
+          "25gbase-x-sfp28": ("sfp28", 25000000),
           "100gbase-x-qsfp28": ("qsfp28", 100000000)}
+# A smaller module in a larger backward-compatible cage, at that module's own
+# rate. Everything else must match the cage's own form factor exactly.
+_DOWNRATED = {("sfp", "sfpp", 1000000), ("sfpp", "sfp28", 10000000)}
 _LENGTH = {"m": 1, "cm": .01, "ft": .3048, "in": .0254, "km": 1000}
 
 
@@ -224,7 +228,7 @@ def analyze(plan, catalog=None):
         rate = attrs(port).get("speed", default_rate)
         if (type(rate) is not int or rate <= 0 or rate != part["rate_kbps"] or
                 name not in part["compatible_interfaces"].get(alias, []) or
-                part["form_factor"] != form and (part["form_factor"], form, rate) != ("sfp", "sfpp", 1000000)):
+                part["form_factor"] != form and (part["form_factor"], form, rate) not in _DOWNRATED):
             report("optics-compatibility", port, "Actual module vendor/model must be reviewed for this named host cage, physical form and effective interface speed.")
         bay, module_type = refs(module).get("module_bay"), refs(module).get("module_type")
         vendor = models[alias]["manufacturer"]

@@ -237,7 +237,11 @@ def validate(plan, catalog=None):
         models = catalog.get("models", catalog) if isinstance(catalog, dict) else {}
         identities = {(model.get("manufacturer"), model.get("model")): model for model in models.values()
                       if isinstance(model, dict)} if isinstance(models, dict) else {}
-        wlan_channels = {"5g-36-5180-20", "5g-44-5220-20", "5g-157-5785-20"}
+        # Independently restated channel plans per band; the catalog's declared
+        # radio band decides which plan applies. No RF coverage is asserted.
+        wlan_channels = {"5g": {"5g-36-5180-20", "5g-44-5220-20", "5g-157-5785-20"},
+                         "2.4g": {"2.4g-1-2412-22", "2.4g-6-2437-22", "2.4g-11-2462-22"}}
+        diagnostic_channels = {"5g": "5g-149-5745-20", "2.4g": "2.4g-11-2462-22"}
         for radio in sorted(serving_radios | linked_radios):
             device = refs(radio).get("device")
             device_type = refs(device).get("device_type")
@@ -250,10 +254,11 @@ def validate(plan, catalog=None):
             if (kind(radio) != "interface" or kind(device) != "device" or kind(device_type) != "device_type" or
                     kind(manufacturer) != "manufacturer" or len(ports) != 1 or
                     not str(ports[0].get("type", "")).startswith("ieee802.11") or attrs(radio).get("type") != ports[0].get("type") or
-                    not isinstance(bands, dict) or not isinstance(name, str) or bands.get(name) != "5g" or
-                    not isinstance(channel, str) or (radio in serving_radios and channel not in wlan_channels) or
-                    (radio in linked_radios and channel != "5g-149-5745-20")):
-                report("wireless-radio-band", radio, "Actual device-type manufacturer/model must provide this 5 GHz radio; WLAN channels are 36/44/157 at 20 MHz and the diagnostic hop uses channel 149 at 20 MHz.")
+                    not isinstance(bands, dict) or not isinstance(name, str) or bands.get(name) not in wlan_channels or
+                    not isinstance(channel, str) or
+                    (radio in serving_radios and channel not in wlan_channels[bands[name]]) or
+                    (radio in linked_radios and channel != diagnostic_channels[bands[name]])):
+                report("wireless-radio-band", radio, "Actual device-type manufacturer/model must declare this radio's band; 5 GHz WLAN channels are 36/44/157 at 20 MHz with the diagnostic hop on 149, and 2.4 GHz uses 1/6/11 at 22 MHz with the diagnostic hop on 11.")
     wlan_identities = set()
     for key in by_kind["wireless_lan"]:
         identity = (refs(key).get("group"), attrs(key).get("ssid"))

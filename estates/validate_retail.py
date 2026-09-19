@@ -13,6 +13,7 @@ import math
 from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
+from .model import selected_alias
 
 
 # Independent restatement of the profile's address and service policy.
@@ -42,6 +43,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     recipe = plan.get("recipe", {})
     if recipe.get("profile") != "retail-chain":
         return []
+    access_alias = selected_alias(recipe, "access")
     findings = []
 
     def report(code, key, message):
@@ -199,7 +201,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if role == "ap":
                 # PoE reachability is the actual copper path into a catalog
                 # access port; the shared PoE analyser checks the supply budget.
-                if attrs(peer).get("name") not in catalog.get("access", {}).get("access_ports", []):
+                if attrs(peer).get("name") not in catalog.get(access_alias, {}).get("access_ports", []):
                     report("retail-ap-power", device, "Coverage radio must reach a catalog PoE access port on its serving switch.")
             if switch:
                 switch_counts[switch] += 1
@@ -218,7 +220,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if (kind(address) != "ip_address" or attrs(address).get("status") != "active" or
                     refs(address).get("assigned_object") != port or refs(address).get("vrf") != f"vrf/{network}"):
                 report("retail-endpoint-address", device, "Installed endpoint requires its active primary address on eth0 in the intended segment VRF.")
-        capacity = int(Decimal(len(catalog.get("access", {}).get("access_ports", []))) * usable)
+        capacity = int(Decimal(len(catalog.get(access_alias, {}).get("access_ports", []))) * usable)
         scope = f"access-endpoints/{sid}/{closet}"
         slots = plan.get("reservations", {}).get(scope)
         if (not capacity or not isinstance(slots, dict) or set(slots) != closet_endpoints or
@@ -233,13 +235,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             for device, slot in slots.items():
                 pair, offset = divmod(slot, 2*capacity)
                 switch = f"device/{sid}/access-{2*pair+offset % 2+1:02}"
-                port = catalog["access"]["access_ports"][offset//2]
+                port = catalog[access_alias]["access_ports"][offset//2]
                 if peers.get(f"{device}/if/eth0") != f"{switch}/if/{port}":
                     report("retail-access-allocation", device, "Actual endpoint path must match its reserved switch and catalog copper port.")
         if len(roles["role/access"]) > 38:
             report("retail-access-capacity", site, "Access-switch attachments exceed the finite distribution port budget.")
         for device in roles["role/access"]:
-            if meta(device).get("hardware") != "access" or switch_counts[device] > capacity:
+            if meta(device).get("hardware") != access_alias or switch_counts[device] > capacity:
                 report("retail-access-capacity", device, "Actual attached endpoints must fit this catalog access switch after reserve.")
 
         required_vlans = {f"vlan/{sid}/{name}" for name in network_offsets if name != "wan"}

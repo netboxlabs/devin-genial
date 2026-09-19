@@ -204,6 +204,15 @@ def recovery_overlay(w):
         w.add("l2vpn_termination", f"l2vpn/recovery/{sid}", {}, {"l2vpn": "l2vpn/recovery", "assigned_object": service})
 
 
+# Authored non-overlapping channel plans per radio band. These are planning
+# assignments, not an RF survey: no coverage, interference or reuse distance is
+# claimed. 2.4 GHz offers only three non-overlapping 22 MHz channels, so the
+# diagnostic hop there shares one with a WLAN radio instead of adding a fourth.
+RADIO_CHANNELS = {"5g": ("5g-36-5180-20", "5g-44-5220-20", "5g-157-5785-20"),
+                  "2.4g": ("2.4g-1-2412-22", "2.4g-6-2437-22", "2.4g-11-2462-22")}
+DIAGNOSTIC_CHANNELS = {"5g": "5g-149-5745-20", "2.4g": "2.4g-11-2462-22"}
+
+
 def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=True, stable_channels=False, guest_sites=()):
     """Attach explicit WLAN roles to existing AP radios and wired access paths.
 
@@ -240,6 +249,14 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
         radio_slots.setdefault("wlan0", len(radio_slots))
     roles_by_site = {site["key"]: lan_roles + ((("guest", "guest", "wlan0"),) if site["key"] in guest_sites else ()) for site in sites}
     peers = _physical_peers(w.objects)
+
+    def band(device, radio_name):
+        """Declared band of this AP model's radio; channels follow the hardware."""
+        bands = w.catalog["models"][w.obj(device)["meta"]["hardware"]].get("radio_bands", {})
+        if bands.get(radio_name) not in RADIO_CHANNELS:
+            raise DesignError(f"{device}: {radio_name} has no reviewed channel plan for its catalog band")
+        return bands[radio_name]
+
     # Check prerequisites before adding groups or modifying the wired/radio paths.
     for site in sites:
         sid = site["key"].split("/", 1)[1]
@@ -276,7 +293,8 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
             channel_slot = w.choose(device, "wireless-channel", range(3)) if stable_channels else ordinal
             for radio_name, wlans in memberships.items():
                 radio = w.obj(f"{device}/if/{radio_name}")
-                radio["attrs"].update(rf_role="ap", rf_channel=("5g-36-5180-20", "5g-44-5220-20", "5g-157-5785-20")[(channel_slot + radio_slots[radio_name]) % 3])
+                channels = RADIO_CHANNELS[band(device, radio_name)]
+                radio["attrs"].update(rf_role="ap", rf_channel=channels[(channel_slot + radio_slots[radio_name]) % len(channels)])
                 radio["attrs"].pop("mode", None)
                 radio["refs"].pop("untagged_vlan", None)
                 radio["refs"].pop("tagged_vlans", None)
@@ -298,7 +316,9 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
         ports = []
         for i, device in enumerate(devices[:2]):
             port = f"{device}/if/wlan1"
-            w.obj(port)["attrs"].update(rf_role="ap" if i == 0 else "station", rf_channel="5g-149-5745-20", description="Dedicated routed diagnostic hop; no LAN bridging")
+            w.obj(port)["attrs"].update(rf_role="ap" if i == 0 else "station",
+                                        rf_channel=DIAGNOSTIC_CHANNELS[band(device, "wlan1")],
+                                        description="Dedicated routed diagnostic hop; no LAN bridging")
             w.obj(port)["refs"]["vrf"] = prefix["refs"]["vrf"]
             w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "active", "dns_name": f"{w.obj(device)['attrs']['name']}-radio.{ns}.example"},
                   {"assigned_object": port, "vrf": prefix["refs"]["vrf"], "tenant": tenant})

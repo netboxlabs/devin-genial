@@ -14,6 +14,7 @@ import math
 from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
+from .model import selected_alias
 
 
 # Independent restatement of the profile's address, layout and service policy.
@@ -189,7 +190,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     if campus_wan < campus_peak:
         report("university-campus-capacity", "plan", f"Campus edge purchase of {campus_wan} Mbps does not cover the "
                                                      f"{campus_peak} Mbps declared building peak.")
-    port_names = catalog.get("access", {}).get("access_ports", [])
+    access_alias = selected_alias(recipe, "access")
+    port_names = catalog.get(access_alias, {}).get("access_ports", [])
     capacity = int(Decimal(len(port_names)) * usable_fraction)
 
     for sid, facility, item in facilities:
@@ -423,7 +425,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if len(roles["role/access"]) > 38:
             report("university-access-capacity", site, "Access-switch attachments exceed the finite distribution port budget.")
         for device in roles["role/access"]:
-            if meta(device).get("hardware") != "access" or switch_counts[device] > capacity:
+            if meta(device).get("hardware") != access_alias or switch_counts[device] > capacity:
                 report("university-access-capacity", device, "Actual attached endpoints must fit this catalog access switch after reserve.")
 
         # --- forwarding, gateways and addressing -------------------------------

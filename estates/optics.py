@@ -14,6 +14,7 @@ from .model import DesignError
 
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
+          "25gbase-x-sfp28": ("sfp28", 25000000),
           "100gbase-x-qsfp28": ("qsfp28", 100000000)}
 
 

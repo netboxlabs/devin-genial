@@ -57,18 +57,19 @@ def _reserve_endpoints(w, scope, members, hardware, usable):
 def aggregation(site, network_roles, wan_peak_mbps, compact=False):
     """Connect WAN edges, optional distribution pair, and addressed gateways."""
     w = site.w
+    fabric_ports, dist_uplinks = (w.hardware("leaf")[field] for field in ("fabric_ports", "uplink_ports"))
     dist = [] if compact else [site.device("leaf", f"dist-{side}", "distribution") for side in ("a", "b")]
     edges = [site.device("edge", f"edge-{side}", "wan-edge") for side in ("a", "b")]
     for index, edge in enumerate(edges):
         for side, parent in enumerate(dist):
-            a, b = site.interface(edge, f"x{side+1}"), site.interface(parent, f"Ethernet{index+1}")
+            a, b = site.interface(edge, f"x{side+1}"), site.interface(parent, fabric_ports[index])
             site.cable(a, b, "smf")
             trunk(site, [a, b], network_roles)
         if dist:
             site.redundant(edge, dist)
         site.wan(edge, "ab"[index], 1, demand_mbps=wan_peak_mbps)
     if dist:
-        a, b = [site.interface(d, "Ethernet49/1") for d in dist]
+        a, b = [site.interface(d, dist_uplinks[0]) for d in dist]
         site.cable(a, b, "aoc")
         trunk(site, [a, b], network_roles)
     upstreams = edges if compact else dist
@@ -99,8 +100,9 @@ def access(site, endpoints, upstreams, network_roles, design, compact=False, sta
     never recycles slots; profile growth policy must decide whether to reject it.
     """
     w = site.w
-    hardware = w.catalog["models"][design["access_hardware"]]
+    hardware = w.hardware(design["access_hardware"])
     access_ports, uplink_ports = hardware["access_ports"], hardware["uplink_ports"]
+    parent_ports = w.hardware("leaf")["fabric_ports"]
     # Critical endpoint cohorts alternate between access switches; this is branch
     # fault isolation, not a claim that a single-homed endpoint is redundant.
     usable = (int(len(access_ports) * (1-Decimal(str(w.recipe["reserve_fraction"])))) if stable else
@@ -138,7 +140,7 @@ def access(site, endpoints, upstreams, network_roles, design, compact=False, sta
             parents = upstreams if design["upstreams"] == 2 else [upstreams[upstream_slot % 2]]
             for j, parent in enumerate(parents):
                 a = site.interface(switch, uplink_ports[j])
-                b = site.interface(parent, f"x{i+1}" if compact else f"Ethernet{upstream_slot+3}")
+                b = site.interface(parent, f"x{i+1}" if compact else parent_ports[upstream_slot+2])
                 site.cable(a, b, "smf")
                 trunk(site, [a, b], network_roles)
             site.redundant(switch, parents, minimum=design["upstreams"])

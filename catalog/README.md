@@ -1,7 +1,9 @@
 # Hardware catalog
 
 `hardware.json` is a small, versioned inventory consumed by the estate builder.
-Catalog **0.10** adds the selected optics and power policy described below.
+Catalog **0.11** adds the [selectable vendor lines](#selectable-vendor-lines)
+the `[hardware]` recipe key chooses between; catalog 0.10 added the selected
+optics and power policy described below.
 Phase 5 generation, independent checks and all-five SDK exports are implemented
 and tested. GOAL.md records review and pinned-target qualification separately;
 catalog entries alone do not prove installed inventory.
@@ -10,7 +12,7 @@ and final representative initial/repeat qualification on the pinned local target
 [the lab guide](../lab/README.md#current-v09-qualification) records exact scope.
 The new catalog digest requires a fresh baseline; phase 4 and older saved plans
 retain their historical catalog.
-The five named vendor models preserve the interface names, types, management
+The named vendor models preserve the interface names, types, management
 flags, rack height, and depth classification from the community device-type
 library at commit `72cc49fbb445f1e2f310d3b8dfef55e12d0b7138`. Each source entry
 records its immutable URL, SHA-256, and CC0-1.0 license. The upstream license is
@@ -25,8 +27,13 @@ and unused source fields remain outside this catalog's scope.
 | `core` | Arista DCS-7060CX-32S-F: `Ethernet1/1`–`32/1` at 100G; `Ethernet33`, `Ethernet34` at 10G; `Management1` at 1G | Two installed PWR-500AC-F supplies; `0`, `1`, C14 |
 | `edge` | Fortinet FortiGate 100F: full upstream inventory including `x1`, `x2` at 10G and `mgmt` at 1G | Source fixed inlets `PS1`, `PS2`, C14 |
 
-The `access` model also serves management-switch roles; hardware is not
-duplicated for a different role. The Fortinet source selects the SFP personality
+The `access`, `leaf` and `ap` rows are **role families**, not fixed models: the
+recipe's `[hardware]` table selects which vendor line each one resolves to. See
+[Selectable vendor lines](#selectable-vendor-lines). The table above lists the
+default line for each family.
+
+Whichever line is selected, that model also serves management-switch roles;
+hardware is not duplicated for a different role. The Fortinet source selects the SFP personality
 for shared-media `port17`–`port20`; the catalog does not add duplicate copper
 ports. No breakout interfaces or automatic speed negotiation are assumed.
 
@@ -63,6 +70,109 @@ JSON. Populating both bays is a design choice, not a claim that every sold
 chassis includes two supplies. Electrical load, PoE budgets, and cord connector
 selection are not certified by this inventory.
 
+## Selectable vendor lines
+
+`hardware_lines` declares the three role families whose model the recipe may
+choose, the default vendor for each, and the catalog alias every vendor line
+resolves to. Nothing else in the catalog is selectable; `core`, `edge`,
+`server`, `provider-edge`, `pdu`, `patch-panel` and the reference endpoints are
+fixed. `inherited-access` stays bound to the bank's acquisition story and is
+never substituted.
+
+| Family | Default line | Alternate line |
+| --- | --- | --- |
+| `access` | `cisco` → alias `access`, Cisco Catalyst 9200L-24P-4X | `juniper` → alias `access-juniper`, Juniper EX3400-24P |
+| `leaf` | `arista` → alias `leaf`, Arista DCS-7050SX3-48C8-F | `juniper` → alias `leaf-juniper`, Juniper QFX5120-48Y-AFO2 |
+| `ap` | `reference` → alias `ap`, Reference PoE access point | `aruba` → alias `ap-aruba`, HPE Aruba AP-505 |
+
+Every builder names a family; `estates/model.py` `World.hardware_alias` is the
+single point where a family becomes a model, and `selected_alias` gives the
+independent checkers the same answer from the declared recipe alone. Adding a
+line here changes the hardware digest, so every profile needs a new baseline.
+
+### Juniper EX3400-24P (`access-juniper`)
+
+`ge-0/0/0`–`23` at 1G with `poe_mode: pse` and `type2-ieee802.3at`; the four
+shared uplink cages selected at 10G as `xe-0/2/0`–`3`; `me0` management at 1G;
+1U. The two rear QSFP+ ports `et-0/1/0` and `et-0/1/1` are the platform's
+default Virtual Chassis ports and carry NetBox type `juniper-vcp`, so the DC
+service stack builds from real stacking ports rather than Cisco StackWise ones.
+Two installed `JPSU-600-AC-AFO` supplies occupy bays `PSU0`/`PSU1`, producing
+C14 inlets `Power Supply 0` and `Power Supply 1`.
+
+Sources: pinned [EX3400-24P device type](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml)
+and [JPSU-600-AC-AFO module type](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JPSU-600-AC-AFO.yaml)
+at the same library commit; Juniper's
+[EX3400 system overview](https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-system-overview.html)
+for the PIC 0/PIC 2 port layout, the default VCPs and both console ports; and the
+[EX3400 power system](https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-power-system.html)
+for the PoE budget, the supply models and bay labels. Airflow variants, the
+150 W and 920 W supplies, DC power and Virtual Chassis membership beyond two
+members are not modeled.
+
+### Juniper QFX5120-48Y-AFO2 (`leaf-juniper`)
+
+48 SFP28 cages `et-0/0/0`–`47` and eight QSFP28 uplinks `et-0/0/48`–`55`; one
+management port `em0` at 1G; one RJ45 `Console`; 1U full depth. Two installed
+`JPSU-650W-AC-AO` supplies occupy bays `PSU 0`/`PSU 1`, producing C14 inlets `0`
+and `1` — the same 650 W module the MX204 uses, so its existing pinned module
+source is reused.
+
+Two deliberate deviations are recorded rather than hidden. First, the SFP28
+cages keep the platform's documented default 10-Gbps port mode, written as an
+explicit `speed` on each interface; Junos would surface a 10G port with the
+`xe-` prefix, and this catalog keeps the pinned library's `et-0/0/N` names
+instead of asserting a name no single Juniper document states. Second, Juniper
+documents **two** rear RJ45 management ports, `em0` (C0) and `em1` (C1), where
+the community library declares a single `fxp0`; this catalog models only `em0`
+and leaves C1 unmodeled, matching the one-management-port assumption every
+shared management builder makes.
+
+Sources: pinned [QFX5120-48Y-AFO2 device type](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/QFX5120-48Y-AFO2.yaml);
+Juniper's [QFX5120 system overview](https://www.juniper.net/documentation/us/en/hardware/qfx5120/topics/topic-map/qfx5120-system-overview.html)
+for the 48 SFP28 + 8 QSFP28 layout, the quad-grouped 10-Gbps default and the
+rear C0/C1/CON labels; the
+[QFX5120 day-one guide](https://www.juniper.net/documentation/us/en/day-one-plus/qfx5120/id-step-2-up-and-running.html)
+for the `em0`/`em1` names; and the
+[QFX5120 power system](https://www.juniper.net/documentation/us/en/hardware/qfx5120/topics/topic-map/qfx5120-power-system.html)
+for the 650 W AC supply models, the slot labels and the C13 cord coupler.
+Channelized breakout, 25G operation and DC supplies are not modeled.
+
+### HPE Aruba AP-505 (`ap-aruba`)
+
+One 1000BASE-T Type 2 powered port and two 802.11ax radios, one 5 GHz and one
+2.4 GHz. Source: the pinned
+[Aruba AP-505 device type](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/HPE/Aruba-AP-505.yaml).
+
+Interface names follow this generator's portable endpoint convention — `eth0`,
+`wlan0`, `wlan1` — so the shared access, PoE and WLAN builders address an AP the
+same way on either line. The vendor labels the wired port **E0** and identifies
+radios by band; no vendor interface-naming claim is made here, and the verified
+facts are the port count, media type, PoE class and radio count/bands. Unlike
+the reference AP's two authored 5 GHz radios, `radio_bands` records the real
+`5g`/`2.4g` split, so `wlan1` takes a 2.4 GHz channel. The `max_input_mw: 25500`
+and `pse_reservation_mw: 30000` values are the IEEE class-4 PD maximum and PSE
+reservation from `reference-poe-v1`, not a measured or vendor consumption figure
+for this model: every HPE-served datasheet URL returns 403 to automated
+retrieval, so no model-specific watt figure is asserted. The optional 12 Vdc
+input, the USB port, the serial console and the Bluetooth/Zigbee radio are not
+modeled.
+
+### Meeting or beating the default
+
+`tests/test_hardware_lines.py` recomputes this claim from the catalog rather
+than trusting the prose. Each alternate has at least as many access, uplink,
+stacking, fabric, console and power ports, at least as many PSU bays, the same
+PoE type and per-port maximum, the same planning supply-loss policy, the same
+configured link rate on every indexed port, and a reviewed optic for every
+optical cage it exposes.
+
+One raw number is smaller and is deliberately allowed: the EX3400-24P's
+two-supply PoE budget is 720 W against the C9200L's 740 W. Both switches have 24
+ports at 30 W, so the deliverable budget — the supply figure capped by that port
+limit — is 720 W on either line, and the binding N-1 planning figure is 370 W on
+both. The test asserts the capped figure, not the raw one.
+
 ## Fictional reference equipment
 
 The remaining aliases are original example designs under manufacturer
@@ -80,7 +190,7 @@ baseline instead of growing or replaying an intermediate v0.8 artifact.
 | `wall-outlet` | Non-racked single-position 8P8C outlet; rear horizontal termination and front endpoint patch connection |
 | `pdu` | Vertical 0U; C20 `Input`; 12 C13 outlets named `Outlet1`–`Outlet12`; no Ethernet management |
 | `endpoint`, `atm` | Non-rack-mounted example appliances; 1G `eth0`; C14 `Input` |
-| `ap` | Non-rack-mounted reference Type 2 PoE access point; 1G `eth0`; two 5 GHz 802.11ax radios, `wlan0` and `wlan1`; no separate mains inlet |
+| `ap` | Non-rack-mounted reference Type 2 PoE access point; 1G `eth0`; two 5 GHz 802.11ax radios, `wlan0` and `wlan1`; no separate mains inlet. Default line of the `ap` family |
 | `console-server` | 1U; 48 RJ45 asynchronous serial ports, separate 1G management, two C14 supplies |
 | `liquid-chassis` | 2U parent enclosure; one blade bay, coolant intake/distribution, 1G management, two C14 supplies |
 | `liquid-blade` | 0U child device; enclosure-powered, dedicated 1G management, cold-plate intake; fictional diagnostic device context |
@@ -101,10 +211,12 @@ they are fictional per-device budgets, not verified vendor consumption or PSU
 ratings. Existing vendor definitions remain unchanged.
 
 The physical enrichment also connects source RJ45 console ports to a same-room
-console server; Cisco USB console ports and later-created management-switch
-consoles remain present and spare. Two auxiliary Cisco access switches per DC
-form a service Virtual Chassis using both catalog StackWise ports. This is not
-an assertion that the existing Arista MLAG pairs are stacks.
+console server; the selected access line's USB console ports and later-created
+management-switch consoles remain present and spare. Two auxiliary access
+switches per DC form a service Virtual Chassis using both of that model's
+catalog stacking ports — Cisco StackWise on the default line, the EX3400's
+default QSFP+ Virtual Chassis ports on the Juniper line. This is not an
+assertion that the existing fabric MLAG pairs are stacks.
 
 Each DC has one explicitly fictional blade enclosure and its child. A native
 CoolingFeed represents the complete supply/return loop from a 4 kW laboratory
@@ -132,8 +244,13 @@ constant AP consumption nor a second load to add at the rack. Juniper's
 [PoE tables 2–3](https://www.juniper.net/documentation/us/en/software/junos/poe/topics/concept/poe-overview.html)
 distinguish a 30 W Type 2 PSE allocation from up to 25.5 W at the PD.
 
-`radio_bands` explicitly maps both `wlan0` and `wlan1` to `5g`. These are
-reference radios, with no Cisco product, country approval, measured RF or
+`radio_bands` declares each radio's band: the reference AP maps both `wlan0`
+and `wlan1` to `5g`, while the Aruba line records its real `5g`/`2.4g` split.
+The shared builder picks that band's authored non-overlapping channel plan —
+36/44/157 at 20 MHz for 5 GHz, 1/6/11 at 22 MHz for 2.4 GHz — and the
+independent checker restates it. With only three non-overlapping 2.4 GHz
+channels the bank's diagnostic hop shares channel 11 instead of adding a
+fourth. These are planning assignments, with no country approval, measured RF or
 interoperability certification implied. Existing interface names and the bank
 diagnostic remain intact; this catalog addition creates no guest WLAN,
 controller, third radio, injector or AP mains inlet.
@@ -145,6 +262,7 @@ allocation policy:
 | Model | Per-port maximum | `budget_by_active_supplies_mw` | Actual supply requirement | Authored `planning_supply_losses` |
 | --- | --- | --- | --- | --- |
 | `access` | 30,000 mW | `0: 0`, `1: 370000`, `2: 740000` | `supply_model: PWR-C5-600WAC` in the installed bays | 1 |
+| `access-juniper` | 30,000 mW | `0: 0`, `1: 370000`, `2: 720000` | `supply_model: JPSU-600-AC-AFO` in the installed bays | 1 |
 | `inherited-access` | 30,000 mW | `0: 0`, `1: 405000` | `fixed_supply_port: PSU0`; no RPS | 0 |
 
 The Cisco facts use `budget_source: cisco-psu-compatibility`, now covering the
@@ -155,7 +273,10 @@ the [EX3300-24P budget table](https://www.juniper.net/documentation/us/en/softwa
 Its 405 W PoE budget differs from its 550 W PSU rating. Removing its sole
 powered supply leaves zero delivery capacity; no single-supply survival is
 promised. Twelve 30 W reservations fit the Cisco one-supply budget, and
-thirteen fit the EX3300 normal budget. Losing one Cisco supply with 360 W
+thirteen fit the EX3300 normal budget. The EX3400-24P's `budget_source:
+juniper-ex3400-power-poe` quotes the same Juniper table family: 370 W with one
+600 W supply, 720 W with two. Twelve 30 W reservations fit its one-supply budget
+too, which is why selecting the Juniper access line moves no endpoint. Losing one Cisco supply with 360 W
 reserved loses redundancy margin without itself exceeding remaining delivery
 capacity. These calculations are policy limits, not live outage observations.
 
@@ -179,7 +300,7 @@ their presence here is not a claim of completed native round-trip testing.
 
 ## Installed optics policy
 
-The top-level `optics.parts` map defines nine selected parts. Each stable part ID
+The top-level `optics.parts` map defines ten selected parts. Each stable part ID
 records manufacturer/model, form factor, optical protocol, medium, connector,
 rate in **kbps**, reach in metres, power reservation in integer **mW**, source
 IDs and an explicit `compatible_interfaces` map from hardware alias to existing
@@ -190,14 +311,15 @@ Arista both sell a part named `SFP-10G-LR`.
 | Part ID | Manufacturer / model | Selected host cages and mode | Reserved mW per module/end |
 | --- | --- | --- | ---: |
 | `cisco-10g-lr` | Cisco `SFP-10G-LR` | `access` fixed `TenGigabitEthernet1/1/1–4`, 10G | 1,000 |
-| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`, 10G | 1,000 |
+| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
 | `arista-10g-lr` | Arista `SFP-10G-LR` | `leaf` `Ethernet1–48`, 10G | 2,000 authored |
 | `arista-100g-lr4` | Arista `QSFP-100G-LR4` | `leaf` `Ethernet49/1–56/1`; `core` `Ethernet1/1–32/1`, 100G | 4,500 |
 | `fortinet-10g-lr` | Fortinet `FN-TRAN-SFP+LR` | `edge` `x1/x2`, 10G | 1,000 authored |
 | `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7` configured **1G** | 1,000 |
-| `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`, 100G | 3,500 |
+| `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`, 100G | 3,500 |
 | `reference-10g-lr` | Devin Reference Designs `Reference 10G-LR transceiver` | `server` `eth0/eth1`, 10G | 2,000 authored |
 | `arista-100g-aoc-3m` | Arista `AOC-Q-Q-100G-3M` | `leaf` QSFP28 cages; existing peer uses `Ethernet49/1`, 100G | 3,500 authored per captive end |
+| `juniper-100g-aoc-3m` | Juniper `JNP-100G-AOC-3M` | `leaf-juniper` QSFP28 cages `et-0/0/48–55`, 100G | 3,500 authored per captive end |
 
 The Cisco [TMG lookup](https://tmgmatrix.cisco.com/) and its fixed-onboard-uplink
 note are archived JSON; the selected optic requires at least IOS XE 16.9.2.
@@ -266,8 +388,8 @@ accumulating earlier enrichment. Do not subtract optics from published PoE
 output budgets, count supply-nameplate watts as consumption, or erase an
 installed optic's reserve merely because its interface is disconnected.
 
-Catalog 0.10 leaves every existing interface, PSU, PoE fact and device model
-unchanged. Phase 5 runtime evidence in `build/goal-connected-depth/phase5/`
+Catalog 0.11 adds the three alternate lines and their reviewed optics; catalog
+0.10 left every existing interface, PSU, PoE fact and device model unchanged. Phase 5 runtime evidence in `build/goal-connected-depth/phase5/`
 qualifies its module/bay/interface and assembly relationships, repeat/growth
 identities, passive paths and additive power checks offline. Live qualification
 remains a separate gate; this catalog alone is not acceptance evidence.

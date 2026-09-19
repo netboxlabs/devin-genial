@@ -195,7 +195,8 @@ def _wireless_walkthrough(plan, objects, kinds):
         inlets[port["refs"].get("device")].append(port)
     rows = []
     for ap in sorted(aps, key=lambda o: o["key"])[:8]:
-        port = objects.get(peers.get(f"{ap['key']}/if/eth0"), {})
+        pd = models.get(ap["refs"].get("device_type", "").removeprefix("hardware/"), {}).get("poe_pd", {})
+        port = objects.get(peers.get(f"{ap['key']}/if/{pd.get('interface', 'eth0')}"), {})
         pse = port.get("refs", {}).get("device")
         normal = sum(p["attrs"].get("allocated_draw", 0) for p in inlets[pse])
         rows.append((name(ap["refs"]["site"]), name(ap["key"]), name(pse),

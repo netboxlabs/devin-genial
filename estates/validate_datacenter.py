@@ -18,7 +18,9 @@ from .validate_optics import analyze as analyze_optics
 # independent of allocator constants so changing an allocation cannot bless it.
 # Chassis watts exclude the separately derived PoE and installed-optics extras.
 HOST = {"vcpus": 64, "memory_mb": 262144, "disk_mb": 8000000}
-WATTS = {"access": 120, "leaf": 160, "core": 220, "edge": 40,
+# Each selectable vendor line shares its family's authored role allowance.
+WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
+         "leaf": 160, "leaf-juniper": 160, "core": 220, "edge": 40,
          "server": 250, "console-server": 40, "liquid-chassis": 400}
 NETWORK_OFFSETS = {"management": 0, "applications": 6, "database": 7,
                    "backup": 8, "wan": 9, "storage": 10}

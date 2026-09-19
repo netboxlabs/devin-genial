@@ -1,5 +1,5 @@
 {
-  "version": "0.10",
+  "version": "0.11",
   "sources": {
     "access-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9200L-24P-4X.yaml",
@@ -228,6 +228,96 @@
       "checked": "2026-09-10",
       "representation": "authored-policy",
       "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+    },
+    "access-juniper-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "cdb6b666106afd4598ee09c1d4d7b1b19e61785f044abb87ea2a5a38b650b9b5",
+      "license": "CC0-1.0"
+    },
+    "access-juniper-psu": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JPSU-600-AC-AFO.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "0f222da49482bccf960430948eedba5cb6c368d509a398e7ef047f8f02a0af18",
+      "license": "CC0-1.0"
+    },
+    "juniper-ex3400-ports": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-system-overview.html",
+      "checked": "2026-09-19",
+      "purpose": "EX3400-24P front panel: 24 Gigabit Ethernet RJ-45 ports labeled 0-23 as PIC 0 and four SFP/SFP+ uplink cages as PIC 2; two rear QSFP+ ports are configured as Virtual Chassis ports by default; RJ-45 console on the rear panel and Mini-USB Type-B console on the front panel. This catalog selects the four shared uplink cages at 10G as xe-0/2/0 through xe-0/2/3 and models the two default VCPs as stacking ports."
+    },
+    "juniper-ex3400-power-poe": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-power-system.html",
+      "checked": "2026-09-19",
+      "purpose": "Table 1: EX3400-24P has 24 PoE-enabled ports; maximum system power available for PoE is 370 W with one 600 W power supply installed and 720 W with two. The maximum power available on a PoE+ port is 30 W. Table 2: JPSU-600-AC-AFO is the 600 W AC supply, minimum one and maximum two per chassis, installed in slots PSU 0 and PSU 1; the AC cord coupler is IEC 60320 type C13, which mates a C14 chassis inlet. Delivered PoE budget is distinct from PSU output rating."
+    },
+    "juniper-ex3400-optics": {
+      "url": "https://apps.juniper.net/hct/product/EX3400/100001",
+      "checked": "2026-09-19",
+      "representation": "parsed-primary-html",
+      "purpose": "EX3400 Hardware Compatibility Tool transceiver list includes EX-SFP-10GE-LR (Juniper part 740-021309) from Junos OS 15.1X53-D50. Catalog installs it only in the four selected 10G uplink cages."
+    },
+    "leaf-juniper-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/QFX5120-48Y-AFO2.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "aecacee8364f15b13a01c5cea4ad539fc8b872f51e6f606b5fb77ea9aaacf2de",
+      "license": "CC0-1.0"
+    },
+    "qfx5120-port-modes": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/qfx5120/topics/topic-map/qfx5120-system-overview.html",
+      "checked": "2026-09-19",
+      "purpose": "QFX5120-48Y front panel has 48 SFP28 ports and 8 QSFP28 ports. The SFP28 ports are grouped in quads and are configured to operate at 10-Gbps speed by default; this catalog keeps that default and records it as an explicit interface speed. Junos surfaces a 10G port with the xe- prefix; the pinned device-type library names all 48 cages et-0/0/0 through et-0/0/47 and this catalog keeps the pinned names. The rear panel has two RJ-45 management ports labeled C0 and C1 and one RJ-45 console port labeled CON."
+    },
+    "qfx5120-management-names": {
+      "url": "https://www.juniper.net/documentation/us/en/day-one-plus/qfx5120/id-step-2-up-and-running.html",
+      "checked": "2026-09-19",
+      "purpose": "The management ports em0 (labeled C0) and em1 (labeled C1) are on the rear panel of the QFX5120-48Y. This catalog models only em0; the pinned device-type library instead declares a single fxp0, which is not the documented name for this platform. The unused second management port is not modeled."
+    },
+    "qfx5120-ac-power": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/qfx5120/topics/topic-map/qfx5120-power-system.html",
+      "checked": "2026-09-19",
+      "purpose": "QFX5120-48Y supports two 650 W AC power supplies, model JPSU-650W-AC-AO (airflow out) or JPSU-650W-AC-AI, installed in slots labeled 0 and 1; the AC cord coupler is IEC 60320 type C13, which mates a C14 chassis inlet. The AFO2 SKU ships two AC supplies with front-to-back airflow. PSU output rating is distinct from the authored chassis allowance."
+    },
+    "qfx5120-optics-host": {
+      "url": "https://apps.juniper.net/hct/product/QFX5120-48Y/transceivers",
+      "checked": "2026-09-19",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact QFX5120-48Y HCT transceiver list includes EX-SFP-10GE-LR (740-021309), JNP-QSFP-100G-LR4 (740-061409) and JNP-100G-AOC-3M (740-065631), each from Junos OS 18.3R1 and none end-of-life. No breakout or channelized mode is modeled."
+    },
+    "juniper-jnp-100g-aoc-3m": {
+      "url": "https://apps.juniper.net/hct/model/JNP-100G-AOC-3M/hwspecs",
+      "checked": "2026-09-19",
+      "representation": "parsed-primary-html",
+      "purpose": "QSFP28 100G active optical cable, 3 m, maximum power consumption 3.5 W. The published figure does not distinguish whole assembly from individual captive end; reserving 3500 mW at each end is an authored conservative interpretation, matching the existing Arista AOC policy."
+    },
+    "ap-aruba-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/HPE/Aruba-AP-505.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "3f9da5018c929340ecd15018ba0577cc7aec0129f3ad4a76cec2022a3df0be81",
+      "license": "CC0-1.0"
+    }
+  },
+  "hardware_lines": {
+    "access": {
+      "default": "cisco",
+      "lines": {
+        "cisco": "access",
+        "juniper": "access-juniper"
+      }
+    },
+    "ap": {
+      "default": "reference",
+      "lines": {
+        "reference": "ap",
+        "aruba": "ap-aruba"
+      }
+    },
+    "leaf": {
+      "default": "arista",
+      "lines": {
+        "arista": "leaf",
+        "juniper": "leaf-juniper"
+      }
     }
   },
   "models": {
@@ -475,6 +565,10 @@
         "TenGigabitEthernet1/1/3",
         "TenGigabitEthernet1/1/4"
       ],
+      "stack_ports": [
+        "StackPort1/1",
+        "StackPort1/2"
+      ],
       "console_ports": [
         {
           "name": "Console",
@@ -495,6 +589,280 @@
           "2": 740000
         },
         "budget_source": "cisco-psu-compatibility",
+        "planning_supply_losses": 1,
+        "upstream_ac_allowance_multiplier": "1.25",
+        "policy_source": "reference-poe-v1"
+      }
+    },
+    "access-juniper": {
+      "manufacturer": "Juniper",
+      "model": "EX3400-24P",
+      "slug": "juniper-ex3400-24p",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "ge-0/0/0",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/1",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/2",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/3",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/4",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/5",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/6",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/7",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/8",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/9",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/10",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/11",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/12",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/13",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/14",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/15",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/16",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/17",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/18",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/19",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/20",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/21",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/22",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "ge-0/0/23",
+          "type": "1000base-t",
+          "poe_mode": "pse",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "xe-0/2/0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/2/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/2/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/2/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "et-0/1/0",
+          "type": "juniper-vcp"
+        },
+        {
+          "name": "et-0/1/1",
+          "type": "juniper-vcp"
+        },
+        {
+          "name": "me0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "Power Supply 0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "Power Supply 1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "access-juniper-chassis",
+        "access-juniper-psu",
+        "juniper-ex3400-ports",
+        "juniper-ex3400-power-poe",
+        "reference-poe-v1"
+      ],
+      "description": "Verified EX3400-24P chassis and interface inventory with two installed JPSU-600-AC-AFO supplies. Power ports are materialized from the supply module template, not fixed chassis ports. The four shared 1G/10G uplink cages are selected at 10G; the two rear QSFP+ ports are the platform's default Virtual Chassis ports and are modeled as stacking ports. Airflow variants, the optional 150 W and 920 W supplies, DC power and Virtual Chassis membership beyond two are not modeled.",
+      "configured_modules": [
+        {
+          "bay": "PSU0",
+          "position": "0",
+          "model": "JPSU-600-AC-AFO",
+          "power_port": "Power Supply 0"
+        },
+        {
+          "bay": "PSU1",
+          "position": "1",
+          "model": "JPSU-600-AC-AFO",
+          "power_port": "Power Supply 1"
+        }
+      ],
+      "access_ports": [
+        "ge-0/0/0",
+        "ge-0/0/1",
+        "ge-0/0/2",
+        "ge-0/0/3",
+        "ge-0/0/4",
+        "ge-0/0/5",
+        "ge-0/0/6",
+        "ge-0/0/7",
+        "ge-0/0/8",
+        "ge-0/0/9",
+        "ge-0/0/10",
+        "ge-0/0/11",
+        "ge-0/0/12",
+        "ge-0/0/13",
+        "ge-0/0/14",
+        "ge-0/0/15",
+        "ge-0/0/16",
+        "ge-0/0/17",
+        "ge-0/0/18",
+        "ge-0/0/19",
+        "ge-0/0/20",
+        "ge-0/0/21",
+        "ge-0/0/22",
+        "ge-0/0/23"
+      ],
+      "uplink_ports": [
+        "xe-0/2/0",
+        "xe-0/2/1",
+        "xe-0/2/2",
+        "xe-0/2/3"
+      ],
+      "stack_ports": [
+        "et-0/1/0",
+        "et-0/1/1"
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        },
+        {
+          "name": "Console (USB)",
+          "type": "usb-mini-b"
+        }
+      ],
+      "poe_pse": {
+        "type": "type2-ieee802.3at",
+        "per_port_max_mw": 30000,
+        "supply_model": "JPSU-600-AC-AFO",
+        "budget_by_active_supplies_mw": {
+          "0": 0,
+          "1": 370000,
+          "2": 720000
+        },
+        "budget_source": "juniper-ex3400-power-poe",
         "planning_supply_losses": 1,
         "upstream_ac_allowance_multiplier": "1.25",
         "policy_source": "reference-poe-v1"
@@ -986,6 +1354,66 @@
           "type": "iec-60320-c14"
         }
       ],
+      "fabric_ports": [
+        "Ethernet1",
+        "Ethernet2",
+        "Ethernet3",
+        "Ethernet4",
+        "Ethernet5",
+        "Ethernet6",
+        "Ethernet7",
+        "Ethernet8",
+        "Ethernet9",
+        "Ethernet10",
+        "Ethernet11",
+        "Ethernet12",
+        "Ethernet13",
+        "Ethernet14",
+        "Ethernet15",
+        "Ethernet16",
+        "Ethernet17",
+        "Ethernet18",
+        "Ethernet19",
+        "Ethernet20",
+        "Ethernet21",
+        "Ethernet22",
+        "Ethernet23",
+        "Ethernet24",
+        "Ethernet25",
+        "Ethernet26",
+        "Ethernet27",
+        "Ethernet28",
+        "Ethernet29",
+        "Ethernet30",
+        "Ethernet31",
+        "Ethernet32",
+        "Ethernet33",
+        "Ethernet34",
+        "Ethernet35",
+        "Ethernet36",
+        "Ethernet37",
+        "Ethernet38",
+        "Ethernet39",
+        "Ethernet40",
+        "Ethernet41",
+        "Ethernet42",
+        "Ethernet43",
+        "Ethernet44",
+        "Ethernet45",
+        "Ethernet46",
+        "Ethernet47",
+        "Ethernet48"
+      ],
+      "uplink_ports": [
+        "Ethernet49/1",
+        "Ethernet50/1",
+        "Ethernet51/1",
+        "Ethernet52/1",
+        "Ethernet53/1",
+        "Ethernet54/1",
+        "Ethernet55/1",
+        "Ethernet56/1"
+      ],
       "source_ids": [
         "leaf-chassis",
         "leaf-psu",
@@ -1005,6 +1433,390 @@
           "model": "PWR-511-AC-RED",
           "power_port": "1"
         }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ]
+    },
+    "leaf-juniper": {
+      "manufacturer": "Juniper",
+      "model": "QFX5120-48Y-AFO2",
+      "slug": "juniper-qfx5120-48y-afo2",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "et-0/0/0",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/1",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/2",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/3",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/4",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/5",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/6",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/7",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/8",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/9",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/10",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/11",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/12",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/13",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/14",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/15",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/16",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/17",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/18",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/19",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/20",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/21",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/22",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/23",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/24",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/25",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/26",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/27",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/28",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/29",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/30",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/31",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/32",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/33",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/34",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/35",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/36",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/37",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/38",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/39",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/40",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/41",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/42",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/43",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/44",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/45",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/46",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/47",
+          "type": "25gbase-x-sfp28",
+          "speed": 10000000
+        },
+        {
+          "name": "et-0/0/48",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/49",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/50",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/51",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/52",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/53",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/54",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/0/55",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "em0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "source_ids": [
+        "leaf-juniper-chassis",
+        "provider-edge-psu",
+        "qfx5120-port-modes",
+        "qfx5120-management-names",
+        "qfx5120-ac-power"
+      ],
+      "description": "Verified QFX5120-48Y-AFO2 chassis and interface inventory with two installed JPSU-650W-AC-AO supplies, the same 650 W AC module the MX204 uses. Power ports materialize the upstream {module} template. The 48 SFP28 cages keep the platform's default 10-Gbps port mode, recorded as an explicit interface speed; Junos would surface a 10G port as xe-, while this catalog keeps the pinned device-type library's et-0/0/N names. Only management port C0 (em0) is modeled; C1 and channelized breakout modes are not.",
+      "configured_modules": [
+        {
+          "bay": "PSU 0",
+          "position": "0",
+          "model": "JPSU-650W-AC-AO",
+          "power_port": "0"
+        },
+        {
+          "bay": "PSU 1",
+          "position": "1",
+          "model": "JPSU-650W-AC-AO",
+          "power_port": "1"
+        }
+      ],
+      "fabric_ports": [
+        "et-0/0/0",
+        "et-0/0/1",
+        "et-0/0/2",
+        "et-0/0/3",
+        "et-0/0/4",
+        "et-0/0/5",
+        "et-0/0/6",
+        "et-0/0/7",
+        "et-0/0/8",
+        "et-0/0/9",
+        "et-0/0/10",
+        "et-0/0/11",
+        "et-0/0/12",
+        "et-0/0/13",
+        "et-0/0/14",
+        "et-0/0/15",
+        "et-0/0/16",
+        "et-0/0/17",
+        "et-0/0/18",
+        "et-0/0/19",
+        "et-0/0/20",
+        "et-0/0/21",
+        "et-0/0/22",
+        "et-0/0/23",
+        "et-0/0/24",
+        "et-0/0/25",
+        "et-0/0/26",
+        "et-0/0/27",
+        "et-0/0/28",
+        "et-0/0/29",
+        "et-0/0/30",
+        "et-0/0/31",
+        "et-0/0/32",
+        "et-0/0/33",
+        "et-0/0/34",
+        "et-0/0/35",
+        "et-0/0/36",
+        "et-0/0/37",
+        "et-0/0/38",
+        "et-0/0/39",
+        "et-0/0/40",
+        "et-0/0/41",
+        "et-0/0/42",
+        "et-0/0/43",
+        "et-0/0/44",
+        "et-0/0/45",
+        "et-0/0/46",
+        "et-0/0/47"
+      ],
+      "uplink_ports": [
+        "et-0/0/48",
+        "et-0/0/49",
+        "et-0/0/50",
+        "et-0/0/51",
+        "et-0/0/52",
+        "et-0/0/53",
+        "et-0/0/54",
+        "et-0/0/55"
       ],
       "console_ports": [
         {
@@ -1546,6 +2358,47 @@
         "wlan1": "5g"
       }
     },
+    "ap-aruba": {
+      "manufacturer": "HPE",
+      "model": "Aruba AP-505",
+      "slug": "hpe-aruba-ap-505",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "type": "1000base-t",
+          "poe_mode": "pd",
+          "poe_type": "type2-ieee802.3at"
+        },
+        {
+          "name": "wlan0",
+          "type": "ieee802.11ax"
+        },
+        {
+          "name": "wlan1",
+          "type": "ieee802.11ax"
+        }
+      ],
+      "power_ports": [],
+      "source_ids": [
+        "ap-aruba-chassis",
+        "reference-poe-v1"
+      ],
+      "description": "Verified Aruba AP-505 inventory: one 1000BASE-T Type 2 powered port and two 802.11ax radios, one 5 GHz and one 2.4 GHz. Interface names follow this generator's portable endpoint convention (eth0, wlan0, wlan1); the vendor labels the wired port E0 and identifies radios by band, and no vendor interface-naming claim is made. The Type 2 envelope below is the IEEE class-4 PD maximum and PSE reservation, not a measured or vendor consumption figure for this model. The optional 12 Vdc input, the USB port, the serial console and the Bluetooth/Zigbee radio are not modeled.",
+      "power_source": "poe",
+      "poe_pd": {
+        "interface": "eth0",
+        "required_type": "type2-ieee802.3at",
+        "max_input_mw": 25500,
+        "pse_reservation_mw": 30000,
+        "policy_source": "reference-poe-v1"
+      },
+      "radio_bands": {
+        "wlan0": "5g",
+        "wlan1": "2.4g"
+      }
+    },
     "wall-outlet": {
       "manufacturer": "Devin Reference Designs",
       "model": "Reference single-port wall outlet",
@@ -2028,7 +2881,9 @@
           "juniper-ex3300-optics",
           "juniper-mx204-optics-host",
           "juniper-ex-sfp-10ge-lr",
-          "mx204-port-modes"
+          "mx204-port-modes",
+          "juniper-ex3400-optics",
+          "qfx5120-optics-host"
         ],
         "compatible_interfaces": {
           "inherited-access": [
@@ -2046,6 +2901,62 @@
             "xe-0/1/5",
             "xe-0/1/6",
             "xe-0/1/7"
+          ],
+          "access-juniper": [
+            "xe-0/2/0",
+            "xe-0/2/1",
+            "xe-0/2/2",
+            "xe-0/2/3"
+          ],
+          "leaf-juniper": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2",
+            "et-0/0/3",
+            "et-0/0/4",
+            "et-0/0/5",
+            "et-0/0/6",
+            "et-0/0/7",
+            "et-0/0/8",
+            "et-0/0/9",
+            "et-0/0/10",
+            "et-0/0/11",
+            "et-0/0/12",
+            "et-0/0/13",
+            "et-0/0/14",
+            "et-0/0/15",
+            "et-0/0/16",
+            "et-0/0/17",
+            "et-0/0/18",
+            "et-0/0/19",
+            "et-0/0/20",
+            "et-0/0/21",
+            "et-0/0/22",
+            "et-0/0/23",
+            "et-0/0/24",
+            "et-0/0/25",
+            "et-0/0/26",
+            "et-0/0/27",
+            "et-0/0/28",
+            "et-0/0/29",
+            "et-0/0/30",
+            "et-0/0/31",
+            "et-0/0/32",
+            "et-0/0/33",
+            "et-0/0/34",
+            "et-0/0/35",
+            "et-0/0/36",
+            "et-0/0/37",
+            "et-0/0/38",
+            "et-0/0/39",
+            "et-0/0/40",
+            "et-0/0/41",
+            "et-0/0/42",
+            "et-0/0/43",
+            "et-0/0/44",
+            "et-0/0/45",
+            "et-0/0/46",
+            "et-0/0/47"
           ]
         },
         "vendor_max_power_mw": 1000
@@ -2251,13 +3162,24 @@
         "source_ids": [
           "juniper-mx204-optics-host",
           "juniper-jnp-qsfp-100g-lr4",
-          "mx204-port-modes"
+          "mx204-port-modes",
+          "qfx5120-optics-host"
         ],
         "compatible_interfaces": {
           "provider-edge": [
             "et-0/0/0",
             "et-0/0/1",
             "et-0/0/2"
+          ],
+          "leaf-juniper": [
+            "et-0/0/48",
+            "et-0/0/49",
+            "et-0/0/50",
+            "et-0/0/51",
+            "et-0/0/52",
+            "et-0/0/53",
+            "et-0/0/54",
+            "et-0/0/55"
           ]
         },
         "vendor_max_power_mw": 3500
@@ -2311,6 +3233,37 @@
             "Ethernet54/1",
             "Ethernet55/1",
             "Ethernet56/1"
+          ]
+        },
+        "assembly": true,
+        "assembly_length_m": 3
+      },
+      "juniper-100g-aoc-3m": {
+        "manufacturer": "Juniper",
+        "model": "JNP-100G-AOC-3M",
+        "form_factor": "qsfp28",
+        "protocol": "100G-AOC",
+        "medium": "aoc",
+        "connector": "captive",
+        "rate_kbps": 100000000,
+        "reach_m": 3,
+        "power_reservation_mw": 3500,
+        "power_basis": "authored per-captive-end allocation of published 3.5 W; source does not explicitly distinguish whole assembly from individual end",
+        "source_ids": [
+          "qfx5120-optics-host",
+          "juniper-jnp-100g-aoc-3m",
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "leaf-juniper": [
+            "et-0/0/48",
+            "et-0/0/49",
+            "et-0/0/50",
+            "et-0/0/51",
+            "et-0/0/52",
+            "et-0/0/53",
+            "et-0/0/54",
+            "et-0/0/55"
           ]
         },
         "assembly": true,
