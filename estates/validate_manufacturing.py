@@ -511,13 +511,39 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if conduit_links != Counter((near, far) for near in process_dist for far in corporate_dist):
             report("mfg-conduit-path", site, "The conduit must fully mesh the plant-floor and corporate "
                                               "distribution pairs; that is the only modeled path between them.")
+        # Allow-list, not deny-list: a VLAN-less cable to the management switch
+        # or any other unlisted corporate device is a boundary crossing too.
+        management_devices = set(roles["role/management"])
         for device in sorted(process_switches | set(process_expected)):
             for port in children[("device", device)]:
                 peer = peers.get(port)
-                if kind_of(port) == "interface" and kind_of(peer) == "interface" and \
-                        refs(peer).get("device") in corporate_switches | corporate_dist | set(roles["role/wan-edge"]):
-                    report("mfg-zone-isolation", port, "No plant-floor access switch or endpoint may attach "
-                                                        "directly to corporate forwarding equipment.")
+                if kind_of(port) != "interface" or kind_of(peer) != "interface":
+                    continue
+                peer_device = refs(peer).get("device")
+                wanted = management_devices if attrs(port).get("mgmt_only") else ot_zone - {device}
+                if peer_device not in wanted:
+                    report("mfg-zone-isolation", port, "A plant-floor access switch or endpoint data port stays "
+                                                        "inside its own zone; only its dedicated management port "
+                                                        "reaches the plant management switch.")
+        # The shared serial console server is the third declared crossing:
+        # serial CLI, never a forwarding path. Pin it exactly on both sides,
+        # reading cables directly — the terminal-peer map drops conflicted ends.
+        console_servers = set(roles["role/console-server"])  # roles is already site-scoped
+        for key, obj in objects.items():
+            if kind_of(key) != "cable":
+                continue
+            ends = [obj["refs"].get("a"), obj["refs"].get("b")]
+            for near, far in (ends, ends[::-1]):
+                if kind_of(near) == "console_port" and refs(near).get("device") in ot_zone:
+                    if kind_of(far) != "console_server_port" or refs(far).get("device") not in console_servers:
+                        report("mfg-zone-isolation", key, "A plant-floor console port terminates only on the "
+                                                           "plant's own console server — the declared serial "
+                                                           "crossing.")
+        for device in sorted(console_servers):
+            for port in children[("device", device)]:
+                if kind_of(port) == "interface" and not vlans(port) <= {management_vlan}:
+                    report("mfg-zone-isolation", port, "The shared console server carries serial CLI and its own "
+                                                        "management address only; no plant-floor segment may ride it.")
 
         # --- addressing --------------------------------------------------------
         if sid not in allocations:

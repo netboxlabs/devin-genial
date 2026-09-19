@@ -90,8 +90,9 @@ Corporate endpoints reach `access-NN` switches; plant-floor endpoints reach
 `ot-access-NN` switches. Each pair grows independently and retains every
 endpoint's reserved physical port as demand grows, so commissioning a line never
 reroutes an existing desk, drop or camera. Endpoints remain single-homed. The
-two zones share one finite 38-switch distribution attachment budget; exceeding
-it fails at resolve time with the exact arithmetic.
+two zones share one finite 38-switch distribution attachment budget — a
+defense-in-depth ceiling the current demand bounds cannot reach (the widest
+accepted recipe needs 18).
 
 Segments per plant:
 
@@ -128,16 +129,22 @@ SVIs exist only on that plant-floor pair. No `process` or `supervisory` VLAN
 appears on a corporate access switch, on the corporate distribution pair, on a
 carrier edge device, or on any cable that reaches one.
 
-**What crosses.** Exactly two modeled paths, both deliberate and both recorded:
+**What crosses.** Exactly three modeled crossings, all deliberate, all recorded
+and all independently checked:
 
 - the `conduit` segment, a fully meshed four-trunk link between the plant-floor
   and corporate distribution pairs that carries the conduit VLAN and nothing
   else. All four distribution switches hold an addressed gateway in it. This is
   the "actual routed path through the plant's distribution" the zone story
-  needs, and it is the only one;
+  needs, and it is the only forwarding path;
 - each plant-floor switch's own dedicated management port, untagged into the
   plant `management` segment and cabled to the equipment room's management
-  switch. Equipment has to be manageable; hiding that would be dishonest.
+  switch. Equipment has to be manageable; hiding that would be dishonest;
+- the equipment room's shared console server, whose console-server ports cable
+  to the console ports of both tiers' switches. That is serial CLI, not a
+  forwarding path, and the validator pins it exactly: plant-floor console ports
+  terminate only there, and the console server itself carries nothing but its
+  own management address.
 
 **What is not claimed.**
 

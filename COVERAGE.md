@@ -220,8 +220,29 @@ government/defense (enterprise/campus plus `site_names`).
 | 5 | Vendor lever | **complete 2026-09-19** — `[hardware]` selects access/leaf/ap lines (Juniper EX3400/QFX5120, Aruba AP-505); 56-cell fit matrix + adversarial review hardening (854 tests); all-Juniper bank live: 10,587/10,587 objects, 0 mismatches, verify + idempotent repeat clean |
 | 6 | MSP profile (one NOC operating N customer tenants) | **complete 2026-09-19** — merged and review-hardened (912 tests); 56 kinds with independent tenancy-isolation and ownership-versus-operation checks; four-customer estate live on the pinned 4.7.1 stack: 7,068/7,068 objects, 0 mismatches, verify + idempotent repeat clean. |
 | 7 | Bank hard-kinds decision point | **dissolved** — phase 2 left no residual; the extras trio went via REST-create and the exempt-count gate |
-| 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | pending |
-| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | pending |
+| 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | merged 2026-09-19 (990 tests, no catalog change); adversarial review + live prove in progress |
+| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | in progress — worktree build launched 2026-09-19 |
+| 10 | Assurance drift twin: `demo` intent generating baseline + believably-drifted Diode snapshot covering Assurance's four deviation classes (undocumented device, drift vs intent, documented-but-missing, data quality) with an expected-deviation manifest; live-prove via Diode ingestion on the Assurance-equipped Cloud instance (4.6-compatible subset) | pending |
+| 11 | Automation demo pack: config contexts, export templates and event-rule/webhook inventory as new loader kinds, so the Ansible/ServiceNow talk track has real objects | pending |
+| 12 | Demo composer: one command assembling profile × vendor × feature packs × customer names into a loaded, verified branch plus a DEMO.md talk track with deep links | pending |
+
+Demand evidence (2026-09-19 review of live sales calls, community feature
+requests, plugin adoption and the official demo dataset): the official demo
+data ships 72 devices with zero rows for wireless, VPN, journals, FHRP,
+services, config contexts and change history — exactly the differentiators our
+estates already fill; demos are path-traversal heavy (trace, rack, power chain,
+topology) which rewards our cable density; Assurance/Analytics demo poorly on
+flawless data, which phase 10 addresses deliberately; NetBox Labs segments by
+topology (AI-DC, campus, branch, ISP, OT, hybrid cloud), not industry — an
+AI/GPU-datacenter profile is the one hard-sold topology we lack (candidate
+phase after 12; currently a declared fold). Cheap wins to fold into scheduled
+phases: pinned real end-of-life dates on catalog device types (4.7 core field;
+feeds lifecycle/Analytics stories — next catalog rebaseline wave), a free-tier
+sized recipe per profile (NetBox Cloud free tier caps at 100 devices/500 IPs),
+and indexing README profiles by topology as well as industry. NetBox Labs'
+own SE org ships an internal "Demo Data Loader" (July 2026 community meetup,
+C. Beye) with branch-scoped industry demo data and air-gapped bundles —
+overlapping framing; the no-other-teams gate stays closed.
 
 Depth backlog (from cold-start run #16, bank): FHRP groups, VPN tunnels and
 inventory items are modeled as single instances in a DC pair — enough to show

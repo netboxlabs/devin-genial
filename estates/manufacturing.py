@@ -8,9 +8,10 @@ adds a paired data center carrying the shared manufacturing services.
 The zone separation is the point of this profile, and it is modeled, not
 enforced. The plant-floor endpoints sit on their own `process` and
 `supervisory` segments, in their own routing contexts, behind their own
-distribution pair; the only modeled path from that pair toward the corporate
-tier is the `conduit` segment trunked between the two distribution pairs, plus
-each device's dedicated management port. No `process` or `supervisory` VLAN
+distribution pair; the only modeled forwarding path from that pair toward the
+corporate tier is the `conduit` segment trunked between the two distribution
+pairs, with each device's dedicated management port and the equipment room's
+shared serial console server as the two other declared crossings. No `process` or `supervisory` VLAN
 reaches a carrier edge device, and `validate_manufacturing.py` proves that from
 the finished graph instead of trusting a contract.
 
@@ -215,8 +216,8 @@ def resolve(raw):
     recipe["plants"] = _plants(raw.get("plants", deepcopy(DEFAULT_PLANTS)))
     # The reviewed bounds cap one plant's own peak at 308 Mbps, inside the 1 Gbps
     # site handoff after the widest supported reserve, and the fleet aggregate at
-    # 2,464 Mbps, which the shared DC aggregation answers with five carrier edge
-    # pairs. The corporate and plant-floor access tiers share one finite
+    # 2,464 Mbps, which the shared DC aggregation answers with four carrier edge
+    # pairs at the default reserve (five at the widest). The corporate and plant-floor access tiers share one finite
     # distribution attachment pool, so their switch counts are checked together.
     # Raising any bound needs all three ceilings rechecked.
     ports = hardware_catalog()["models"][selected_alias(recipe, "access")]["access_ports"]
@@ -331,8 +332,9 @@ SHARED_ASSUMPTIONS = [
     "isolation: no firewall policy, access control list, route filter, data diode or air gap exists, and no "
     "Purdue-model level assignment or IEC 62443 compliance state is demonstrated or certified.",
     "The plant-floor distribution pair reaches the corporate tier only through the conduit segment trunked between "
-    "the two distribution pairs, and each plant-floor switch additionally reaches the plant management segment "
-    "through its own dedicated management port. Those are the two modeled paths; no process or supervisory segment "
+    "the two distribution pairs; each plant-floor switch additionally reaches the plant management segment through "
+    "its own dedicated management port, and its console port reaches the equipment room's shared console server "
+    "(serial CLI, not a forwarding path). Those are the three modeled crossings; no process or supervisory segment "
     "reaches a carrier edge device.",
     "Both distribution tiers share the one plant equipment room. The zone boundary is modeled in the routing and "
     "VLAN graph, not by separate rooms, cabinets or enclosures, and no DIN-rail, fanless, hardened or industrially "
@@ -429,7 +431,8 @@ def _plant(site, item):
                                     stable=True)
     process_facts = campus.access(site, process_endpoints, process, OT_NETWORKS,
                                   {"access_hardware": "access", "upstreams": 2,
-                                   "label": "ot-access-", "zone": "/ot"}, stable=True)
+                                   "label": "ot-access-", "panel_label": "ot-patch-",
+                                   "zone": "/ot"}, stable=True)
     site.contract.update(endpoint_count=len(corporate_endpoints) + len(process_endpoints),
                          demand=demand(item), plant=item["key"],
                          access_hardware=site.w.hardware_alias("access"),

@@ -32,6 +32,7 @@ rather than silently renumbering the estate.
 - [Retail chain](#retail-chain)
 - [University campus](#university-campus)
 - [Managed service provider](#managed-service-provider)
+- [Manufacturing](#manufacturing)
 - [Worked example](#worked-example)
 - [Not expressible in a recipe](#not-expressible-in-a-recipe)
 
@@ -88,6 +89,11 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `university-campus` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `msp` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `manufacturing` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
+
+The accepted prefix is a bound, not a promise: the pool must still hold one
+reservation per site, so a minimum-size pool cannot build a multi-site default
+recipe (the default manufacturing fleet needs five `/16`s, for example).
+Generation fails with the exact reservation arithmetic.
 
 Data centers per profile: the bank, retail chain and manufacturer always build
 the shared two-DC pair (`dc-01`, `dc-02`), the enterprise profile builds `data_centers`
@@ -454,8 +460,8 @@ Segments per plant are `management`, `office`, `logistics`, `wireless` and
 `security` (corporate), `process` and `supervisory` (plant floor), `conduit`
 (the modeled transit between the two distribution tiers), and `wan` for the
 carrier handoffs. The two zones keep separate access populations with separate
-port ledgers and share one finite 38-switch distribution attachment budget;
-exceeding it fails at resolve time with the exact arithmetic. See the
+port ledgers and share one finite 38-switch distribution attachment budget — a
+defense-in-depth ceiling the current demand bounds cannot reach. See the
 [profile guide](../profiles/manufacturing.md) for the zone boundary and what is
 explicitly not asserted — in particular that the separation is modeled, never
 enforced, and that no industrial protocol, Purdue level or IEC 62443 state is

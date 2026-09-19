@@ -137,7 +137,8 @@ def access(site, endpoints, upstreams, network_roles, design, compact=False, sta
         prefix = site.room_prefix(room)
         for i in range(count):
             switch = site.device(design["access_hardware"], f"{prefix}{design['label']}{i+1:02}", "access", location=room)
-            panel = site.device("patch-panel", f"{prefix}patch-{i+1:02}", "patch-panel", location=room) if w.recipe["patching"] == "panels" else None
+            panel = site.device("patch-panel", f"{prefix}{design.get('panel_label', 'patch-')}{i+1:02}",
+                                "patch-panel", location=room) if w.recipe["patching"] == "panels" else None
             switches.append(switch)
             area_switches[room].append(switch)
             area_panels[room].append(panel)

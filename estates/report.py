@@ -822,8 +822,8 @@ def markdown(plan):
         lines.extend(["**Zone walkthrough:** start at a line controller or field device, open its process segment "
             "and follow its real cable to a plant-floor access switch. Trace that switch's two uplinks to the "
             "plant-floor distribution pair, then take the conduit trunks to the corporate pair — that is the only "
-            "modeled path between the tiers, apart from each device's own dedicated management port on the plant "
-            "management segment. Continue at the corporate data centers, where the manufacturing execution and "
+            "modeled forwarding path between the tiers, apart from each device's own dedicated management port on "
+            "the plant management segment and the equipment room's shared serial console server. Continue at the corporate data centers, where the manufacturing execution and "
             "historian services carry their listener, replica, resource and power tables below. Those services hold "
             "no production order, recipe, batch record or process tag, and nothing connects them to a plant-floor "
             "endpoint.", ""])
@@ -895,7 +895,8 @@ def markdown(plan):
                        if recipe.get("profile") == "hospital-clinics" else
                        "One line controller per plant, so the path crosses the plant-floor zone. "
                        if recipe.get("profile") == "manufacturing" else
-                       "One workstation per site where present; other endpoint roles are used only when no workstation is. ")
+                       "One workstation per site where present, selecting the highest occupied floor; "
+                       "other endpoint roles are used only when no workstation is. ")
                       + "Paths follow actual cables and front/rear mappings; lengths sum cable records.", ""])
         examples = []
         for site_key, devices in sorted(devices_by_site.items()):

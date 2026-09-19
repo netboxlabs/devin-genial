@@ -421,9 +421,10 @@ docks and an office block — plus the single equipment room that serves them.
 The plant-floor (OT) endpoints (line controllers, operator panels, field-device
 drops) sit on their own `process` and `supervisory` segments, in their own
 routing contexts, behind their own access pair and their own distribution pair.
-The only modeled path to the corporate tier is the `conduit` segment trunked
-between the two distribution pairs, plus each device's own dedicated management
-port. This profile is offline-checked and fits the TurboBulk contract; it has no
+The only modeled forwarding path to the corporate tier is the `conduit` segment
+trunked between the two distribution pairs; each device's dedicated management
+port and the equipment room's shared serial console server are the two other
+declared, validated crossings. This profile is offline-checked and fits the TurboBulk contract; it has no
 separately recorded live qualification receipt.
 
 ```sh

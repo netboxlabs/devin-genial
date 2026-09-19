@@ -616,6 +616,38 @@ class ManufacturingValidatorTests(unittest.TestCase):
                 "b": f"device/{SITE}/access-01/if/TenGigabitEthernet1/1/3"}))
         self.assertIn("mfg-zone-isolation", self.mutated(bridge))
 
+    def test_a_vlanless_cable_to_the_management_switch_is_reported(self):
+        # The fifth-link attack from the adversarial review: no VLAN refs, and
+        # the peer is a role the old deny-list never mentioned.
+        def bridge(plan, objects):
+            template = next(o for o in plan["objects"] if o["kind"] == "cable"
+                            and o["attrs"].get("type") == "smf")
+            plan["objects"].append(dict(template, key="cable/vlanless-cross", refs={
+                "a": f"device/{SITE}/ot-access-01/if/TenGigabitEthernet1/1/3",
+                "b": f"device/{SITE}/mgmt-01/if/GigabitEthernet1/0/10"}))
+        self.assertIn("mfg-zone-isolation", self.mutated(bridge))
+
+    def test_a_plant_floor_console_port_leaving_the_console_server_is_reported(self):
+        def rewire(plan, objects):
+            cable = objects[f"cable/device/{SITE}/console-01/console_server_port/Console07--"
+                            f"device/{SITE}/ot-access-01/console_port/Console"]
+            cable["refs"]["b"] = f"device/{SITE}/edge-a/console_port/Console"
+        self.assertIn("mfg-zone-isolation", self.mutated(rewire))
+
+    def test_a_plant_floor_segment_on_the_console_server_is_reported(self):
+        self.assertIn("mfg-zone-isolation", self.mutated(
+            lambda plan, objects: objects[f"device/{SITE}/console-01/if/mgmt0"]["refs"].__setitem__(
+                "untagged_vlan", f"vlan/{SITE}/process")))
+
+    def test_panels_mode_generates_and_validates(self):
+        # Regression: the OT tier's patch panels must not collide with the
+        # corporate tier's in the shared equipment room.
+        plan = small(patching="panels")
+        self.assertEqual(validate(plan), [])
+        keys = {o["key"] for o in plan["objects"]}
+        self.assertIn(f"device/{SITE}/ot-patch-01", keys)
+        self.assertIn(f"device/{SITE}/patch-01", keys)
+
     def test_a_plant_floor_gateway_borrowing_a_corporate_routing_context_is_reported(self):
         self.assertIn("mfg-zone-isolation", self.mutated(
             lambda plan, objects: objects[f"prefix/{SITE}/office"]["refs"].__setitem__("vrf", "vrf/process")))
