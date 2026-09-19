@@ -226,6 +226,26 @@ def _fresh_load_occupancy(client, plan, objects):
     return result
 
 
+def _turbobulk_recovery_note(version):
+    """Warn when the target's TurboBulk predates the 0.4.0 orphaned-job reaper.
+
+    Without it a load interrupted by worker death leaves its branch
+    permanently unrecoverable. Source builds may report 0.0.0 while carrying
+    the reaper, so this is a caution, not a blocker.
+    """
+    if not version:
+        return None
+    try:
+        parts = tuple(int(part) for part in str(version).split(".")[:3])
+    except ValueError:
+        parts = ()
+    if parts >= (0, 4, 0):
+        return None
+    return (f"target reports netbox_turbobulk {version}: dead-worker recovery needs the "
+            "0.4.0 orphaned-job reaper; a worker-death branch is fresh-branch-only unless "
+            "this build is known to carry it (source builds may report 0.0.0)")
+
+
 def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="reviewable",
             occupancy=False):
     """Read target capabilities and return one deterministic transport decision."""
@@ -316,6 +336,7 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
         },
         "merge_note": ("merging a TurboBulk-loaded branch to main is currently blocked "
                        "upstream; demo from the branch (see docs/qualification.md)"),
+        "turbobulk_recovery_note": _turbobulk_recovery_note(plugins.get("netbox_turbobulk")),
         "target_contract": {"netbox": status.get("netbox-version"), "plugins": plugins},
         "branch": None if branch_row is None else {
             key: branch_row.get(key) for key in ("id", "name", "schema_id", "status")},

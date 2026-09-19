@@ -19,6 +19,11 @@ detail and [seeding](seeding.md) the database-restore alternative.
 - **The TurboBulk plugin**, for bulk transport. Without it the loader falls
   back to Diode (which has its own pinned version gates) or refuses with the
   exact blockers per transport — `just load-explain` shows the decision.
+  Dead-worker recovery additionally needs TurboBulk **0.4.0 or newer** (the
+  opportunistic orphaned-job reaper): on older builds a load interrupted by a
+  worker death leaves its branch permanently unrecoverable — fresh branch
+  only. Source builds may report version `0.0.0` even when they carry the
+  reaper, so confirm with whoever built the target.
 - On **NetBox Cloud** these are managed platform plugins: enabling or
   upgrading them on a tenant is a NetBox Labs operations action, not a tenant
   setting — request it through your account or support channel. On
@@ -45,8 +50,11 @@ qualified shape; narrower grants fail mid-load at the first missing endpoint.
 
 One optional extra: the loader's worker-death oracle reads
 `/api/core/background-tasks/`, a staff-only endpoint. Without staff access the
-loader still works — a dead worker is then detected at the poll timeout and
-resolved on the next resume instead of within ~66 seconds.
+loader still works — a dead worker is then detected at the poll timeout
+instead of within ~66 seconds. Either way, resuming past a dead worker needs
+the target's reaper to have marked the orphaned row first (TurboBulk ≥ 0.4.0;
+the reap triggers when the next TurboBulk job runs, in practice your
+fresh-branch load) — see §10 when a load fails.
 
 Put credentials in `.env` (see `.env.example`) or export them. Justfile
 recipes source `.env` only when `NETBOX_TOKEN` is not already exported, so an
@@ -118,8 +126,9 @@ NetBox page the demo starts from.
 **The receipt, in five sentences.** Every load writes a private receipt under
 `build/load-receipts/`, bound to the artifact, target, branch, delivery
 policy, row bound, and compiler version. It is the only resume and recovery
-checkpoint: interrupt the load and rerunning the same command continues from
-the receipt. Never delete or edit it while its branch is in use — a lost
+checkpoint: interrupt the load cleanly and rerunning the same command
+continues from the receipt (a load interrupted by a *worker death* resumes
+only after the target's reaper marks the orphaned job — §10). Never delete or edit it while its branch is in use — a lost
 receipt makes the branch unrecoverable, and the remedy is `just reset` plus a
 fresh load. A changed artifact, policy, or loader version refuses the old
 receipt loudly and needs a fresh branch. Verification receipts
@@ -204,3 +213,23 @@ Re-runs the full acceptance readback with zero writes — against a loaded
 branch, or against main on an instance seeded some other way (for example a
 database restore). Exit code 2 and a full mismatch list in the `verify-*`
 receipt when the target differs.
+
+## 10. When a load fails
+
+Every refusal is one of three shapes, and each names itself:
+
+- **Transport blocker** ("no faithful loader is available…"): fix what the
+  per-transport reasons name, re-check with `just load-explain`. Nothing was
+  written.
+- **Fresh-load occupancy** ("fresh load requires empty inventories…"): the
+  refusal names the exact colliding rows; retire your namespace (§8) or pick
+  a new one. Nothing was written.
+- **Worker death** ("abandoned by a dead worker…"): the *target's* background
+  worker died mid-job — commonly resource exhaustion (memory, database
+  connections) on the target, which loading again will not fix and which an
+  operator without target access must escalate. On TurboBulk ≥ 0.4.0 the
+  orphaned row is reaped when the next TurboBulk job runs, after which a
+  resume arbitrates it from exact ChangeDiff evidence; until then — and
+  always on older TurboBulk — start over on a fresh branch, once the target
+  itself is healthy again. A fresh branch alone does not fix a saturated
+  target.
