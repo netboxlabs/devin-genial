@@ -305,7 +305,10 @@ def main(argv=None):
                 print(f"Source-checked NetBox target: {target}; live ingestion not verified")
                 if result["known_incompatible_netbox"]:
                     print("Incompatible NetBox targets: " + ", ".join(result["known_incompatible_netbox"]))
-            print(f"SHA256: {result['sha256']}")
+            # The canonical-encoding digest, not the bytes of plan.json: load
+            # receipts publish it as canonical_sha256 next to the file-bytes
+            # plan_sha256, so label it or operators reconcile the wrong pair.
+            print(f"Canonical plan SHA256: {result['sha256']}")
         return 0
     except (ValueError, OSError, KeyError, TypeError, ImportError, RuntimeError) as exc:
         if args.json:

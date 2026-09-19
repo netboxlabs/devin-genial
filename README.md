@@ -1,9 +1,10 @@
 # Genial
 
 Generate a believable, connected NetBox estate from a small recipe. Target-aware
-loading is in active qualification. Start with a regional bank, data center,
-school district, hospital network or provider backbone and change the demand to
-suit your customer.
+loading is in active qualification. Start with a regional bank, enterprise data
+center, school district, hospital network, provider backbone, retail chain,
+university campus or managed service provider and change the demand to suit
+your customer.
 
 **The goal is the whole estate.** Sites, rooms, racks, devices, ports, cables,
 address plans, services and operational context should make sense together.

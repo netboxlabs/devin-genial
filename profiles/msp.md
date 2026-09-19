@@ -109,8 +109,9 @@ This is the modeling claim worth walking through in a demo, and
 `validate_msp.py` checks all of it independently of what any contract says.
 
 **Owned by the customer.** Each customer is one NetBox tenant inside the
-`<namespace> customers` tenant group, with its own segment routing contexts
-(`<namespace>-cust-<key>-<segment>`). The office site, its rooms, racks,
+`<namespace> customers` tenant group — the tenant slug is
+`<namespace>-cust-<key>`, the shape every API filter needs — with its own
+segment routing contexts (`<namespace>-cust-<key>-<segment>`). The office site, its rooms, racks,
 equipment, VLANs, prefixes, addresses, WLANs and access circuits all carry that
 customer's tenant. Nothing — no cable, segment, VLAN, prefix, address, routing
 context or service — joins two customers, and the provider's own operations site
@@ -131,6 +132,24 @@ concept:
   addresses, and each office record names that segment;
 - the shared infrastructure owner and the carrier accounts for every office
   access circuit belong to the provider, not to the customers.
+
+Proving both claims live on a loaded branch (`SCHEMA` is the branch's schema id
+from `just branch`; the customer key here is `kestrel-logistics` under
+namespace `beacon`):
+
+```sh
+# 1. Every device at the customer's offices carries their tenant.
+curl -s -H "Authorization: Token $NETBOX_TOKEN" \
+  "$TARGET/api/dcim/devices/?tenant=beacon-cust-kestrel-logistics&_branch=SCHEMA&brief=true&limit=0" | jq .count
+# 2. Their operated equipment escalates to the provider's per-account desk.
+curl -s -H "Authorization: Token $NETBOX_TOKEN" \
+  "$TARGET/api/tenancy/contact-assignments/?object_type=dcim.device&_branch=SCHEMA&limit=300" \
+  | jq '[.results[] | select(.contact.name | contains("kestrel-logistics"))] | length'
+```
+
+The first count is every owned device; the second is the operated subset
+(access, distribution, wan-edge, APs, management, console server) bound to that
+account's NOC duty desk.
 
 ## Shared managed services
 
