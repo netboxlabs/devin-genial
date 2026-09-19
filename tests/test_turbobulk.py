@@ -987,6 +987,28 @@ class TurboBulkLoaderTests(unittest.TestCase):
                  max_job_rows=MAX_JOB_ROWS + 1)
         self.assertIn("silently drop columns", str(caught.exception))
 
+    def test_wireless_lan_identity_uses_ssid_group_and_vlan(self):
+        obj = {"kind": "wireless_lan", "key": "w",
+               "attrs": {"ssid": "district-staff", "status": "active"},
+               "refs": {"group": "g", "vlan": "v"}, "meta": {}}
+        ids = {"g": 5, "v": 9}
+        row = {"id": 1, "ssid": "district-staff", "group": {"id": 5}, "vlan": {"id": 9}}
+        self.assertTrue(_matches(obj, row, ids))
+        # same SSID under another group or VLAN is a different WLAN
+        self.assertFalse(_matches(obj, dict(row, group={"id": 6}), ids))
+        self.assertFalse(_matches(obj, dict(row, vlan={"id": 10}), ids))
+        from estates.turbobulk import _candidate_bucket_key, _row_bucket_keys
+        self.assertEqual(_candidate_bucket_key(obj, ids),
+                         ("ssid-group", "district-staff", 5))
+        self.assertEqual(_row_bucket_keys("wireless_lan", row),
+                         [("ssid-group", "district-staff", 5)])
+
+    def test_wireless_lan_group_matches_by_slug(self):
+        obj = {"kind": "wireless_lan_group", "key": "g",
+               "attrs": {"name": "maple campus", "slug": "maple-campus"}, "refs": {}, "meta": {}}
+        self.assertTrue(_matches(obj, {"slug": "maple-campus"}, {}))
+        self.assertFalse(_matches(obj, {"slug": "other"}, {}))
+
     def test_patch_state_normalizes_choice_and_fk_readback_shapes(self):
         from estates.turbobulk import _patch_state
         actual = {"primary_ip4": {"id": 363, "address": "10.0.96.12/20"},

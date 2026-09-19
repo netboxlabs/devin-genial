@@ -18,7 +18,8 @@ from .model import DesignError, World, canonical, resolve_bank_recipe, resolve_d
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
-          "max_objects", "patching", "reservation_user", "wan_tiers_mbps"}
+          "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
+          "naming", "site_names"}
 DEFAULT_POPS = [dict(key="chicago-west",metro="chicago"),dict(key="detroit-south",metro="detroit"),
                 dict(key="cleveland-east",metro="cleveland")]
 DEFAULT_CUSTOMERS = [dict(key="harbor-logistics",hub_pop="chicago-west",sites=[dict(pop=p["key"],count=1) for p in DEFAULT_POPS])]

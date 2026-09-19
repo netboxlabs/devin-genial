@@ -145,7 +145,9 @@ class Site:
         inherited = self.lineage == "birch" and not (role == "access" and self.design == "refreshed")
         attrs = dict(name=self.display_name(label, inherited), status="active",
                      serial=f"SYN-{self.w.choose(key, 'serial', range(10**10)):010d}",
-                     description=f"{role} at {self.name}")
+                     # Reference the emitted display name (authored or legacy);
+                     # device identities themselves stay keyed on stable ids.
+                     description=f"{role} at {self.w.obj(self.key)['attrs']['name']}")
         refs = dict(site=self.key, device_type=f"hardware/{alias}", role=f"role/{role}", tenant=self.tenant, tags=["tag/estate"])
         metadata = dict(hardware=alias, purpose=role, **(meta or {}))
         if racked and spec["u_height"]:

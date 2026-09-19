@@ -11,7 +11,8 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
-          "max_objects", "patching", "reservation_user", "wan_tiers_mbps"}
+          "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
+          "naming", "site_names"}
 CAMPUS_NETWORKS = ("clinical", "medical", "imaging", "staff", "wireless", "security", "management")
 NETWORKS = ("management", "clinical", "medical", "wireless", "security", "applications",
             "database", "backup", "wan", "storage", "staff", "imaging")

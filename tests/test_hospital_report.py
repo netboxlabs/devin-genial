@@ -38,13 +38,13 @@ class HospitalReportTests(unittest.TestCase):
         for phrase in ("School population", "classroom workstation", "Banking", "ATM"):
             self.assertNotIn(phrase, text)
         section = text.split("## Care units and shared services\n", 1)[1].split("## Geography", 1)[0]
-        row = next(line for line in section.splitlines() if "| lakeshore-hospital-central |" in line)
+        row = next(line for line in section.splitlines() if "| Central Hospital |" in line)
         self.assertIn("| 1 | 4 | 0 | 1 | 4 | 1 |", row)
         changed = deepcopy(self.plan)
         monitor = next(o for o in changed["objects"] if o["refs"].get("role") == "role/medical-device")
         monitor["refs"]["role"] = "role/workstation"
         section = markdown(changed).split("## Care units and shared services\n", 1)[1].split("## Geography", 1)[0]
-        row = next(line for line in section.splitlines() if "| lakeshore-hospital-central |" in line)
+        row = next(line for line in section.splitlines() if "| Central Hospital |" in line)
         self.assertIn("| 1 | 4 | 0 | 1 | 3 | 1 |", row)
 
 

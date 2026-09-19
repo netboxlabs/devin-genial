@@ -66,6 +66,8 @@ are enforced at `estates/model.py:146`.
 | `reservation_user` | string | `""` | Empty, or an existing NetBox username, 1–150 of `[\w.@+-]`. Binds an existing account; Diode never creates one. Must be empty on every profile except the bank. | **rebaseline** |
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Strictly increasing unique integers, each 1–1000, last element exactly `1000`. Purchased tiers; the physical handoff stays 1 Gb/s. Not accepted by the enterprise profile. | **rebaseline** |
 | `max_objects` | integer | `500000` | `100`–`2000000`. Generation fails when the budget is exceeded. | mutable |
+| `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
+| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `pop-chicago-lakeview`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). Unknown site ids fail generation. The way to show the customer's real footprint. | **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
 
 Per-profile `address_pool` ceilings and per-site reservation sizes:
@@ -341,9 +343,9 @@ Recipes size demand. They do not select:
 
 - **Vendors, device types or models.** Hardware comes from `catalog/hardware.json`
   and each profile's authored role-to-alias mapping.
-- **Site names, facility codes, geography, addresses or coordinates.** Site display
-  names are derived from the namespace and ordinal (`cedar-complete-hq-01`), and
-  metros, rooms and rack geometry are authored in `estates/places.py`.
+- **Metros, rooms and rack geometry.** Authored in `estates/places.py`. (Site
+  *display names* and facility codes ARE expressible: authored defaults via
+  `naming`, exact per-site values via `[site_names]` — see Common keys.)
 - **VLAN IDs, subnet layout within a site, interface names, rack units or cable
   lengths.** These are allocator outputs bound to stable keys.
 - **Custom fields, tags, tenant hierarchies or NetBox config contexts.**
@@ -353,6 +355,4 @@ Recipes size demand. They do not select:
 
 All of the above are code-level changes in `estates/` or `catalog/`, and each one
 changes the hardware digest or generated identities, so each needs a new baseline.
-Meaningful site names and stable facility codes are a known deferred item recorded
-in [CLAUDE.md](../CLAUDE.md); do not work around it by renaming objects in a running
-estate.
+Do not work around any of them by renaming or editing objects in a running estate.

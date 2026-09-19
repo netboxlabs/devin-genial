@@ -1,5 +1,6 @@
 """Small canonical graph, input validation, and persistent address reservations."""
 
+from collections import defaultdict
 import hashlib
 import ipaddress
 import json
@@ -61,7 +62,8 @@ def resolve_demo(value):
 def resolve_bank_recipe(raw):
     allowed = {"profile", "namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool",
                "data_centers", "headquarters", "branches", "reserve_fraction", "max_objects", "patching",
-               "design_mix", "site_designs", "acquired_sites", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "demo"}
+               "design_mix", "site_designs", "acquired_sites", "headquarters_staff", "wan_tiers_mbps",
+               "reservation_user", "demo", "naming", "site_names"}
     if unknown := raw.keys() - allowed:
         raise DesignError(f"Unknown recipe fields: {', '.join(sorted(unknown))}")
     r = dict(profile="regional-bank", namespace="cedar", name="Cedar Regional Bank",
@@ -69,7 +71,8 @@ def resolve_bank_recipe(raw):
              data_centers=2, headquarters=1, headquarters_staff=180, branches={"small": 4, "medium": 2, "large": 1},
              reserve_fraction=0.2, max_objects=500000, patching="direct",
              design_mix={"modern": 100, "inherited": 0, "refreshed": 0}, site_designs={}, acquired_sites=[],
-             wan_tiers_mbps=[50, 100, 200, 500, 1000], reservation_user="")
+             wan_tiers_mbps=[50, 100, 200, 500, 1000], reservation_user="",
+             naming="authored", site_names={})
     r.update(raw)
     if "demo" in r:
         r["demo"] = resolve_demo(r["demo"])
@@ -84,6 +87,21 @@ def resolve_bank_recipe(raw):
     if not isinstance(r["reservation_user"], str) or (r["reservation_user"] and
             not re.fullmatch(r"[\w.@+-]{1,150}", r["reservation_user"])):
         raise DesignError("reservation_user must be empty or an existing NetBox username (1–150 letters, digits, @/./+/-/_)")
+    if r["naming"] not in ("authored", "legacy"):
+        raise DesignError("naming must be 'authored' (readable site names, facility codes and "
+                          "coordinates) or 'legacy' (namespace-ordinal site names)")
+    if not isinstance(r["site_names"], dict):
+        raise DesignError("site_names must be a table of site-id keyed overrides")
+    for site_id, entry in r["site_names"].items():
+        if (not isinstance(entry, dict) or not entry
+                or entry.keys() - {"name", "facility"}):
+            raise DesignError(f"site_names.{site_id}: supply only 'name' and/or 'facility'")
+        display = entry.get("name")
+        if display is not None and (not isinstance(display, str) or not 1 <= len(display) <= 100):
+            raise DesignError(f"site_names.{site_id}: name must be 1–100 characters (native Site limit)")
+        facility = entry.get("facility")
+        if facility is not None and (not isinstance(facility, str) or not 1 <= len(facility) <= 50):
+            raise DesignError(f"site_names.{site_id}: facility must be 1–50 characters (native Site limit)")
     if type(r["seed"]) is not int or not 0 <= r["seed"] < 2**63:
         raise DesignError("seed must be an integer in [0, 2^63)")
     try:
@@ -138,12 +156,13 @@ class World:
         self.allocations = {}
         self.reservations = {}
         self.design_assignments = {}
+        self.consumed_site_names = set()
         if previous is not None:
             if previous.get("schema_version") != 1 or previous.get("generator_version") != __version__:
                 raise DesignError("Previous plan has a different schema/generator version; explicit rebaseline required")
             if previous.get("hardware_digest") != digest(self.catalog):
                 raise DesignError("Hardware catalog changed since previous plan; explicit rebaseline required")
-            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user"):
+            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming", "site_names"):
                 if previous["recipe"].get(k) != self.recipe.get(k):
                     raise DesignError(f"Changing {k} requires a new estate; omit --previous for an explicit rebaseline")
             self.allocations = dict(previous["allocations"])
@@ -219,6 +238,20 @@ class World:
         return ipaddress.ip_network((int(self.pool.network_address) + self.allocations[site_id] * (1 << (32-self.site_prefixlen)), self.site_prefixlen))
 
     def finish(self):
+        unused = set(self.recipe.get("site_names", {})) - self.consumed_site_names
+        if unused:
+            raise DesignError("site_names overrides reference unknown site ids: "
+                              + ", ".join(sorted(unused)) + "; keys are site ids such as "
+                              "br-s0002, dc-01, school-oak or pop-chicago-lakeview")
+        names = defaultdict(list)
+        for obj in self.objects.values():
+            if obj["kind"] == "site":
+                names[obj["attrs"]["name"]].append(obj["key"])
+        duplicates = {name: keys for name, keys in names.items() if len(keys) > 1}
+        if duplicates:
+            raise DesignError("site display names must be globally unique; duplicates: "
+                              + "; ".join(f"{name} ({', '.join(keys)})" for name, keys in sorted(duplicates.items()))
+                              + ". Override one with site_names, or change the seed.")
         return dict(schema_version=1, generator_version=__version__, recipe=self.recipe,
                     hardware_digest=digest(self.catalog), allocations=self.allocations,
                     reservations=self.reservations,

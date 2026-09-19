@@ -39,7 +39,7 @@ class ProviderReportTests(unittest.TestCase):
         self.assertNotIn("WAN capacity by provider and site", text)
         section = text.split("## Provider service walkthrough", 1)[1].split("## Sites and demand", 1)[0]
         self.assertIn("| lakes-fiber-private-cargo | lakes-fiber cargo | 3 |", section)
-        self.assertIn("| lakes-fiber-pop-chicago-west | 2 | 2 | 2 | 12 |", section)
+        self.assertIn("| Chicago West Exchange | 2 | 2 | 2 | 12 |", section)
         changed = deepcopy(self.plan)
         changed["contracts"] = []
         changed["objects"] = [o for o in changed["objects"] if o["key"] != "virtual-circuit-termination/ce-cargo-detroit-south-002"]

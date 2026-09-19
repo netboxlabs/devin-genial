@@ -4,7 +4,9 @@ Time-zone labels follow IANA tzdb northamerica and zone1970.tab:
 https://data.iana.org/time-zones/tzdb/northamerica
 https://data.iana.org/time-zones/tzdb/zone1970.tab
 Street addresses, rooms, dimensions and routes are design inputs, not surveyed
-properties. No precise GPS coordinates or RF/electrical compliance are invented.
+properties. Authored naming emits metro-centered synthetic coordinate offsets
+for the map view — never a claim about a real premises location — and no
+RF/electrical compliance is invented.
 """
 
 import hashlib
@@ -14,11 +16,25 @@ from .model import DesignError
 
 
 METROS = (
-    ("Chicago", "IL", "Illinois", "America/Chicago"),
-    ("Detroit", "MI", "Michigan", "America/Detroit"),
-    ("Cleveland", "OH", "Ohio", "America/New_York"),
-    ("Milwaukee", "WI", "Wisconsin", "America/Chicago"),
+    ("Chicago", "IL", "Illinois", "America/Chicago", 41.8781, -87.6298),
+    ("Detroit", "MI", "Michigan", "America/Detroit", 42.3314, -83.0458),
+    ("Cleveland", "OH", "Ohio", "America/New_York", 41.4993, -81.6944),
+    ("Milwaukee", "WI", "Wisconsin", "America/Chicago", 43.0389, -87.9065),
 )
+# Authored display-name pools ("naming = 'authored'"). Streets are real metro
+# geography; every composed site name stays a fictional design assumption.
+STREETS = {
+    "Chicago": ("Wabash", "Halsted", "Clark", "Ashland", "Damen", "Kedzie", "Montrose", "Archer"),
+    "Detroit": ("Woodward", "Gratiot", "Cass", "Livernois", "Vernor", "Bagley", "Jefferson", "Mack"),
+    "Cleveland": ("Euclid", "Superior", "Lorain", "Prospect", "Carnegie", "Payne", "Clifton", "Denison"),
+    "Milwaukee": ("Brady", "Kilbourn", "Wells", "Vliet", "Locust", "Greenfield", "Mitchell", "Burleigh"),
+}
+CAMPUSES = {
+    "Chicago": ("Elk Grove", "Cermak", "Fulton Market", "Ravenswood"),
+    "Detroit": ("Corktown", "Rivertown", "Highland Park", "New Center"),
+    "Cleveland": ("Flats East", "Midtown", "Lakewood Edge", "University Circle"),
+    "Milwaukee": ("Third Ward", "Menomonee Valley", "Walkers Point", "Bay View"),
+}
 GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers", "school": "Schools",
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises"}
 MAX_CHANNEL_M = 80
@@ -42,6 +58,95 @@ SPACE_DESCRIPTIONS = {
 }
 
 
+def _site_display(site):
+    """The emitted display name (authored, overridden, or legacy)."""
+    return site.w.obj(site.key)["attrs"]["name"]
+
+
+def _ordinal(number):
+    if 10 <= number % 100 <= 20:
+        return f"{number}th"
+    return f"{number}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th') }"
+
+
+def _authored_identity(site, city):
+    """Deterministic, unique-by-construction display name for one site.
+
+    Every template embeds a component that is unique within its kind (the
+    branch ordinal, the user-authored campus/PoP/customer key, or the fixed
+    DC metro), so growth never renames an existing site and collisions cannot
+    depend on generation order. Workspace.finish() still enforces global
+    uniqueness as the belt.
+    """
+    w, sid, kind = site.w, site.id, site.contract["kind"]
+    profile = w.recipe["profile"]
+    # Pool picks hash the site id alone (not the seed): display names embed in
+    # journals and descriptions estate-wide, and the declared seed variation
+    # stays bounded to serials, dates and design-pool choices.
+    pick = lambda pool: pool[int.from_bytes(
+        hashlib.sha256(f"display/{sid}".encode()).digest()[:4], "big") % len(pool)]
+    if kind == "branch":
+        # The address-allocation slot is unique across every site and stable
+        # under growth, so street & number can never collide or get renamed.
+        # "and", not "&": report tables HTML-escape ampersands, and every name
+        # must appear verbatim in the rendered report.
+        return f"{pick(STREETS[city])} and {_ordinal(getattr(w, 'allocations', {}).get(sid, 0))} Branch"
+    if kind == "hq":
+        return f"{city} Headquarters"
+    if kind == "dc":
+        if profile == "provider-backbone":
+            return f"{city} NOC Campus"
+        return f"{pick(CAMPUSES[city])} Data Center"
+    if kind in {"school", "hospital", "clinic"}:
+        title = sid.split("-", 1)[1].replace("-", " ").title()
+        return f"{title} {'School' if kind == 'school' else kind.title()}"
+    if kind == "pop":
+        # Never drop tokens: PoP keys are globally unique, so full-token
+        # titles are too (chicago-east and cleveland-east must not both
+        # become "East Exchange").
+        tokens = sid.removeprefix("pop-").split("-")
+        return f"{' '.join(token.title() for token in tokens)} Exchange"
+    if kind == "customer":
+        base = sid.removeprefix("ce-")
+        stem, ordinal = base.rsplit("-", 1)
+        pop_keys = sorted((p.removeprefix("pop-") for p in getattr(w, "provider_metros", {})
+                           if p.startswith("pop-")), key=len, reverse=True)
+        pop_title = ""
+        for pop_key in pop_keys:
+            if stem.endswith("-" + pop_key):
+                stem = stem.removesuffix("-" + pop_key)
+                pop_title = " ".join(token.title() for token in pop_key.split("-"))
+                break
+        customer = stem.replace("-", " ").title()
+        return " ".join(part for part in (customer, "-", pop_title, f"{int(ordinal):02}") if part)
+    return f"{sid.replace('-', ' ').title()} Site"
+
+
+def _display_site(site, node, city, latitude, longitude):
+    """Apply the naming policy: authored identity, overrides, facility, geo."""
+    w = site.w
+    authored = w.recipe.get("naming", "authored") == "authored"
+    name = _authored_identity(site, city) if authored else node["attrs"]["name"]
+    # Facility codes ride the stable address-allocation slot: short, unique,
+    # and unchanged by growth (site ids can exceed the native 50-char limit).
+    facility = (f"{city[:3].upper()}{getattr(w, 'allocations', {}).get(site.id, 0):04}"
+                if authored else None)
+    override = w.recipe.get("site_names", {}).get(site.id)
+    if override:
+        name = override.get("name", name)
+        facility = override.get("facility", facility)
+        w.consumed_site_names.add(site.id)
+    node["attrs"]["name"] = name
+    if facility:
+        node["attrs"]["facility"] = facility
+    if authored:
+        # Metro-centered synthetic offsets: enough spread for the map view,
+        # never a claim about a real street address.
+        jitter = hashlib.sha256(f"geo/{site.id}".encode()).digest()
+        node["attrs"]["latitude"] = round(latitude + (jitter[0] / 255 - 0.5) * 0.24, 6)
+        node["attrs"]["longitude"] = round(longitude + (jitter[1] / 255 - 0.5) * 0.24, 6)
+
+
 def foundation(w, *, site_kinds=None):
     """Publish namespaced shared geography before any site references it."""
     ns = w.recipe["namespace"]
@@ -51,7 +156,7 @@ def foundation(w, *, site_kinds=None):
                                     (lakes, "Great Lakes", "great-lakes", root)):
         w.add("region", key, {"name": f"{ns} {name}", "slug": f"{ns}-{slug}"},
               {"parent": parent} if parent else {})
-    for _, code, state, _ in METROS:
+    for _, code, state, _, _, _ in METROS:
         w.add("region", f"{root}/{code.lower()}",
               {"name": f"{ns} {state}", "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
     for kind, name in GROUPS.items():
@@ -110,7 +215,7 @@ def locate(site):
         metro_index = int(site.id[-2:]) - 1
     else:
         metro_index = int.from_bytes(hashlib.sha256(site.id.encode()).digest()[:4], "big") % len(METROS)
-    city, state_code, state, zone = METROS[metro_index]
+    city, state_code, state, zone, latitude, longitude = METROS[metro_index]
     node = site.w.obj(site.key)
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
@@ -125,6 +230,7 @@ def locate(site):
     node["refs"].update(region=f"region/{site.w.recipe['namespace']}/us/{state_code.lower()}",
                         group=f"site-group/{site.w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = {"country": "US", "state": state_code, "city": city, "synthetic": True}
+    _display_site(site, node, city, latitude, longitude)
     building = _location(site, "building", "Main building", "building", 0, (0, 0, 0))
     ground = _floor(site, 1)
     equipment = _location(site, "", "Data hall" if kind == "dc" else "MDF",
@@ -143,13 +249,14 @@ def provider_locate(site):
     """Provider sites use explicit metro attachments; geometry stays local."""
     kind, w = site.contract["kind"], site.w
     metro = w.provider_metros[site.id]
-    city, code, state, zone = next(row for row in METROS if row[0].lower() == metro)
+    city, code, state, zone, latitude, longitude = next(row for row in METROS if row[0].lower() == metro)
     street = {"pop": "Exchange Avenue", "customer": "Business Way", "dc": "Technology Way"}[kind]
     node = w.obj(site.key)
     node["attrs"].update(time_zone=zone, physical_address=f"{100+4*w.allocations[site.id]} {street}\n{city}, {state}\nUnited States")
     node["refs"].update(region=f"region/{w.recipe['namespace']}/us/{code.lower()}",
                         group=f"site-group/{w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = dict(country="US", state=code, city=city, synthetic=True)
+    _display_site(site, node, city, latitude, longitude)
     building = _location(site,"building","Main building","building",0,(0,0,0))
     floor = _floor(site,1)
     equipment = _location(site,"","Data hall" if kind == "dc" else "MDF","equipment_room",1,(24,18,0),floor)
@@ -268,7 +375,7 @@ def place_endpoint(site, key, role, ordinal):
         raise DesignError(f"{key}: authored access channel needs {route} m; limit is {MAX_CHANNEL_M} m")
     node = site.w.obj(key)
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{purpose} {ordinal:03} in {space['attrs']['name']} at {site.name}"
+    node["attrs"]["description"] = f"{purpose} {ordinal:03} in {space['attrs']['name']} at {_site_display(site)}"
     node["meta"].update(placement={"room": room, "function": space["meta"]["space_type"],
                                   "floor": space["meta"]["floor"], "position_m": position,
                                   "cable_origin": origin_room}, access_channel_length_m=route)
@@ -351,7 +458,7 @@ def school_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: school access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node = site.w.obj(key)
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {site.name}"
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
     if role == "role/ap":
         node["attrs"]["description"] += "; staff on wlan0, students on wlan1; RF coverage unverified"
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
@@ -416,9 +523,9 @@ def hospital_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: clinical access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {site.name}"
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
     if role in {"role/medical-device","role/imaging-device"}:
-        node["attrs"]["description"] = f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {site.name}"
+        node["attrs"]["description"] = f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {_site_display(site)}"
     elif role == "role/ap":
         node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
     node["meta"].update(cohort=cohort,placement={"room":room,"function":space["meta"]["space_type"],

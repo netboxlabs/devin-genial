@@ -168,7 +168,7 @@ for the separately recorded pinned-target live qualification.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
   `estates/turbobulk.py`: the bounded TurboBulk/REST adapter, including the
-  29-kind Cloud qualification and the 59-kind enterprise contract, live-qualified
+  29-kind Cloud qualification and the 61-kind contract (wireless included), live-qualified
   only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
 
@@ -305,10 +305,14 @@ for the separately recorded pinned-target live qualification.
 - Rack asset tags retain accepted short labels; longer labels use a readable
   prefix and stable digest of the full site/room identity to fit native 50-character
   limits. Validate global tag uniqueness before export; site names are unchanged.
-- Deferred naming work: site display names currently expose the test namespace
-  (for example `cedar-complete-hq-01`). Generate meaningful site names and stable
-  facility codes while retaining unambiguous matching. The user explicitly
-  deferred this change; do not manually rename objects in the running estate.
+- Site naming: authored display names, facility codes and metro-jittered
+  synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
+  `naming = "legacy"` restores namespace-ordinal names and `[site_names]`
+  overrides any site by id. Slugs, DNS, device names and matching keys keep the
+  stable namespace form; name pools hash the site id (never the seed or other
+  sites), so growth cannot rename and seeds cannot reshuffle. Workspace.finish
+  enforces global display-name uniqueness. Never rename objects in a running
+  estate; naming keys are rebaseline-frozen.
 - HQ staff demand determines office floors and equipment rooms. Allocate access,
   management and power locally; check the actual copper paths and fiber backbone.
   Rack names may repeat across rooms; rack references and asset tags retain room scope.

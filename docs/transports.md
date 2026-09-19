@@ -62,7 +62,7 @@ Since server v0.4.0, operators can enable
 concurrency cap): a violated guardrail fails the job with a `guardrail` error,
 which this loader surfaces as a terminal job failure with the receipt
 preserved. A server max-rows cap below the artifact's job bound is a target
-configuration question, not a loader defect. It bypasses normal per-object
+configuration question, not a loader defect. TurboBulk bypasses normal per-object
 REST creation, which makes large table loads attractive, but moves more work into
 Genial. The loader must inspect target schemas, supply target defaults, translate
 foreign keys to IDs, split cables from their terminations, bound each job, run
@@ -221,7 +221,7 @@ execute Assurance-review mode. A standalone REST loader is not implemented yet,
 so the selector reports that gap rather than silently omitting unsupported objects.
 
 The frozen v0.2 bank qualifies 29 canonical kinds through TurboBulk on Cloud.
-The compiler now covers 59 kinds, including all 53 in the current enterprise data
+The compiler now covers 61 kinds (wireless LANs and groups included), including all 53 in the current enterprise data
 center artifact, with REST relationship completion and resumable REST creation for
 models absent from TurboBulk. The configured NetBox 4.6.8 target lacks the 4.7
 module-bay model entirely, so it rejects that artifact before any write. The

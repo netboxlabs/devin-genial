@@ -42,8 +42,8 @@ optional devenv/Just setup. All commands run from the repository root.
 | --- | --- | --- | --- |
 | Regional bank | [bank.toml](profiles/bank.toml) · [guide](docs/modeling.md#what-makes-it-a-bank) | Branch mix, headquarters staffing, inherited equipment and shared DC services | No — 39 kinds beyond the TurboBulk contract |
 | Enterprise data center | [enterprise-dc.toml](profiles/enterprise-dc.toml) · [guide](docs/usage.md#enterprise-data-center) | Workload demand, replicas, placement and compute capacity | **Yes** (NetBox 4.7+) |
-| School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | TurboBulk: no (wireless kinds) — Diode path qualified locally* |
-| Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | TurboBulk: no (wireless kinds) — Diode path qualified locally* |
+| School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | **Yes** (NetBox 4.7+) |
+| Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | **Yes** (NetBox 4.7+) |
 | Provider backbone | [provider-backbone.toml](profiles/provider-backbone.toml) · [guide](profiles/provider-backbone.md) | PoPs, customer premises, private-L3 services and purchased transport | **Yes** (NetBox 4.7+) |
 
 Every profile generates, validates and reports offline. "Loadable" means the
@@ -51,11 +51,9 @@ whole estate loads into a live NetBox through TurboBulk today — run
 `just load-check build/…` for the exact per-artifact verdict before picking a
 demo profile.
 
-\* School and hospital estates have a complete, locally qualified **Diode**
-load procedure — see the [local lab guide](lab/README.md) — but unlike the
-TurboBulk branch-per-demo pattern it requires a Diode-equipped target and one
-estate per target (a populated target fails its bootstrap capture; no branch
-coexistence).
+School and hospital also have a locally qualified **Diode** procedure — see the
+[local lab guide](lab/README.md) — which, unlike the TurboBulk branch-per-demo
+pattern, needs a Diode-equipped target and one estate per target.
 
 **Profile not loadable to your target?** A working demo still has three shapes:
 ship the generated `report.md` and a scenario walkthrough as the offline
@@ -84,9 +82,8 @@ New to loading? [First target](docs/first-target.md) is the start-to-finish
 runbook: prerequisites, token shape, branch creation, load, verify.
 
 Not every profile is loadable today: the bank estate emits 39 kinds beyond the
-TurboBulk compiler contract, and school/hospital emit wireless kinds outside
-it, so `just load-check` is the required first step when picking a demo
-profile — enterprise-dc and provider-backbone load completely, and every
+TurboBulk compiler contract, so `just load-check` is the required first step
+when picking a demo profile — the other four profiles load completely, and every
 current profile requires a NetBox 4.7+ target (module bay types). Check the
 artifact offline, then inspect the target without writing:
 
@@ -189,7 +186,7 @@ Use the printed replacement name for the next load and future reset. If Diode ro
 to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
 configuration attestation before loading.
 The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
-compiles the full 59-kind contract, which covers the current 53-kind enterprise
+compiles the full 61-kind contract (wireless included), which covers the current 53-kind enterprise
 data center artifact. The configured NetBox 4.6.8 tenant cannot represent the
 4.7-only module-bay compatibility model, so preflight rejects that exact rich
 artifact before writes. The complete 4.7 path is live-qualified only on the pinned

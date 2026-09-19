@@ -286,7 +286,7 @@ assume that previously open deviations will be applied or replayed automatically
 
 One complete mixed TurboBulk/REST estate has passed strict Cloud readback. Its
 29-kind qualification compiler is callable through `just load`. The compiler now
-covers 59 kinds, including all 53 kinds and references in the current enterprise
+covers 61 kinds (wireless included), including all 53 kinds and references in the current enterprise
 data center artifact, with content-type-safe generic relationships, deferred
 many-to-many fields,
 and resumable REST creation when a required model is absent from TurboBulk. A fresh write

@@ -260,7 +260,10 @@ class SpanScenarioTests(unittest.TestCase):
         raw["customers"].append(dict(key="zeta-retail", hub_pop="cleveland-east", site_peak_mbps=400,
                                      sites=[dict(pop="chicago-west", count=1), dict(pop="cleveland-east", count=1)]))
         grown = generate(raw, previous=self.baseline)
-        e = create(grown, "circuit/backbone/chicago-east/b")
+        # The generator version participates in stable choices, so which spans
+        # carry declared customer paths reshuffles per version: pick the span
+        # that keeps the checked margin (empty resilience) under this version.
+        e = create(grown, "circuit/backbone/seed-03")
         self.assertEqual(len(e["affected"]["premises"]), 2)
         self.assertEqual(e["resilience"], [])
         self.assertEqual(len(e["expected_findings"]), 3)

@@ -33,8 +33,10 @@ class PlacesTests(unittest.TestCase):
         other = sample(seed=99, design="inherited")
         self.assertEqual(first.w.objects, other.w.objects)
         initial = first.w.obj(first.key)
-        self.assertNotIn("latitude", initial["attrs"])
-        self.assertNotIn("longitude", initial["attrs"])
+        # Authored naming emits metro-centered synthetic coordinates: id-derived,
+        # seed-independent (the objects equality above pins that), 6dp-rounded.
+        self.assertAlmostEqual(initial["attrs"]["latitude"], 43.04, delta=0.2)
+        self.assertAlmostEqual(initial["attrs"]["longitude"], -87.91, delta=0.2)
         self.assertTrue(initial["meta"]["geography"]["synthetic"])
         self.assertTrue(initial["attrs"]["physical_address"].endswith("United States"))
         ZoneInfo(initial["attrs"]["time_zone"])

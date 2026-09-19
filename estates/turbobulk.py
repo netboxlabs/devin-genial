@@ -234,6 +234,8 @@ SPECS = {
     "virtual_circuit_termination": ("circuits.virtualcircuittermination",
                                     "/api/circuits/virtual-circuit-terminations/"),
     "virtual_circuit_type": ("circuits.virtualcircuittype", "/api/circuits/virtual-circuit-types/"),
+    "wireless_lan": ("wireless.wirelesslan", "/api/wireless/wireless-lans/"),
+    "wireless_lan_group": ("wireless.wirelesslangroup", "/api/wireless/wireless-lan-groups/"),
 }
 
 CONTENT_TYPES = {
@@ -292,7 +294,7 @@ DIRECT_REFS = {
 
 DEFERRED = {"primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address",
             "tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
-            "asns", "export_targets", "import_targets"}
+            "asns", "export_targets", "import_targets", "wireless_lans"}
 SUPPORTED_REFS = {
     "aggregate": {"rir", "tenant"},
     "asn": {"rir", "tenant"},
@@ -312,7 +314,8 @@ SUPPORTED_REFS = {
     "device": {"cluster", "device_type", "location", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant"},
     "device_role": set(),
     "device_type": {"manufacturer"},
-    "interface": {"device", "module", "parent", "primary_mac_address", "tagged_vlans", "untagged_vlan", "vrf"},
+    "interface": {"device", "module", "parent", "primary_mac_address", "tagged_vlans",
+                  "untagged_vlan", "vrf", "wireless_lans"},
     "ip_address": {"assigned_object", "tenant", "vrf"},
     "journal_entry": {"assigned_object"},
     "location": {"parent", "site", "tenant"},
@@ -353,6 +356,8 @@ SUPPORTED_REFS = {
     "vlan_group": {"scope_site", "tenant"},
     "vm_interface": {"primary_mac_address", "untagged_vlan", "virtual_machine", "vrf"},
     "vrf": {"export_targets", "import_targets", "tenant"},
+    "wireless_lan": {"group", "scope_site", "tenant", "vlan"},
+    "wireless_lan_group": {"parent"},
 }
 
 
@@ -543,7 +548,7 @@ def _matches(obj, row, ids, objects=None):
     kind, attrs = obj["kind"], obj["attrs"]
     if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
                 "device_role", "site", "device_type", "contact_group", "contact_role",
-                "platform", "rack_role", "rir", "site_group"}:
+                "platform", "rack_role", "rir", "site_group", "wireless_lan_group"}:
         return row.get("slug") == attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group"}:
         return row.get("name") == attrs["name"]
@@ -641,6 +646,11 @@ def _matches(obj, row, ids, objects=None):
     if kind == "virtual_circuit_termination":
         return (_nested_id(row.get("virtual_circuit")) == _ref_id(obj, "virtual_circuit", ids)
                 and _nested_id(row.get("interface")) == _ref_id(obj, "interface", ids))
+    if kind == "wireless_lan":
+        return (row.get("ssid") == attrs["ssid"]
+                and _nested_id(row.get("group")) == _ref_id(obj, "group", ids)
+                and ("vlan" not in obj["refs"]
+                     or _nested_id(row.get("vlan")) == _ref_id(obj, "vlan", ids)))
     raise LoadError(f"no target identity matcher for {kind}")
 
 
@@ -649,7 +659,7 @@ def _candidate_bucket_key(obj, ids, objects=None):
     kind, attrs, refs = obj["kind"], obj["attrs"], obj["refs"]
     if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
                 "device_role", "site", "device_type", "contact_group", "contact_role",
-                "platform", "rack_role", "rir", "site_group", "region"}:
+                "platform", "rack_role", "rir", "site_group", "region", "wireless_lan_group"}:
         return "slug", attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
                 "virtual_machine"}:
@@ -712,6 +722,8 @@ def _candidate_bucket_key(obj, ids, objects=None):
     if kind == "virtual_circuit_termination":
         return ("vc-interface", _ref_id(obj, "virtual_circuit", ids),
                 _ref_id(obj, "interface", ids))
+    if kind == "wireless_lan":
+        return "ssid-group", attrs["ssid"], _ref_id(obj, "group", ids)
     raise LoadError(f"no target identity index for {kind}")
 
 
@@ -719,7 +731,7 @@ def _row_bucket_keys(kind, row):
     nested = _nested_id
     if kind in {"manufacturer", "tag", "circuit_type", "cluster_type", "provider", "tenant",
                 "device_role", "site", "device_type", "contact_group", "contact_role",
-                "platform", "rack_role", "rir", "site_group", "region"}:
+                "platform", "rack_role", "rir", "site_group", "region", "wireless_lan_group"}:
         return [("slug", row.get("slug"))]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
                 "virtual_machine"}:
@@ -787,6 +799,8 @@ def _row_bucket_keys(kind, row):
         return [("cid-provider-network", row.get("cid"), nested(row.get("provider_network")))]
     if kind == "virtual_circuit_termination":
         return [("vc-interface", nested(row.get("virtual_circuit")), nested(row.get("interface")))]
+    if kind == "wireless_lan":
+        return [("ssid-group", row.get("ssid"), nested(row.get("group")))]
     raise LoadError(f"no target identity index for {kind}")
 
 
@@ -1687,7 +1701,7 @@ def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=N
 
 
 REST_PATCH_LIST_FIELDS = {"tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
-                          "asns", "export_targets", "import_targets"}
+                          "asns", "export_targets", "import_targets", "wireless_lans"}
 
 
 def _observed_patch_value(value):
