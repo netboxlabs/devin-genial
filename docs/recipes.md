@@ -98,7 +98,7 @@ including a non-empty `reservation_user`, plus:
 | `branches` | table | `{small = 4, medium = 2, large = 1}` | Only `small`, `medium`, `large`; each an integer `0`–`2000`. Omitted sizes count zero. | grow-only |
 | `design_mix` | table | `{modern = 100, inherited = 0, refreshed = 0}` | Only `modern`, `inherited`, `refreshed`; each an integer weight `0`–`100`, at least one positive. Applies to newly added branches. | **rebaseline** |
 | `site_designs` | table | `{}` | Maps a branch ID to `modern`, `inherited` or `refreshed`. IDs are `br-s0001`, `br-m0001`, `br-l0001`, … and must exist. | grow-only for new branches; changing an existing assignment needs the scenario transition or a new baseline |
-| `acquired_sites` | array of strings | `[]` | Existing branch IDs, no duplicates. The branch must have inherited lineage — an acquired `modern` branch is rejected. | grow-only; changing existing ownership needs the acquisition transition |
+| `acquired_sites` | array of strings | `[]` | Existing branch IDs, no duplicates. The branch must have inherited lineage — an acquired `modern` branch is rejected. Inherited estates render under the authored predecessor brand "Birch" (device/DNS/VRF/tenant names) — see [modeling](modeling.md); the brand is not recipe-settable. Place this key ABOVE any `[table]` header: TOML scoping otherwise swallows it. | grow-only; changing existing ownership needs the acquisition transition |
 
 Branch counts drive fixed per-size demand: small 12 workstations / 2 ATMs / 2 APs
 / 2 cameras / 20 Mbps, medium 36 / 4 / 4 / 4 / 50, large 84 / 6 / 8 / 8 / 100.
@@ -350,6 +350,12 @@ Recipes size demand. They do not select:
   lengths.** These are allocator outputs bound to stable keys.
 - **Custom fields, tags, tenant hierarchies or NetBox config contexts.**
 - **Per-object descriptions, comments or journal text.**
+- **The inherited-lineage brand.** Acquired/inherited bank branches carry the
+  authored predecessor identity "Birch" throughout (device names, DNS, VRFs,
+  route targets, a `… Birch Bank` tenant, WAN accounts, journals) — that is
+  the merger story's substance, documented in
+  [modeling](modeling.md#what-makes-it-a-bank), and there is no recipe key to
+  rebrand it.
 - **Object counts directly.** `max_objects` is a ceiling that fails the build, not a
   target.
 

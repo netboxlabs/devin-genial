@@ -137,8 +137,15 @@ def resolve_bank_recipe(raw):
     r["design_mix"] = {name: r["design_mix"].get(name, 0) for name in designs}
     if any(type(n) is not int or not 0 <= n <= 100 for n in r["design_mix"].values()) or not sum(r["design_mix"].values()):
         raise DesignError("design_mix weights must be 0–100 with at least one positive weight")
-    if not isinstance(r["site_designs"], dict) or any(not isinstance(k, str) or v not in designs for k, v in r["site_designs"].items()):
+    if not isinstance(r["site_designs"], dict):
         raise DesignError("site_designs maps branch IDs to modern, inherited or refreshed")
+    bad = {k: v for k, v in r["site_designs"].items() if not isinstance(k, str) or v not in designs}
+    if bad:
+        detail = "; ".join(f"{k}={v!r}" for k, v in sorted(bad.items()))
+        raise DesignError(
+            f"site_designs maps branch IDs to modern, inherited or refreshed; got {detail}. "
+            "(A top-level key such as acquired_sites placed AFTER the [site_designs] header "
+            "is swallowed into that table by TOML scoping — move it above the header.)")
     if not isinstance(r["acquired_sites"], list) or any(not isinstance(k, str) for k in r["acquired_sites"]):
         raise DesignError("acquired_sites must be a list of branch IDs")
     if len(r["acquired_sites"]) != len(set(r["acquired_sites"])):

@@ -369,7 +369,7 @@ class FreshLoadOccupancyTests(unittest.TestCase):
         # occupied site rows block a fresh load and carry their endpoint
         self.assertEqual(result["allowlisted"], {"owner": [3]})
         self.assertEqual(result["blocking"],
-                         {"site": {"rows": 2, "endpoint": "/api/dcim/sites/"}})
+                         {"site": {"endpoint_total_rows": 2, "endpoint": "/api/dcim/sites/"}})
         self.assertIn("delete exactly the conflicting_rows", result["note"])
 
     def test_blocking_names_only_the_plans_own_colliding_rows(self):

@@ -223,6 +223,12 @@ government/defense (enterprise/campus plus `site_names`).
 | 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | pending |
 | 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | pending |
 
+Depth backlog (from cold-start run #16, bank): FHRP groups, VPN tunnels and
+inventory items are modeled as single instances in a DC pair — enough to show
+the object type, not a per-branch redundancy *pattern*. Candidate enrichment:
+per-branch FHRP gateway pairs, per-acquired-site tunnels, per-host inventory.
+Not scheduled; weigh against phases 3–9.
+
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
 cold-start-se runs to two consecutive cleans whenever the loading surface or

@@ -189,7 +189,10 @@ def _fresh_load_occupancy(client, plan, objects):
     inventory = (fetch_inventory(client.base, client.token, candidates, client.branch_id)
                  if candidates else {})
     allowed = _bootstrap_allowlist(plan, inventory).get("target_ids", {})
-    blocking = {kind: dict(value) for kind, value in occupied.items() if kind not in allowed}
+    # blocking entries rename the endpoint count so it cannot read as "N rows
+    # are blocking you": only conflicting_rows (when present) are yours.
+    blocking = {kind: {"endpoint": value["endpoint"], "endpoint_total_rows": value["rows"]}
+                for kind, value in occupied.items() if kind not in allowed}
     for kind in blocking:
         # For allowlist-eligible kinds name the exact colliding rows — only
         # rows whose identity the plan also uses. The other rows on the
@@ -760,7 +763,8 @@ def main(argv=None):
                 # one line instead of leaving it buried mid-JSON.
                 print(f"Selected transport: {decision['selected']}. NOTE: fresh-load "
                       "blockers present ("
-                      + ", ".join(f"{kind}={value['rows']}" for kind, value in sorted(blocking.items()))
+                      + ", ".join(f"{kind}={value['endpoint_total_rows']}"
+                                  for kind, value in sorted(blocking.items()))
                       + ") — see fresh_load_occupancy.blocking above; a resume with its "
                       "existing receipt is unaffected.", file=os.sys.stderr)
             elif decision["selected"] is not None:
