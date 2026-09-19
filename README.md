@@ -57,6 +57,14 @@ TurboBulk branch-per-demo pattern it requires a Diode-equipped target and one
 estate per target (a populated target fails its bootstrap capture; no branch
 coexistence).
 
+**Profile not loadable to your target?** A working demo still has three shapes:
+ship the generated `report.md` and a scenario walkthrough as the offline
+industry deliverable; run the Diode lab path against a clean Diode-equipped
+target for real screens; or load a TurboBulk-clean profile (enterprise-dc or
+provider-backbone) shaped to the customer — for example an enterprise DC whose
+workloads carry the customer's application names — and pair it with the
+industry report.
+
 These are configurable industry models with explicit construction limits.
 Additional industries need reviewed rules and checks. See [how the generator
 works](docs/modeling.md#procedural-design-without-ai) and the

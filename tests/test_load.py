@@ -372,6 +372,24 @@ class FreshLoadOccupancyTests(unittest.TestCase):
                          {"site": {"rows": 2, "endpoint": "/api/dcim/sites/"}})
         self.assertIn("delete exactly the conflicting_rows", result["note"])
 
+    def test_blocking_names_only_the_plans_own_colliding_rows(self):
+        # a same-namespace collision blocks the kind's allowlist, but cleanup
+        # guidance must name only the plan's own rows — never other namespaces'
+        from estates.load import _fresh_load_occupancy
+
+        plan = {"objects": [{"kind": "owner", "attrs": {"name": "stonebrook ops"}, "refs": {}}]}
+
+        class Probe(Target):
+            def request(self, path, **_kwargs):
+                return 200, {"count": 6}
+
+        rows = ([{"id": i, "name": f"other-{i} ops"} for i in range(3, 8)]
+                + [{"id": 8, "name": "stonebrook ops"}])
+        with patch("estates.load.fetch_inventory", return_value={"owner": rows}):
+            result = _fresh_load_occupancy(Probe(), plan, {"k0": plan["objects"][0]})
+        self.assertEqual(result["blocking"]["owner"]["conflicting_rows"],
+                         {8: "stonebrook ops"})
+
     def test_probe_reports_absent_endpoints_instead_of_crashing(self):
         # module bay types return a rendered HTML 404 before NetBox 4.7; the
         # probe must leave that to the transport blockers, not crash explain

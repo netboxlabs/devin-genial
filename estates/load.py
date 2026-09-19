@@ -191,13 +191,13 @@ def _fresh_load_occupancy(client, plan, objects):
     allowed = _bootstrap_allowlist(plan, inventory).get("target_ids", {})
     blocking = {kind: dict(value) for kind, value in occupied.items() if kind not in allowed}
     for kind in blocking:
-        # For allowlist-eligible kinds name the exact colliding rows: the other
-        # rows on the endpoint belong to other namespaces and must stay.
+        # For allowlist-eligible kinds name the exact colliding rows — only
+        # rows whose identity the plan also uses. The other rows on the
+        # endpoint belong to other namespaces and must stay, even when their
+        # kind's allowlist is blocked by this plan's own collision.
         if kind in inventory:
-            conflicts = [row for row in inventory[kind]
-                         if row["id"] not in set(allowed.get(kind, []))]
-            blocking[kind]["conflicting_rows"] = {
-                row["id"]: row.get("name") for row in conflicts}
+            from .turbobulk import _colliding_rows
+            blocking[kind]["conflicting_rows"] = _colliding_rows(plan, inventory[kind], kind)
     result = {"occupied": occupied,
               "allowlisted": {kind: allowed[kind] for kind in occupied if kind in allowed},
               "blocking": blocking,
@@ -235,7 +235,8 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
         if blocker:
             tb_reasons.append(blocker)
     if not branch:
-        tb_reasons.append("the qualified TurboBulk adapter requires a disposable branch")
+        tb_reasons.append("the qualified TurboBulk adapter requires a ready branch; "
+                          "create one with just branch TARGET NAME")
     if branch and not branch_row:
         tb_reasons.append("requested branch is unavailable on this target")
     tb_preflight = None
@@ -291,13 +292,13 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
         "delivery_policy": delivery_policy,
         "delivery_warning": (None if delivery_policy == "reviewable" else
                              "This branch cannot be reviewed, merged, or reverted; delete it after use."),
+        # What the operator can actually do with the branch today: merge-to-main
+        # is blocked upstream for TurboBulk-loaded branches regardless of policy.
         "branch_capabilities": {
             "reviewable": delivery_policy == "reviewable",
-            "mergeable": delivery_policy == "reviewable",
-            "revertible_after_merge": delivery_policy == "reviewable",
+            "revertible": delivery_policy == "reviewable",
+            "mergeable": False,
         },
-        # branch_capabilities state the delivery-policy contract; they are not
-        # a claim about upstream merge health.
         "merge_note": ("merging a TurboBulk-loaded branch to main is currently blocked "
                        "upstream; demo from the branch (see docs/qualification.md)"),
         "target_contract": {"netbox": status.get("netbox-version"), "plugins": plugins},
@@ -659,7 +660,9 @@ def main(argv=None):
                            + (f"{len(uncovered)} of {len(kinds)} kinds are outside the "
                               "compiler contract" if uncovered else
                               f"{len(unsupported_refs)} reference fields have no compiler "
-                              "translation") + " (listed below).")
+                              "translation") + " (listed below). Options: demo from the "
+                           "generated report.md, use the Diode lab path, or load a "
+                           "TurboBulk-clean profile — see README's industry table.")
             elif "module_bay_type" in rest_kinds:
                 verdict = ("REQUIRES a NetBox 4.7+ target (module bay types do not exist "
                            "before 4.7). Loadable there via TurboBulk+REST; run just "
@@ -682,9 +685,16 @@ def main(argv=None):
                 receipt = receipt.with_name("verify-" + receipt.name)
             result = verify_target(args.artifact, url=args.target, token=token,
                                    branch=args.branch or None, receipt_path=receipt)
-            print(json.dumps({"success": result["success"], "result": result["result"],
-                              "mismatches": result["verification"].get("mismatch_count"),
-                              "receipt": str(receipt)}, sort_keys=True))
+            summary = {"success": result["success"], "result": result["result"],
+                       "mismatches": result["verification"].get("mismatch_count"),
+                       "receipt": str(receipt)}
+            paths = result.get("computed_paths") or {}
+            if paths.get("cables_expected") is not None:
+                summary["cables_traced"] = f"{paths.get('cables_traced')}/{paths.get('cables_expected')}"
+            caches = result.get("component_caches") or {}
+            if caches.get("components_expected") is not None:
+                summary["components_checked"] = caches.get("components_expected")
+            print(json.dumps(summary, sort_keys=True))
             return 0 if result["success"] else 2
         receipt = receipt or default_receipt(args.artifact, args.target, args.branch,
                                              args.delivery_policy)

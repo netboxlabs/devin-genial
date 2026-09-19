@@ -1852,6 +1852,20 @@ MAIN_SCOPED_KINDS = {"owner", "owner_group"}
 ALLOWLISTED_KINDS = ALLOWLISTED_BUILTIN_KINDS | MAIN_SCOPED_KINDS
 
 
+def _colliding_rows(plan, rows, kind):
+    """Rows whose identity is also planned — the only rows cleanup may touch.
+
+    Everything else on the endpoint belongs to other namespaces (or the
+    factory) and must stay, even when a collision blocks this kind's allowlist.
+    """
+    from lab.verify import IDENTITIES
+    identity = IDENTITIES.get(kind, ("name",))
+    planned = {tuple(obj["attrs"].get(field) for field in identity)
+               for obj in plan["objects"] if obj["kind"] == kind}
+    return {row["id"]: row.get("name") for row in rows
+            if tuple(row.get(field) for field in identity) in planned}
+
+
 def _merge_allowlists(prior, fresh):
     """Union two allowlists per kind, keeping ids and identities aligned."""
     kinds = set(prior.get("target_ids") or {}) | set(fresh.get("target_ids") or {})
@@ -2376,9 +2390,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
             for kind, count in sorted(occupied.items()):
                 part = f"{kind}={count} (at {SPECS[kind][1]})"
                 if kind in ALLOWLISTED_KINDS:
-                    allowed_ids = set((allowed_existing.get("target_ids") or {}).get(kind, []))
-                    conflicts = {row["id"]: row.get("name") for row in inventory.get(kind, [])
-                                 if row.get("id") not in allowed_ids}
+                    conflicts = _colliding_rows(plan, inventory.get(kind, []), kind)
                     part += f"; colliding rows {conflicts}"
                 parts.append(part)
             raise LoadError("fresh load requires empty inventories for every emitted kind; "

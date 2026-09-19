@@ -50,6 +50,10 @@ also rejected as an ordinary growth seed.
 **Use separate fresh disposable targets for the two snapshots.** Changing a cable's
 termination changes its Diode matching identity; replay does not retire the old
 cable. These artifacts do not implement an in-place rewiring or rollback command.
+The `just load` path refuses the `changed/` snapshot by design — its `checks.json`
+records `expected-defect verified`, not a passing plan — so the live before/after
+is qualified only on the Diode lab path. On a TurboBulk target, load the healthy
+baseline and demonstrate the defect from the scenario's findings and `report.md`.
 Offline restoration is proven against the frozen baseline; live restoration means
 a fresh target loaded from that healthy snapshot until an actual transition is
 qualified. Branching, approval, drift detection and running service failover are
