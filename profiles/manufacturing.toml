@@ -1,0 +1,44 @@
+# Three manufacturing plants and the paired corporate data centers behind them.
+#
+# Each plant is one site with three authored areas on one ground floor: a
+# production floor of line cells, a warehouse of loading docks, and an office
+# block. The plant-floor (OT) endpoints sit on their own `process` and
+# `supervisory` segments, behind their own access pair and their own
+# distribution pair; the only modeled path to the corporate tier is the
+# `conduit` segment trunked between the two distribution pairs.
+#
+# That separation is inventory and intended boundaries. It is NOT enforced
+# security, NOT an air gap, and NOT a Purdue-model or IEC 62443 claim, and no
+# industrial protocol is configured anywhere. See profiles/manufacturing.md for
+# the complete limits and everything this dataset does not assert.
+profile = "manufacturing"
+namespace = "ironwood"
+name = "Ironwood Manufacturing"
+address_pool = "10.0.0.0/8"
+seed = 42
+as_of = "2026-09-01"
+reserve_fraction = 0.2
+
+# Plants. `production_lines` and `warehouse_docks` are installed line cells and
+# loading docks; `office_staff` is installed desk positions. All three are
+# equipment inventory, never production output, throughput or headcount. All
+# may grow; none may shrink without a new baseline.
+[[plants]]
+key = "riverbend"
+production_lines = 6
+warehouse_docks = 6
+office_staff = 48
+
+[[plants]]
+key = "kestrel-forge"
+production_lines = 4
+warehouse_docks = 4
+office_staff = 24
+
+# A small plant: two lines, two docks and one office pod. Omitted keys take the
+# authored defaults (4 lines, 4 docks, 36 desks).
+[[plants]]
+key = "granite-harbor"
+production_lines = 2
+warehouse_docks = 2
+office_staff = 12

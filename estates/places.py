@@ -39,7 +39,7 @@ GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
           "store": "Retail stores", "distribution": "Distribution centers",
           "academic": "Academic buildings", "residence": "Residence halls", "library": "Libraries",
-          "office": "Managed customer offices"}
+          "office": "Managed customer offices", "plant": "Manufacturing plants"}
 MAX_CHANNEL_M = 80
 FLOOR_HEIGHT_M = 4
 OFFICE_DESKS = 12
@@ -55,6 +55,11 @@ MAX_BUILDING_FLOORS = 8
 # pods of twelve desk positions each. A larger customer premises needs a
 # reviewed riser and closet layout before demand can exceed it.
 MAX_OFFICE_PODS = 4
+# Authored manufacturing-plant grammar: one ground floor holding a reception,
+# office pods, warehouse loading docks and production line cells, all served by
+# the single plant equipment room. Every position is reserved permanently and
+# every bay sits inside the 80 m copper ceiling measured from that room.
+MAX_PLANT_LINES, MAX_PLANT_DOCKS, MAX_PLANT_PODS = 12, 12, 8
 SPACE_DESCRIPTIONS = {
     "building": "Banking and business operations premises",
     "floor": "Customer or staff floor with assigned equipment-room service",
@@ -80,6 +85,8 @@ SPACE_DESCRIPTIONS = {
     "dorm_room": "Residence room with installed wired data ports; no resident-owned device is represented",
     "reading_room": "Library reading area with installed study workstation positions",
     "staff_office": "Customer staff office pod with installed workstation positions",
+    "production_line": "Production line cell with installed controller, operator-panel and field-device positions; no control function or industrial protocol is configured",
+    "loading_dock": "Warehouse loading dock with installed scanner-station positions",
 }
 
 
@@ -136,6 +143,11 @@ def _authored_identity(site, city):
         # frozen by growth, so two managed offices can never resolve to one name.
         stem, ordinal = sid.removeprefix("off-").rsplit("-", 1)
         return f"{stem.replace('-', ' ').title()} {pick(CAMPUSES[city])} Office {int(ordinal):02}"
+    if kind == "plant":
+        # Plant keys are unique within the recipe and frozen by growth, so one
+        # key can never name two plants.
+        title = sid.split("-", 1)[1].replace("-", " ").title()
+        return f"{title} Plant"
     if kind == "hq":
         return f"{city} Headquarters"
     if kind == "dc":
@@ -211,7 +223,7 @@ def foundation(w, *, site_kinds=None):
     for kind, name in GROUPS.items():
         if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
                                            "store", "distribution", "academic", "residence", "library",
-                                           "office"}:
+                                           "office", "plant"}:
             continue
         if site_kinds is not None and kind not in site_kinds:
             continue
@@ -238,6 +250,9 @@ def _location(site, suffix, name, space_type, floor, position, parent=None, capa
             description = "Campus teaching, residential and services building" if space_type == "building" else "Teaching, residential and equipment floor"
         elif site.w.recipe["profile"] == "msp":
             description = "Managed office or operations building" if space_type == "building" else "Staff and equipment floor"
+        elif site.w.recipe["profile"] == "manufacturing":
+            description = ("Production, warehouse and office building" if space_type == "building"
+                           else "Production, warehouse, office and equipment floor")
     if site.contract["kind"] == "dc" and space_type == "equipment_room":
         description = "Restricted data hall with compute, network and power distribution"
     site.w.add("location", key,
@@ -279,7 +294,7 @@ def locate(site):
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
     if kind in {"school", "hospital", "clinic", "store", "distribution",
-                "academic", "residence", "library", "office"}:
+                "academic", "residence", "library", "office", "plant"}:
         number = 100 + 4 * site.w.allocations[site.id]
     streets = {"br-s": "Market Street", "br-m": "Commerce Drive", "br-l": "Harbor Avenue",
                "hq": "Lakefront Boulevard", "dc": "Technology Way", "school-": "Learning Way",
@@ -287,7 +302,8 @@ def locate(site):
                "st-s": "Market Square", "st-m": "Retail Parkway", "st-l": "Galleria Drive",
                "di-": "Distribution Parkway", "bldg-": "University Quadrangle",
                "hall-": "Residence Row", "library-": "Library Green",
-               "noc-": "Operations Parkway", "off-": "Enterprise Parkway"}
+               "noc-": "Operations Parkway", "off-": "Enterprise Parkway",
+               "pl-": "Industrial Parkway"}
     street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
     node["attrs"].update(time_zone=zone,
                          physical_address=f"{number} {street}\n{city}, {state}\nUnited States")
@@ -629,6 +645,79 @@ def msp_endpoint(site, key, room, cohort, ordinal):
     node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
     if role == "role/ap":
         node["attrs"]["description"] += "; staff and any requested guest WLAN ride wlan0; RF coverage unverified"
+    node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
+        "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
+        access_channel_length_m=route)
+
+
+def plant_pods(staff):
+    """Authored office-pod layout for one plant: twelve desk positions each."""
+    return [(f"pod-{n+1:02}", min(OFFICE_DESKS, staff - OFFICE_DESKS*n))
+            for n in range(math.ceil(staff / OFFICE_DESKS))]
+
+
+def plant_rooms(site, item):
+    """Permanent plant rooms: reception, office pods, loading docks, line cells.
+
+    Every room holds a reserved ground-floor position for the life of the
+    estate, so commissioning a line, opening a dock or hiring into the office
+    appends a room beside the existing ones instead of renumbering the floor.
+
+    ponytail: one authored ground floor per plant, with the reviewed ceilings of
+    twelve production lines, twelve loading docks and eight office pods. The
+    positions below are chosen so every bay stays inside the 80 m copper ceiling
+    measured from the single plant equipment room; a larger site needs a
+    reviewed multi-room riser layout before demand can exceed them.
+    """
+    if site.contract["kind"] != "plant":
+        raise DesignError(f"{site.id}: plant rooms require a manufacturing plant site")
+    ground = _floor(site, 1)
+    rooms = dict(reception=_location(site, "reception", "Reception", "reception", 1, (48, 10, 0), ground),
+                 pods=[], docks=[], lines=[])
+    for suffix, desks in plant_pods(item["office_staff"]):
+        slot = site.w.reserve(f"plant-pods/{site.id}", suffix, MAX_PLANT_PODS)
+        rooms["pods"].append(_location(site, suffix, f"Office pod {suffix.removeprefix('pod-')}",
+                                       "office", 1, (6 + 10*(slot % 4), 2 + 8*(slot // 4), 0),
+                                       ground, {"workstations": desks}))
+    for index in range(item["warehouse_docks"]):
+        suffix = f"dock-{index+1:02}"
+        slot = site.w.reserve(f"plant-docks/{site.id}", suffix, MAX_PLANT_DOCKS)
+        rooms["docks"].append(_location(site, suffix, f"Loading dock {index+1:02}", "loading_dock", 1,
+                                        (32 + 6*(slot % 4), 28 + 6*(slot // 4), 0), ground))
+    for index in range(item["production_lines"]):
+        suffix = f"line-{index+1:02}"
+        slot = site.w.reserve(f"plant-lines/{site.id}", suffix, MAX_PLANT_LINES)
+        rooms["lines"].append(_location(site, suffix, f"Production line {index+1:02}", "production_line", 1,
+                                        (6 + 6*(slot % 4), 28 + 6*(slot // 4), 0), ground))
+    return rooms
+
+
+def plant_endpoint(site, key, room, cohort, ordinal):
+    """Place one plant endpoint on its permanent mount and local copper route."""
+    space, node = site.w.obj(room), site.w.obj(key)
+    origin, role = space["meta"]["position_m"], node["refs"]["role"]
+    height = 2.8 if role == "role/ap" else 2.5 if role == "role/camera" else 0.8
+    if role == "role/ap":
+        offset = _ap_offset(cohort, ordinal)
+    elif type(ordinal) is not int or ordinal < 1:
+        raise DesignError(f"{key}: plant endpoint ordinal must be a positive integer")
+    elif role == "role/camera":
+        offset = (1 + 8*(ordinal-1), 0)
+    else:
+        offset = (1 + 1.2*((ordinal-1) % 6), 1 + 1.2*((ordinal-1)//6))
+    point = [origin[0]+offset[0], origin[1]+offset[1], origin[2]+height]
+    serving = site.contract["placement"]["equipment_locations"][str(space["meta"]["floor"])]
+    route = math.ceil(sum(abs(a-b) for a, b in zip(point, site.w.obj(serving)["meta"]["position_m"]))+10)
+    if route > MAX_CHANNEL_M:
+        raise DesignError(f"{key}: plant access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
+    node["refs"]["location"] = room
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
+    if role in {"role/plc", "role/hmi", "role/field-device"}:
+        node["attrs"]["description"] = (
+            f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {_site_display(site)}; "
+            "inventory only, with no control function, safety rating or industrial protocol configured")
+    elif role == "role/ap":
+        node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)

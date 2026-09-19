@@ -246,7 +246,8 @@ management, serial access and power. Neither mode executes application replicati
 
 `generate.generate` dispatches resolved recipes to `regional-bank`,
 `enterprise-data-center`, `school-district`, `hospital-clinics`,
-`provider-backbone`, `retail-chain`, `university-campus` or `msp`. Enterprise policy accepts 1–8 sites, 1–16 keyed workloads,
+`provider-backbone`, `retail-chain`, `university-campus`, `msp` or
+`manufacturing`. Enterprise policy accepts 1–8 sites, 1–16 keyed workloads,
 groups/replicas/resources/listeners, per-site WAN demand and baseline demo intent.
 It reserves persistent `workload-slots` before calling the shared builder and
 creates a non-bank foundation. Actual resource/port/rack/address capacity may

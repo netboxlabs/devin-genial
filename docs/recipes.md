@@ -52,13 +52,13 @@ choosing the maximum of every input is not a supported composition.
 ## Common keys
 
 These are top-level keys accepted by more than one profile. They are validated in
-`resolve_bank_recipe` (`estates/model.py`) and re-exported to the other seven
+`resolve_bank_recipe` (`estates/model.py`) and re-exported to the other eight
 profiles through each module's `COMMON` set. The fifteen keys frozen for growth
 are enforced by the loop in `World.__init__` (`estates/model.py`).
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
-| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`, `university-campus`, `msp`. Omitting the key selects the bank. | **rebaseline** |
+| `profile` | string | `regional-bank` | `regional-bank`, `enterprise-data-center`, `school-district`, `hospital-clinics`, `provider-backbone`, `retail-chain`, `university-campus`, `msp`, `manufacturing`. Omitting the key selects the bank. | **rebaseline** |
 | `namespace` | string | per profile | 2–20 character DNS label: `[a-z][a-z0-9-]*[a-z0-9]`. Separates estate identities and VRFs; it is not a target-side access boundary. **Customer-visible: it prefixes every generated site name** (`acme-dc-01`), so pick what the audience should read. On a shared target check `GET /api/users/owners/` first: one live estate per namespace, and this key is frozen after baseline. | **rebaseline** |
 | `name` | string | per profile | 1–80 characters. Participates in Diode matching identities for the provider. | **rebaseline** |
 | `seed` | integer | `42` | `0` ≤ seed < 2^63. Drives bounded local variation (serials, procurement dates, design-pool choices) only. | **rebaseline** |
@@ -71,7 +71,7 @@ are enforced by the loop in `World.__init__` (`estates/model.py`).
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Strictly increasing unique integers, each 1–1000, last element exactly `1000`. Purchased tiers; the physical handoff stays 1 Gb/s. Not accepted by the enterprise profile. | **rebaseline** |
 | `max_objects` | integer | `500000` | `100`–`2000000`. Generation fails when the budget is exceeded. | mutable |
 | `naming` | string | `"authored"` | `"authored"` gives readable site display names, `ABC0000` facility codes and metro-jittered synthetic coordinates (map view); `"legacy"` keeps namespace-ordinal names. Slugs, DNS and device names keep the stable namespace form in both. Display names must stay globally unique; generation fails on a collision. | **rebaseline** |
-| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-central`, `clinic-west`, `pop-chicago-west`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`, `noc-01`, `off-summit-legal-01`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). **`just plan RECIPE` prints the estate's real site ids** — check there before writing overrides; an unknown site id fails generation and the error lists them too. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
+| `site_names` | table of tables | `{}` | Per-site overrides keyed by site id (`[site_names."br-s0002"]`, `dc-01`, `school-oak`, `hospital-central`, `clinic-west`, `pop-chicago-west`, `st-s0002`, `di-01`, `bldg-science`, `hall-aspen`, `library-01`, `noc-01`, `off-summit-legal-01`, `pl-riverbend`…), each with optional `name` (1–100 chars) and/or `facility` (1–50). **`just plan RECIPE` prints the estate's real site ids** — check there before writing overrides; an unknown site id fails generation and the error lists them too. The way to show the customer's real footprint. | grow-only: growth may **append** entries for new sites; changing or removing an existing entry is a **rebaseline** |
 | `demo` | string | `baseline` | `baseline` or `loss-of-power-diversity` on all profiles; the provider additionally accepts `provider-span-maintenance`. `plan` always previews the healthy baseline. The bank omits the key entirely when it is not supplied; absence is read as `baseline`. | mutable |
 | `hardware` | table | `{}` | Vendor line per role family. Families are exactly `access`, `leaf` and `ap`. Values: `access` = `cisco` (default, Cisco Catalyst 9200L-24P-4X) or `juniper` (Juniper EX3400-24P); `leaf` = `arista` (default, Arista DCS-7050SX3-48C8-F) or `juniper` (Juniper QFX5120-48Y-AFO2); `ap` = `reference` (default, Reference PoE access point) or `aruba` (HPE Aruba AP-505). Omitted families keep their default. An unknown family or vendor fails generation and the error lists the real choices. This is "they're a Juniper shop" — the alternates meet or beat the models they replace on every port, PSU, PoE and optics quantity, so all those checks still hold. One visible modeling difference: `ap = "aruba"` declares the AP-505's real 5 GHz + 2.4 GHz radio split (the reference AP models two 5 GHz radios), so whichever WLAN rides `wlan1` — students in the school and university profiles — carries 2.4 GHz channels on that line. Written as its own `[hardware]` header, so place it AFTER every top-level scalar key: TOML scoping otherwise swallows them. See [the catalog](../catalog/README.md#selectable-vendor-lines). | **rebaseline** |
 
@@ -87,9 +87,10 @@ Per-profile `address_pool` ceilings and per-site reservation sizes:
 | `retail-chain` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `university-campus` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 | `msp` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
+| `manufacturing` | `/8`–`/16` | `/16` | `10.0.0.0/8` |
 
-Data centers per profile: the bank and retail chain always build the shared
-two-DC pair (`dc-01`, `dc-02`), the enterprise profile builds `data_centers`
+Data centers per profile: the bank, retail chain and manufacturer always build
+the shared two-DC pair (`dc-01`, `dc-02`), the enterprise profile builds `data_centers`
 of them (1–8), and school, hospital, provider and university build exactly one
 `dc-01` — there is no `dc-02` to override or attach demand to. The MSP's only
 data-center site is its NOC, `noc-01`.
@@ -99,7 +100,7 @@ Default `namespace` / `name`: bank `cedar` / `Cedar Regional Bank`; enterprise
 District`; hospital `lakeshore` / `Lakeshore Health System`; provider
 `lakes-fiber` / `Great Lakes Fiber`; retail `harvest` / `Harvest Retail Group`;
 university `lakemont` / `Lakemont University`; MSP `arbor` / `Arbor Managed
-Networks`.
+Networks`; manufacturing `ironwood` / `Ironwood Manufacturing`.
 
 ## Regional bank
 
@@ -412,6 +413,53 @@ its own per-segment routing contexts. See the
 [profile guide](../profiles/msp.md) for the ownership-versus-operation split and
 what is explicitly not asserted — in particular that no SLA, ticketing, RMM
 execution or remote-access path is represented anywhere.
+
+## Manufacturing
+
+Allowlist and `COMMON` set: `estates/manufacturing.py`.
+Accepts every common key **except `headquarters_staff`**, which is an
+office-sizing input for the bank and retail profiles; `reservation_user` must be
+empty. The two data centers are fixed. There is no `design_mix`, `site_designs`
+or `acquired_sites` key: every site is modern, and no acquisition, refresh,
+plant-remodel or decommissioning transition exists in this profile.
+
+| Key | Type | Default | Accepted values and bounds | Growth |
+| --- | --- | --- | --- | --- |
+| `plants` | array of tables | three authored plants | `1`–`8` entries; each needs a unique hyphen-separated lowercase `key` of at most 20 characters (no leading, trailing or doubled hyphen), also distinct with hyphens removed | grow-only (append entries) |
+| `plants[].production_lines` | integer | `4` | `1`–`12` installed line cells on that plant's production floor | grow-only |
+| `plants[].warehouse_docks` | integer | `0` accepted, default `4` | `0`–`12` installed loading docks in that plant's warehouse | grow-only |
+| `plants[].office_staff` | integer | `36` | `4`–`96` installed desk positions, filling twelve-desk pods | grow-only |
+
+Site ids are `dc-01`, `dc-02` and `pl-<plant key>`. Each site reserves a `/16`
+and each plant segment is a `/24`.
+
+Per-plant demand is authored policy, not a recipe input:
+
+| Quantity | Rule |
+| --- | --- |
+| Office pods | `ceil(office_staff / 12)`, at most eight, each on a permanent reserved ground-floor position |
+| Line controllers / operator panels / field devices | `1` / `2` / `4` per line cell |
+| Scanner stations | `2` per loading dock |
+| Coverage radios | one in reception, one per office pod, one per two docks |
+| Cameras | one in reception plus one over each dock |
+| Peak Mbps | `20 + 2 × office_staff + 5 × production_lines + 3 × warehouse_docks` |
+
+There is no `wan_peak_mbps` key: the data-center edge is sized from resolved
+plant demand on every generation, so appending plants never collides with a
+frozen purchase. The bounds above cap one plant at 308 Mbps, inside the 1 Gb/s
+site handoff after the widest supported `reserve_fraction`, and the fleet at
+2,464 Mbps.
+
+Segments per plant are `management`, `office`, `logistics`, `wireless` and
+`security` (corporate), `process` and `supervisory` (plant floor), `conduit`
+(the modeled transit between the two distribution tiers), and `wan` for the
+carrier handoffs. The two zones keep separate access populations with separate
+port ledgers and share one finite 38-switch distribution attachment budget;
+exceeding it fails at resolve time with the exact arithmetic. See the
+[profile guide](../profiles/manufacturing.md) for the zone boundary and what is
+explicitly not asserted — in particular that the separation is modeled, never
+enforced, and that no industrial protocol, Purdue level or IEC 62443 state is
+configured or claimed anywhere.
 
 ## Worked example
 
