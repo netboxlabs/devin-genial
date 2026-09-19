@@ -152,7 +152,14 @@ def main(argv=None):
     try:
         if args.delete:
             client = Client(args.target, token)
-            row = delete_branch(client, args.name, timeout=args.timeout)
+            try:
+                row = delete_branch(client, args.name, timeout=args.timeout)
+            except LoadError as exc:
+                # Retirement must still clear the namespace's main-scoped rows
+                # when the branch was already deleted some other way.
+                if not (args.retire_namespace and "found 0" in str(exc)):
+                    raise
+                row = {"name": args.name, "deleted": False, "branch": "already absent"}
             if args.retire_namespace:
                 row["retired_rows"] = retire_namespace_rows(client, args.retire_namespace)
             print(json.dumps(row, sort_keys=True))

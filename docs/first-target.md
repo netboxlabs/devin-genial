@@ -64,9 +64,9 @@ exported environment always wins.
 
 Writes are separately gated: TurboBulk loads require `TURBOBULK_WRITES=1`
 alongside the token (`export NETBOX_TOKEN=… TURBOBULK_WRITES=1` in bash/zsh;
-`set -x` in fish — or set both in `.env`; the shipped `.env.example`
-deliberately has the gate off). Exporting the token suppresses `.env`, so an
-exported environment must carry both.
+`set -x NETBOX_TOKEN …; set -x TURBOBULK_WRITES 1` in fish — or set both in
+`.env`; the shipped `.env.example` deliberately has the gate off). Exporting
+the token suppresses `.env`, so an exported environment must carry both.
 
 The token drives every command here, but the demo itself (§6) is the NetBox
 web UI — you also need a UI login on the target for the screen share.
@@ -200,18 +200,23 @@ just retire https://target.example demo-acme acme
 
 It deletes the named branch, then deletes exactly the main-scoped ownership
 rows whose names begin with your namespace, reporting each. (Separately,
-`just branch-delete` removes only the branch, and `just reset` *replaces* a
-branch with a fresh empty one.) End-state check — nothing carrying your
-namespace remains:
+`just branch-delete` removes only the branch — and if the branch is already
+gone, `just retire` still clears the namespace's owner rows, reporting the
+branch as already absent. `just reset` *replaces* a branch with a fresh empty
+one.) End-state check — nothing carrying your namespace remains (`?limit=0`
+returns every row; `|| true` because zero matches is the success case):
 
 ```
 curl -s -H "Authorization: Token $NETBOX_TOKEN" \
-  "https://target.example/api/plugins/branching/branches/" \
-  "https://target.example/api/users/owners/" \
-  "https://target.example/api/users/owner-groups/" | grep -c acme   # expect 0
+  "https://target.example/api/plugins/branching/branches/?limit=0" \
+  "https://target.example/api/users/owners/?limit=0" \
+  "https://target.example/api/users/owner-groups/?limit=0" \
+  | { grep -c acme || true; }   # expect 0
 ```
 
-and a main-side search (`/api/dcim/sites/?q=acme`) returns none of your objects.
+and a main-side search (`/api/dcim/sites/?q=acme`) returns none of your
+objects. (The changelog keeps the branch create/delete audit rows; that is
+NetBox's audit trail, not estate data.)
 
 ## 9. Verify anytime, write nothing
 

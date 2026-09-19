@@ -119,8 +119,11 @@ branch to main is currently blocked upstream; see the
 It requires a dedicated branch with zero initial ChangeDiffs. After strict graph
 readback, the loader verifies the exact total and create-ChangeDiff counts by
 model, including cable terminations, and records that evidence in the receipt.
-For a load-only scale test on a newly reset, empty branch, use the explicit
-disposable command:
+For a load-only scale test on a newly reset, empty branch, the explicit
+disposable command exists — but note it accepts only TurboBulk-only artifacts,
+and **no currently generated profile qualifies** (they all need REST creation
+or completion, `build/my-dc` included), so today this path applies to trimmed
+or historical artifacts:
 
 ```sh
 just load-explain-disposable build/my-dc https://netbox.example "Scale baseline"

@@ -758,10 +758,14 @@ def main(argv=None):
             if decision["selected"] is not None and blocking:
                 # The transport fits, but a fresh load will refuse: say so in
                 # one line instead of leaving it buried mid-JSON.
-                print("NOTE: fresh-load blockers present ("
+                print(f"Selected transport: {decision['selected']}. NOTE: fresh-load "
+                      "blockers present ("
                       + ", ".join(f"{kind}={value['rows']}" for kind, value in sorted(blocking.items()))
                       + ") — see fresh_load_occupancy.blocking above; a resume with its "
                       "existing receipt is unaffected.", file=os.sys.stderr)
+            elif decision["selected"] is not None:
+                print(f"Selected transport: {decision['selected']}; no fresh-load blockers.",
+                      file=os.sys.stderr)
             if decision["selected"] is None:
                 names = ([decision["requested"]] if decision["requested"] != "auto"
                          else ["turbobulk", "diode", "rest"])
