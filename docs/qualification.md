@@ -480,6 +480,15 @@ September 19, 2026: a three-plant estate with separated IT/OT zones loaded
 verify and idempotent repeat (receipt
 `v1-Ridgeline-Fabrication-f0d2b0bc00c2.json` and its `verify-` sibling).
 
+The utility profile completed the same gate later on September 19, 2026: two
+control centers and six substations loaded 9,364/9,364 objects and
+10,972/10,972 create ChangeDiffs with zero mismatches, 804/804 cable traces
+and 6,180 component placements, plus clean zero-write verify and idempotent
+repeat (receipt `v1-Bluewater-Electric-Cooperative-44d9f25f4c0c.json` and its
+`verify-` sibling). Note the per-bay locations raise readback fan-out: unracked
+station endpoints bucket by location, so wide substation fleets need more
+filtered component reads than an equally sized bank.
+
 Also on September 19, 2026 the `[hardware]` vendor lever passed the same gate
 live: an all-alternate bank estate (Juniper EX3400-24P access, QFX5120-48Y
 leaves, Aruba AP-505 APs) loaded 10,587/10,587 objects and 12,596/12,596

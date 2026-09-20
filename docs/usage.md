@@ -457,8 +457,9 @@ routing contexts, behind their own access pair and their own distribution pair.
 The only modeled forwarding path to the corporate tier is the `conduit` segment
 trunked between the two distribution pairs; each device's dedicated management
 port and the control house's shared serial console server are the two other
-declared, validated crossings. This profile is offline-checked and fits the
-TurboBulk contract; it has no separately recorded live qualification receipt.
+declared, validated crossings. This profile is offline-checked, fits the
+TurboBulk contract and holds a recorded live qualification receipt on the
+pinned local 4.7.1 stack (see [qualification](qualification.md)).
 `patching = "panels"` generates but is not TurboBulk-loadable (front/rear ports
 need the Diode 4.7 bridge, as with every panels artifact).
 
