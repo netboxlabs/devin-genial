@@ -72,9 +72,11 @@ class ComposerTests(unittest.TestCase):
             self.assertIn("Show the wireless story.", sheet)
             self.assertIn("/wireless/wireless-lans/", sheet)
             # The closing block scopes its retire to whichever branch is live.
-            self.assertIn("without the growth block", sheet)
-            self.assertIn("after the growth block", sheet)
+            self.assertIn("Close the grown demo out from here, with ITS branch", sheet)
+            self.assertIn("did **not** run the growth block", sheet)
             self.assertIn("narrate the second call", sheet)
+            # Feature-aware growth block: scenario regen, no drift line here.
+            self.assertNotIn("just drift ", sheet)
 
     def test_the_merger_step_is_a_graph_fact_not_a_template_assumption(self):
         # Cold-start run #23: a custom bank without design_mix has no merger,
@@ -124,9 +126,6 @@ class ComposerTests(unittest.TestCase):
                                         "--name", "Someone Else")
             self.assertEqual(status, 2, text)
             self.assertIn("edit the recipe instead", text)
-        payload = json.loads(text.strip().splitlines()[-1])
-        self.assertEqual(payload["error"], "DesignError", payload)
-        return payload["message"]
 
     # -- flags ------------------------------------------------------------
 

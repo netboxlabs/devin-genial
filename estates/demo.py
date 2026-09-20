@@ -852,7 +852,7 @@ def demo_markdown(spec, facts, artifacts, live):
         ["Artifact", f"`{estate}` (report: `{estate}/report.md`)"],
         ["Feature packs", ", ".join(spec["features"]) or "none"],
         ["Branch", f"`{live['branch']}`" if live else "not loaded"],
-        ["Open at", f"<{live['ui_url']}>" if live else "— (load it first, below)"],
+        ["Open at", f"[{live['ui_url']}]({live['ui_url']})" if live else "— (load it first, below)"],
     ])
 
     lines.extend(["## Before the call", ""])
@@ -1113,16 +1113,21 @@ def demo_markdown(spec, facts, artifacts, live):
         f"just retire {origin} {branch} {_shell(spec['namespace'])}",
         f"just load {out}-v2 {origin} '<v2 branch name>'",
         f"just verify-target {out}-v2 {origin} '<v2 branch name>'",
-        f"just drift {out}-v2/plan.json {out}-v2-drift   # the drift twin binds one plan; regenerate it after growth",
+        *([f"just drift {out}-v2/plan.json {out}-v2-drift   # the drift twin binds one plan; regenerate it after growth"]
+          if "assurance" in spec["features"] else []),
+        *([f"just power-scenario {out}-v2/plan.json {out}-v2-scenario   # the what-if binds one plan; regenerate it after growth"]
+          if "scenario" in spec["features"] else []),
         "# The grown estate has no regenerated cheat sheet: this DEMO.md's links die",
-        f"# with the v1 branch — narrate the second call from {out}-v2/estate/report.md.", "",
-        "# Leave the target exactly as you found it: the branch AND the namespace's",
-        "# main-scoped rows, which branch deletion alone does not remove. Retire the",
-        "# branch that is actually live — this one if you never ran the growth block,",
-        "# the v2 branch if you did. Retiring with the branch already gone still",
-        "# deletes the namespace's rows, which breaks any OTHER live branch's readback.",
-        f"just retire {origin} {branch} {_shell(spec['namespace'])}          # without the growth block",
-        f"# just retire {origin} '<v2 branch name>' {_shell(spec['namespace'])}   # after the growth block",
+        f"# with the v1 branch — narrate the second call from {out}-v2/estate/report.md.",
+        "# Close the grown demo out from here, with ITS branch:",
+        f"# just retire {origin} '<v2 branch name>' {_shell(spec['namespace'])}",
+        "```", "",
+        "If you did **not** run the growth block, leave the target exactly as you found "
+        "it — the branch AND the namespace's main-scoped rows, which branch deletion "
+        "alone does not remove. Retiring with the branch already gone still deletes the "
+        "rows, which breaks any other live branch's readback (the command warns).", "",
+        "```sh",
+        f"just retire {origin} {branch} {_shell(spec['namespace'])}",
         "```", "",
         "One namespace has one verifiable branch at a time. A side-by-side before/after demo "
         "needs two namespaces planned from the start.", "",
