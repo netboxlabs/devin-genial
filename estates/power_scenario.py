@@ -17,7 +17,8 @@ from .validate import validate
 
 SCENARIO = "loss-of-power-diversity"
 PROFILES = {"regional-bank", "enterprise-data-center", "school-district", "hospital-clinics",
-            "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing"}
+            "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing",
+            "utility"}
 EXECUTION = {"transition": "review-only", "snapshots": "fresh-target-only-unverified", "applied_to_target": False}
 LIMITATIONS = [
     "One planted wiring defect can produce multiple independent validation findings.",
@@ -38,7 +39,7 @@ def _healthy(plan):
     _require(isinstance(plan, dict) and isinstance(plan.get("recipe"), dict), "baseline must be a frozen plan")
     _require(type(plan.get("schema_version")) is int and plan["schema_version"] == 1 and
              plan.get("generator_version") == __version__, "baseline needs canonical schema 1 and the current generator version; regenerate unsupported frozen plans")
-    _require(plan["recipe"].get("profile") in PROFILES, "baseline needs a supported bank, enterprise DC, school, hospital, provider, retail, university, MSP or manufacturing profile")
+    _require(plan["recipe"].get("profile") in PROFILES, "baseline needs a supported bank, enterprise DC, school, hospital, provider, retail, university, MSP, manufacturing or utility profile")
     _require(plan.get("hardware_digest") == digest(hardware_catalog()), "baseline hardware catalog fingerprint differs from this generator")
     findings = validate(plan)
     _require(not findings, f"baseline must be healthy before planting a defect: {findings[:3]}")

@@ -751,6 +751,11 @@ def markdown(plan):
         elif recipe.get("profile") == "manufacturing":
             demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
                                     if label != "peak_mbps") or "Shared corporate services"
+        elif recipe.get("profile") == "utility":
+            demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
+                                    if label != "peak_mbps") or "Shared operational services"
+            if kind := site["meta"].get("substation_kind"):
+                demand_text = f"{kind.title()} substation; {demand_text}"
         elif recipe.get("profile") == "msp":
             owner = site["meta"].get("managed_customer")
             demand_text = ", ".join(f"{n} {label.replace('_', ' ')}" for label, n in sorted(demand.items())
@@ -827,6 +832,45 @@ def markdown(plan):
             "historian services carry their listener, replica, resource and power tables below. Those services hold "
             "no production order, recipe, batch record or process tag, and nothing connects them to a plant-floor "
             "endpoint.", ""])
+    if recipe.get("profile") == "utility":
+        lines.extend(["## Substation zones: corporate and station", "",
+            "Bays are declared installed equipment positions, not voltage classes, electrical ratings, bus "
+            "arrangements, breaker positions, generation or load. The equipment columns below count actual device "
+            "roles and actual switch placement. The station (OT) endpoints sit on their own protection, telemetry "
+            "and station segments, behind their own access pair and their own distribution pair; the conduit column "
+            "counts the actual trunks between the two distribution tiers. That boundary is modeled inventory — no "
+            "firewall policy, access control list, air gap, electronic security perimeter or NERC CIP state is "
+            "demonstrated, no SCADA or EMS function is executed, and no utility protocol (DNP3, IEC 61850, Modbus, "
+            "ICCP or any other) is configured or claimed anywhere.", ""])
+        conduits = Counter()
+        for cable in kinds["cable"]:
+            ends = [objects.get(objects.get(cable["refs"].get(side), {}).get("refs", {}).get("device"), {})
+                    for side in ("a", "b")]
+            tiers = {"/ot-dist-" in end.get("key", "") for end in ends}
+            if tiers == {True, False} and all("dist-" in end.get("key", "") for end in ends):
+                conduits[ends[0]["refs"].get("site")] += 1
+        rows = []
+        for item in recipe.get("substations", []):
+            key = f"site/sub-{item['key']}"
+            station_roles = Counter(device["refs"].get("role") for device in devices_by_site[key])
+            switches = Counter("station" if "/ot-access-" in device["key"] else "corporate"
+                               for device in devices_by_site[key]
+                               if device["refs"].get("role") == "role/access")
+            rows.append((name(key), item["kind"], item["bays"], station_roles["role/rtu"],
+                         station_roles["role/protection-relay"], station_roles["role/hmi"],
+                         station_roles["role/station-gateway"], station_roles["role/workstation"],
+                         switches["station"], switches["corporate"], conduits[key]))
+        _table(lines, ["Substation", "Kind", "Bays", "Remote terminal units", "Protection relays",
+                       "Station HMIs", "Station gateways", "Corporate workstations",
+                       "Station access switches", "Corporate access switches", "Conduit trunks"], rows)
+        lines.extend(["**Zone walkthrough:** start at a remote terminal unit or protection relay, open its "
+            "telemetry or protection segment and follow its real cable to a station access switch. Trace that "
+            "switch's two uplinks to the station distribution pair, then take the conduit trunks to the corporate "
+            "pair — that is the only modeled path between the tiers, apart from each device's own dedicated "
+            "management port on the substation management segment. Continue at the control centers, where the SCADA "
+            "front end, historian and EMS gateway carry their listener, replica, resource and power tables below. "
+            "Those services hold no telemetry point, measurement, tag, setpoint or switching command, and nothing "
+            "connects them to a station endpoint.", ""])
     if recipe.get("profile") == "hospital-clinics":
         lines.extend(["## Care units and shared services", "",
             "Beds, desks and rooms are declared installed capacity, not patient volume or staff headcount. "
@@ -895,6 +939,8 @@ def markdown(plan):
                        if recipe.get("profile") == "hospital-clinics" else
                        "One line controller per plant, so the path crosses the plant-floor zone. "
                        if recipe.get("profile") == "manufacturing" else
+                       "One remote terminal unit per substation, so the path crosses the station zone. "
+                       if recipe.get("profile") == "utility" else
                        "One workstation per site where present; other endpoint roles are used only when no workstation is. ")
                       + "Paths follow actual cables and front/rear mappings; lengths sum cable records.", ""])
         examples = []
@@ -911,6 +957,9 @@ def markdown(plan):
                              d["refs"].get("role") != "role/workstation", -floor_of(d), d["key"]))
             elif recipe.get("profile") == "manufacturing":
                 device = min(candidates, key=lambda d: (d["refs"].get("role") != "role/plc",
+                             d["refs"].get("role") != "role/workstation", d["key"]))
+            elif recipe.get("profile") == "utility":
+                device = min(candidates, key=lambda d: (d["refs"].get("role") != "role/rtu",
                              d["refs"].get("role") != "role/workstation", d["key"]))
             else:
                 device = min(candidates, key=lambda d: (d["meta"].get("purpose") != "workstation", -floor_of(d) if hq else 0, d["key"]))

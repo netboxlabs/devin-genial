@@ -3,8 +3,8 @@
 An offline, deterministic generator of believable connected estates for NetBox,
 exported through Diode. Regional bank, enterprise DC, school district,
 hospital/clinic, provider backbone, retail chain, university campus, managed
-service provider and manufacturing have generation profiles. No LLM calls belong
-in generation, allocation, validation, or export.
+service provider, manufacturing and electric utility have generation profiles.
+No LLM calls belong in generation, allocation, validation, or export.
 
 The product goal is a believable whole estate. Demo stories are views into that
 connected estate; a library of isolated industry slices does not replace it.
@@ -168,6 +168,10 @@ for the separately recorded pinned-target live qualification.
   corporate (IT) zones, their own distribution tiers and one modeled conduit;
   `validate_manufacturing.py`: independent room-ledger, endpoint, zone-isolation
   and conduit checks.
+- `estates/utility.py`: keyed substations with a separated station (OT) zone and
+  corporate (IT) tier behind one modeled conduit, plus one or two control centers;
+  `validate_utility.py`: independent bay-ledger, endpoint, zone-isolation and
+  conduit checks.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
 - `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
@@ -258,6 +262,30 @@ for the separately recorded pinned-target live qualification.
   plants, lines, docks and desks; reductions and WAN renewal require a new
   baseline. The data-center edge is sized from resolved demand every
   generation, so it is never a frozen purchase that blocks growth.
+- One electric utility is one or two control centers plus N substations. A
+  substation is one control house with two forwarding zones: station (OT)
+  endpoints — one remote terminal unit and one protection relay per bay, two
+  station HMIs and a gateway — sit on their own `protection`, `telemetry` and
+  `station` segments, in their own routing contexts, behind their own access
+  pair and their own distribution pair; a minimal corporate (IT) presence keeps
+  the ordinary campus grammar. Reuse the manufacturing zone machinery: the only
+  modeled path between the tiers is the `conduit` segment trunked between the two
+  distribution pairs, plus each device's dedicated management port. Validate both
+  independently of emitted contracts, including that no record of any kind
+  outside a zone names that zone's VLANs or binds its ports and addresses. Bays
+  hold permanent reserved positions and are installed equipment positions only:
+  never voltage classes, electrical ratings, bus arrangements or breaker
+  positions. Nothing claims NERC CIP compliance, an electronic security
+  perimeter, SCADA/EMS execution, any utility protocol (DNP3, IEC 61850, Modbus,
+  ICCP, IEC 60870-5), protection logic or relay settings, grid topology,
+  power-flow, generation/load figures, or physical security; the estate is
+  documentation inventory, not a critical-infrastructure claim. No wireless of
+  any kind is modeled. Two control centers are the existing multi-DC replica
+  grammar, never a demonstrated failover. Show actual span providers per
+  substation without promising carrier diversity. Growth may append substations,
+  bays and the backup control center; reductions, kind changes and WAN renewal
+  require a new baseline. The control-center edge is sized from resolved demand
+  every generation, so it is never a frozen purchase that blocks growth.
 - One managed service provider is one NOC plus N separate customer estates. The
   NOC contains its own machine room; a second operations DC is deliberately not
   modeled, because this grammar has no owned-fiber interconnect to join it

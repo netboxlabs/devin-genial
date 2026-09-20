@@ -21,6 +21,8 @@ def generate(recipe, previous=None):
         from .msp import generate as build
     elif recipe["profile"] == "manufacturing":
         from .manufacturing import generate as build
+    elif recipe["profile"] == "utility":
+        from .utility import generate as build
     else:
         from .bank import generate as build
     return build(recipe, previous=previous)

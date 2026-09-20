@@ -206,8 +206,9 @@ being executed in least-resistance order. This section is the campaign's durable
 state: update the Status column as phases complete, and record decisions here.
 
 Existing profiles: enterprise DC, provider backbone, regional bank, hospital,
-K-12 school district, retail chain, university campus, MSP/managed services.
-Still new: manufacturing/industrial, utility/energy. Deliberate folds, not
+K-12 school district, retail chain, university campus, MSP/managed services,
+manufacturing/industrial, utility/energy. The Top-10 industry set is now
+covered. Deliberate folds, not
 profiles: GPU/AI cloud (an enterprise-DC workload/hardware flavor) and
 government/defense (enterprise/campus plus `site_names`).
 
@@ -220,8 +221,8 @@ government/defense (enterprise/campus plus `site_names`).
 | 5 | Vendor lever | **complete 2026-09-19** — `[hardware]` selects access/leaf/ap lines (Juniper EX3400/QFX5120, Aruba AP-505); 56-cell fit matrix + adversarial review hardening (854 tests); all-Juniper bank live: 10,587/10,587 objects, 0 mismatches, verify + idempotent repeat clean |
 | 6 | MSP profile (one NOC operating N customer tenants) | **complete 2026-09-19** — merged and review-hardened (912 tests); 56 kinds with independent tenancy-isolation and ownership-versus-operation checks; four-customer estate live on the pinned 4.7.1 stack: 7,068/7,068 objects, 0 mismatches, verify + idempotent repeat clean. |
 | 7 | Bank hard-kinds decision point | **dissolved** — phase 2 left no residual; the extras trio went via REST-create and the exempt-count gate |
-| 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | pending |
-| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | pending |
+| 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | **merged offline 2026-09-19** — plants with separated plant-floor (OT) and corporate (IT) zones joined by one exhaustively checked conduit; 31 finding codes, each mutation-tested. No live qualification receipt yet. |
+| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | **merged offline 2026-09-19** — control centers plus keyed substations reusing the phase-8 zone machinery (`campus.access` zone ledgers, conduit, estate-wide VLAN sweep) with no new object kinds and no catalog additions; 30 finding codes, each mutation-tested; 98 profile tests. No live qualification receipt yet. |
 
 Depth backlog (from cold-start run #16, bank): FHRP groups, VPN tunnels and
 inventory items are modeled as single instances in a DC pair — enough to show

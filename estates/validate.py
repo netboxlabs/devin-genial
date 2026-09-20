@@ -103,8 +103,8 @@ def validate(plan):
         report("plan-profile", "plan", "recipe must be an object with a supported profile.")
         return findings
     generated = "generator_version" in plan or "hardware_digest" in plan or "profile" in recipe
-    if generated and recipe.get("profile") not in ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing"):
-        report("plan-profile", "plan", "Generated plans require a supported bank, data center, school, hospital, provider, retail, university, managed-service-provider or manufacturing profile; missing or unsupported profiles cannot disable domain validation.")
+    if generated and recipe.get("profile") not in ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing", "utility"):
+        report("plan-profile", "plan", "Generated plans require a supported bank, data center, school, hospital, provider, retail, university, managed-service-provider, manufacturing or utility profile; missing or unsupported profiles cannot disable domain validation.")
         return findings
     objects = {}
     for obj in plan["objects"]:
@@ -1019,7 +1019,8 @@ def validate(plan):
         if kind(site_key) != "site":
             report("contract-site", site_key, "Contract must reference an existing site.")
         if contract.get("kind") in {"branch", "hq", "dc", "school", "hospital", "clinic", "store",
-                                    "distribution", "academic", "residence", "library", "office", "plant"}:
+                                    "distribution", "academic", "residence", "library", "office", "plant",
+                                    "substation"}:
             for device in devices_by_site[site_key]:
                 for vlan in needed_vlans[device]:
                     if device not in gateway_reachable.get(vlan, set()):
@@ -1091,6 +1092,11 @@ def validate(plan):
                                  "role/field-device": {"production_line"},
                                  "role/ap": {"office", "reception", "loading_dock"},
                                  "role/camera": {"reception", "loading_dock"}}
+            elif contract.get("kind") == "substation":
+                allowed_rooms = {"role/workstation": {"control_room"}, "role/hmi": {"control_room"},
+                                 "role/station-gateway": {"control_room"},
+                                 "role/rtu": {"switchyard_bay"},
+                                 "role/protection-relay": {"switchyard_bay"}}
             elif contract.get("kind") in {"academic", "residence", "library"}:
                 allowed_rooms = {"role/workstation": {"lecture_hall", "teaching_lab", "office",
                                                       "dorm_room", "reading_room"},
@@ -1622,6 +1628,11 @@ def validate(plan):
     if recipe.get("profile") == "manufacturing":
         from .validate_manufacturing import validate as validate_manufacturing
         findings.extend(validate_manufacturing(plan, catalog, objects=objects, children=children, peers=terminal_peers,
+                        component_of=component_of, component_members=component_members,
+                        cable_of=occupied, path_lengths=path_lengths, poe_watts=poe_watts, optics_watts=optics_watts))
+    if recipe.get("profile") == "utility":
+        from .validate_utility import validate as validate_utility
+        findings.extend(validate_utility(plan, catalog, objects=objects, children=children, peers=terminal_peers,
                         component_of=component_of, component_members=component_members,
                         cable_of=occupied, path_lengths=path_lengths, poe_watts=poe_watts, optics_watts=optics_watts))
     if recipe.get("profile") == "provider-backbone":
