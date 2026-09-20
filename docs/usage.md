@@ -325,8 +325,7 @@ just load-check build/campus-demo
 just power-scenario build/campus-demo/plan.json build/campus-power
 ```
 
-This profile is offline-checked and fits the TurboBulk contract; it has no
-separately recorded live qualification receipt.
+This profile is offline-checked, fits the TurboBulk contract and holds a recorded live qualification receipt on the pinned local 4.7.1 stack (see [qualification](qualification.md)).
 
 Edit the `[[buildings]]`, `[[residences]]` and `[library]` tables and the campus
 `wan_peak_mbps`. Ordinary growth appends buildings, halls, rooms, seats, desks
@@ -358,8 +357,7 @@ devices behind the room ports, no RF survey and no campus-owned fiber.
 distribution centres and the paired commerce data centers they depend on. Store
 formats are authored equipment profiles: back-office workstations, point-of-sale
 lanes, coverage radios and security cameras. Distribution centres replace the
-lanes with handheld scanner stations. This profile is offline-checked and fits
-the TurboBulk contract; it has no separately recorded live qualification receipt.
+lanes with handheld scanner stations. This profile is offline-checked, fits the TurboBulk contract and holds a recorded live qualification receipt on the pinned local 4.7.1 stack (see [qualification](qualification.md)).
 
 ```sh
 just plan profiles/retail-chain.toml
@@ -394,9 +392,7 @@ it operates under contract. Every customer is a separate NetBox tenant inside
 one customer tenant group, with its own sites, equipment, address space and
 per-segment routing contexts — nothing joins two customers. The provider appears
 as the shared infrastructure owner, the per-customer technical desk on every
-operated device, and the carrier accounts it holds. This profile is
-offline-checked and fits the TurboBulk contract; it has no separately recorded
-live qualification receipt.
+operated device, and the carrier accounts it holds. This profile is offline-checked, fits the TurboBulk contract and holds a recorded live qualification receipt on the pinned local 4.7.1 stack (see [qualification](qualification.md)).
 
 ```sh
 just plan profiles/msp.toml
@@ -424,8 +420,7 @@ routing contexts, behind their own access pair and their own distribution pair.
 The only modeled forwarding path to the corporate tier is the `conduit` segment
 trunked between the two distribution pairs; each device's dedicated management
 port and the equipment room's shared serial console server are the two other
-declared, validated crossings. This profile is offline-checked and fits the TurboBulk contract; it has no
-separately recorded live qualification receipt.
+declared, validated crossings. This profile is offline-checked, fits the TurboBulk contract and holds a recorded live qualification receipt on the pinned local 4.7.1 stack (see [qualification](qualification.md)).
 
 ```sh
 just plan profiles/manufacturing.toml

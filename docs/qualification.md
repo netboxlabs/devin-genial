@@ -473,6 +473,13 @@ stack later that day: a four-customer estate loaded 7,068/7,068 objects and
 sibling). Its widest accepted recipe (24 accounts, 97 sites, 104,793 objects)
 remains offline-checked only.
 
+The manufacturing profile passed the same gate on the same stack on
+September 19, 2026: a three-plant estate with separated IT/OT zones loaded
+9,352/9,352 objects and 11,308/11,308 create ChangeDiffs with zero mismatches,
+978/978 cable traces and 5,420 component placements, plus clean zero-write
+verify and idempotent repeat (receipt
+`v1-Ridgeline-Fabrication-f0d2b0bc00c2.json` and its `verify-` sibling).
+
 Also on September 19, 2026 the `[hardware]` vendor lever passed the same gate
 live: an all-alternate bank estate (Juniper EX3400-24P access, QFX5120-48Y
 leaves, Aruba AP-505 APs) loaded 10,587/10,587 objects and 12,596/12,596
