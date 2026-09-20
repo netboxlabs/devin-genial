@@ -79,6 +79,13 @@ class ComposerTests(unittest.TestCase):
             self.assertLessEqual(set(v1), set(v2))
             self.assertIn("sub-briar", {k.removeprefix("site/") for k in v2 if k.startswith("site/")})
             self.assertTrue((root / "two/DEMO.md").exists())
+            grown_sheet = (root / "two/DEMO.md").read_text()
+            # Run #30: the recompose one-liner must reproduce THIS estate.
+            self.assertIn("--recipe", grown_sheet)
+            self.assertIn("--previous", grown_sheet)
+            self.assertNotIn("--profile utility --name", grown_sheet)
+            self.assertIn("New in this growth", grown_sheet)
+            self.assertIn("growco-v2", grown_sheet)  # distinct suggested branch
             # --previous without --recipe is a named refusal.
             s, text, _ = self.call("--json", "demo", "--previous", root / "one/estate/plan.json",
                                    "--out", root / "three")

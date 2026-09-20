@@ -893,14 +893,18 @@ def demo_markdown(spec, facts, artifacts, live):
             f"The load verified {live['objects_matched']} objects with {live['mismatches']} "
             f"mismatches and re-verified clean with zero writes.", ""])
     else:
+        # A grown compose suggests a branch name distinct from v1's, so its
+        # closing retire cannot be mistaken for the predecessor's.
+        example_branch = (f"{spec['namespace']}-v2" if spec.get("previous")
+                          else spec["namespace"])
         lines.extend([
             "Nothing is on a target yet. Every offline gate passed; these are the exact "
             "commands to go live, in order:", "", "```sh",
             "export NETBOX_TOKEN=…            # or put it in .env",
             "export TURBOBULK_WRITES=1        # the write attestation",
-            f"just branch https://netbox.example {_shell(spec['namespace'])}",
-            f"just load {estate} https://netbox.example {_shell(spec['namespace'])}",
-            f"just verify-target {estate} https://netbox.example {_shell(spec['namespace'])}",
+            f"just branch https://netbox.example {_shell(example_branch)}",
+            f"just load {estate} https://netbox.example {_shell(example_branch)}",
+            f"just verify-target {estate} https://netbox.example {_shell(example_branch)}",
             "```", "",
             "Or recompose straight onto the target — same recipe, same seed, same estate:", "",
             "```sh", _compose_command(spec, target="https://netbox.example",
@@ -995,6 +999,9 @@ def demo_markdown(spec, facts, artifacts, live):
             f"{drift['observed_records']} observed records at "
             f"**{_cell(facts['names'].get(drift['site'], drift['site']))}**, plus the exact "
             "expected deviation manifest. It re-checked clean against its bound baseline.", "",
+            *(["The drift set stays bound to its stable anchor site rather than moving to the "
+                "growth's new site — deliberate, so growing the estate never reshuffles the "
+                "story you rehearsed.", ""] if facts.get("new_sites") else []),
             f"**Read `{out}/drift/drift.md` before the call.** It carries the run sequence, the "
             "per-item talk track and the review-versus-auto-apply warning, and it is byte-bound "
             "to the manifest — `just drift-check` re-renders and compares it, so it is never "
@@ -1259,18 +1266,26 @@ def _shell(value):
 
 
 def _compose_command(spec, *, target=None, branch=None, out=None):
-    argv = ["python3", "-m", "estates", "demo", "--profile", spec["profile"]]
-    if spec["vendor"] != "default":
-        argv += ["--vendor", spec["vendor"]]
-    argv += ["--name", _shell(spec["name"])]
-    if spec["namespace"] != _derived(spec["name"]):
-        argv += ["--namespace", spec["namespace"]]
-    if spec["seed_source"] == "supplied":
-        argv += ["--seed", str(spec["seed"])]
+    argv = ["python3", "-m", "estates", "demo"]
+    if spec.get("recipe_path"):
+        # A recipe-shaped compose reproduces from its recipe (and its previous
+        # plan when grown) — re-deriving from flags would rebuild the template.
+        argv += ["--recipe", _shell(spec["recipe_path"])]
+        if spec.get("previous"):
+            argv += ["--previous", _shell(spec["previous"])]
+    else:
+        argv += ["--profile", spec["profile"]]
+        if spec["vendor"] != "default":
+            argv += ["--vendor", spec["vendor"]]
+        argv += ["--name", _shell(spec["name"])]
+        if spec["namespace"] != _derived(spec["name"]):
+            argv += ["--namespace", spec["namespace"]]
+        if spec["seed_source"] == "supplied":
+            argv += ["--seed", str(spec["seed"])]
+        if spec["sites_file"]:
+            argv += ["--sites", _shell(spec["sites_file"])]
     if spec["features"]:
         argv += ["--features", ",".join(spec["features"])]
-    if spec["sites_file"]:
-        argv += ["--sites", _shell(spec["sites_file"])]
     argv += ["--out", _shell(out or spec["out"])]
     if target:
         argv += ["--target", target, "--branch", _shell(branch)]
