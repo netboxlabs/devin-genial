@@ -688,15 +688,21 @@ def markdown(envelope, baseline):
              "#    here binds the artifact and is not a loadable build).",
              "just load <original-baseline-build-dir> <target> <branch>",
              "",
-             "# 2. Mid-demo, ingest the observed snapshot through the target's Diode endpoint,",
-             "#    replaying request files in phase order per observed/manifest.json — later",
-             "#    phases reference records earlier ones create (the undocumented VLAN first).",
-             "#    This repository has no Cloud ingest recipe; use that instance's documented Diode client.",
-             "devenv --profile diode shell -- just sdk-check <drift-dir>/observed   # offline qualification",
+             "# 2. Mid-demo, ingest the observed snapshot through the target's Diode endpoint.",
+             "#    drift-ingest replays the request files in phase order (later phases reference",
+             "#    records earlier ones create); it needs the .env Diode credentials and the",
+             "#    DIODE_WRITES=1 attestation. Acknowledgement is acceptance only: on an",
+             "#    Assurance-review tenant the records become pending deviations to open in the UI.",
+             "devenv --profile diode shell -- just drift-ingest <drift-dir>",
              "",
              "# 3. Re-check the artifact at any time; it recomputes from the bound baseline.",
              "just drift-check <drift-dir>",
              "```", "",
+             "Mode matters: ingestion routing (Assurance review versus direct auto-apply) is a tenant setting the "
+             "API neither chooses nor reports. On a review tenant, ingest the documented baseline first and accept "
+             "it wholesale in Assurance, so the drift ingest arrives against real documented state; on an "
+             "auto-apply tenant, load the baseline normally and confirm review routing before step 2, or every "
+             "drift record silently applies instead of surfacing.", "",
              "Then open **Assurance → Deviations → Active Deviations** in NetBox. A deviation row carries its "
              "deviation type, source and change count; opening one shows the ingested data and the per-object "
              "before/after changes. Exact labels are version-dependent - check them against your target build "

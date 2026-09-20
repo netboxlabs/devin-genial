@@ -498,6 +498,18 @@ component placements, plus clean zero-write verify and idempotent repeat
 sibling). This qualifies the variant hardware through the identical loader
 path; default-line estates remain the primary receipts above.
 
+Discovery-drift Cloud probe, September 19, 2026: a one-entity Diode SDK ingest
+against the Assurance-equipped Cloud tenant (NetBox 4.6.9, Diode plugin 1.14.1,
+Assurance plugin 1.5.4) was acknowledged by the SDK, was **not** applied to
+main after 80+ seconds, and created no branch — consistent with Assurance
+review routing. Per the Cloud protocol, acknowledgement is treated as
+acceptance only: rendering the resulting deviation is UI-side evidence this
+repository does not claim, and the probe record ("meridianprobe Mode Check"
+circuit type) remains pending in that tenant's review queue. No auto-apply
+attestation was made and no estate was loaded. `just drift-ingest` wraps the
+pinned SDK replay for the drift payload; live Assurance rendering remains the
+open gate for the drift twin.
+
 "TurboBulk 0.4.0" here means a source build of TurboBulk main carrying the
 opportunistic reaper (TRB-23); the receipts' target contract records the locally
 built plugin as `0.0.0`. The version is publicly released:

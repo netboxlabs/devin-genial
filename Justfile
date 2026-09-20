@@ -93,6 +93,21 @@ drift plan='build/bank-v9/plan.json' output='build/discovery-drift':
 drift-check output='build/discovery-drift':
     python3 -m estates drift-check {{quote(output)}}
 
+# Ingest a checked drift payload into a Diode-configured target, one phase at a
+# time in manifest order. Requires the devenv diode profile and the .env Diode
+# credentials; DIODE_WRITES=1 is the operator attestation. Acknowledgement is
+# acceptance only: on an Assurance-review tenant the records become pending
+# deviations, and rendering them is UI-side evidence this repo does not claim.
+drift-ingest output='build/discovery-drift':
+    python3 -m estates drift-check {{quote(output)}}
+    set -a; [ -f .env ] && . ./.env; set +a; \
+    [ "$DIODE_WRITES" = "1" ] || { echo "DIODE_WRITES=1 not attested" >&2; exit 2; }; \
+    for phase in {{quote(output)}}/observed/phase-*.json; do \
+      python3 -m netboxlabs.diode.scripts.dryrun_replay --target "$DIODE_TARGET" \
+        --app-name devin-generator --app-version "$(python3 -c 'import estates; print(estates.__version__)')" \
+        "$phase" || exit 2; \
+    done
+
 # Independent mutation tests and growth/determinism/scale regressions
 check:
     python3 -m unittest discover -s tests -v
