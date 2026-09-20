@@ -91,6 +91,10 @@ class ComposerTests(unittest.TestCase):
             for line in grown_sheet.splitlines():
                 if line.startswith("just retire ") or line.startswith("just verify-target "):
                     self.assertIn("growco-v2", line, line)
+                if "--branch" in line:
+                    self.assertIn("--branch growco-v2", line, line)
+            # The Size row cites the copy inside this demo's own directory.
+            self.assertIn("recipe copied verbatim to", grown_sheet)
             # --previous without --recipe is a named refusal.
             s, text, _ = self.call("--json", "demo", "--previous", root / "one/estate/plan.json",
                                    "--out", root / "three")
@@ -209,7 +213,7 @@ class ComposerTests(unittest.TestCase):
             self.assertEqual((out / "recipe.toml").read_text(), recipe)
             sheet = (out / "DEMO.md").read_text()
             self.assertIn("Harbor Point Substation", sheet)
-            self.assertIn("custom shape from", sheet)
+            self.assertIn("custom shape (recipe copied verbatim", sheet)
             self.assertIn("station (OT) zone", sheet)  # the profile hook survives --recipe
             self.assertNotIn("Fairhaven", sheet)  # no stock-template leakage
             # Identity flags conflict with --recipe and say why.

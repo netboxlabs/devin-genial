@@ -863,7 +863,9 @@ def demo_markdown(spec, facts, artifacts, live):
     if spec.get("recipe_path"):
         # A customer-shaped estate: the size prose describes the stock demand,
         # so derive it from the recipe — but the profile's claim stays.
-        size = f"custom shape from `{spec['recipe_path']}` — {counts['site']} sites (see the recipe)"
+        # Cite the verbatim copy inside THIS demo's own directory: the source
+        # path may live in a retired predecessor's output.
+        size = f"custom shape (recipe copied verbatim to `{out}/recipe.toml`) — {counts['site']} sites"
     lines = [f"# {_cell(spec['name'])} — demo cheat sheet", "",
              f"**{_cell(template.label)}**, composed by Genial {spec['generator_version']}. "
              + ("Loaded and strictly verified on a live branch." if live else
@@ -912,7 +914,7 @@ def demo_markdown(spec, facts, artifacts, live):
             "```", "",
             "Or recompose straight onto the target — same recipe, same seed, same estate:", "",
             "```sh", _compose_command(spec, target="https://netbox.example",
-                                      branch=spec["namespace"], out=f"{out}-live"), "```", "",
+                                      branch=example_branch, out=f"{out}-live"), "```", "",
             f"`just load` prints `ui_url` when it finishes; that is the link this section "
             "would carry. Expect a minute or two per few thousand objects, and a silent "
             "several-minute window while the cable and counter finalizers run — that is normal, "
