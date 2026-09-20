@@ -515,6 +515,16 @@ def _artifact(path):
         raise LoadError(f"{checks_path} is required to prove this canonical plan passed offline checks")
     offline = json.loads(checks_path.read_text())
     if offline.get("status") != "passed" or offline.get("plan_sha256") != digest(plan):
+        status = offline.get("status")
+        if isinstance(status, str) and status.startswith("expected-"):
+            # A deliberate scenario snapshot, refused by design — name the
+            # policy, not a phantom corruption.
+            raise LoadError(
+                f"{checks_path} records status {status!r}: this is a deliberate scenario "
+                "snapshot whose ordinary validation must fail. Load the scenario's baseline/ "
+                "artifact into a live branch and narrate the change from the scenario report; "
+                "the changed/ snapshot loads only into a separate fresh target "
+                "(docs/scenarios.md).")
         raise LoadError(f"{checks_path} does not prove this canonical plan passed offline checks")
     return plan_path, raw, plan, objects, offline
 

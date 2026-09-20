@@ -152,7 +152,13 @@ shared-carrier exposure. Different provider names do not establish duct diversit
 expected findings and byte-identical inverse restoration. Its changed-state
 label is `expected-maintenance verified`. Ordinary verification of
 `build/provider-maintenance/changed/plan.json` must fail: the baseline's active-span
-and resilience obligations are deliberately unmet. In this three-PoP story,
+and resilience obligations are deliberately unmet. **On a TurboBulk target this
+means exactly what it means for the power-diversity defect: load the healthy
+`baseline/` into your live branch and demonstrate the maintenance window from
+the scenario's `report.md` and findings — the loader refuses the `changed/`
+snapshot (its `checks.json` records `expected-maintenance verified`, not
+`passed`), and the refusal says so. The `changed/` snapshot loads only into a
+separate fresh target.** In this three-PoP story,
 the current declared flows still fit; further link/router failures can now break
 connectivity. Those findings describe lost additional-failure protection, not a
 present modeled customer outage. Their count and affected objects come from the

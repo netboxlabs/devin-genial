@@ -37,6 +37,7 @@ Into `--out` (default `build/demos/<namespace>/`):
 | `estate/` | The generated artifact — `plan.json`, `report.md`, `coverage.json`, `intent.json`, `diode/` |
 | `drift/` | The Assurance drift twin, with `--features assurance` |
 | `scenario/` | The power-diversity snapshots, with `--features scenario` |
+| `maintenance/` | The provider span-maintenance story, with `--features maintenance` |
 | `compose.json` | Machine-readable receipt: resolved flags, the exact command of every step, wall seconds, per-kind counts, the TurboBulk verdict and the live branch evidence |
 
 An existing `--out` is refused; earlier demos are never overwritten. A *failed*
@@ -55,7 +56,7 @@ shape. `python3 -m estates demo --help` has the rest.
 | `--name` | `Genial Demo Estate` | 1–80 characters of customer-visible text; it becomes the recipe `name` |
 | `--namespace` | derived from `--name` | 2–20 character DNS label. Derivation lowercases, hyphenates and truncates; a name that cannot yield one (`"1234"`) fails and tells you to pass this flag |
 | `--seed` | derived from the namespace | `0 ≤ seed < 2^63`. Derived so two composes for one customer agree without anybody remembering a number |
-| `--features` | none | Comma list of `assurance`, `automation`, `scenario` |
+| `--features` | none | Comma list of `assurance`, `automation`, `scenario`, `maintenance` (provider only) |
 | `--sites` | none | TOML or JSON file of `[site_names]` overrides — the customer's real site names. Either the bare mapping or a file wrapping it in `site_names` |
 | `--recipe` | none | Compose from this recipe file instead of a template; conflicts with the identity flags — see [Template sizes](#template-sizes) |
 | `--out` | `build/demos/<namespace>/` | New directory |
@@ -137,7 +138,13 @@ decides what gets built beside the artifact and what the cheat sheet narrates.
   the deliberately inert webhook + disabled event rule (the ServiceNow/ITSM
   hook shape, with nothing firing and the records saying so).
 - **`scenario`** builds the loss-of-power-diversity snapshots into `scenario/`
-  and scenario-checks them. Those two snapshots are separate estates for
+  and scenario-checks them.
+- **`maintenance`** (provider only) builds the
+  [span-maintenance story](scenarios.md#provider-span-maintenance) into
+  `maintenance/` and scenario-checks it — the planned-window conversation an
+  ISP NOC manager actually asks for. Same boundary as `scenario`: narrate from
+  the loaded baseline branch and `report.md`; the `changed/` snapshot loads
+  only into a separate fresh target, and the loader's refusal says so. Those two snapshots are separate estates for
   separate fresh targets, never a transition on the loaded branch.
 
 ## Going live in the same run

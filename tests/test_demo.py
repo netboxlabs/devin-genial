@@ -57,6 +57,38 @@ class ComposerTests(unittest.TestCase):
         self.assertEqual(payload.get("error"), "DesignError", payload)
         return payload["message"]
 
+    def test_the_maintenance_pack_is_provider_only_and_builds_the_span_story(self):
+        # Cold-start run #26: the flagship provider scenario is reachable from
+        # the flagship command, with the same snapshot boundary stated.
+        message = self.failure("--features", "maintenance", "--out", "unused",
+                               profile="hospital-clinics")
+        self.assertIn("provider-backbone", message)
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary) / "demo"
+            self.compose(out, "--features", "maintenance", profile="provider-backbone",
+                         name="Great Plains Fiber")
+            self.assertTrue((out / "maintenance" / "scenario.json").exists())
+            self.assertTrue((out / "maintenance" / "report.md").exists())
+            sheet = (out / "DEMO.md").read_text()
+            self.assertIn("Maintenance — a planned span window", sheet)
+            self.assertIn("refuses to load `changed/`", sheet)
+            self.assertIn("just span-scenario", sheet)
+
+    def test_a_scenario_snapshot_refusal_names_the_policy(self):
+        # Run #26's second S2: the guardrail must name itself, not read as a
+        # corrupt artifact.
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary) / "demo"
+            self.compose(out, "--features", "scenario")
+            from estates.turbobulk import LoadError, _artifact
+            with self.assertRaises(LoadError) as caught:
+                _artifact(out / "scenario" / "changed")
+            message = str(caught.exception)
+            self.assertIn("deliberate scenario snapshot", message)
+            self.assertIn("expected-defect verified", message)
+            self.assertIn("baseline/", message)
+            self.assertIn("docs/scenarios.md", message)
+
     def test_wireless_claims_are_graph_facts(self):
         # Cold-start run #24: no guest promise without a guest SSID, no 2.4 GHz
         # promise when nothing rides wlan1, and a wireless step when APs exist.

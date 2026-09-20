@@ -39,7 +39,7 @@ from .report import _cell, _table
 # here so a derived namespace fails at the flag, not after template assembly.
 _NAMESPACE = re.compile(r"[a-z][a-z0-9-]{0,18}[a-z0-9]")
 
-FEATURES = ("assurance", "automation", "scenario")
+FEATURES = ("assurance", "automation", "scenario", "maintenance")
 
 # `[hardware]` families, not vendors-in-general: the recipe key selects a line
 # for exactly `access`, `leaf` and `ap`. "juniper" has no AP line, "aruba" has
@@ -473,6 +473,10 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
     unknown = [item for item in chosen if item not in FEATURES]
     if unknown:
         raise DesignError(f"unknown --features {', '.join(unknown)}; choose from: " + ", ".join(FEATURES))
+    if "maintenance" in chosen and profile != "provider-backbone":
+        raise DesignError(
+            "--features maintenance is the provider span-maintenance story and needs "
+            f"--profile provider-backbone; {profile} has no leased inter-PoP spans.")
     if "assurance" in chosen and profile in NO_DRIFT:
         raise DesignError(
             f"--features assurance needs a profile that models campus access; {profile} models "
@@ -1045,6 +1049,23 @@ def demo_markdown(spec, facts, artifacts, live):
             "load them into separate fresh targets, never as a transition on the branch above. "
             "This inspects modeled inventory and executes no failover.", ""])
 
+    if "maintenance" in spec["features"]:
+        window = artifacts["maintenance"]
+        lines.extend([
+            "### Maintenance — a planned span window", "",
+            f"`{out}/maintenance/` holds the provider span-maintenance story: `baseline/` healthy "
+            f"and `changed/` with one leased inter-PoP span "
+            f"(**{_cell(facts['names'].get(window['subject'], window['subject']))}**) set offline, "
+            f"plus `report.md` — customer attribution, the traceable alternate path and the exact "
+            f"remaining-protection findings ({len(window['expected_findings'])}), verified with a "
+            "byte-identical inverse restoration.", "",
+            "Run it from the loaded baseline branch: the circuits, PE ports and the alternate "
+            "ring are all live and traceable there. `report.md` is the change artifact — the "
+            "offline snapshot is a generated state, not a flip performed on this branch, and "
+            "the loader refuses to load `changed/` into it by design. Status transitions were "
+            "qualified end to end on the pinned local Diode stack; claim exactly that and no "
+            "more.", ""])
+
     if spec["profile"] == "msp":
         first = facts["customer_tenants"][0] if facts["customer_tenants"] else f"{spec['namespace']}-cust-…"
         account = first.split("-cust-", 1)[-1]
@@ -1117,6 +1138,8 @@ def demo_markdown(spec, facts, artifacts, live):
           if "assurance" in spec["features"] else []),
         *([f"just power-scenario {out}-v2/plan.json {out}-v2-scenario   # the what-if binds one plan; regenerate it after growth"]
           if "scenario" in spec["features"] else []),
+        *([f"just span-scenario {out}-v2/plan.json {out}-v2-maintenance   # the maintenance story binds one plan; regenerate it after growth"]
+          if "maintenance" in spec["features"] else []),
         "# The grown estate has no regenerated cheat sheet: this DEMO.md's links die",
         f"# with the v1 branch — narrate the second call from {out}-v2/estate/report.md.",
         "# Close the grown demo out from here, with ITS branch:",
@@ -1256,6 +1279,13 @@ def run(spec, *, cli, stream=None):
              "--out", out / "scenario"])
         runner.estates("check the scenario findings",
                        ["scenario-check", out / "scenario" / "scenario.json"])
+    if "maintenance" in spec["features"]:
+        artifacts["maintenance"] = runner.estates(
+            "build the span-maintenance scenario",
+            ["scenario", estate / "plan.json", "--kind", "provider-span-maintenance",
+             "--out", out / "maintenance"])
+        runner.estates("check the maintenance findings",
+                       ["scenario-check", out / "maintenance" / "scenario.json"])
 
     live = None
     if spec["target"]:
