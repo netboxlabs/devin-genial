@@ -605,9 +605,13 @@ Recipes size demand. They do not select:
   lengths.** These are allocator outputs bound to stable keys.
 - **Custom fields, tags, tenant hierarchies, config contexts, export templates,
   webhooks or event rules.** Every estate carries the same authored automation
-  pack unconditionally, with its config-context values derived from that
-  estate's own services (see
-  [modeling](modeling.md#automation-records)); no key selects, adds to or
+  pack unconditionally — two config contexts, two export templates, one inert
+  webhook and one disabled event rule — with its config-context values derived
+  from that estate's own services (see
+  [modeling](modeling.md#automation-records)). Custom-field, choice-set and
+  custom-link definitions are profile-authored, not universal: today only the
+  bank emits them (its operations tier and site-equipment link). No key selects,
+  adds to or
   removes it.
 - **Per-object descriptions, comments or journal text.**
 - **The inherited-lineage brand.** Acquired/inherited bank branches carry the

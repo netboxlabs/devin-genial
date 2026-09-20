@@ -224,4 +224,7 @@ this profile: no `design_mix`, `site_designs` or `acquired_sites` key is
 accepted, and every site is modern.
 
 `--kind loss-of-power-diversity` works on a generated utility plan, like the
-other profiles. See [scenarios](../docs/scenarios.md) for its boundaries.
+other profiles — the defect subject is a service host at a **control center**
+(the dc-kind site); a substation has no eligible dual-supply service host, and
+naming one is refused with the exact reason. See
+[scenarios](../docs/scenarios.md) for its boundaries.

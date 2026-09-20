@@ -167,7 +167,7 @@ screen share:
 - **Merging a TurboBulk-loaded branch to main is currently blocked** by
   upstream defects (see [qualification](qualification.md)); the working
   pattern is branch-per-demo, then `just reset` or branch deletion.
-- On NetBox 4.7, `owner`/`owner_group` rows, the custom-field trio and the
+- On NetBox 4.7, `owner`/`owner_group` rows, any custom-field/choice-set/custom-link definitions the profile emits (bank only today) and the
   automation export templates, webhook and event rule are **not
   branch-isolated**: a branch load writes them to main and branch deletion does
   not remove them. Other namespaces coexist over them automatically (§1);
@@ -205,7 +205,7 @@ way: append entries for the new sites in the same recipe change. Changing or
 removing an *existing* entry is a rename and needs a new baseline.
 
 **Retiring v1 is a deliberate, destructive step.** The namespace's main-scoped
-rows — `owner`/`owner_group`, the custom-field trio and the automation export
+rows — `owner`/`owner_group`, any custom-field/choice-set/custom-link definitions the profile emits (bank only today) and the automation export
 templates, webhook and event rule — block the v2 load; deleting them (the
 refusal names the exact rows) also nulls `owner` across the already-loaded v1
 branch and permanently invalidates its receipt — v1 becomes display-only and
@@ -228,7 +228,7 @@ before/after demo therefore needs **two namespaces planned from the start**
 
 When the demo cycle ends, two things carry your namespace on the target: the
 branch (which holds the estate, including its config contexts), and the
-namespace's main-scoped rows — `owner`/`owner_group`, the custom-field trio and
+namespace's main-scoped rows — `owner`/`owner_group`, any custom-field/choice-set/custom-link definitions the profile emits (bank only today) and
 the automation export templates, webhook and event rule. One command removes
 both:
 

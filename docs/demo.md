@@ -68,8 +68,19 @@ sheet says so, and says so again when the profile models no wireless at all.
 ## Template sizes
 
 One authored demand template per profile: moderate on purpose — believable
-enough to walk for twenty minutes, small enough to load in minutes. Edit
-`recipe.toml` and re-generate when a customer needs a different shape.
+enough to walk for twenty minutes, small enough to load in minutes. When a
+customer needs a different shape, write an ordinary recipe (the
+[recipe reference](recipes.md) documents every demand key) and compose from it:
+
+```sh
+just demo-recipe build/lakeshore/recipe.toml scenario https://netbox.example demo-lakeshore
+```
+
+`--recipe` takes the estate's identity and shape from the file — profile,
+`name`, `namespace`, `seed`, `[hardware]` and `[site_names]` — copies it
+verbatim into the output, and writes a cheat sheet that follows the customer's
+shape instead of the stock template. The identity flags conflict with it by
+design: edit the recipe, not the command line.
 
 Counts below are measured at the default `--name` (`Genial Demo Estate` →
 namespace `genial-demo-estate`) with the default vendor line, and reproduce
@@ -109,9 +120,11 @@ decides what gets built beside the artifact and what the cheat sheet narrates.
   flag.
 - **`automation`** adds narration only, no files — since 0.11.0 the records are
   already in every estate. It points at the inventory a playbook reads, the
-  service records a template renders, the custom field and custom link the
-  estate carries, the two config contexts whose ntp/syslog/dns values are the
-  estate's own service VM addresses, the two rendering export templates, and
+  service records a template renders, the custom field and custom link where
+  the profile authors them (today the bank's operations tier; the sheet lists
+  only what the estate actually carries), the two config contexts whose
+  ntp/syslog/dns values are the estate's own service VM addresses, the two
+  rendering export templates, and
   the deliberately inert webhook + disabled event rule (the ServiceNow/ITSM
   hook shape, with nothing firing and the records saying so).
 - **`scenario`** builds the loss-of-power-diversity snapshots into `scenario/`
@@ -171,3 +184,9 @@ repository (the default) and point at the upstream repository when it does not.
 - It does not rename or edit objects in a running estate. `namespace`, `name`,
   `seed` and the vendor line are rebaseline-frozen: changing one means a fresh
   compose, a fresh output and a fresh branch.
+
+One live-demo caution that is NetBox's, not this repo's: the REST API silently
+ignores an unknown query parameter (HTTP 200, unfiltered results). When you
+prove an isolation or scoping claim live, sanity-check that the filtered count
+is well below the unfiltered total — a typo'd filter renders as a
+catastrophic-looking leak that is pure query error.

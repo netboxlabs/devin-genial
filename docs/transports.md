@@ -203,7 +203,7 @@ with two recorded exceptions, both requiring every existing plain-attribute
 identity to be disjoint from the plan's: rows of a declared builtin kind
 (currently `module_type_profile`; NetBox's factory ModuleTypeProfiles — eight on
 4.7.1, seven on 4.7.0), and the main-scoped rows another estate left on a shared
-4.7 target — `owner`/`owner_group`, the custom-field trio and the automation
+4.7 target — `owner`/`owner_group`, any custom-field/choice-set/custom-link definitions the profile emits (bank only today) and the automation
 export templates, webhook and event rule (none of them branch-isolated; each
 carries its estate's namespace in its name, so distinct namespaces coexist).
 The exact ids and identities are stored in the receipt and honored by strict

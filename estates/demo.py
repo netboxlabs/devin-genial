@@ -30,7 +30,8 @@ import time
 import tomllib
 
 from . import __version__
-from .model import DesignError
+from .model import (DesignError, resolve_hardware as model_resolve_hardware,
+                    resolve_recipe as model_resolve_recipe)
 from .report import _cell, _table
 
 
@@ -416,8 +417,43 @@ bays = 6
 # Flags
 
 
-def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, target, branch):
+def _vendor_note(resolved_hardware):
+    """Describe a recipe's [hardware] selection the way the flag shorthands do."""
+    defaults = model_resolve_hardware({})
+    moved = {family: line for family, line in sorted(resolved_hardware.items())
+             if line != defaults.get(family)}
+    if not moved:
+        return VENDORS["default"][1]
+    return "from the recipe's [hardware] table: " + ", ".join(
+        f"{family} = {line}" for family, line in moved.items())
+
+
+def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, target, branch,
+            recipe=None):
     """Validate the flags and return the frozen compose specification."""
+    if recipe is not None:
+        # The customer's real shape: everything identity- and demand-shaped
+        # comes from the recipe file; only features/out/target/branch are flags.
+        shadowed = [flag for flag, moved in (
+            ("--profile", profile != "regional-bank"), ("--vendor", vendor != "default"),
+            ("--name", name != "Genial Demo Estate"), ("--namespace", bool(namespace)),
+            ("--seed", seed is not None), ("--sites", sites is not None)) if moved]
+        if shadowed:
+            raise DesignError(f"--recipe supplies the estate's identity and shape itself; "
+                              f"drop {', '.join(shadowed)} (edit the recipe instead)")
+        try:
+            source = Path(recipe).read_text()
+            resolved = model_resolve_recipe(tomllib.loads(source))
+        except OSError as exc:
+            raise DesignError(f"--recipe {recipe}: {exc}") from exc
+        except tomllib.TOMLDecodeError as exc:
+            raise DesignError(f"--recipe {recipe} is not valid TOML: {exc}") from exc
+        spec = resolve(profile=resolved["profile"], vendor="default", name=resolved["name"],
+                       namespace=resolved["namespace"], seed=resolved["seed"], features=features,
+                       sites=None, out=out, target=target, branch=branch)
+        return spec | {"seed_source": "from the recipe", "recipe_path": str(recipe),
+                       "recipe_source": source, "site_names": resolved.get("site_names", {}),
+                       "vendor_note": _vendor_note(resolved.get("hardware", {}))}
     if profile not in PROFILES:
         raise DesignError(f"unknown --profile {profile!r}; choose one of: " + ", ".join(PROFILES))
     if vendor not in VENDORS:
@@ -469,6 +505,7 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
             "features": sorted(set(chosen), key=FEATURES.index),
             "site_names": _site_overrides(sites), "sites_file": str(sites) if sites else None,
             "out": str(out).rstrip("/") or ".", "target": target or None, "branch": branch or None,
+            "recipe_path": None, "vendor_note": VENDORS[vendor][1],
             "generator_version": __version__}
 
 
@@ -518,6 +555,9 @@ def _toml(value):
 
 def recipe_text(spec):
     """Render the deterministic demo recipe; identical inputs give identical bytes."""
+    if spec.get("recipe_path"):
+        # The customer's own recipe, copied verbatim: the composer adds nothing.
+        return spec["recipe_source"]
     template = PROFILES[spec["profile"]]
     lines = [f"# {spec['name']} — {template.label} demo estate, composed by "
              f"`python3 -m estates demo` (Genial {spec['generator_version']}).",
@@ -761,6 +801,14 @@ def demo_markdown(spec, facts, artifacts, live):
     template = PROFILES[spec["profile"]]
     counts, out = facts["counts"], spec["out"]
     estate = f"{out}/estate"
+    if spec.get("recipe_path"):
+        # A customer-shaped estate: the template's size prose and hook describe
+        # the stock demand, so derive both from the recipe and the graph.
+        hook = (f"{counts['site']} sites under the {template.label.lower()} grammar, "
+                f"shaped by the customer's own recipe.")
+        size = f"custom shape from `{spec['recipe_path']}` — {counts['site']} sites (see the recipe)"
+    else:
+        hook, size = template.hook, template.size
     lines = [f"# {_cell(spec['name'])} — demo cheat sheet", "",
              f"**{_cell(template.label)}**, composed by Genial {spec['generator_version']}. "
              + ("Loaded and strictly verified on a live branch." if live else
@@ -768,15 +816,15 @@ def demo_markdown(spec, facts, artifacts, live):
                 "written to a NetBox target.**"), "",
              f"> **{counts['site']} sites, {counts['device']} devices, {counts['cable']} cables "
              "— all connected.**", ">",
-             f"> {_cell(template.hook)}", ""]
+             f"> {_cell(hook)}", ""]
 
     _table(lines, ["", ""], [
         ["Customer", spec["name"]],
         ["Profile", f"`{spec['profile']}` — {template.label}"],
         ["Namespace", f"`{spec['namespace']}`"],
-        ["Vendor line", VENDORS[spec["vendor"]][1]],
+        ["Vendor line", spec["vendor_note"]],
         ["Seed", f"{spec['seed']} ({spec['seed_source']})"],
-        ["Size", template.size],
+        ["Size", size],
         ["Objects", f"{facts['objects']:,} ({counts['interface']:,} interfaces, "
                     f"{counts['ip_address']:,} addresses, {counts.get('virtual_machine', 0)} VMs)"],
         ["Recipe", f"`{out}/recipe.toml`"],

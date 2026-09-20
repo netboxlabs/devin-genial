@@ -269,6 +269,9 @@ def main(argv=None):
     p.add_argument("--features", default="", metavar="LIST",
                    help="comma list: " + ", ".join(demo.FEATURES))
     p.add_argument("--sites", type=Path, help="TOML or JSON file of [site_names] overrides")
+    p.add_argument("--recipe", type=Path, metavar="RECIPE",
+                   help="compose from this recipe file instead of a template: profile, name, "
+                        "namespace, seed, [hardware] and [site_names] all come from it")
     p.add_argument("--out", type=Path, help="new demo directory (default: build/demos/<namespace>)")
     p.add_argument("--target", default="", help="NetBox root URL; with --branch, go live in this run")
     p.add_argument("--branch", default="", help="branch name to create and load into")
@@ -297,8 +300,8 @@ def main(argv=None):
         if args.command == "demo":
             spec = demo.resolve(profile=args.profile, vendor=args.vendor, name=args.name,
                                 namespace=args.namespace, seed=args.seed, features=args.features,
-                                sites=args.sites, out=args.out, target=args.target,
-                                branch=args.branch)
+                                sites=args.sites, recipe=args.recipe, out=args.out,
+                                target=args.target, branch=args.branch)
             result = demo.run(spec, cli=main)
             if args.json:
                 print(json.dumps(result, sort_keys=True))

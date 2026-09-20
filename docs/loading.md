@@ -409,7 +409,7 @@ id and identity in the receipt and honored by strict readback, so distinct
 namespaces coexist on one target. An identity collision is still a hard block —
 clear the same namespace's leftovers with `just retire`, which walks those
 endpoints in dependency order (event rules, webhooks and export templates first,
-then the custom-field trio, then `/api/users/owners/` and
+then any custom-field/choice-set/custom-link definitions the profile emits (bank only today), then `/api/users/owners/` and
 `/api/users/owner-groups/`). `just load-explain` reports the target's occupancy
 with this exact allowlist assessment before any write. The loader assumes
 exclusive use of that disposable branch while the receipt is active.

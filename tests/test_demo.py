@@ -54,6 +54,38 @@ class ComposerTests(unittest.TestCase):
         status, text, _ = self.call("--json", "demo", "--profile", profile, *args)
         self.assertEqual(status, 2, text)
         payload = json.loads(text.strip().splitlines()[-1])
+        self.assertEqual(payload.get("error"), "DesignError", payload)
+        return payload["message"]
+
+    def test_a_customer_shaped_recipe_composes_with_its_own_identity(self):
+        # Cold-start run #22: taking the customer's real shape must not cost
+        # the cheat sheet.
+        recipe = ('profile = "utility"\nnamespace = "laketest"\nname = "Laketest Electric"\n'
+                  'control_centers = 2\n\n[[substations]]\nkey = "harbor-point"\n'
+                  'kind = "transmission"\nbays = 6\n\n[[substations]]\nkey = "millbrook"\n'
+                  'kind = "distribution"\nbays = 4\n\n'
+                  '[site_names."sub-harbor-point"]\nname = "Harbor Point Substation"\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "customer.toml"
+            path.write_text(recipe)
+            out = Path(temporary) / "demo"
+            status, text, _ = self.call("--json", "demo", "--recipe", path, "--out", out)
+            self.assertEqual(status, 0, text)
+            result = json.loads(text.strip().splitlines()[-1])
+            self.assertEqual(result["name"], "Laketest Electric")
+            self.assertEqual(result["sites"], 4)
+            # The recipe is copied verbatim and the sheet is customer-shaped.
+            self.assertEqual((out / "recipe.toml").read_text(), recipe)
+            sheet = (out / "DEMO.md").read_text()
+            self.assertIn("Harbor Point Substation", sheet)
+            self.assertIn("shaped by the customer's own recipe", sheet)
+            self.assertNotIn("Fairhaven", sheet)  # no stock-template leakage
+            # Identity flags conflict with --recipe and say why.
+            status, text, _ = self.call("--json", "demo", "--recipe", path,
+                                        "--name", "Someone Else")
+            self.assertEqual(status, 2, text)
+            self.assertIn("edit the recipe instead", text)
+        payload = json.loads(text.strip().splitlines()[-1])
         self.assertEqual(payload["error"], "DesignError", payload)
         return payload["message"]
 
