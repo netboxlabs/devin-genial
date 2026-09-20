@@ -6,8 +6,9 @@
 # remote terminal unit and one protection relay per bay, two station HMIs and a
 # station gateway — sit on their own `protection`, `telemetry` and `station`
 # segments, behind their own access pair and their own distribution pair; the
-# only modeled path to the corporate tier is the `conduit` segment trunked
-# between the two distribution pairs.
+# only modeled forwarding path to the corporate tier is the `conduit` segment
+# trunked between the two distribution pairs; the dedicated management ports
+# and the shared serial console server are the two other declared crossings.
 #
 # That separation is inventory and intended boundaries. It is NOT enforced
 # security, NOT an air gap, NOT an electronic security perimeter and NOT a NERC

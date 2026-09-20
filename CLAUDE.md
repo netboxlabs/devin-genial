@@ -246,10 +246,13 @@ for the separately recorded pinned-target live qualification.
   (OT) endpoints sit on their own `process` and `supervisory` segments, in
   their own routing contexts, behind their own access pair and their own
   distribution pair; corporate (IT) endpoints keep the ordinary campus
-  grammar. The only modeled path between the tiers is the `conduit` segment
-  trunked between the two distribution pairs, plus each device's own dedicated
-  management port; validate both independently of emitted contracts, including
-  that no record of any kind outside a zone names that zone's VLANs. Both tiers
+  grammar. The only modeled forwarding path between the tiers is the `conduit`
+  segment trunked between the two distribution pairs; each device's dedicated
+  management port and the room's shared serial console server are the two other
+  declared crossings. Validate all three independently of emitted contracts —
+  per-port allow-lists (mgmt_only gating), console cables pinned to the room's
+  own console server, and no record of any kind outside a zone naming that
+  zone's VLANs, interfaces or addresses. Both tiers
   share the one plant equipment room: the boundary is modeled in the routing
   and VLAN graph, never physical, never enforced, and never a Purdue-model or
   IEC 62443 claim. No industrial protocol is configured, carried or asserted
@@ -269,8 +272,10 @@ for the separately recorded pinned-target live qualification.
   `station` segments, in their own routing contexts, behind their own access
   pair and their own distribution pair; a minimal corporate (IT) presence keeps
   the ordinary campus grammar. Reuse the manufacturing zone machinery: the only
-  modeled path between the tiers is the `conduit` segment trunked between the two
-  distribution pairs, plus each device's dedicated management port. Validate both
+  modeled forwarding path between the tiers is the `conduit` segment trunked
+  between the two distribution pairs, with the dedicated management ports and
+  the control house's shared serial console server as the two other declared,
+  validated crossings. Validate all three
   independently of emitted contracts, including that no record of any kind
   outside a zone names that zone's VLANs or binds its ports and addresses. Bays
   hold permanent reserved positions and are installed equipment positions only:

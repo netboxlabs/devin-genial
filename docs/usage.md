@@ -454,10 +454,13 @@ equipment room that serves them. The station (OT) endpoints (one remote terminal
 unit and one protection relay per bay, two station HMIs and a station gateway)
 sit on their own `protection`, `telemetry` and `station` segments, in their own
 routing contexts, behind their own access pair and their own distribution pair.
-The only modeled path to the corporate tier is the `conduit` segment trunked
-between the two distribution pairs, plus each device's own dedicated management
-port. This profile is offline-checked and fits the TurboBulk contract; it has no
-separately recorded live qualification receipt.
+The only modeled forwarding path to the corporate tier is the `conduit` segment
+trunked between the two distribution pairs; each device's dedicated management
+port and the control house's shared serial console server are the two other
+declared, validated crossings. This profile is offline-checked and fits the
+TurboBulk contract; it has no separately recorded live qualification receipt.
+`patching = "panels"` generates but is not TurboBulk-loadable (front/rear ports
+need the Diode 4.7 bridge, as with every panels artifact).
 
 ```sh
 just plan profiles/utility.toml

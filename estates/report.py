@@ -866,8 +866,9 @@ def markdown(plan):
         lines.extend(["**Zone walkthrough:** start at a remote terminal unit or protection relay, open its "
             "telemetry or protection segment and follow its real cable to a station access switch. Trace that "
             "switch's two uplinks to the station distribution pair, then take the conduit trunks to the corporate "
-            "pair — that is the only modeled path between the tiers, apart from each device's own dedicated "
-            "management port on the substation management segment. Continue at the control centers, where the SCADA "
+            "pair — that is the only modeled forwarding path between the tiers, apart from each device's own "
+            "dedicated management port on the substation management segment and the control house's shared serial "
+            "console server. Continue at the control centers, where the SCADA "
             "front end, historian and EMS gateway carry their listener, replica, resource and power tables below. "
             "Those services hold no telemetry point, measurement, tag, setpoint or switching command, and nothing "
             "connects them to a station endpoint.", ""])

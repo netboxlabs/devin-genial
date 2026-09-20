@@ -18,7 +18,7 @@ just load-check build/utility-demo
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
 | `control_centers` | integer | `2` | `1` (primary only) or `2` (primary and backup) | grow-only (1 → 2) |
-| `substations` | array of tables | four authored substations | `1`–`24` entries; each needs a unique hyphen-separated lowercase `key` of at most 20 characters (no leading, trailing or doubled hyphen), also distinct with hyphens removed | grow-only (append entries) |
+| `substations` | array of tables | four authored substations | `1`–`24` entries; each needs a unique hyphen-separated lowercase `key` of at most 20 characters (starting with a letter; no leading, trailing or doubled hyphen), also distinct with hyphens removed | grow-only (append entries) |
 | `substations[].kind` | string | `distribution` | `transmission` or `distribution`. Selects the authored corporate presence and planning demand — **never a voltage class, electrical rating or bus arrangement** | **rebaseline** |
 | `substations[].bays` | integer | `6` | `2`–`16` installed switchyard bay positions | grow-only |
 | `wan_tiers_mbps` | array of integers | `[50, 100, 200, 500, 1000]` | Increasing unique integers `1`–`1000`, last exactly `1000` | **rebaseline** |
@@ -94,8 +94,9 @@ Corporate endpoints reach `access-NN` switches; station endpoints reach
 `ot-access-NN` switches. Each pair grows independently and retains every
 endpoint's reserved physical port as demand grows, so commissioning a bay never
 reroutes an existing relay, unit or desk. Endpoints remain single-homed. The two
-zones share one finite 38-switch distribution attachment budget; exceeding it
-fails at resolve time with the exact arithmetic.
+zones share one finite 38-switch distribution attachment budget — a
+defense-in-depth ceiling the current demand bounds cannot reach (the widest
+accepted substation needs 6).
 
 Segments per substation:
 
@@ -133,16 +134,22 @@ carrier edge device, or on any cable that reaches one, and no record outside the
 zone — service, FHRP group, VM interface or anything else — may bind a station
 port or address.
 
-**What crosses.** Exactly two modeled paths, both deliberate and both recorded:
+**What crosses.** Exactly three modeled crossings, all deliberate, all recorded
+and all independently checked:
 
 - the `conduit` segment, a fully meshed four-trunk link between the station and
   corporate distribution pairs that carries the conduit VLAN and nothing else.
   All four distribution switches hold an addressed gateway in it. This is the
   "actual routed path toward the control centers" the zone story needs, and it
-  is the only one;
+  is the only forwarding path;
 - each station switch's own dedicated management port, untagged into the
-  substation `management` segment and cabled to the equipment room's management
-  switch. Equipment has to be manageable; hiding that would be dishonest.
+  substation `management` segment and cabled to the control house's management
+  switch. Equipment has to be manageable; hiding that would be dishonest;
+- the control house's shared console server, whose console-server ports cable
+  to the console ports of both tiers' switches. That is serial CLI, not a
+  forwarding path, and the validator pins it exactly: station console ports
+  terminate only there, and the console server itself carries nothing but its
+  own management address.
 
 **What is not claimed.**
 

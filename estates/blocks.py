@@ -344,8 +344,11 @@ class Site:
               "description": f"Stable site reservation for {role}; child allocation fixed by network role"}, {"vrf": vrf, "tenant": self.tenant, "scope_site": self.key})
         vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": f"{self.name}-{role}", "vid": 10 * (index+1),
               "status": "active", "description": f"{role} segment"}, {"site": self.key, "tenant": self.tenant})
+        # `wan` carries no gateway SVI and the conduit holds four, not two:
+        # the reservation sentence belongs only to ordinary client segments.
+        gateways = "" if role in ("wan", "conduit") else "; .1 and .2 reserved for gateway SVIs"
         self.w.add("prefix", f"prefix/{self.id}/{role}", {"prefix": str(net), "status": "active",
-              "description": f"{self.name} {role}; .1 and .2 reserved for gateway SVIs"},
+              "description": f"{self.name} {role}{gateways}"},
               {"vrf": vrf, "vlan": vlan, "scope_site": self.key, "tenant": self.tenant})
         self.nets[role] = vlan, net
         return vlan, net

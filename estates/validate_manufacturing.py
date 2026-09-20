@@ -633,6 +633,24 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             continue
         report("mfg-zone-isolation", key, "Only that plant's own zone equipment and its segment prefix may name "
                                            "a plant-floor or conduit VLAN; no other record of any kind may.")
+    # Back-ported from the utility profile's review: a service, FHRP assignment,
+    # L2VPN termination, tunnel termination or VM interface can reach into a
+    # plant-floor zone by naming one of its interfaces or addresses directly,
+    # with no VLAN reference at all.
+    zone_devices = set().union(*ot_zones.values()) if ot_zones else set()
+    ot_records = {key for key, obj in objects.items()
+                  if obj["kind"] == "interface" and refs(key).get("device") in zone_devices}
+    ot_records |= {key for key, obj in objects.items()
+                   if obj["kind"] in {"ip_address", "mac_address"}
+                   and refs(key).get("assigned_object") in ot_records}
+    for key, obj in objects.items():
+        if obj["kind"] == "cable" or key in ot_records or key in zone_devices:
+            continue
+        if any(target in ot_records for value in refs(key).values()
+               for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)):
+            report("mfg-zone-isolation", key, "No record outside a plant's floor zone may bind that zone's "
+                                              "interfaces or their assigned addresses.")
+
     # An interface bond, bridge or subinterface is a second way to join two
     # devices that carries no VLAN reference at all.
     zone_of = {device: sid for sid, members in ot_zones.items() for device in members}

@@ -512,8 +512,8 @@ Segments per substation are `management` and `office` (corporate), `protection`,
 between the two distribution tiers), and `wan` for the carrier handoffs. There is
 no wireless segment: this profile models no radio, WLAN or mobile endpoint
 anywhere. The two zones keep separate access populations with separate port
-ledgers and share one finite 38-switch distribution attachment budget; exceeding
-it fails at resolve time with the exact arithmetic. See the
+ledgers and share one finite 38-switch distribution attachment budget — a
+defense-in-depth ceiling the current demand bounds cannot reach. See the
 [profile guide](../profiles/utility.md) for the zone boundary and what is
 explicitly not asserted — in particular that the separation is modeled, never
 enforced, and that no NERC CIP state, electronic security perimeter, SCADA/EMS

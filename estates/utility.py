@@ -10,11 +10,12 @@ The zone separation is the point of this profile, and it is modeled, not
 enforced. The station endpoints — one remote terminal unit and one protection
 relay per bay, two station HMIs and one station gateway — sit on their own
 `protection`, `telemetry` and `station` segments, in their own routing contexts,
-behind their own distribution pair; the only modeled path from that pair toward
-the corporate tier is the `conduit` segment trunked between the two distribution
-pairs, plus each device's dedicated management port. No station segment reaches a
-carrier edge device, and `validate_utility.py` proves that from the finished
-graph instead of trusting a contract.
+behind their own distribution pair; the only modeled forwarding path from that
+pair toward the corporate tier is the `conduit` segment trunked between the two
+distribution pairs, with each device's dedicated management port and the control
+house's shared serial console server as the two other declared crossings. No
+station segment reaches a carrier edge device, and `validate_utility.py` proves
+that from the finished graph instead of trusting a contract.
 
 What is deliberately *not* claimed anywhere: this is inventory and intended
 boundaries, never enforced security, a firewall policy, an air gap, an electronic
@@ -338,8 +339,9 @@ SHARED_ASSUMPTIONS = [
     "policy, access control list, route filter, data diode or air gap exists, and no electronic security perimeter, "
     "NERC CIP compliance state or security assessment is demonstrated or certified.",
     "The station distribution pair reaches the corporate tier only through the conduit segment trunked between the "
-    "two distribution pairs, and each station switch additionally reaches the substation management segment through "
-    "its own dedicated management port. Those are the two modeled paths; no station segment reaches a carrier edge "
+    "two distribution pairs; each station switch additionally reaches the substation management segment through its "
+    "own dedicated management port, and its console port reaches the control house's shared console server (serial "
+    "CLI, not a forwarding path). Those are the three modeled crossings; no station segment reaches a carrier edge "
     "device.",
     "Both distribution tiers share the one control-house equipment room. The zone boundary is modeled in the routing "
     "and VLAN graph, not by separate rooms, cabinets or enclosures, and no DIN-rail, fanless, hardened, "

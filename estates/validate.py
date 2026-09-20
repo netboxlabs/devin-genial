@@ -173,6 +173,14 @@ def validate(plan):
         if kind(refs(key).get("group")) != "owner_group":
             report("owner-group", key, "An infrastructure owner must reference its owner group for the pinned REST target.")
 
+    # Native description fields cap at 200 characters (NetBox v4.7.0
+    # netbox.models.features CharField max_length=200 across models).
+    for key, obj in objects.items():
+        description = obj["attrs"].get("description")
+        if isinstance(description, str) and len(description) > 200:
+            report("native-field-limit", key, "Description exceeds the native 200-character limit; "
+                                              "a live target would reject or truncate it.")
+
     # NetBox v4.7.0 dcim.models.racks.Rack.asset_tag: max_length=50, unique=True.
     rack_tags = {}
     for key in by_kind["rack"]:

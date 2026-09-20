@@ -735,6 +735,33 @@ class UtilityValidatorTests(unittest.TestCase):
                 "b": f"device/{SITE}/access-01/if/TenGigabitEthernet1/1/3"}))
         self.assertIn("utl-zone-isolation", self.mutated(bridge))
 
+    def test_a_vlanless_cable_to_the_management_switch_is_reported(self):
+        # The utility review's S1-2: a data port with no VLAN refs, cabled to a
+        # device role the old allow-list permitted wholesale.
+        def bridge(plan, objects):
+            template = next(o for o in plan["objects"] if o["kind"] == "cable"
+                            and o["attrs"].get("type") == "smf")
+            plan["objects"].append(dict(template, key="cable/vlanless-cross", refs={
+                "a": f"device/{SITE}/ot-access-01/if/TenGigabitEthernet1/1/3",
+                "b": f"device/{SITE}/mgmt-01/if/GigabitEthernet1/0/10"}))
+        self.assertIn("utl-zone-isolation", self.mutated(bridge))
+
+    def test_a_station_console_port_leaving_the_console_server_is_reported(self):
+        def rewire(plan, objects):
+            cable = next(o for o in plan["objects"] if o["kind"] == "cable"
+                         and o["refs"].get("a") == f"device/{SITE}/ot-access-01/console_port/Console")
+            cable["refs"]["b"] = f"device/{SITE}/edge-a/console_port/Console"
+        self.assertIn("utl-zone-isolation", self.mutated(rewire))
+
+    def test_overlong_descriptions_fail_generation_with_the_site_named(self):
+        # The utility review's S2-3: a long site_names override plus authored
+        # boilerplate overflowed NetBox's native 200-character description.
+        with self.assertRaises(DesignError) as caught:
+            small(substations=[dict(key="oakridge", kind="transmission", bays=16)],
+                  site_names={"sub-oakridge": {"name": "The Consolidated Municipal Power "
+                              "and Light Authority Oakridge Transmission Interconnection Yard"}})
+        self.assertIn("200-character", str(caught.exception))
+
     def test_a_station_gateway_borrowing_a_corporate_routing_context_is_reported(self):
         self.assertIn("utl-zone-isolation", self.mutated(
             lambda plan, objects: objects[f"prefix/{SITE}/office"]["refs"].__setitem__("vrf", "vrf/telemetry")))

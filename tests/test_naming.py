@@ -74,6 +74,12 @@ class NamingTests(unittest.TestCase):
             generate(_recipe(site_names={"br-s0001": {"name": "Renamed"}}),
                      previous=baseline)
         self.assertIn("append entries for new sites only", str(caught.exception))
+        # a FIRST-TIME entry for an already-built site is a rename too: the
+        # site shipped under its authored name (utility review S2-2)
+        with self.assertRaises(DesignError) as caught:
+            generate(_recipe(site_names=named | {"dc-01": {"name": "Renamed DC"}}),
+                     previous=baseline)
+        self.assertIn("renames a running estate", str(caught.exception))
         with self.assertRaises(DesignError):
             generate(_recipe(site_names={}), previous=baseline)
 

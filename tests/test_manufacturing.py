@@ -639,6 +639,14 @@ class ManufacturingValidatorTests(unittest.TestCase):
             lambda plan, objects: objects[f"device/{SITE}/console-01/if/mgmt0"]["refs"].__setitem__(
                 "untagged_vlan", f"vlan/{SITE}/process")))
 
+    def test_a_record_binding_a_plant_floor_interface_is_reported(self):
+        # Back-ported from the utility review: reaching into the zone by naming
+        # an interface directly carries no VLAN reference for the sweep to see.
+        def bind(plan, objects):
+            journal = next(o for o in plan["objects"] if o["kind"] == "journal_entry")
+            journal["refs"]["assigned_object"] = f"device/{SITE}/ot-access-01/if/GigabitEthernet1/0/1"
+        self.assertIn("mfg-zone-isolation", self.mutated(bind))
+
     def test_panels_mode_generates_and_validates(self):
         # Regression: the OT tier's patch panels must not collide with the
         # corporate tier's in the shared equipment room.

@@ -466,17 +466,36 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         # Allow-list, not deny-list: a station access switch or endpoint may
         # only reach this substation's own zone and its own management switch,
         # so a cable to another substation's station zone is reported too.
+        management_devices = set(roles["role/management"])
         for device in sorted(station_switches | set(station_expected)):
-            allowed_peers = ot_zone | set(roles["role/management"])
             for port in children[("device", device)]:
                 peer = peers.get(port)
                 if kind_of(port) != "interface" or peer is None:
                     continue
-                if kind_of(peer) != "interface" or refs(peer).get("device") not in allowed_peers - {device}:
-                    report("utl-zone-isolation", port, "A station access switch or endpoint attaches only to this "
-                                                       "substation's own station zone and its management switch; "
-                                                       "never to corporate forwarding equipment, a circuit, or "
-                                                       "another substation.")
+                # Gate on the port, not just the device: only the dedicated
+                # management port may leave the zone, so a VLAN-less data-port
+                # cable to the management switch is a crossing too.
+                wanted = management_devices if attrs(port).get("mgmt_only") else ot_zone - {device}
+                if kind_of(peer) != "interface" or refs(peer).get("device") not in wanted:
+                    report("utl-zone-isolation", port, "A station access switch or endpoint data port stays inside "
+                                                       "this substation's own station zone; only its dedicated "
+                                                       "management port reaches the management switch — never "
+                                                       "corporate forwarding equipment, a circuit, or another "
+                                                       "substation.")
+        # The shared serial console server is the third declared crossing:
+        # serial CLI, never a forwarding path. Read cables directly — the
+        # terminal-peer map drops conflicted ends.
+        console_servers = set(roles["role/console-server"])
+        for key, obj in objects.items():
+            if kind_of(key) != "cable":
+                continue
+            ends = [obj["refs"].get("a"), obj["refs"].get("b")]
+            for near, far in (ends, ends[::-1]):
+                if kind_of(near) == "console_port" and refs(near).get("device") in ot_zone:
+                    if kind_of(far) != "console_server_port" or refs(far).get("device") not in console_servers:
+                        report("utl-zone-isolation", key, "A station console port terminates only on the "
+                                                          "substation's own console server — the declared serial "
+                                                          "crossing.")
 
         # --- addressing --------------------------------------------------------
         if sid not in allocations:
@@ -570,8 +589,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     # The VLAN sweep above sees segment membership. A service, FHRP assignment,
     # L2VPN termination, tunnel termination or VM interface can reach into the
     # zone by naming one of its interfaces or addresses directly, with no VLAN
-    # reference at all. Cables are excluded because the peer rules above already
-    # constrain every physical attachment.
+    # reference at all. Cables are excluded because the per-port allow-lists and
+    # the console-cable pin above constrain every physical attachment, data and
+    # serial alike.
     zone_devices = set().union(*ot_zones.values()) if ot_zones else set()
     ot_records = {key for key, obj in objects.items()
                   if obj["kind"] == "interface" and refs(key).get("device") in zone_devices}
@@ -584,8 +604,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if any(target in ot_records for value in refs(key).values()
                for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)):
             report("utl-zone-isolation", key, "No record outside a substation's station zone may bind that zone's "
-                                              "interfaces or addresses; the control-center services never "
-                                              "reference a station endpoint.")
+                                              "interfaces or their assigned addresses.")
 
     # An interface bond, bridge or subinterface is a second way to join two
     # devices that carries no VLAN reference at all.

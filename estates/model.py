@@ -236,6 +236,15 @@ class World:
                     "Changing or removing existing site_names entries requires a new estate "
                     f"(renames break Diode matching identities): {', '.join(changed)}. "
                     "Growth may append entries for new sites only.")
+            # A first-time entry for an already-built site is a rename too: the
+            # site shipped under its authored name, and growth must not move it.
+            renamed = sorted(sid for sid in self.recipe.get("site_names", {})
+                             if sid not in before and sid in previous.get("allocations", {}))
+            if renamed:
+                raise DesignError(
+                    "site_names may not name a site the previous plan already built "
+                    f"(that renames a running estate): {', '.join(renamed)}. "
+                    "Renaming requires a new baseline; growth may name new sites only.")
             self.allocations = dict(previous["allocations"])
             self.design_assignments = dict(previous.get("design_assignments", {}))
             if any(v not in ("modern", "inherited", "refreshed") for v in self.design_assignments.values()):
@@ -341,6 +350,16 @@ class World:
             raise DesignError("site display names must be globally unique; duplicates: "
                               + "; ".join(f"{name} ({', '.join(keys)})" for name, keys in sorted(duplicates.items()))
                               + ". Override one with site_names, or change the seed.")
+        # Native NetBox description fields cap at 200 characters. Long authored
+        # boilerplate plus a long site_names override can overflow silently;
+        # fail here with the object named instead of at target write time.
+        overlong = sorted(key for key, obj in self.objects.items()
+                          if isinstance(obj["attrs"].get("description"), str)
+                          and len(obj["attrs"]["description"]) > 200)
+        if overlong:
+            shown = ", ".join(overlong[:5]) + (" …" if len(overlong) > 5 else "")
+            raise DesignError(f"{len(overlong)} descriptions exceed the native 200-character limit "
+                              f"({shown}); shorten the site_names override that feeds them.")
         return dict(schema_version=1, generator_version=__version__, recipe=self.recipe,
                     hardware_digest=digest(self.catalog), allocations=self.allocations,
                     reservations=self.reservations,
