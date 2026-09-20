@@ -101,7 +101,8 @@ class ComposerTests(unittest.TestCase):
             self.assertIn("Maintenance — a planned span window", sheet)
             self.assertIn("refuses to load `changed/`", sheet)
             self.assertIn("just demo-recipe", sheet)
-            self.assertIn("maintenance https://netbox.example", sheet)
+            self.assertIn("recipe-v2.toml maintenance", sheet)
+            self.assertNotIn("(**None**)", sheet)
 
     def test_a_scenario_snapshot_refusal_names_the_policy(self):
         # Run #26's second S2: the guardrail must name itself, not read as a
@@ -133,9 +134,9 @@ class ComposerTests(unittest.TestCase):
             self.assertIn("Show the wireless story.", sheet)
             self.assertIn("/wireless/wireless-lans/", sheet)
             # The closing block scopes its retire to whichever branch is live.
-            self.assertIn("recompose from the edited recipe plus this plan", sheet)
-            self.assertIn("did **not** run the growth block", sheet)
-            self.assertIn("fresh cheat sheet", sheet)
+            self.assertIn("offline compose: identities survive", sheet)
+            self.assertIn("nothing is retired", sheet)
+            self.assertIn("fresh cheat", sheet)
             # Feature-aware growth block: scenario regen, no drift line here.
             self.assertNotIn("just drift ", sheet)
 
@@ -180,7 +181,8 @@ class ComposerTests(unittest.TestCase):
             self.assertEqual((out / "recipe.toml").read_text(), recipe)
             sheet = (out / "DEMO.md").read_text()
             self.assertIn("Harbor Point Substation", sheet)
-            self.assertIn("shaped by the customer's own recipe", sheet)
+            self.assertIn("custom shape from", sheet)
+            self.assertIn("station (OT) zone", sheet)  # the profile hook survives --recipe
             self.assertNotIn("Fairhaven", sheet)  # no stock-template leakage
             # Identity flags conflict with --recipe and say why.
             status, text, _ = self.call("--json", "demo", "--recipe", path,

@@ -453,6 +453,10 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
             raise DesignError(f"--recipe {recipe} is not valid TOML: {exc}") from exc
         if previous is not None and not Path(previous).is_file():
             raise DesignError(f"--previous {previous}: not a readable plan.json")
+        if previous is not None and out is None:
+            # A grown compose must not collide with its predecessor's default
+            # directory; give it its own deterministic home.
+            out = f"build/demos/{resolved['namespace']}-v2"
         spec = resolve(profile=resolved["profile"], vendor="default", name=resolved["name"],
                        namespace=resolved["namespace"], seed=resolved["seed"], features=features,
                        sites=None, out=out, target=target, branch=branch)
@@ -845,14 +849,13 @@ def demo_markdown(spec, facts, artifacts, live):
     template = PROFILES[spec["profile"]]
     counts, out = facts["counts"], spec["out"]
     estate = f"{out}/estate"
+    hook, size = template.hook, template.size
+    if spec["profile"] == "regional-bank" and not facts.get("inherited_site"):
+        hook = "Paired data centers carry the shared services; the branches consume them."
     if spec.get("recipe_path"):
-        # A customer-shaped estate: the template's size prose and hook describe
-        # the stock demand, so derive both from the recipe and the graph.
-        hook = (f"{counts['site']} sites under the {template.label.lower()} grammar, "
-                f"shaped by the customer's own recipe.")
+        # A customer-shaped estate: the size prose describes the stock demand,
+        # so derive it from the recipe — but the profile's claim stays.
         size = f"custom shape from `{spec['recipe_path']}` — {counts['site']} sites (see the recipe)"
-    else:
-        hook, size = template.hook, template.size
     lines = [f"# {_cell(spec['name'])} — demo cheat sheet", "",
              f"**{_cell(template.label)}**, composed by Genial {spec['generator_version']}. "
              + ("Loaded and strictly verified on a live branch." if live else
@@ -874,6 +877,8 @@ def demo_markdown(spec, facts, artifacts, live):
         ["Recipe", f"`{out}/recipe.toml`"],
         ["Artifact", f"`{estate}` (report: `{estate}/report.md`)"],
         ["Feature packs", ", ".join(spec["features"]) or "none"],
+        *([["New in this growth", ", ".join(f"**{_cell(name)}**" for name in facts["new_sites"])]]
+          if facts.get("new_sites") else []),
         ["Branch", f"`{live['branch']}`" if live else "not loaded"],
         ["Open at", f"[{live['ui_url']}]({live['ui_url']})" if live else "— (load it first, below)"],
     ])
@@ -1080,7 +1085,7 @@ def demo_markdown(spec, facts, artifacts, live):
             "### Maintenance — a planned span window", "",
             f"`{out}/maintenance/` holds the provider span-maintenance story: `baseline/` healthy "
             f"and `changed/` with one leased inter-PoP span "
-            f"(**{_cell(facts['names'].get(window['subject'], window['subject']))}**) set offline, "
+            f"(**{_cell(facts['names'].get(window['subject']) or window['subject'].removeprefix('circuit/'))}**) set offline, "
             f"plus `report.md` — customer attribution, the traceable alternate path and the exact "
             f"remaining-protection findings ({len(window['expected_findings'])}), verified with a "
             "byte-identical inverse restoration.", "",
@@ -1125,8 +1130,10 @@ def demo_markdown(spec, facts, artifacts, live):
             f'  "$TARGET/api/dcim/devices/?tenant={first}&_branch=$SCHEMA&brief=true&limit=0" | jq .count',
             "# 2. Their operated equipment escalates to the provider's per-account desk.",
             'curl -s -H "Authorization: Token $NETBOX_TOKEN" \\',
-            '  "$TARGET/api/tenancy/contact-assignments/?object_type=dcim.device&_branch=$SCHEMA&limit=0" \\',
+            '  "$TARGET/api/tenancy/contact-assignments/?object_type=dcim.device&_branch=$SCHEMA&limit=1000" \\',
             f"  | jq '[.results[] | select(.contact.name | contains(\"{account}\"))] | length'",
+            "# (client-side filter over one page — the explicit limit is the page cap;",
+            "#  cross-check against the server-side tenant count above)",
             "```", "",
             "The first count is every owned device; the second is the operated subset — access, "
             "distribution, WAN edge, APs, management and console server — bound to that account's "
@@ -1166,22 +1173,22 @@ def demo_markdown(spec, facts, artifacts, live):
     lines.extend([
         "# Re-run the full strict readback at any time. Zero writes.",
         f"just verify-target {estate} {origin} {branch}", "",
-        "# Grow it without renaming anything. FIRST edit a copy of the recipe (append",
-        "# the new demand — running it unedited regenerates this same estate). Then",
-        "# retire this branch and recompose from the edited recipe plus this plan:",
-        "# identities, ports and addresses survive, and you get a fresh cheat sheet",
-        "# for the second call (one namespace = one live branch, so retire first).",
-        f"cp {out}/recipe.toml {out}/recipe-v2.toml   # then edit: append demand",
-        f"just retire {origin} {branch} {_shell(spec['namespace'])}",
-        f"just demo-recipe {out}/recipe-v2.toml {_shell(','.join(spec['features']))} "
-        f"{origin} '<v2 branch name>' {out}/estate/plan.json",
-        "# Prefer the manual sequence? first-target.md §7 is the same journey",
-        "# step by step; regenerate any feature artifacts against the grown plan.",
+        "# Grow it without renaming anything, in this order — nothing is retired",
+        "# until the grown compose exists and has passed every offline gate:",
+        f"cp {out}/recipe.toml {out}/recipe-v2.toml   # 1. edit: append the new demand",
+        f"just demo-recipe {out}/recipe-v2.toml {_shell(','.join(spec['features']))} '' '' {out}/estate/plan.json",
+        "#    ^ 2. offline compose: identities survive, and it writes a fresh cheat",
+        f"#      sheet at build/demos/{spec['namespace']}-v2/DEMO.md for the second call.",
+        f"just retire {origin} {branch} {_shell(spec['namespace'])}   # 3. now retire this branch",
+        "# 4. go live with the commands the NEW sheet prints (branch, load, verify),",
+        "#    and close the grown demo out with ITS branch per that sheet.",
         "```", "",
-        "If you did **not** run the growth block, leave the target exactly as you found "
-        "it — the branch AND the namespace's main-scoped rows, which branch deletion "
-        "alone does not remove. Retiring with the branch already gone still deletes the "
-        "rows, which breaks any other live branch's readback (the command warns).", "",
+        "Leave the target exactly as you found it — the branch AND the namespace's "
+        "main-scoped rows, which branch deletion alone does not remove. This retires the "
+        "branch THIS sheet loaded; a grown compose has its own sheet whose closing "
+        "section covers its own branch. Retiring with the branch already gone still "
+        "deletes the rows, which breaks any other live branch's readback (the command "
+        "warns).", "",
         "```sh",
         f"just retire {origin} {branch} {_shell(spec['namespace'])}",
         "```", "",
@@ -1354,6 +1361,12 @@ def run(spec, *, cli, stream=None):
 
     plan = json.loads((estate / "plan.json").read_text())
     facts = _facts(plan)
+    if spec.get("previous"):
+        # The second call's opening line: what this growth actually added.
+        before = {obj["key"] for obj in json.loads(Path(spec["previous"]).read_text())["objects"]
+                  if obj["kind"] == "site"}
+        facts["new_sites"] = [obj["attrs"]["name"] for obj in plan["objects"]
+                              if obj["kind"] == "site" and obj["key"] not in before]
     (out / "DEMO.md").write_text(demo_markdown(spec, facts, artifacts, live)
                                  + "\n" + timings_markdown(runner.steps, started_at))
     receipt = {"schema_version": 1, "artifact": "demo-compose", "composed_at": started_at,

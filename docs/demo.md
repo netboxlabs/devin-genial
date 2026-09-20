@@ -84,10 +84,12 @@ just demo-recipe build/lakeshore/recipe.toml scenario https://netbox.example dem
 `name`, `namespace`, `seed`, `[hardware]` and `[site_names]` — copies it
 verbatim into the output, and writes a cheat sheet that follows the customer's
 shape instead of the stock template. The identity flags conflict with it by
-design: edit the recipe, not the command line. Growth composes too:
-`just demo-recipe recipe-v2.toml FEATURES TARGET BRANCH v1/plan.json` reuses the
-previous plan as the allocation ledger and writes a fresh cheat sheet for the
-second call — retire the previous branch first. Walkthrough steps are graph
+design: edit the recipe, not the command line. Growth composes too, offline
+first so nothing is retired until the grown compose exists and has passed every
+gate: `just demo-recipe recipe-v2.toml FEATURES '' '' v1/plan.json` reuses the
+previous plan as the allocation ledger and writes a fresh cheat sheet into its
+own `build/demos/<namespace>-v2/`; then retire the old branch and go live with
+the commands the new sheet prints. Walkthrough steps are graph
 facts: a bank recipe without `design_mix`/`site_designs` has no inherited
 branch, so the merger step is omitted rather than pointed at a site with no
 merger — add those keys if the acquisition story should be on screen.
@@ -103,16 +105,16 @@ Changing `--vendor` moves counts similarly.
 
 | Profile | Shape | Objects | Sites | Devices | Cables |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `regional-bank` | 2 DCs, HQ (48 staff), 5 branches — 3 modern, 1 inherited, 1 refreshed | 8,428 | 8 | 390 | 774 |
-| `enterprise-data-center` | 2 DCs, 4 workloads, 36 rack-diverse VMs | 2,967 | 2 | 60 | 248 |
-| `school-district` | 1 district DC, 2 campuses, 20 classrooms, 1 lab | 4,360 | 3 | 241 | 437 |
-| `hospital-clinics` | 1 DC, 1 hospital (3 wards, 2 imaging), 2 clinics | 4,676 | 4 | 177 | 402 |
-| `provider-backbone` | 3 PoPs in 3 metros, 2 customers, 5 premises | 3,526 | 9 | 97 | 267 |
-| `retail-chain` | 2 commerce DCs, support centre, 1 DC, 6 stores | 9,971 | 10 | 396 | 926 |
-| `university-campus` | Campus DC, 2 academic buildings, 1 hall, library | 8,484 | 5 | 491 | 881 |
-| `msp` | 1 NOC, 3 accounts, 5 managed offices | 5,617 | 6 | 225 | 508 |
-| `manufacturing` | 2 corporate DCs, 2 plants with IT/OT zones | 6,773 | 4 | 299 | 669 |
-| `utility` | 1 control center, 3 substations, 24 bays | 4,798 | 4 | 145 | 411 |
+| `regional-bank` | 2 DCs, HQ (48 staff), 5 branches — 3 modern, 1 inherited, 1 refreshed | 8,434 | 8 | 390 | 774 |
+| `enterprise-data-center` | 2 DCs, 4 workloads, 36 rack-diverse VMs | 2,973 | 2 | 60 | 248 |
+| `school-district` | 1 district DC, 2 campuses, 20 classrooms, 1 lab | 4,366 | 3 | 241 | 437 |
+| `hospital-clinics` | 1 DC, 1 hospital (3 wards, 2 imaging), 2 clinics | 4,682 | 4 | 177 | 402 |
+| `provider-backbone` | 3 PoPs in 3 metros, 2 customers, 5 premises | 3,532 | 9 | 97 | 267 |
+| `retail-chain` | 2 commerce DCs, support centre, 1 DC, 6 stores | 9,977 | 10 | 396 | 926 |
+| `university-campus` | Campus DC, 2 academic buildings, 1 hall, library | 8,490 | 5 | 491 | 881 |
+| `msp` | 1 NOC, 3 accounts, 5 managed offices | 5,623 | 6 | 225 | 508 |
+| `manufacturing` | 2 corporate DCs, 2 plants with IT/OT zones | 6,779 | 4 | 299 | 669 |
+| `utility` | 1 control center, 3 substations, 24 bays | 4,804 | 4 | 145 | 411 |
 
 Load time scales with objects: expect a minute or two per few thousand on a
 local target, plus a silent several-minute finalizer window on the larger ones.
