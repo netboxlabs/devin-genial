@@ -466,6 +466,7 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
         return spec | {"previous": str(previous) if previous else None,
                        "seed_source": "from the recipe", "recipe_path": str(recipe),
                        "recipe_source": source, "site_names": resolved.get("site_names", {}),
+                       "hardware_selection": dict(resolved.get("hardware", {})),
                        "vendor_note": _vendor_note(resolved.get("hardware", {}))}
     if profile not in PROFILES:
         raise DesignError(f"unknown --profile {profile!r}; choose one of: " + ", ".join(PROFILES))
@@ -523,6 +524,7 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
             "site_names": _site_overrides(sites), "sites_file": str(sites) if sites else None,
             "out": str(out).rstrip("/") or ".", "target": target or None, "branch": branch or None,
             "recipe_path": None, "previous": None, "vendor_note": VENDORS[vendor][1],
+            "hardware_selection": dict(VENDORS[vendor][0]),
             "generator_version": __version__}
 
 
@@ -1209,7 +1211,7 @@ def demo_markdown(spec, facts, artifacts, live):
         "deletes the rows, which breaks any other live branch's readback (the command "
         "warns).", "",
         "```sh",
-        f"just retire {origin} {branch} {_shell(spec['namespace'])}",
+        f"just retire {origin} {branch} {_shell(spec['namespace'])}   # skip if growth step 3 already retired it",
         "```", "",
         "One namespace has one verifiable branch at a time. A side-by-side before/after demo "
         "needs two namespaces planned from the start.", "",
@@ -1228,22 +1230,23 @@ def demo_markdown(spec, facts, artifacts, live):
         "Capacity figures are purchased or installed capacity and exact decimal reserve "
         "arithmetic — never measured traffic, throughput or headcount.",
     ]
-    if spec["vendor"] == "aruba":
+    selection = spec.get("hardware_selection", {})
+    if selection.get("ap") == "aruba":
         honesty.append(
-            ("`--vendor aruba` declares the AP-505's real 5 GHz + 2.4 GHz split, and a WLAN "
+            ("The Aruba AP line declares the AP-505's real 5 GHz + 2.4 GHz split, and a WLAN "
              "rides `wlan1` in this estate, so that SSID carries 2.4 GHz channels — say which "
              "band you are showing."
              if facts.get("second_radio_assigned") else
-             "`--vendor aruba` declares the AP-505's real 5 GHz + 2.4 GHz split, but nothing "
+             "The Aruba AP line declares the AP-505's real 5 GHz + 2.4 GHz split, but nothing "
              "rides `wlan1` in this profile: the second radio renders as an unused interface "
              "(no channel, no WLAN). Show `wlan0`'s 5 GHz plan; do not click into `wlan1` "
              "expecting a 2.4 GHz story.")
             if counts.get("wireless_lan") else
-            "`--vendor aruba` was requested, but this profile models no radio, WLAN or wireless "
+            "The Aruba AP line was selected, but this profile models no radio, WLAN or wireless "
             "endpoint of any kind — the AP line changes the hardware digest and nothing on screen.")
-    if spec["vendor"] == "juniper":
+    if "juniper" in (selection.get("access"), selection.get("leaf")):
         honesty.append(
-            "`--vendor juniper` moves the access and leaf families only; the AP family has no "
+            "The Juniper line moves the access and leaf families only; the AP family has no "
             "Juniper line in the catalog and stays on the reference model. The alternates meet "
             "or beat the models they replace on every port, PSU, PoE and optics quantity.")
     if counts.get("wireless_lan"):

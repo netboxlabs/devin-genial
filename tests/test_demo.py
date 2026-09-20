@@ -101,6 +101,20 @@ class ComposerTests(unittest.TestCase):
             self.assertEqual(s, 2, text)
             self.assertIn("--recipe", text)
 
+    def test_recipe_hardware_selection_earns_the_vendor_honesty_lines(self):
+        # Run #33: the honesty gate reads the resolved selection, not the flag.
+        recipe = ('profile = "hospital-clinics"\nnamespace = "bayviewtest"\n'
+                  'name = "Bayview Test"\n\n[hardware]\nap = "aruba"\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "bay.toml"
+            path.write_text(recipe)
+            out = Path(temporary) / "demo"
+            s, text, _ = self.call("--json", "demo", "--recipe", path, "--out", out)
+            self.assertEqual(s, 0, text)
+            sheet = (out / "DEMO.md").read_text()
+            self.assertIn("Aruba AP line", sheet)
+            self.assertIn("rides `wlan1` in this profile", sheet)
+
     def test_the_enterprise_failure_domain_step_names_a_real_workload(self):
         # Run #31: the stock key must never leak into a renamed-workload sheet.
         recipe = ('profile = "enterprise-data-center"\nnamespace = "halbtest"\n'
