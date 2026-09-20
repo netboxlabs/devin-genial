@@ -183,6 +183,9 @@ for the separately recorded pinned-target live qualification.
 - `estates/power_scenario.py`: property-selected shared defect, exact finding and restoration checks.
 - `estates/span_scenario.py`: provider-only status maintenance, actual premise
   attribution and directed headroom; sample `profiles/provider-maintenance.toml`.
+- `estates/drift.py`: the Assurance discovery-drift twin — property-selected
+  observed drift, its exact expected deviation manifest and the SE walkthrough;
+  `just drift PLAN OUT` and `just drift-check OUT`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
@@ -220,6 +223,23 @@ for the separately recorded pinned-target live qualification.
   Carrier-wide failure is outside this contract; show actual span providers per
   PoP without promising carrier diversity. External-transit journals must leave
   remote interface and owner unknown, unlike real two-site handoff records.
+- The Assurance drift twin is a subcommand over a frozen healthy plan, never a
+  recipe key: `drift` writes a separate artifact bound to that plan's SHA and
+  never mutates the baseline. Drift subjects are property-selected — the first
+  eligible site in permanent allocation order, then the first eligible switch,
+  ports and endpoints by canonical key — so growth keeps the same subjects.
+  `observed/` is a projection of the plan: only drifted records are emitted, and
+  every other record exists to resolve nested identities. A drifted record must
+  keep its documented Diode matching identity, a created record must not reuse
+  one, and every emitted *and nested* kind must sit inside the reviewed NetBox
+  4.6 allowlist. Diode expresses create and update only and its IngestRequest
+  carries no tombstone, so documented-not-observed items emit nothing and are
+  declared `requires-target-side-comparison` rather than faked. Expected
+  deviations are a prediction from the public changeset contract; never claim
+  live Assurance behaviour, review-versus-auto-apply mode or matching outcomes
+  without target-side evidence. `drift-check` recomputes the whole manifest from
+  the bound baseline, rebinds every observed wire byte and re-renders the
+  walkthrough. The observed payload is an ingest artifact, not a loadable estate.
 - Scenario verification checks the exact code/object findings and inverse change.
   Saved scenario checking re-exports both plans and binds every wire file to its graph.
   Ordinary validation must reject the defective snapshot; never add a blanket

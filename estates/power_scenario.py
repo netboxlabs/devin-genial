@@ -34,14 +34,17 @@ def _require(condition, message):
         raise DesignError(f"Power scenario: {message}")
 
 
-def _healthy(plan):
-    _require(isinstance(plan, dict) and isinstance(plan.get("recipe"), dict), "baseline must be a frozen plan")
-    _require(type(plan.get("schema_version")) is int and plan["schema_version"] == 1 and
-             plan.get("generator_version") == __version__, "baseline needs canonical schema 1 and the current generator version; regenerate unsupported frozen plans")
-    _require(plan["recipe"].get("profile") in PROFILES, "baseline needs a supported bank, enterprise DC, school, hospital, provider, retail, university, MSP or manufacturing profile")
-    _require(plan.get("hardware_digest") == digest(hardware_catalog()), "baseline hardware catalog fingerprint differs from this generator")
+def _healthy(plan, label="Power scenario"):
+    def _check(condition, message):
+        if not condition:
+            raise DesignError(f"{label}: {message}")
+    _check(isinstance(plan, dict) and isinstance(plan.get("recipe"), dict), "baseline must be a frozen plan")
+    _check(type(plan.get("schema_version")) is int and plan["schema_version"] == 1 and
+           plan.get("generator_version") == __version__, "baseline needs canonical schema 1 and the current generator version; regenerate unsupported frozen plans")
+    _check(plan["recipe"].get("profile") in PROFILES, "baseline needs a supported bank, enterprise DC, school, hospital, provider, retail, university, MSP or manufacturing profile")
+    _check(plan.get("hardware_digest") == digest(hardware_catalog()), "baseline hardware catalog fingerprint differs from this generator")
     findings = validate(plan)
-    _require(not findings, f"baseline must be healthy before planting a defect: {findings[:3]}")
+    _check(not findings, f"baseline must be healthy before planting a defect: {findings[:3]}")
 
 
 def _graph(plan):

@@ -85,6 +85,14 @@ span-scenario plan='build/provider-v9/plan.json' output='build/span-maintenance'
 scenario-check scenario='build/power-diversity/scenario.json':
     python3 -m estates scenario-check {{quote(scenario)}}
 
+# Build the Assurance drift twin: an observed Diode payload plus its exact deviation manifest
+drift plan='build/bank-v9/plan.json' output='build/discovery-drift':
+    python3 -m estates drift {{quote(plan)}} --out {{quote(output)}}
+
+# Recompute a saved drift twin from its bound baseline and rebind the observed payload
+drift-check output='build/discovery-drift':
+    python3 -m estates drift-check {{quote(output)}}
+
 # Independent mutation tests and growth/determinism/scale regressions
 check:
     python3 -m unittest discover -s tests -v

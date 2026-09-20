@@ -10,6 +10,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Shared power-diversity demonstration](#shared-power-diversity-demonstration)
 - [Acquisition and refresh walkthrough](#acquisition-and-refresh-walkthrough)
 - [Provider span maintenance](#provider-span-maintenance)
+- [Assurance discovery drift](#assurance-discovery-drift)
 
 ## Shared power-diversity demonstration
 
@@ -170,3 +171,78 @@ This is inventory status reconciliation; no router configuration, approval,
 forwarding or failover execution is added. Other stacks and cable rewiring
 remain unqualified. Generated scenario envelopes conservatively describe what
 generation itself proved; this separate receipt establishes the local execution.
+
+## Assurance discovery drift
+
+NetBox Assurance compares Diode-ingested observation against documented NetBox
+state, so it demonstrates nothing on flawless data. The drift twin supplies the
+missing half: keep a generated estate as documented truth, then ingest a bounded,
+believably drifted "observed" snapshot and let the review screen do the talking.
+
+```sh
+just generate profiles/bank.toml build/bank-v9
+just drift build/bank-v9/plan.json build/discovery-drift
+just drift-check build/discovery-drift
+devenv --profile diode shell -- just sdk-check build/discovery-drift/observed
+```
+
+The artifact holds `baseline/plan.json` (a frozen copy of the bound baseline),
+`observed/` (the incremental Diode payload), `manifest.json` (the exact expected
+deviation set), `drift.md` (the operator talk track) and `checks.json`. There is
+no `demo` recipe key and no resolver change: `drift` is a subcommand over an
+already healthy frozen plan, like `power-scenario`.
+
+Fourteen drift items land on one selected site, covering the four behaviours
+NetBox Labs advertises Assurance detecting: undocumented objects, drift against
+documented intent, documented infrastructure discovery never saw, and data-quality
+damage. Every subject is property-selected from stable keys — the site is the
+first eligible one in permanent allocation order, then the first eligible switch,
+ports and endpoints by canonical key — so growing the estate keeps the same
+subjects rather than reshuffling them. On the default bank estate that anchor is
+`hq-01`, and the set drifts a replaced chassis serial, a repurposed port
+description, a port moved onto an undocumented VLAN, a shut port, a re-addressed
+access point, a blank serial, an upper-cased DNS name, a re-addressed IP
+appearing on a second device and a lower-cased serial, alongside an undocumented
+switch with its uplink and management address. Two stories deliberately link up:
+the port moved onto the VLAN that the undocumented-VLAN item creates, and the
+old address of the re-addressed endpoint reappearing on a neighbour.
+
+`observed/` is a **projection** of the plan: only the drifted records are emitted
+in full, and every other record exists to resolve nested matching identities. So
+the payload is fifteen records, not a whole estate, and each one carries the exact
+documented site, tenant and device identities Assurance matches on. Changing a
+matching identity is a hard error — that would create a duplicate object rather
+than a field deviation. The payload is restricted to models that exist on NetBox
+4.6, which is what an Assurance-equipped target runs here; the 4.7-only additions
+in this generator's Diode coverage (cooling records, module bay types) are
+excluded by an allowlist checked against the emitted **and** nested kinds.
+
+**Absence cannot be ingested.** Diode's reconciler defines create, update and
+noop change types and its `IngestRequest` carries no tombstone, so the two
+documented-not-observed items are named in the manifest and in `drift.md` with
+`detection: requires-target-side-comparison`, and deliberately emit nothing. The
+manifest does not fake a deviation it cannot produce.
+
+`just drift-check` recomputes the entire manifest from the bound baseline plan,
+re-exports the observed payload and compares every wire file byte for byte, then
+re-renders `drift.md` and compares that too. A tampered manifest, baseline copy,
+request file or walkthrough fails. The recorded inverse proves that replacing
+every observed record with its documented record restores the exact frozen
+baseline, so re-ingesting the baseline's own Diode files resolves every changed
+field; the undocumented objects are listed separately as
+`not_cleared_by_ingest`, because no ingest withdraws them.
+
+**No live Assurance evidence exists.** Expected deviations are what this ingest
+*should* produce against the bound baseline, derived from the public Diode
+changeset contract. Whether a target opens, diffs, applies or clears them — and
+whether it runs in review (`autoApplyChangesets: false`, which the operator
+forces when Assurance is licensed) or auto-apply — requires target-side evidence
+under the Cloud qualification protocol. This repository ships no Cloud ingest
+recipe; use the target instance's own Diode client, then open
+**Assurance → Deviations → Active Deviations**. Exact screen labels are
+version-dependent; check them against the target build before a call.
+
+The observed payload is an ingest artifact, not an estate. It has no `plan.json`,
+fails ordinary validation by construction, and must never be pushed through the
+TurboBulk loader. Ordinary `just verify` on the baseline is untouched: drift
+artifacts are gated by `just drift-check` alone.
