@@ -755,7 +755,12 @@ def _facts(plan):
                            "channel": obj["attrs"]["rf_channel"],
                            "ssid": index[obj["refs"]["wireless_lans"][0]]["attrs"]["ssid"],
                            "count": len(kinds.get("wireless_lan", []))}
-                          for obj in kinds.get("interface", [])
+                          # Guest-carrying radios first: on a segmentation call
+                          # the AP that shows staff AND guest is the story.
+                          for obj in sorted(kinds.get("interface", []),
+                                            key=lambda o: (not any(
+                                                "guest" in (index.get(k, {}).get("attrs", {}).get("ssid") or "").lower()
+                                                for k in o.get("refs", {}).get("wireless_lans") or []), o["key"]))
                           if obj["attrs"].get("rf_channel") and obj["refs"].get("wireless_lans")
                           and obj["refs"].get("device") in index
                           and obj["refs"]["wireless_lans"][0] in index), None),
@@ -933,7 +938,7 @@ def demo_markdown(spec, facts, artifacts, live):
                       f"{_ui(live, '/wireless/wireless-lans/')} — {w['count']} WLANs. Open "
                       f"**{_cell(w['device'])}** → *Interfaces*: radio `{w['radio']}` carries "
                       f"`{_cell(w['ssid'])}` on channel `{w['channel']}`, and its `eth0` uplink is "
-                      "a real tagged trunk (untagged wireless management, tagged client VLANs) — "
+                      "a real tagged trunk (untagged wireless management, tagged client segments) — "
                       "segmentation you can trace, not describe."))
     step = template.step
     if "{inherited}" in step:
@@ -1141,7 +1146,7 @@ def demo_markdown(spec, facts, artifacts, live):
         *([f"just span-scenario {out}-v2/plan.json {out}-v2-maintenance   # the maintenance story binds one plan; regenerate it after growth"]
           if "maintenance" in spec["features"] else []),
         "# The grown estate has no regenerated cheat sheet: this DEMO.md's links die",
-        f"# with the v1 branch — narrate the second call from {out}-v2/estate/report.md.",
+        f"# with the v1 branch — narrate the second call from {out}-v2/report.md.",
         "# Close the grown demo out from here, with ITS branch:",
         f"# just retire {origin} '<v2 branch name>' {_shell(spec['namespace'])}",
         "```", "",

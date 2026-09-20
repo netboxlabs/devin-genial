@@ -202,7 +202,10 @@ repository (the default) and point at the upstream repository when it does not.
   compose, a fresh output and a fresh branch.
 
 One live-demo caution that is NetBox's, not this repo's: the REST API silently
-ignores an unknown query parameter (HTTP 200, unfiltered results). When you
-prove an isolation or scoping claim live, sanity-check that the filtered count
-is well below the unfiltered total — a typo'd filter renders as a
-catastrophic-looking leak that is pure query error.
+ignores an unknown query parameter (HTTP 200, unfiltered results), and a *known*
+parameter that does not apply to a model can return an empty result just as
+silently (`?site=` on prefixes, which are scope-based on 4.7 — filter by
+`?vlan_vid=` instead). When you prove an isolation or scoping claim live,
+sanity-check the filtered count against the unfiltered total in both
+directions — a typo'd filter renders as a catastrophic-looking leak, and a
+wrong filter renders as a missing subnet, both of them pure query error.
