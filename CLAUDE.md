@@ -72,6 +72,10 @@ those receipt paths are local evidence, not files shipped in a clone.
 Use the standalone devenv shell (`direnv allow`). The runtime is Python 3.11+
 standard library; the pinned Diode SDK is an optional export-verification tool.
 The Justfile is the human CLI. Run `just check` before committing.
+`just demo PROFILE NAME VENDOR FEATURES [TARGET BRANCH]` is the composed
+operator path: it assembles a per-profile demo recipe, generates, checks,
+load-checks, builds the requested feature packs and — given a target and branch
+— branches, loads and verifies, writing `DEMO.md` beside the artifact.
 The target-aware loader is `just load ARTIFACT TARGET [BRANCH]`;
 the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
 `just load-check ARTIFACT` reports TurboBulk contract fit offline; `just branch
@@ -152,6 +156,8 @@ for the separately recorded pinned-target live qualification.
 - [docs/modeling.md](docs/modeling.md): construction rules and connected detail.
 - [docs/scenarios.md](docs/scenarios.md): change/defect walkthroughs and boundaries.
 - [docs/loading.md](docs/loading.md): artifacts and Diode handoff.
+- [docs/demo.md](docs/demo.md): the demo composer — one command from industry,
+  vendor and feature packs to a loaded branch plus a DEMO.md cheat sheet.
 - [docs/first-target.md](docs/first-target.md): operator runbook from empty target to loaded branch.
 - [docs/recipes.md](docs/recipes.md): complete recipe key reference per profile.
 - [docs/seeding.md](docs/seeding.md): zero-write target verification and restore-based seeding.
@@ -208,6 +214,8 @@ for the separately recorded pinned-target live qualification.
 - `estates/power_scenario.py`: property-selected shared defect, exact finding and restoration checks.
 - `estates/span_scenario.py`: provider-only status maintenance, actual premise
   attribution and directed headroom; sample `profiles/provider-maintenance.toml`.
+- `estates/demo.py`: the demo composer — per-profile demand templates, vendor
+  shorthands, feature packs and the DEMO.md cheat sheet; `just demo`.
 - `estates/drift.py`: the Assurance discovery-drift twin — property-selected
   observed drift, its exact expected deviation manifest and the SE walkthrough;
   `just drift PLAN OUT` and `just drift-check OUT`.
@@ -248,6 +256,19 @@ for the separately recorded pinned-target live qualification.
   Carrier-wide failure is outside this contract; show actual span providers per
   PoP without promising carrier diversity. External-transit journals must leave
   remote interface and owner unknown, unlike real two-site handoff records.
+- The demo composer orchestrates and never bypasses. `estates/demo.py` calls
+  the same entry points the Justfile recipes run — generate, check, load-check,
+  drift/drift-check, scenario/scenario-check, branch, load, verify-target —
+  with the argv those recipes build, and any non-zero exit stops the compose
+  before a cheat sheet exists. It adds no loader, kind, validation path or
+  recipe key, and its per-profile templates are ordinary recipes an operator
+  can edit and grow. DEMO.md is assembled only from the finished graph, the
+  step receipts and the profile guides' own anchors; bound artifacts such as
+  `drift.md` are linked, never restated. Keep it byte-deterministic for
+  identical inputs, with wall clock confined to a fenced timings section and
+  `compose.json`. `--features assurance` requires campus access, so the
+  enterprise data center is refused at the flag. Never let it claim live
+  behaviour an offline check did not prove.
 - The Assurance drift twin is a subcommand over a frozen healthy plan, never a
   recipe key: `drift` writes a separate artifact bound to that plan's SHA and
   never mutates the baseline. Drift subjects are property-selected — the first

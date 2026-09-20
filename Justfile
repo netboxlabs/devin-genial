@@ -6,6 +6,16 @@ local_diode := local_docker + " compose --project-directory build/local-target/d
 help:
     @just --list --unsorted
 
+# FEATURES is a comma list of assurance,automation,scenario. Supplying TARGET
+# and BRANCH also creates the branch, loads and strictly verifies in the same
+# run; omitting them stops after the offline gates and prints the go-live
+# commands. `python3 -m estates demo --help` has the rest (--namespace, --seed,
+# --sites, --out). Every step is the same entry point the recipes below run.
+
+# Compose one customer demo: estate, feature packs and a DEMO.md cheat sheet
+demo profile='regional-bank' name='Genial Demo Estate' vendor='default' features='' target='' branch='':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates demo --profile {{quote(profile)}} --name {{quote(name)}} --vendor {{quote(vendor)}} --features {{quote(features)}} {{if target == '' { '' } else { '--target ' + quote(target) + ' --branch ' + quote(branch) } }}
+
 # Preview a validated estate without writing files
 plan recipe='profiles/bank.toml':
     python3 -m estates plan {{quote(recipe)}}
