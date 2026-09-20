@@ -431,8 +431,7 @@ def _plant(site, item):
                                     stable=True)
     process_facts = campus.access(site, process_endpoints, process, OT_NETWORKS,
                                   {"access_hardware": "access", "upstreams": 2,
-                                   "label": "ot-access-", "panel_label": "ot-patch-",
-                                   "zone": "/ot"}, stable=True)
+                                   "label": "ot-access-", "zone": "/ot"}, stable=True)
     site.contract.update(endpoint_count=len(corporate_endpoints) + len(process_endpoints),
                          demand=demand(item), plant=item["key"],
                          access_hardware=site.w.hardware_alias("access"),

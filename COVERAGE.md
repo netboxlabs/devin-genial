@@ -206,8 +206,9 @@ being executed in least-resistance order. This section is the campaign's durable
 state: update the Status column as phases complete, and record decisions here.
 
 Existing profiles: enterprise DC, provider backbone, regional bank, hospital,
-K-12 school district, retail chain, university campus, MSP/managed services.
-Still new: manufacturing/industrial, utility/energy. Deliberate folds, not
+K-12 school district, retail chain, university campus, MSP/managed services,
+manufacturing/industrial, utility/energy. The Top-10 industry set is now
+covered. Deliberate folds, not
 profiles: GPU/AI cloud (an enterprise-DC workload/hardware flavor) and
 government/defense (enterprise/campus plus `site_names`).
 
@@ -221,7 +222,7 @@ government/defense (enterprise/campus plus `site_names`).
 | 6 | MSP profile (one NOC operating N customer tenants) | **complete 2026-09-19** — merged and review-hardened (912 tests); 56 kinds with independent tenancy-isolation and ownership-versus-operation checks; four-customer estate live on the pinned 4.7.1 stack: 7,068/7,068 objects, 0 mismatches, verify + idempotent repeat clean. |
 | 7 | Bank hard-kinds decision point | **dissolved** — phase 2 left no residual; the extras trio went via REST-create and the exempt-count gate |
 | 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | **complete 2026-09-19** — merged and review-hardened (994 tests; panels collision and the console-server third crossing fixed and declared); three-plant estate live: 9,352/9,352 objects, 0 mismatches, verify + idempotent repeat clean |
-| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | in progress — worktree build launched 2026-09-19 |
+| 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | merged 2026-09-19 — control centers plus keyed substations reusing the phase-8 zone machinery with no new object kinds and no catalog additions; 30 finding codes, each mutation-tested; adversarial review + live prove in progress |
 | 10 | Assurance drift twin: `demo` intent generating baseline + believably-drifted Diode snapshot covering Assurance's four deviation classes (undocumented device, drift vs intent, documented-but-missing, data quality) with an expected-deviation manifest; live-prove via Diode ingestion on the Assurance-equipped Cloud instance (4.6-compatible subset) | pending |
 | 11 | Automation demo pack: config contexts, export templates and event-rule/webhook inventory as new loader kinds, so the Ansible/ServiceNow talk track has real objects | pending |
 | 12 | Demo composer: one command assembling profile × vendor × feature packs × customer names into a loaded, verified branch plus a DEMO.md talk track with deep links | pending |

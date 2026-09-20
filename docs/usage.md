@@ -16,6 +16,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Retail chain](#retail-chain)
 - [Managed service provider](#managed-service-provider)
 - [Manufacturing](#manufacturing)
+- [Utility](#utility)
 - [Repeatability and growth](#repeatability-and-growth)
 
 ## Start
@@ -443,6 +444,48 @@ plant, lowering any count and changing WAN tiers require a new baseline. The
 [profile guide](../profiles/manufacturing.md) owns the complete limits, the
 per-line equipment density, the service sizing thresholds and the full list of
 what the IT/OT boundary does and does not assert.
+
+## Utility
+
+`utility` composes an electric utility's operations estate: one or two control
+centers and 1–24 substations. Each substation is one site — a control house with
+a control room and a switchyard of permanently positioned bays, plus the single
+equipment room that serves them. The station (OT) endpoints (one remote terminal
+unit and one protection relay per bay, two station HMIs and a station gateway)
+sit on their own `protection`, `telemetry` and `station` segments, in their own
+routing contexts, behind their own access pair and their own distribution pair.
+The only modeled path to the corporate tier is the `conduit` segment trunked
+between the two distribution pairs, plus each device's own dedicated management
+port. This profile is offline-checked and fits the TurboBulk contract; it has no
+separately recorded live qualification receipt.
+
+```sh
+just plan profiles/utility.toml
+just generate profiles/utility.toml build/utility-demo
+just load-check build/utility-demo
+just power-scenario build/utility-demo/plan.json build/utility-power
+```
+
+That zone separation is **modeled, not enforced**. It is inventory and intended
+boundaries: no firewall policy, access control list, route filter, air gap,
+electronic security perimeter or NERC CIP compliance state is represented; no
+SCADA or EMS function is executed; and no utility protocol — DNP3, IEC 61850,
+Modbus, ICCP, IEC 60870-5-104 or any other — is configured, carried or claimed
+anywhere. The remote terminal units, relays, HMIs and gateways are reference
+endpoint inventory with no telemetry point, measurement, control action,
+protection setting, trip scheme, certification or firmware. Bays are installed
+equipment positions, not voltage classes, electrical ratings, bus arrangements
+or breaker positions, and no grid topology, power-flow, generation, load or
+physical-security record exists. Both distribution tiers share the one control
+house, so no substation-rated or DIN-rail hardware is implied. The estate is
+documentation inventory for a fictional operator.
+
+Growth appends substations, raises a substation's bays and adds the backup
+control center. Removing a substation or a control center, lowering bays,
+changing a substation's kind and changing WAN tiers require a new baseline. The
+[profile guide](../profiles/utility.md) owns the complete limits, the per-bay
+equipment density, the service sizing thresholds and the full list of what the
+station/corporate boundary does and does not assert.
 
 ## Repeatability and growth
 

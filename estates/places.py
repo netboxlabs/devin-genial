@@ -39,7 +39,8 @@ GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
           "store": "Retail stores", "distribution": "Distribution centers",
           "academic": "Academic buildings", "residence": "Residence halls", "library": "Libraries",
-          "office": "Managed customer offices", "plant": "Manufacturing plants"}
+          "office": "Managed customer offices", "plant": "Manufacturing plants",
+          "substation": "Substations"}
 MAX_CHANNEL_M = 80
 FLOOR_HEIGHT_M = 4
 OFFICE_DESKS = 12
@@ -60,6 +61,11 @@ MAX_OFFICE_PODS = 4
 # the single plant equipment room. Every position is reserved permanently and
 # every bay sits inside the 80 m copper ceiling measured from that room.
 MAX_PLANT_LINES, MAX_PLANT_DOCKS, MAX_PLANT_PODS = 12, 12, 8
+# Authored utility-substation grammar: one control house on one ground floor
+# holding a control room and the switchyard bay positions it serves, all cabled
+# from the single control-house equipment room. Every bay position is reserved
+# permanently and sits inside the 80 m copper ceiling measured from that room.
+MAX_SUBSTATION_BAYS = 16
 SPACE_DESCRIPTIONS = {
     "building": "Banking and business operations premises",
     "floor": "Customer or staff floor with assigned equipment-room service",
@@ -87,6 +93,8 @@ SPACE_DESCRIPTIONS = {
     "staff_office": "Customer staff office pod with installed workstation positions",
     "production_line": "Production line cell with installed controller, operator-panel and field-device positions; no control function or industrial protocol is configured",
     "loading_dock": "Warehouse loading dock with installed scanner-station positions",
+    "control_room": "Substation control-house room with installed station HMI, gateway and corporate desk positions",
+    "switchyard_bay": "Switchyard bay position with installed remote-terminal-unit and protection-relay records; no electrical rating, protection setting or control function is configured",
 }
 
 
@@ -148,6 +156,11 @@ def _authored_identity(site, city):
         # key can never name two plants.
         title = sid.split("-", 1)[1].replace("-", " ").title()
         return f"{title} Plant"
+    if kind == "substation":
+        # Substation keys are unique within the recipe and frozen by growth, so
+        # one key can never name two substations.
+        title = sid.split("-", 1)[1].replace("-", " ").title()
+        return f"{title} Substation"
     if kind == "hq":
         return f"{city} Headquarters"
     if kind == "dc":
@@ -157,6 +170,8 @@ def _authored_identity(site, city):
             return f"{city} Campus Data Center"
         if profile == "msp":
             return f"{pick(CAMPUSES[city])} Operations Center"
+        if profile == "utility":
+            return f"{pick(CAMPUSES[city])} Control Center"
         return f"{pick(CAMPUSES[city])} Data Center"
     if kind in {"school", "hospital", "clinic"}:
         title = sid.split("-", 1)[1].replace("-", " ").title()
@@ -223,7 +238,7 @@ def foundation(w, *, site_kinds=None):
     for kind, name in GROUPS.items():
         if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
                                            "store", "distribution", "academic", "residence", "library",
-                                           "office", "plant"}:
+                                           "office", "plant", "substation"}:
             continue
         if site_kinds is not None and kind not in site_kinds:
             continue
@@ -253,6 +268,9 @@ def _location(site, suffix, name, space_type, floor, position, parent=None, capa
         elif site.w.recipe["profile"] == "manufacturing":
             description = ("Production, warehouse and office building" if space_type == "building"
                            else "Production, warehouse, office and equipment floor")
+        elif site.w.recipe["profile"] == "utility":
+            description = ("Control house, operations and services building" if space_type == "building"
+                           else "Control, equipment and facilities floor")
     if site.contract["kind"] == "dc" and space_type == "equipment_room":
         description = "Restricted data hall with compute, network and power distribution"
     site.w.add("location", key,
@@ -294,7 +312,7 @@ def locate(site):
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
     if kind in {"school", "hospital", "clinic", "store", "distribution",
-                "academic", "residence", "library", "office", "plant"}:
+                "academic", "residence", "library", "office", "plant", "substation"}:
         number = 100 + 4 * site.w.allocations[site.id]
     streets = {"br-s": "Market Street", "br-m": "Commerce Drive", "br-l": "Harbor Avenue",
                "hq": "Lakefront Boulevard", "dc": "Technology Way", "school-": "Learning Way",
@@ -303,7 +321,7 @@ def locate(site):
                "di-": "Distribution Parkway", "bldg-": "University Quadrangle",
                "hall-": "Residence Row", "library-": "Library Green",
                "noc-": "Operations Parkway", "off-": "Enterprise Parkway",
-               "pl-": "Industrial Parkway"}
+               "pl-": "Industrial Parkway", "sub-": "Switchyard Road"}
     street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
     node["attrs"].update(time_zone=zone,
                          physical_address=f"{number} {street}\n{city}, {state}\nUnited States")
@@ -718,6 +736,58 @@ def plant_endpoint(site, key, room, cohort, ordinal):
             "inventory only, with no control function, safety rating or industrial protocol configured")
     elif role == "role/ap":
         node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
+    node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
+        "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
+        access_channel_length_m=route)
+
+
+def substation_rooms(site, bays, workstations):
+    """Permanent substation rooms: one control room and its switchyard bays.
+
+    Every bay holds a reserved ground-floor position for the life of the estate,
+    so commissioning a bay appends a position beside the existing ones instead of
+    renumbering the switchyard. Bay positions are installed equipment locations
+    in an authored layout: never a voltage class, electrical rating or bus
+    arrangement.
+
+    ponytail: one authored control house per substation, with the reviewed
+    ceiling of sixteen bay positions. The positions below are chosen so every
+    bay stays inside the 80 m copper ceiling measured from the single
+    control-house equipment room; a larger switchyard needs a reviewed
+    multi-room or fibre-riser layout before demand can exceed it.
+    """
+    if site.contract["kind"] != "substation":
+        raise DesignError(f"{site.id}: substation rooms require a utility substation site")
+    ground = _floor(site, 1)
+    rooms = dict(control=_location(site, "control-room", "Control room", "control_room", 1, (48, 10, 0),
+                                   ground, {"workstations": workstations}),
+                 bays=[])
+    for index in range(bays):
+        suffix = f"bay-{index+1:02}"
+        slot = site.w.reserve(f"substation-bays/{site.id}", suffix, MAX_SUBSTATION_BAYS)
+        rooms["bays"].append(_location(site, suffix, f"Switchyard bay {index+1:02}", "switchyard_bay", 1,
+                                       (6 + 8*(slot % 4), 30 + 8*(slot // 4), 0), ground))
+    return rooms
+
+
+def substation_endpoint(site, key, room, cohort, ordinal):
+    """Place one substation endpoint on its permanent mount and copper route."""
+    space, node = site.w.obj(room), site.w.obj(key)
+    origin, role = space["meta"]["position_m"], node["refs"]["role"]
+    if type(ordinal) is not int or ordinal < 1:
+        raise DesignError(f"{key}: substation endpoint ordinal must be a positive integer")
+    offset, height = (1 + 1.2*((ordinal-1) % 6), 1 + 1.2*((ordinal-1)//6)), 0.8
+    point = [origin[0]+offset[0], origin[1]+offset[1], origin[2]+height]
+    serving = site.contract["placement"]["equipment_locations"][str(space["meta"]["floor"])]
+    route = math.ceil(sum(abs(a-b) for a, b in zip(point, site.w.obj(serving)["meta"]["position_m"]))+10)
+    if route > MAX_CHANNEL_M:
+        raise DesignError(f"{key}: substation access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
+    node["refs"]["location"] = room
+    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
+    if role in {"role/rtu", "role/protection-relay", "role/hmi", "role/station-gateway"}:
+        node["attrs"]["description"] = (
+            f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {_site_display(site)}; "
+            "inventory only, with no telemetry point, protection setting, control action or utility protocol configured")
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)

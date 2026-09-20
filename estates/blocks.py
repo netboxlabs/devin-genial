@@ -48,6 +48,7 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
               "medical-device": "d81b60", "imaging-device": "8e24aa",
               "pos-terminal": "ef6c00", "scanner": "5d4037",
               "plc": "bf360c", "hmi": "ff8f00", "field-device": "827717",
+              "rtu": "00695c", "protection-relay": "ad1457", "station-gateway": "4527a0",
               "provider-edge": "5e35b1", "customer-edge": "00838f"}
     for role in device_roles if device_roles is not None else ("wan-edge", "distribution", "access", "spine", "leaf", "server", "management", "patch-panel",
                  "pdu", "workstation", "atm", "ap", "camera", "wall-outlet"):
@@ -110,7 +111,7 @@ class Site:
         self.tenant = tenant or ("tenant/inherited" if self.lineage == "birch" and not self.acquired else "tenant")
         self.equipment_prefix = f"{w.recipe['namespace']}-birch-{site_id}" if self.lineage == "birch" else self.name
         self.racks, self.rack_members, self.devices, self.nets = {}, {}, [], {}
-        self.rack_grid = (kind == "dc" and w.recipe["profile"] in {"enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing"}
+        self.rack_grid = (kind == "dc" and w.recipe["profile"] in {"enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing", "utility"}
                           or kind == "pop" and w.recipe["profile"] == "provider-backbone")
         self.rack_domains = self.rack_grid
         self.network_prefixlen = {"regional-bank": 24, "enterprise-data-center": 20, "school-district": 20,
@@ -120,7 +121,8 @@ class Site:
                                   # data port, so campus buildings need a /22.
                                   "university-campus": 20 if kind == "dc" else 22,
                                   "msp": 20 if kind == "dc" else 24,
-                                  "manufacturing": 20 if kind == "dc" else 24}[w.recipe["profile"]]
+                                  "manufacturing": 20 if kind == "dc" else 24,
+                                  "utility": 20 if kind == "dc" else 24}[w.recipe["profile"]]
         self.network_offsets = {name: index for index, name in enumerate(NETWORKS)}
         if w.recipe["profile"] == "school-district":
             self.network_offsets.pop("users")
@@ -148,6 +150,12 @@ class Site:
             self.network_offsets = dict(management=0, office=1, process=2, supervisory=3,
                                         wireless=4, security=5, applications=6, database=7,
                                         backup=8, wan=9, storage=10, logistics=11, conduit=12)
+        elif w.recipe["profile"] == "utility":
+            # `protection`, `telemetry` and `station` are the station (OT) zone;
+            # `conduit` is the modeled routed transit between the two tiers.
+            self.network_offsets = dict(management=0, office=1, protection=2, telemetry=3,
+                                        station=4, applications=6, database=7, backup=8,
+                                        wan=9, storage=10, conduit=12)
         self.links = set()
         self.contract = dict(site=self.key, kind=kind, required_device_roles={}, redundant_uplinks=[],
                              required_connections=[], compute=[], assumptions=[])
@@ -389,11 +397,13 @@ class Site:
             cohort = "managed-standard"
         elif not dc and self.w.recipe["profile"] == "manufacturing":
             cohort = "plant-standard"
+        elif not dc and self.w.recipe["profile"] == "utility":
+            cohort = "substation-standard"
         ages = {"dc-aggregation": range(1460, 1826), "retained-birch": range(2190, 2921),
                 "cedar-standard": range(365, 1096), "district-standard": range(365, 1096),
                 "health-system-standard": range(365, 1096), "chain-standard": range(365, 1096),
                 "campus-standard": range(365, 1096), "managed-standard": range(365, 1096),
-                "plant-standard": range(365, 1096)}
+                "plant-standard": range(365, 1096), "substation-standard": range(365, 1096)}
         key = f"circuit/{self.id}/{side}/{number}"
         try:
             installed = (date.fromisoformat(self.w.recipe["as_of"]) -

@@ -48,6 +48,9 @@ SMALL = {
                           address_pool="10.208.0.0/12",
                           plants=[dict(key="one", production_lines=1, warehouse_docks=1,
                                        office_staff=4)]),
+    "utility": dict(profile="utility", namespace="tinyutil", name="Tiny Power and Light",
+                    address_pool="10.224.0.0/12", control_centers=1,
+                    substations=[dict(key="one", kind="distribution", bays=2)]),
 }
 # The models this repository shipped before the lever existed. A default recipe
 # must still build exactly these.

@@ -54,6 +54,7 @@ optional devenv/Just setup. All commands run from the repository root.
 | University campus | [university-campus.toml](profiles/university-campus.toml) · [guide](profiles/university-campus.md) | Academic buildings, residence halls, a library, dense per-zone wireless and shared campus services | **Yes** (NetBox 4.7+) |
 | Managed service provider | [msp.toml](profiles/msp.toml) · [guide](profiles/msp.md) | One NOC operating many customer accounts, each its own tenant, with nothing shared between them | **Yes** (NetBox 4.7+) |
 | Manufacturing | [manufacturing.toml](profiles/manufacturing.toml) · [guide](profiles/manufacturing.md) | Plants with separated plant-floor (OT) and corporate (IT) zones, a modeled conduit between them, and shared manufacturing services | **Yes** (NetBox 4.7+) |
+| Utility | [utility.toml](profiles/utility.toml) · [guide](profiles/utility.md) | Control centers and substations, with the station (OT) zone separated from the corporate tier by one modeled conduit | **Yes** (NetBox 4.7+) |
 
 Every profile generates, validates and reports offline. "Loadable" means the
 whole estate loads into a live NetBox through TurboBulk today — run
