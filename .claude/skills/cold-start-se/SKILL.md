@@ -134,6 +134,16 @@ template below. Prefer `model: opus` for fan-out.
 | 2026-09-20 | School district, customer-named campuses via demo-recipe, wireless + power what-if, growth and BOTH closeouts run as printed (Copper Hills) | 4.7.1 local, shared with 20 branches | Prep & what-if yes; growth yes-with-papercuts (call-ready 4m21s, lifecycle 11m05s; zero failed commands, zero state damage; every API proof exact; recompose one-liner byte-reproduces its estate) | the recompose call site still passed the namespace as --branch — the last line not on the shared derivation (fixed, one word, and the per-line test now sweeps --branch too); the grown sheet's Size row cited the retired predecessor's directory (fixed: cites its own verbatim recipe copy) |
 | 2026-09-20 | Hospital, Aruba, wireless + segmentation + drift + power what-if, growth and both closeouts as printed (Bayview) | 4.7.1 local, shared with 20 branches | Prep & stories yes; growth yes-with-papercuts (call-ready ~4 min, lifecycle 9m04s; all three claims byte-verified live; drift + scenario byte-stable across growth as claimed) | the vendor honesty lines gated on the flag, so recipe/growth sheets lost the Aruba wlan1 caution while carrying 21 empty wlan1 radios (fixed: gates read the resolved [hardware] selection on both paths, pinned by test); the v1 closing retire labels its skip condition |
 | 2026-09-20 | MSP, Aruba, tenancy/operator proofs + drift, growth with second sheet, both closeouts as printed (Meridian — #29's journey replayed) | 4.7.1 local, shared with 20 branches | **CLEAN #1: zero S1/S2** (call-ready T+6, everything incl. both closeouts in 12.5 min; per-tenant arithmetic closes to the device; 0 of 666 cables join two customers; all honest lines verified true on the branch) | S3 polish applied post-run: the growth block states the rollback position (v1's artifact survives on disk — reload into a fresh branch) and the redundant closing retire names its blast radius |
+| 2026-09-20 | Provider ISP, maintenance-window + drift double-ask, growth with second sheet, both closeouts as printed (Northline) | 4.7.1 local, shared with 20 branches | **CLEAN #2: zero S1/S2 — exit bar met** (call-ready in 15 of 30 min with both stories rehearsed and proven; growth literal, both retirements clean, target as found) | S3 polish applied post-run: the Justfile FEATURES comment names all four packs and demo-recipe's just --list one-liner says what it does |
+
+**Exit bar met 2026-09-20** after 22 runs on the composer-era surface (#14–#35
+overall): runs #34 and #35 are consecutive cleans across two different
+profiles, journeys and feature packs, with every printed cheat-sheet command
+line under literal test. The loop found and fixed 2 S1s, 13 S2s and dozens of
+S3s along the way, and grew four capabilities (--recipe, --previous, the
+maintenance pack, universal API proofs) out of findings. Keep running this
+skill after any change to the loading surface, the composer or the operator
+docs; a new finding restarts the count.
 
 **Exit bar met 2026-09-18** after 13 runs (2 no → 5 yes-with-papercuts → mixed
 → 2 consecutive clean). The wireless/naming surface change of 2026-09-19

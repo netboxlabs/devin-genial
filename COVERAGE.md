@@ -218,7 +218,7 @@ government/defense (enterprise/campus plus `site_names`).
 
 | Phase | Work | Status |
 | --- | --- | --- |
-| 1 | Close the cold-start loop on the wireless/naming surface (two consecutive cleans) | in progress — runs #14/#15 fixes applied; count restarts with the phase-2 surface change |
+| 1 | Close the cold-start loop (two consecutive cleans) | **complete 2026-09-20** — runs #34 and #35 are consecutive zero-S1/S2 cleans on the finished composer-era surface (22 runs this era; every sheet command line literally tested; loop log in `.claude/skills/cold-start-se/SKILL.md`) |
 | 2 | Bank kinds (loader-only) | **complete 2026-09-19** — all 37 remaining kinds + 12 refs landed in one wave; full 98-kind bank loaded/verified/repeated live (11,801 objects, 0 mismatches). No hard residual. |
 | 3 | Retail chain profile | **complete 2026-09-19** — 55-kind profile merged (789 tests); first live load on the pinned 4.7.1 stack: 13,005/13,005 objects, 0 mismatches, 1,265/1,265 cables, verify + idempotent repeat clean |
 | 4 | University campus profile | **complete 2026-09-19** — merged (832 tests); first live load: 21,970/21,970 objects, 0 mismatches, 2,380/2,380 cables, 26,730/26,730 ChangeDiffs, verify + repeat clean (largest single estate loaded to date) |

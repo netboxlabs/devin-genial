@@ -6,19 +6,19 @@ local_diode := local_docker + " compose --project-directory build/local-target/d
 help:
     @just --list --unsorted
 
-# FEATURES is a comma list of assurance,automation,scenario. Supplying TARGET
-# and BRANCH also creates the branch, loads and strictly verifies in the same
-# run; omitting them stops after the offline gates and prints the go-live
-# commands. `python3 -m estates demo --help` has the rest (--namespace, --seed,
+# FEATURES is a comma list of assurance,automation,scenario,maintenance
+# (maintenance is provider-only). Supplying TARGET and BRANCH also creates the
+# branch, loads and strictly verifies in the same run; omitting them stops
+# after the offline gates and prints the go-live commands. `python3 -m estates demo --help` has the rest (--namespace, --seed,
 # --sites, --out). Every step is the same entry point the recipes below run.
 
 # Compose one customer demo: estate, feature packs and a DEMO.md cheat sheet
 demo profile='regional-bank' name='Genial Demo Estate' vendor='default' features='' target='' branch='' out='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates demo --profile {{quote(profile)}} --name {{quote(name)}} --vendor {{quote(vendor)}} --features {{quote(features)}} {{if out == '' { '' } else { '--out ' + quote(out) } }} {{if target == '' { '' } else { '--target ' + quote(target) + ' --branch ' + quote(branch) } }}
 
-# Compose from the customer's own recipe file: profile, name, namespace, seed,
-# [hardware] and [site_names] all come from it; the cheat sheet follows the
-# customer's shape instead of the stock template.
+# ([hardware], [site_names], identity and demand all come from the recipe file;
+# PREVIOUS grows from that frozen plan.json with a fresh cheat sheet.)
+# Compose from the customer's own recipe — their shape, their names, growable
 demo-recipe recipe features='' target='' branch='' previous='' out='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates demo --recipe {{quote(recipe)}} --features {{quote(features)}} {{if previous == '' { '' } else { '--previous ' + quote(previous) } }} {{if out == '' { '' } else { '--out ' + quote(out) } }} {{if target == '' { '' } else { '--target ' + quote(target) + ' --branch ' + quote(branch) } }}
 
