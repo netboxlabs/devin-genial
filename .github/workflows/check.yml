@@ -39,7 +39,7 @@ jobs:
           done
       - name: Qualify the Assurance drift twin and its observed payload
         run: |
-          for profile in bank school-district hospital-clinics provider-backbone retail-chain university-campus msp manufacturing; do
+          for profile in bank school-district hospital-clinics provider-backbone retail-chain university-campus msp manufacturing utility; do
             python -m estates drift "build/${profile}/plan.json" --out "build/${profile}-drift"
             python -m estates drift-check "build/${profile}-drift"
             python -m estates sdk-check "build/${profile}-drift/observed"

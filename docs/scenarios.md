@@ -197,7 +197,8 @@ NetBox Labs advertises Assurance detecting: undocumented objects, drift against
 documented intent, documented infrastructure discovery never saw, and data-quality
 damage. Every subject is property-selected from stable keys — the site is the
 first eligible one in permanent allocation order, then the first eligible switch,
-ports and endpoints by canonical key — so growing the estate keeps the same
+ports in numeric-aware name order and endpoints by their append-only room-ledger
+slot — so growing the estate, in place or by appending sites, keeps the same
 subjects rather than reshuffling them. On the default bank estate that anchor is
 `hq-01`, and the set drifts a replaced chassis serial, a repurposed port
 description, a port moved onto an undocumented VLAN, a shut port, a re-addressed

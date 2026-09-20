@@ -54,7 +54,7 @@ SOURCES = [
     "https://netboxlabs.com/docs/assurance/",
     "https://netboxlabs.com/docs/assurance/using-the-ui/",
     "https://netboxlabs.com/docs/enterprise/helm/configuration/diode/",
-    "https://github.com/netboxlabs/diode/blob/main/diode-server/reconciler/changeset/changeset.go",
+    "https://github.com/netboxlabs/diode/blob/develop/diode-server/reconciler/changeset/changeset.go",
     "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi",
     "https://github.com/netboxlabs/diode-netbox-plugin/blob/develop/docs/matching-criteria-documentation.md",
     "https://github.com/netbox-community/netbox/blob/main/docs/release-notes/version-4.7.md",
@@ -106,15 +106,23 @@ def _token(*parts):
     return digest(["drift", __version__, *parts])
 
 
+def _natural(key):
+    """Numeric-aware ordering: Gi1/0/2 sorts before Gi1/0/10, so growth that
+    creates higher-numbered ports never reshuffles the first picks."""
+    return [int(piece) if piece.isdigit() else piece
+            for piece in re.split(r"(\d+)", key)]
+
+
 def _ports(objects, children, device):
     """Enabled, described, VLAN-bearing physical access ports, mgmt excluded."""
-    return [key for key in children[("device", device)]
-            if objects[key]["kind"] == "interface"
-            and objects[key]["attrs"].get("enabled") is True
-            and not objects[key]["attrs"].get("mgmt_only")
-            and objects[key]["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
-            and objects[key]["attrs"].get("description")
-            and isinstance(objects[key]["refs"].get("untagged_vlan"), str)]
+    return sorted((key for key in children[("device", device)]
+                   if objects[key]["kind"] == "interface"
+                   and objects[key]["attrs"].get("enabled") is True
+                   and not objects[key]["attrs"].get("mgmt_only")
+                   and objects[key]["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
+                   and objects[key]["attrs"].get("description")
+                   and isinstance(objects[key]["refs"].get("untagged_vlan"), str)),
+                  key=_natural)
 
 
 def _addressed(objects, key):
@@ -128,7 +136,25 @@ def _addressed(objects, key):
     return {"ip": address, "interface": interface}
 
 
-def _site_subjects(objects, children, site):
+def _endpoint_ranks(plan, site_id):
+    """Append-only room-ledger slots for this site's access endpoints.
+
+    Profiles built on stable campus access reserve every endpoint a permanent
+    physical port slot; ordering by that slot keeps drift subjects fixed under
+    in-place growth (new pods and rooms take higher slots, never earlier ones).
+    Estates without a ledger fall back to name order, which is stable there
+    because their in-place endpoint growth is rebaseline-frozen.
+    """
+    ranks = {}
+    for scope, items in plan.get("reservations", {}).items():
+        if scope.startswith(f"access-endpoints/{site_id}/"):
+            for endpoint, slot in items.items():
+                if isinstance(slot, int):
+                    ranks[endpoint] = min(slot, ranks.get(endpoint, slot))
+    return ranks
+
+
+def _site_subjects(objects, children, site, ranks):
     """Every drift subject this site offers, or None when one is missing."""
     switches = [key for key in children[("site", site)]
                 if objects[key]["kind"] == "device" and objects[key]["refs"].get("role") == "role/access"
@@ -140,9 +166,11 @@ def _site_subjects(objects, children, site):
                  and _addressed(objects, key)]
     if not switches or len(endpoints) < 4:
         return None
-    # ponytail: first eligible subject by sorted canonical key, the same
-    # selection policy the power scenario uses. Growth appends identities, so
-    # a grown estate keeps the drift subjects of every retained site.
+    # Subjects order by append-only room-ledger slot where one exists (natural
+    # name order otherwise), so in-place growth at the anchor site keeps the
+    # same picks: new endpoints take higher slots and new ports higher numbers.
+    switches.sort(key=_natural)
+    endpoints.sort(key=lambda key: (ranks.get(key, float("inf")), _natural(key)))
     switch = switches[0]
     management = _addressed(objects, switch)
     ports = _ports(objects, children, switch)[:4]
@@ -164,16 +192,18 @@ def _select(plan, objects, children):
     # beside an existing "br-s…".
     allocations = plan.get("allocations", {})
     sites = sorted((key for key, obj in objects.items() if obj["kind"] == "site"),
-                   key=lambda key: (allocations.get(key.removeprefix("site/"), len(allocations)), key))
+                   key=lambda key: (allocations.get(key.removeprefix("site/"), float("inf")), key))
     for site in sites:
-        subjects = _site_subjects(objects, children, site)
+        subjects = _site_subjects(objects, children, site,
+                                  _endpoint_ranks(plan, site.removeprefix("site/")))
         if subjects is not None:
             return subjects
     raise DesignError(
         f"{LABEL}: no site offers an active access switch with four drift-eligible ports and four addressed "
         "endpoint devices. Data-center-only estates (enterprise-data-center) model fabric, not campus access; "
         "generate a baseline from a profile with branch, campus, office or plant access - regional-bank, "
-        "school-district, hospital-clinics, provider-backbone, retail-chain, university-campus, msp or manufacturing.")
+        "school-district, hospital-clinics, provider-backbone, retail-chain, university-campus, msp, "
+        "manufacturing or utility.")
 
 
 def _holding_prefix(objects, address, vrf):
@@ -214,6 +244,10 @@ def _unused_address(objects, documented, vrf, taken):
         if candidate <= network.network_address:
             break
         if candidate in used or any(start <= candidate <= end for start, end in ranges):
+            continue
+        # The candidate must still live in the SAME holding prefix: a more
+        # specific documented block covering it would change the story's home.
+        if _holding_prefix(objects, f"{candidate}/{network.prefixlen}", vrf) != holder:
             continue
         taken.add(candidate)
         return holder, f"{candidate}/{network.prefixlen}"
@@ -650,9 +684,13 @@ def markdown(envelope, baseline):
              "## Run it", "",
              "```sh",
              "# 1. Load the documented baseline first; it is the state Assurance compares against.",
-             "just load <baseline-artifact> <target> <branch>",
+             "#    Load the ORIGINAL build directory this plan came from (the baseline/ copy in",
+             "#    here binds the artifact and is not a loadable build).",
+             "just load <original-baseline-build-dir> <target> <branch>",
              "",
-             "# 2. Mid-demo, ingest the observed snapshot through the target's Diode endpoint.",
+             "# 2. Mid-demo, ingest the observed snapshot through the target's Diode endpoint,",
+             "#    replaying request files in phase order per observed/manifest.json — later",
+             "#    phases reference records earlier ones create (the undocumented VLAN first).",
              "#    This repository has no Cloud ingest recipe; use that instance's documented Diode client.",
              "devenv --profile diode shell -- just sdk-check <drift-dir>/observed   # offline qualification",
              "",

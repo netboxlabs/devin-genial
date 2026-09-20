@@ -138,6 +138,21 @@ class DriftCliTests(unittest.TestCase):
             path.write_bytes(canonical(plan))
             self.run_cli("drift-check", output, code=2)
 
+    def test_a_tampered_checks_record_breaks_the_binding(self):
+        # checks.json is the honesty record: claiming live verification in it
+        # must not ride a green drift-check.
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            _, output, _ = self.build(directory)
+            path = output / "checks.json"
+            record = json.loads(path.read_text())
+            record["live_ingestion"] = "verified"
+            record["assurance_deviations"] = "14 deviations confirmed in the Assurance UI"
+            path.write_bytes(canonical(record) + b"\n")
+            self.run_cli("drift-check", output, code=2)
+            path.unlink()
+            self.run_cli("drift-check", output, code=2)
+
     def test_a_tampered_observed_payload_breaks_the_binding(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

@@ -231,7 +231,8 @@ for the separately recorded pinned-target live qualification.
   recipe key: `drift` writes a separate artifact bound to that plan's SHA and
   never mutates the baseline. Drift subjects are property-selected — the first
   eligible site in permanent allocation order, then the first eligible switch,
-  ports and endpoints by canonical key — so growth keeps the same subjects.
+  ports in numeric-aware name order and endpoints by append-only room-ledger
+  slot — so growth, in place or site-appending, keeps the same subjects.
   `observed/` is a projection of the plan: only drifted records are emitted, and
   every other record exists to resolve nested identities. A drifted record must
   keep its documented Diode matching identity, a created record must not reuse

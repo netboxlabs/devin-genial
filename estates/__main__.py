@@ -200,6 +200,14 @@ def check_drift(directory):
                 raise DesignError(f"Observed Diode file {name} differs from the recomputed drift payload; rebuild the drift twin")
     if (directory / "drift.md").read_text() != drift.markdown(envelope, baseline):
         raise DesignError("drift.md differs from the walkthrough derived from the checked manifest")
+    # checks.json is the honesty record; bind it too, so a hand-edited claim of
+    # live verification cannot ride a green drift-check.
+    expected_checks = canonical({"status": "expected-drift verified", "scope": "offline drift twin",
+                                 "live_ingestion": "not run",
+                                 "assurance_deviations": "predicted offline; not verified on a target",
+                                 **checks}) + b"\n"
+    if not (directory / "checks.json").is_file() or (directory / "checks.json").read_bytes() != expected_checks:
+        raise DesignError("checks.json differs from the recomputed offline drift record; rebuild the drift twin")
     return {"artifact": envelope["artifact"], "checks": "expected-drift verified", "evidence": checks,
             "observed_payload_matches_manifest": True, "applied_to_target": False}
 

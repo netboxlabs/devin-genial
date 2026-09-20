@@ -74,6 +74,20 @@ class DriftSelectionTests(unittest.TestCase):
         self.assertEqual(after["selection"], self.envelope["selection"])
         self.assertEqual(canonical(after["items"]), canonical(self.envelope["items"]))
 
+    def test_selection_survives_in_place_growth_at_the_anchor_site(self):
+        # The adversarial review's failing case: growing MSP staff appends pods
+        # whose names sort BEFORE existing endpoints; the room-ledger rank must
+        # keep every subject fixed anyway.
+        small = dict(profile="msp", namespace="drifter", name="Drifter Networks",
+                     customers=[dict(key="brightline", offices=1, staff=4)])
+        baseline = generate(small)
+        before = drift.create(baseline)
+        grown = generate(dict(small, customers=[dict(key="brightline", offices=1, staff=40)]),
+                         previous=baseline)
+        after = drift.create(grown)
+        self.assertEqual(after["selection"], before["selection"])
+        self.assertEqual(canonical(after["items"]), canonical(before["items"]))
+
     def test_data_center_only_estates_fail_with_an_actionable_error(self):
         plan = generate(dict(profile="enterprise-data-center", data_centers=1,
                              workloads=[dict(key="customer-portal")]))
