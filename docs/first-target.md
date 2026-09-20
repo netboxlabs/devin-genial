@@ -187,7 +187,9 @@ Growth is a generator feature, not a target feature: `just generate RECIPE
 build/v2 build/v1/plan.json` reuses the frozen plan as the allocation ledger,
 so every existing identity survives — but **the grown artifact is a full
 fresh load of the whole estate into a new branch, not an incremental update
-of the live one**. There is no in-place load mode. The sequence:
+of the live one**. There is no in-place load mode. A drift twin binds one
+plan's SHA: regenerate it (`just drift`) from the grown plan after growth.
+The sequence:
 
 ```
 just generate RECIPE build/v2 build/v1/plan.json

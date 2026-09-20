@@ -107,14 +107,13 @@ decides what gets built beside the artifact and what the cheat sheet narrates.
   `just drift-check` re-renders and compares it. Needs a profile with campus
   access; `enterprise-data-center` models fabric only and is refused at the
   flag.
-- **`automation`** adds narration only, no files. It points at the inventory a
-  playbook reads, the service records a template renders, the custom field and
-  custom link the bank already carries, and the WLAN whose comments resolve its
-  own DNS and RADIUS dependencies to named hosts, protocols and ports. It also
-  states the gap out loud: **this generator emits no config context, config
-  template or export template object** ([COVERAGE.md](../COVERAGE.md) phase 11,
-  pending), so the strong version of that demo is to author one live against
-  real data.
+- **`automation`** adds narration only, no files — since 0.11.0 the records are
+  already in every estate. It points at the inventory a playbook reads, the
+  service records a template renders, the custom field and custom link the
+  estate carries, the two config contexts whose ntp/syslog/dns values are the
+  estate's own service VM addresses, the two rendering export templates, and
+  the deliberately inert webhook + disabled event rule (the ServiceNow/ITSM
+  hook shape, with nothing firing and the records saying so).
 - **`scenario`** builds the loss-of-power-diversity snapshots into `scenario/`
   and scenario-checks them. Those two snapshots are separate estates for
   separate fresh targets, never a transition on the loaded branch.
@@ -141,12 +140,12 @@ go-live commands, plus the one-line recompose that goes live directly.
 Retiring is one command and it is in the cheat sheet:
 `just retire TARGET BRANCH NAMESPACE`.
 
-**One open gate, stated plainly.** The three live steps are the already-qualified
-branch, load and verify commands, but *this composition of them* has never run
-against a real NetBox — it is covered offline by mocked entry-point tests only
-([COVERAGE.md](../COVERAGE.md) phase 12). If anything surprises you, fall back
-to running the three commands yourself; the artifact is already on disk and the
-cheat sheet prints them.
+The composed live path is qualified: on September 20, 2026 one command took a
+bank + Juniper + assurance + automation compose from nothing to a loaded,
+strictly verified branch (8,474/8,474 objects, 0 mismatches) in 227 seconds on
+the pinned local stack ([COVERAGE.md](../COVERAGE.md) phase 12). If anything
+surprises you, fall back to running the three commands yourself; the artifact
+is already on disk and the cheat sheet prints them.
 
 ## Determinism
 

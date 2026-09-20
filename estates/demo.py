@@ -46,7 +46,7 @@ FEATURES = ("assurance", "automation", "scenario")
 VENDORS = {
     "default": ({}, "catalog defaults (Cisco access, Arista leaf, reference AP)"),
     "juniper": ({"access": "juniper", "leaf": "juniper"},
-                "Juniper EX3400-24P access and QFX5120-48Y leaf; the AP stays the reference line"),
+                "Juniper EX3400-24P access and QFX5120-48Y-AFO2 leaf; the AP stays the reference line"),
     "aruba": ({"ap": "aruba"},
               "HPE Aruba AP-505 radios; access and leaf stay on the catalog defaults"),
 }
@@ -693,6 +693,7 @@ def _facts(plan):
                  "facility": headline["attrs"].get("facility")},
         "device": subject["attrs"]["name"] if subject else None,
         "devices_at_site": len(at_site),
+        "racked_at_site": len([obj for obj in at_site if obj["refs"].get("rack")]),
         "rack": rack["attrs"]["name"] if rack else None,
         "listener": listener,
         "desks": desks,
@@ -748,7 +749,11 @@ def _ui(live, path, query=""):
     if not live:
         return f"`{path}{('?' + query) if query else ''}` (on the target, once loaded)"
     separator = "&" if query else "?"
-    return f"<{live['origin']}{path}{('?' + query) if query else ''}{separator}_branch={live['schema']}>"
+    url = f"{live['origin']}{path}{('?' + query) if query else ''}{separator}_branch={live['schema']}"
+    # A markdown link, never an autolink: table cells HTML-escape "&", and a
+    # copied "&amp;" silently drops _branch= (HTTP 200 on plain main). The URL
+    # inside parentheses survives copy-paste from any rendering.
+    return f"[{path}]({url})"
 
 
 def demo_markdown(spec, facts, artifacts, live):
@@ -820,10 +825,11 @@ def demo_markdown(spec, facts, artifacts, live):
         ("Drop into one site.",
          f"**{_cell(facts['site']['name'])}** (`{facts['site']['id']}`) — "
          + _ui(live, "/dcim/devices/", f"site={facts['site']['slug']}")
-         + f" holds {facts['devices_at_site']} devices"
-         + (f", racked in **{_cell(facts['rack'])}**" if facts["rack"] else "")
-         + ". Open the rack elevation: every unit position is deliberate, and its asset tag is "
-           "unique across the whole estate."),
+         + f" holds {facts['devices_at_site']} devices — {facts['racked_at_site']} racked"
+         + (f" (start at **{_cell(facts['rack'])}**)" if facts["rack"] else "")
+         + f", the other {facts['devices_at_site'] - facts['racked_at_site']} are room and wall "
+           "endpoints in their own locations. Open the rack elevation: every unit position is "
+           "deliberate, and its asset tag is unique across the whole estate."),
         ("Trace a path, do not assert one.",
          f"Open **{_cell(facts['device'])}** → *Interfaces* → any cabled port → **Trace**. "
          f"{counts['cable']:,} cables mean the trace lands somewhere real. Then *Power ports* "
@@ -1003,10 +1009,21 @@ def demo_markdown(spec, facts, artifacts, live):
     lines.extend([
         "# Re-run the full strict readback at any time. Zero writes.",
         f"just verify-target {estate} {origin} {branch}", "",
-        "# Grow it without renaming anything: new branch, full fresh load of the whole estate.",
-        f"just generate {out}/recipe.toml {out}-v2 {estate}/plan.json", "",
+        "# Grow it without renaming anything. FIRST edit a copy of the recipe (append",
+        "# the new demand — running it unedited regenerates this same estate), then the",
+        "# full go-live sequence in this order (one namespace = one live branch, so v1",
+        "# retires before v2 loads; the preflight names any blocking rows first):",
+        f"cp {out}/recipe.toml {out}/recipe-v2.toml   # then edit: append demand",
+        f"just generate {out}/recipe-v2.toml {out}-v2 {estate}/plan.json",
+        f"just load-check {out}-v2",
+        f"just branch {origin} '<v2 branch name>'",
+        f"just load-explain {out}-v2 {origin} '<v2 branch name>'",
+        f"just retire {origin} {branch} {_shell(spec['namespace'])}",
+        f"just load {out}-v2 {origin} '<v2 branch name>'",
+        f"just verify-target {out}-v2 {origin} '<v2 branch name>'",
+        f"just drift {out}-v2/plan.json {out}-v2-drift   # the drift twin binds one plan; regenerate it after growth", "",
         "# Leave the target exactly as you found it: the branch AND the namespace's",
-        "# main-scoped owner rows, which branch deletion alone does not remove.",
+        "# main-scoped rows, which branch deletion alone does not remove.",
         f"just retire {origin} {branch} {_shell(spec['namespace'])}",
         "```", "",
         "One namespace has one verifiable branch at a time. A side-by-side before/after demo "
