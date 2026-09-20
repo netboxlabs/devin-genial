@@ -603,7 +603,12 @@ Recipes size demand. They do not select:
   `naming`, exact per-site values via `[site_names]` — see Common keys.)
 - **VLAN IDs, subnet layout within a site, interface names, rack units or cable
   lengths.** These are allocator outputs bound to stable keys.
-- **Custom fields, tags, tenant hierarchies or NetBox config contexts.**
+- **Custom fields, tags, tenant hierarchies, config contexts, export templates,
+  webhooks or event rules.** Every estate carries the same authored automation
+  pack unconditionally, with its config-context values derived from that
+  estate's own services (see
+  [modeling](modeling.md#automation-records)); no key selects, adds to or
+  removes it.
 - **Per-object descriptions, comments or journal text.**
 - **The inherited-lineage brand.** Acquired/inherited bank branches carry the
   authored predecessor identity "Birch" throughout (device names, DNS, VRFs,

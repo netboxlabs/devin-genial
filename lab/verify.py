@@ -74,7 +74,7 @@ for _app, _kinds in {
     "virtualization": "cluster_group virtual_machine_type",
     "vpn": "ike_policy ike_proposal ip_sec_policy ip_sec_proposal ip_sec_profile tunnel tunnel_group tunnel_termination l2vpn l2vpn_termination",
     "wireless": "wireless_lan wireless_lan_group wireless_link",
-    "extras": "custom_field custom_field_choice_set custom_link journal_entry",
+    "extras": "config_context custom_field custom_field_choice_set custom_link event_rule export_template journal_entry webhook",
     "users": "owner owner_group user",
 }.items():
     for _kind in _kinds.split():
@@ -140,7 +140,8 @@ for _kind in ("interface", "front_port", "rear_port", "power_port", "power_outle
 def _generic_stem(obj, field):
     if field.startswith("scope_"):
         return "scope"
-    if field in {"assigned_object", "termination", "object", "member", "component"}:
+    if field in {"assigned_object", "termination", "object", "member", "component",
+                 "action_object"}:
         return field
     if obj["kind"] == "fhrp_group_assignment" and field == "interface":
         return "interface"
@@ -564,6 +565,9 @@ def main(argv=None):
     parser.add_argument("--allow-existing-receipt", type=Path,
                         help="successful same-target readback whose captured IDs may coexist with this plan; requires --strict-inventory")
     parser.add_argument("--strict-inventory", action="store_true")
+    parser.add_argument("--diode-delivered-only", action="store_true",
+                        help="compare only the records a Diode package can carry; use after an "
+                             "SDK replay, which never delivers the plan's loader-only records")
     args = parser.parse_args(argv)
     try:
         if not args.url:
@@ -583,6 +587,16 @@ def main(argv=None):
         plan_bytes = (json.dumps(bootstrap_plan(), sort_keys=True).encode()
                       if args.bootstrap else args.plan.read_bytes())
         plan = json.loads(plan_bytes)
+        omitted = 0
+        if args.diode_delivered_only:
+            if args.bootstrap:
+                raise ValueError("bootstrap captures a target, not a delivered plan")
+            # The pinned SDK has no entity for these kinds, so a replayed
+            # target cannot hold them; the restriction is recorded below.
+            from estates.diode import LOADER_ONLY_KINDS
+            kept = [obj for obj in plan["objects"] if obj["kind"] not in LOADER_ONLY_KINDS]
+            omitted = len(plan["objects"]) - len(kept)
+            plan = {**plan, "objects": kept}
         started_at = datetime.now(timezone.utc).isoformat()
         inventory = fetch_inventory(args.url, token, ENDPOINTS if args.bootstrap
                                     else (obj["kind"] for obj in plan["objects"]), args.branch)
@@ -591,6 +605,13 @@ def main(argv=None):
         result.update(plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
                       target_url=args.url.rstrip("/"), readback_started_at=started_at,
                       observed_at=observed_at, branch=args.branch)
+        if args.diode_delivered_only:
+            result["scope"] = "diode-delivered"
+            result["loader_only_records_excluded"] = omitted
+            result["limits"].append(
+                f"{omitted} loader-only plan records were excluded from this comparison; "
+                "only the TurboBulk/REST loader delivers them, so this receipt says nothing "
+                "about their presence.")
         if args.bootstrap:
             result["purpose"] = "pinned-local-bootstrap"
             result["limits"][1] = "All supported readback endpoints were inventoried; only the nine expected bootstrap identities are permitted."

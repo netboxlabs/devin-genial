@@ -17,6 +17,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Wireless demand and PoE](#wireless-demand-and-poe)
 - [Installed optics policy](#installed-optics-policy)
 - [Contact and journal context](#contact-and-journal-context)
+  - [Automation records](#automation-records)
 - [Extending it](#extending-it)
 
 ## Procedural design, without AI
@@ -271,6 +272,7 @@ complete simulations:
 | Wireless | Site-scoped staff WLAN groups, actual radio interfaces and tagged user-VLAN access paths; a separate routed diagnostic hop |
 | Carrier and recovery services | Virtual circuits over real WAN handoffs; planned IKE/IPsec tunnel and translated VXLAN recovery segment between the DCs |
 | Operations | Contacts/owners, commercial accounts, restoration groups, VM disks/types, cabinet types/groups/reservations, a typed custom choice, journal entry and contextual link |
+| Automation | A global config context carrying this estate's own service endpoints and a role-weighted switching context; CSV export templates for devices and cables; an inert `.invalid` webhook with its disabled device-change event rule (loader-only: no Diode entity exists for these four kinds) |
 
 `report.md` gives graph-derived starting questions. `coverage.json` lists every
 kind and an example key, including the remaining native/SDK gaps. The planned
@@ -428,7 +430,9 @@ desks follow tenant ownership; site facilities desks handle local access and
 power-work coordination; carrier desks follow each circuit's provider; service
 desks follow the VM's workload and tenant. Distinct responsibilities have separate
 primary assignments. The directory uses descriptive `.example` mailboxes and
-does not create user accounts or configure notifications, coverage hours or SLAs.
+does not create user accounts, coverage hours or SLAs. The estate's one webhook
+and event rule are automation *inventory* (below), not configured notification:
+the endpoint is unreachable by construction and the rule is disabled.
 Network infrastructure, APs and hosts expose their actual tenant's technical desk
 directly on the device. Hospital medical/imaging equipment retains its distinct
 site biomedical responsibility. Addressed physical and VM interfaces receive
@@ -469,6 +473,36 @@ does not imply Diode will retire the former contact assignment in place.
 Open a site's Contacts and Journal views, follow a circuit to its carrier desk,
 then inspect a workload VM's service desk and resource/listener notes. The full
 directory and notes remain in the canonical plan and normal Diode package.
+
+### Automation records
+
+Every estate also carries a small automation inventory, unconditionally and
+with no recipe key: two config contexts, two CSV export templates, one webhook
+and one event rule.
+
+The global config context is derived from the finished graph, not authored: its
+`service_endpoints` (and the `dns_servers` resolver list) are exactly the
+addresses this estate's own service listeners bind, so a demo can trace a value
+in the context back to the VM that serves it. The second context is weighted
+above it and scoped to the estate's switching roles; its data is explicitly
+reference intent. Neither context configures a device, and Genial renders no
+configuration. Growth may append a new workload's endpoints; it never rerolls an
+existing list or renames a record, because these names are matching identities
+on the target.
+
+The export templates are CSV Jinja2 for NetBox to render on request from the
+estate's own devices and cables — template text we emit, not code Genial runs.
+Their syntax and the model attributes they read were checked offline against the
+pinned 4.7.1 Jinja environment and models; the offline validator only checks
+structure, and a live render belongs to the owed target qualification. The
+webhook's endpoint is a host in the reserved `.invalid` top-level domain
+(RFC 2606) and its device-change event rule ships **disabled**, so the estate
+dispatches nothing. That is the point: the objects show the automation wiring an
+operator would build, without asserting that any integration ran.
+
+The pinned Diode SDK 1.14.0 has no ingest entity for any of these four kinds, so
+the wire package omits them and names the omission in its manifest; only
+`just load` delivers them (see [loading](loading.md#artifacts-and-diode)).
 The shared bank/DC/school milestone passed independent offline review and live
 Harbor qualification: 3,331 objects match initial/repeat strict readback with
 unchanged IDs. See `build/goal-richness/live/summary.json` and `walkthrough.md`

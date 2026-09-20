@@ -16,6 +16,26 @@ from estates.turbobulk import (LoadError, REST_CREATE_KINDS, SPECS, SUPPORTED_RE
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Writable POST fields of the pinned NetBox 4.7.1 extras serializers, read from
+# the running local stack (manage.py shell: `[n for n, f in Serializer().fields
+# .items() if not f.read_only]`). Hand-copied rather than derived from the
+# compiler, so a payload field the target does not accept fails this preflight.
+REST_CREATE_SCHEMAS = {
+    "/api/extras/config-contexts/": (
+        "cluster_groups cluster_types clusters data data_file data_source description "
+        "device_types is_active locations name owner platforms profile regions roles "
+        "site_groups sites tags tenant_groups tenants weight"),
+    "/api/extras/export-templates/": (
+        "as_attachment data_source description environment_params file_extension file_name "
+        "mime_type name object_types owner template_code"),
+    "/api/extras/webhooks/": (
+        "additional_headers body_template ca_file_path custom_fields description "
+        "http_content_type http_method name owner payload_url secret ssl_verification tags timeout"),
+    "/api/extras/event-rules/": (
+        "action_object_id action_object_type action_type conditions custom_fields description "
+        "enabled event_types name object_types owner tags"),
+}
+
 
 class SchemaClient:
     def __init__(self, objects, rest=True, service_shape="protocol_ports"):
@@ -50,6 +70,9 @@ class SchemaClient:
         if path == SPECS["provider_account"][1]:
             return 200, {"actions": {"POST": {
                 "account": {}, "name": {}, "description": {}, "provider": {}, "owner": {}}}}
+        if path in REST_CREATE_SCHEMAS:
+            return 200, {"actions": {"POST": {name: {}
+                                              for name in REST_CREATE_SCHEMAS[path].split()}}}
         if method == "OPTIONS":
             return 200, {"actions": {"PATCH": {field: {} for field in (
                 "groups", "ipaddresses", "module_bay_types", "oob_ip", "primary_ip4",
@@ -66,9 +89,9 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         cls.plan = generate(recipe_from_file(ROOT / "profiles/enterprise-dc.toml"))
         cls.objects = _index(cls.plan)
 
-    def test_all_53_kinds_and_references_have_declarative_compilers(self):
+    def test_all_57_kinds_and_references_have_declarative_compilers(self):
         kinds = {obj["kind"] for obj in self.objects.values()}
-        self.assertEqual(len(kinds), 53)
+        self.assertEqual(len(kinds), 57)
         self.assertFalse(kinds - SPECS.keys())
         unsupported = {(obj["kind"], ref) for obj in self.objects.values()
                        for ref in set(obj["refs"]) - SUPPORTED_REFS[obj["kind"]]}
@@ -79,7 +102,9 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
                          {"circuit_termination", "console_port", "console_server_port", "interface",
                           "power_feed", "power_outlet", "power_port"})
         result = _schema_preflight(SchemaClient(self.objects), self.objects)
-        self.assertEqual(result["rest_create_fields"], {"module_bay_type": 4, "provider_account": 5})
+        self.assertEqual(result["rest_create_fields"],
+                         {"config_context": 22, "event_rule": 12, "export_template": 11,
+                          "module_bay_type": 4, "provider_account": 5, "webhook": 14})
         ids = {key: position for position, key in enumerate(self.objects, 1)}
         content_types = {kind: position for position, kind in
                          enumerate(sorted(_required_content_types(self.objects)), 1)}
@@ -118,9 +143,13 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         client = SchemaClient(self.objects, rest=False)
         with self.assertRaisesRegex(LoadError, "no writable REST model.*module_bay_type"):
             _schema_preflight(client, self.objects)
-        self.assertEqual(client.calls, [("OPTIONS", SPECS["module_bay_type"][1])])
-        self.assertEqual(REST_CREATE_KINDS, {"module_bay_type", "provider_account",
-                                             "custom_field", "custom_field_choice_set", "custom_link"})
+        # Only REST create schemas are read, and the run stops on the missing one.
+        self.assertEqual({method for method, _ in client.calls}, {"OPTIONS"})
+        self.assertEqual(client.calls[-1], ("OPTIONS", SPECS["module_bay_type"][1]))
+        self.assertEqual(REST_CREATE_KINDS,
+                         {"module_bay_type", "provider_account", "custom_field",
+                          "custom_field_choice_set", "custom_link", "config_context",
+                          "event_rule", "export_template", "webhook"})
 
     def test_missing_rest_completion_field_fails_preflight(self):
         client = SchemaClient(self.objects)
@@ -144,7 +173,7 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
                 {"status": "passed", "plan_sha256": digest(self.plan)}))
             with patch("estates.turbobulk.Client") as client:
                 with self.assertRaisesRegex(
-                        LoadError, "REST create: module_bay_type.*REST completion PATCH"):
+                        LoadError, "REST create: config_context.*module_bay_type.*REST completion PATCH"):
                     load(root, url="https://netbox.example", token="fixture", branch="Demo",
                          receipt_path=root / "receipt.json",
                          delivery_policy="disposable-baseline")

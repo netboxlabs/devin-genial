@@ -37,6 +37,15 @@ class ProviderIntegrationTests(unittest.TestCase):
 
     def operations_plan(self, remote_kind):
         world = empty_provider_world()
+        # Shared enrichment attaches automation records to the estate's own
+        # ownership record and a switching role, exactly as every profile does.
+        world.add("owner_group", "owner-group/operations", {"name": "Operator Infrastructure teams"})
+        world.add("owner", "owner/operations", {"name": "Operator Network operations"},
+                  {"group": "owner-group/operations"})
+        world.add("device_role", "role/access", {"name": "Access", "slug": "access"})
+        # Export templates must target object types the estate populates.
+        world.add("device", "device/pop-a", {"name": "pop-a-edge-01"})
+        world.add("cable", "cable/pop-a", {"label": "POP-A-1", "type": "cat6"})
         world.add("tenant", "tenant", {"name": "Operator"})
         world.add("tenant", "tenant/cust-acme", {"name": "Acme"})
         for key, name in (("site/a", "Chicago PoP"), ("site/z", "Detroit PoP")):

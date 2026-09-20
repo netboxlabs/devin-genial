@@ -28,8 +28,8 @@ template below. Prefer `model: opus` for fan-out.
 
 ### Variation rules (pick differently each run)
 
-- **Scenario/industry**: rotate through every shipped profile (all five load
-  completely as of the 98-kind contract; check README's industry table for
+- **Scenario/industry**: rotate through every shipped profile (all ten load
+  completely as of the 102-kind contract; check README's industry table for
   the current set). Vary the *journey* too: first load, growth act,
   retirement act, customer-named sites, merger/acquired lineage.
 - **Customization**: the agent must author its own recipe from

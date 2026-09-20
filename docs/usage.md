@@ -80,6 +80,9 @@ Python 3.11+ alone can run the generator without devenv or Just:
 No third-party packages are imported on that path. Each build includes
 `coverage.json`: counts and example keys for all 106 pinned SDK entity kinds,
 plus explicit classifications for native types without a top-level SDK message.
+The four automation kinds every estate emits appear there, classified
+`loader_only` rather than counted: no Diode request can carry them (see
+[modeling](modeling.md#automation-records)).
 Generated counts do not establish successful ingestion.
 
 For the broadest local walkthrough, use `profiles/bank-depth.toml`. Its

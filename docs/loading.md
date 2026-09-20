@@ -200,8 +200,19 @@ replacement name to TurboBulk loads.
 | `diode/manifest.json` | Checksums, counts, deterministic request IDs, dependency phases, and replay notes |
 | `diode/phase-*.json` | Diode dry-run replay requests; at most 1,000 entities and 2,500,000 JSON bytes each |
 
-The export contract is pinned to **netboxlabs-diode-sdk 1.14.0**. The optional
-devenv `diode` profile installs it in a devenv-managed environment:
+The export contract is pinned to **netboxlabs-diode-sdk 1.14.0**, whose
+`IngestRequest` has no entity for four kinds every estate carries: the
+automation records (`config_context`, `export_template`, `webhook`,
+`event_rule`). The wire package therefore omits them and records exactly what it
+left out in `diode/manifest.json` under `loader_only_records`; only
+`just load` (TurboBulk plus bounded REST) delivers them. A Diode-seeded target
+holds the estate without them, so verify it with `just lab-verify` (which passes
+`--diode-delivered-only`: the same restriction, recorded in its receipt).
+`just verify-target` is the complete gate and expects every record, including
+these.
+
+The optional devenv `diode` profile installs the SDK in a devenv-managed
+environment:
 
 ```sh
 devenv --profile diode shell
@@ -286,7 +297,7 @@ assume that previously open deviations will be applied or replayed automatically
 
 One complete mixed TurboBulk/REST estate has passed strict Cloud readback. Its
 29-kind qualification compiler is callable through `just load`. The compiler now
-covers 98 kinds — every kind any current profile emits, the complete bank included — with all 53 kinds and references in the current enterprise
+covers 102 kinds — every kind any current profile emits, the complete bank included — with all 57 kinds and references in the current enterprise
 data center artifact, with content-type-safe generic relationships, deferred
 many-to-many fields,
 and resumable REST creation when a required model is absent from TurboBulk. A fresh write
@@ -299,7 +310,7 @@ end-to-end timing and the rich graph have since been measured on the pinned loca
 stack; both remain unqualified on Cloud. The configured
 Cloud tenant runs NetBox 4.6.8. Its API cannot represent `module_bay_type` or the
 related compatibility fields, which NetBox [introduced in 4.7](https://github.com/netbox-community/netbox/discussions/22950).
-Read-only preflight therefore rejects the exact 53-kind artifact before writes.
+Read-only preflight therefore rejects the exact 57-kind artifact before writes.
 The 4.7 rich path is live-qualified only on the pinned local 4.7.1 stack
 (see [the rich-contract qualification](qualification.md#rich-contract-live-qualification-and-merge-findings));
 Cloud and Enterprise remain unqualified.
@@ -380,20 +391,26 @@ reaper marks the row a resume arbitrates it from exact create-ChangeDiff counts.
 Do not mark committed rows complete solely from counters.
 
 TurboBulk supports branch-targeted jobs, making a disposable branch the rollback
-boundary for a multi-model estate — except NetBox 4.7 `owner`/`owner_group` rows,
+boundary for a multi-model estate — except the Branching-exempt main-scoped rows,
 which a branch-scoped load writes to main and which survive branch deletion and
-`just reset`. TurboBulk does not make every model idempotent:
+`just reset`: NetBox 4.7 `owner`/`owner_group`, the custom-field, choice-set and
+custom-link definitions, and the automation export templates, webhook and event
+rule. (Config contexts are *not* exempt — `get_branchable_object_types()` lists
+`extras.configcontext` — so they live in the branch and go with it.)
+TurboBulk does not make every model idempotent:
 upsert depends on target database constraints, and some generated identities do
 not have a suitable unique constraint. Resume only from verified completed-job
 receipts; restart an ambiguous phase on a fresh branch. A new receipt requires all
 emitted-kind inventories to be empty, with two recorded exceptions whose
 plain-attribute identities must all be disjoint from the plan's: declared builtin
-kinds (currently `module_type_profile`) and main-scoped `owner`/`owner_group`
-rows another estate left on a shared 4.7 target. Both are allowlisted by exact
+kinds (currently `module_type_profile`) and the main-scoped rows listed above
+that another estate left on a shared 4.7 target. Both are allowlisted by exact
 id and identity in the receipt and honored by strict readback, so distinct
 namespaces coexist on one target. An identity collision is still a hard block —
-clear the same namespace's leftovers through REST at `/api/users/owners/` and
-`/api/users/owner-groups/`. `just load-explain` reports the target's occupancy
+clear the same namespace's leftovers with `just retire`, which walks those
+endpoints in dependency order (event rules, webhooks and export templates first,
+then the custom-field trio, then `/api/users/owners/` and
+`/api/users/owner-groups/`). `just load-explain` reports the target's occupancy
 with this exact allowlist assessment before any write. The loader assumes
 exclusive use of that disposable branch while the receipt is active.
 

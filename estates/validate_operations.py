@@ -8,6 +8,200 @@ import re
 from .model import digest, hardware_catalog
 
 
+# A CSV export template must be one header line plus exactly one queryset loop,
+# so NetBox renders a row per object. The check is structural: nothing here
+# imports or executes Jinja2 (the runtime is the standard library only), and a
+# column expression must not contain a comma.
+_EXPORT_TEMPLATE = re.compile(
+    r"(?P<header>[^\n{}]+)\n\{% for (?P<name>[a-z_]+) in queryset %\}"
+    r"(?P<row>[^\n]+)\n\{% endfor %\}\Z")
+_EXPRESSION = re.compile(r"\{\{(.+?)\}\}")
+# core.events in the pinned NetBox 4.7 registers exactly these event types.
+_EVENT_TYPES = {"object_created", "object_updated", "object_deleted",
+                "job_started", "job_completed", "job_failed", "job_errored"}
+# A server list names a small, redundant set of hosts, never the whole workload.
+_MAX_ENDPOINT_HOSTS = 2
+
+
+def _renders_csv_rows(code):
+    """True when this template is a header plus one queryset loop that reads the object."""
+    if not isinstance(code, str):
+        return False
+    match = _EXPORT_TEMPLATE.fullmatch(code)
+    if not match or code.count("{%") != 2 or code.count("{{") != code.count("}}"):
+        return False
+    header = [column.strip() for column in match.group("header").split(",")]
+    columns = match.group("row").split(",")
+    expressions = _EXPRESSION.findall(match.group("row"))
+    loop = match.group("name")
+    # Every column must read the loop object, so a row cannot silently render
+    # empty or repeat one global value.
+    return (len(header) >= 3 and len(header) == len(columns) == len(expressions)
+            and all(header) and all(expression.strip().startswith(f"{loop}.")
+                                    for expression in expressions))
+
+
+def _emitted(kinds, content_type):
+    """True when the plan emits objects of this native `app.model` type.
+
+    The canonical kind is the model segment; a multi-word model would simply
+    find nothing, which fails closed.
+    """
+    return (isinstance(content_type, str) and "." in content_type
+            and bool(kinds.get(content_type.split(".", 1)[1])))
+
+
+def _automation(objects, kinds, ns, fail):
+    """Check the estate's automation inventory against its own graph.
+
+    Config-context server lists must be addresses this estate's own service
+    listeners bind; scope references must exist; the event rule must name the
+    emitted webhook and stay inert. Emitted contracts and metadata are not
+    inputs.
+    """
+    # Reading a defaultdict would insert empty kinds the coverage check reads.
+    listed = lambda kind: kinds.get(kind, [])
+    hosts = defaultdict(lambda: defaultdict(list))
+    for service in listed("service"):
+        vm = service["refs"].get("virtual_machine", "")
+        parts = vm.split("/") if isinstance(vm, str) else []
+        if len(parts) != 4:
+            continue
+        for key in service["refs"].get("ipaddresses", []):
+            address = objects.get(key, {}).get("attrs", {}).get("address", "")
+            if isinstance(address, str) and address:
+                hosts[parts[2]][vm].append(address.split("/")[0])
+    bound = {workload: {address for served in served_by.values() for address in served}
+             for workload, served_by in hosts.items()}
+
+    for obj in (listed("config_context") + listed("export_template")
+                + listed("webhook") + listed("event_rule")):
+        name = obj["attrs"].get("name", "")
+        description = obj["attrs"].get("description", "")
+        if (not isinstance(name, str) or not name.startswith(f"{ns} ") or len(name) > 100
+                or not isinstance(description, str) or not 1 <= len(description) <= 200
+                or objects.get(obj["refs"].get("owner"), {}).get("kind") != "owner"):
+            fail("automation-record", obj["key"],
+                 "Automation records must carry the namespace, a native-length name and description, and the estate's owner.")
+
+    contexts = {obj["key"]: obj for obj in listed("config_context")}
+    weights = {}
+    for key in ("config-context/global", "config-context/switching"):
+        obj = contexts.get(key)
+        if obj is None or obj["attrs"].get("is_active") is not True:
+            fail("automation-context", key, "Estate automation needs this active config context.")
+            continue
+        weight = obj["attrs"].get("weight")
+        if type(weight) is not int or not 0 <= weight <= 32767:
+            fail("automation-context", key, "Config-context weight must be a native positive small integer.")
+            continue
+        weights[key] = weight
+    if len(weights) == 2 and not weights["config-context/switching"] > weights["config-context/global"]:
+        fail("automation-context", "config-context/switching",
+             "The role-scoped context must outweigh the global one for its narrower scope to win.")
+    for key, obj in contexts.items():
+        if key not in {"config-context/global", "config-context/switching"}:
+            fail("automation-context", key, "Config context has no declared estate scope.")
+
+    context = contexts.get("config-context/global")
+    data = context["attrs"].get("data") if context else None
+    if context is not None:
+        endpoints = data.get("service_endpoints") if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or data.get("domain") != f"{ns}.example"
+                or not isinstance(endpoints, dict)
+                or set(data) - {"domain", "service_endpoints", "dns_servers"}):
+            fail("automation-context", context["key"],
+                 "The global context carries this estate's domain and its own service endpoints, nothing else.")
+        else:
+            if {workload.replace("_", "-") for workload in endpoints} != set(bound):
+                fail("automation-context-facts", context["key"],
+                     "Service endpoints must name exactly the workloads this estate serves.")
+            for workload, addresses in sorted(endpoints.items()):
+                served_by = hosts.get(workload.replace("_", "-"), {})
+                available = bound.get(workload.replace("_", "-"), set())
+                if (not isinstance(addresses, list) or not addresses
+                        or len(set(addresses)) != len(addresses)
+                        or any(address not in available for address in addresses)):
+                    fail("automation-context-facts", context["key"],
+                         f"Every {workload} endpoint must be an address that workload's own listeners bind.")
+                    continue
+                # A short, redundant server list: the addresses of a couple of
+                # hosts (both families when the estate is dual-stack), never a
+                # roster of every instance.
+                named = {vm for vm, served in served_by.items()
+                         if set(served) & set(addresses)}
+                if len(named) > _MAX_ENDPOINT_HOSTS:
+                    fail("automation-context-facts", context["key"],
+                         f"The {workload} endpoint list must name at most "
+                         f"{_MAX_ENDPOINT_HOSTS} serving hosts.")
+            resolvers = data.get("dns_servers")
+            if resolvers != endpoints.get("dns"):
+                fail("automation-context-facts", context["key"],
+                     "The resolver list must be exactly this estate's own DNS listener addresses.")
+
+    scoped = contexts.get("config-context/switching")
+    if scoped is not None:
+        roles = scoped["refs"].get("roles")
+        if (not isinstance(roles, list) or not roles
+                or any(objects.get(role, {}).get("kind") != "device_role" for role in roles)):
+            fail("automation-context", scoped["key"],
+                 "The role-scoped context must reference existing device roles.")
+        if not isinstance(scoped["attrs"].get("data"), dict) or not scoped["attrs"]["data"]:
+            fail("automation-context", scoped["key"], "A config context must carry data.")
+
+    templates = {obj["key"]: obj for obj in listed("export_template")}
+    for key in ("export-template/device-inventory", "export-template/cable-report"):
+        obj = templates.get(key)
+        if obj is None:
+            fail("automation-template", key, "Estate automation needs this export template.")
+            continue
+        types = obj["attrs"].get("object_types")
+        if (not isinstance(types, list) or not types
+                or any(not _emitted(kinds, name) for name in types)):
+            fail("automation-template", key,
+                 "An export template must apply to an object type this estate actually emits.")
+        if (not _renders_csv_rows(obj["attrs"].get("template_code"))
+                or obj["attrs"].get("mime_type") != "text/csv"
+                or obj["attrs"].get("file_extension") != "csv"
+                or obj["attrs"].get("as_attachment") is not True):
+            fail("automation-template", key,
+                 "A CSV export template must be a header plus one queryset loop whose columns all read the object.")
+
+    webhooks = {obj["key"]: obj for obj in listed("webhook")}
+    hook = webhooks.get("webhook/netops")
+    if hook is None or len(webhooks) != 1:
+        fail("automation-event-rule", "webhook/netops", "Estate automation needs exactly one demo webhook.")
+    else:
+        url = hook["attrs"].get("payload_url", "")
+        host = url.split("//", 1)[-1].split("/", 1)[0] if isinstance(url, str) else ""
+        if (not isinstance(url, str) or not url.startswith("https://") or not host.endswith(".invalid")
+                or hook["attrs"].get("http_method") != "POST"
+                or hook["attrs"].get("ssl_verification") is not True):
+            fail("automation-event-rule", hook["key"],
+                 "The demo webhook must stay inert: an https reserved .invalid endpoint that nothing can reach.")
+    rules = {obj["key"]: obj for obj in listed("event_rule")}
+    rule = rules.get("event-rule/device-change")
+    if rule is None or len(rules) != 1:
+        fail("automation-event-rule", "event-rule/device-change",
+             "Estate automation needs exactly one demo event rule.")
+    else:
+        types = rule["attrs"].get("object_types")
+        events = rule["attrs"].get("event_types")
+        if (objects.get(rule["refs"].get("action_object"), {}).get("kind") != "webhook"
+                or rule["attrs"].get("action_type") != "webhook"):
+            fail("automation-event-rule", rule["key"],
+                 "The event rule must fire the estate's own webhook through the webhook action.")
+        if rule["attrs"].get("enabled") is not False:
+            fail("automation-event-rule", rule["key"],
+                 "The demo event rule ships disabled; an enabled rule would emit requests the estate does not model.")
+        if (not isinstance(types, list) or not types
+                or any(not _emitted(kinds, name) for name in types)
+                or not isinstance(events, list) or not events or set(events) - _EVENT_TYPES
+                or len(set(events)) != len(events)):
+            fail("automation-event-rule", rule["key"],
+                 "The event rule must watch an emitted object type on native event types.")
+
+
 def _context(plan, objects, kinds):
     """Derive obligations from inventory, never emitted contracts or metadata."""
     if not plan.get("recipe", {}).get("profile"):
@@ -319,6 +513,7 @@ def _context(plan, objects, kinds):
     for key in notes:
         if objects.get(key, {}).get("kind") != "journal_entry":
             fail("operations-journal", key, "Required bounded lifecycle event is missing.")
+    _automation(objects, kinds, ns, fail)
     return findings
 
 
@@ -341,7 +536,8 @@ def validate(plan):
     expected = {"circuit_group", "circuit_group_assignment", "cluster_group", "contact", "contact_group", "contact_role",
                 "contact_assignment", "provider_account", "rack_type", "rack_group", "tenant_group", "virtual_disk",
                 "virtual_machine_type", "custom_field", "custom_field_choice_set", "journal_entry", "custom_link",
-                "owner", "owner_group", "cable_bundle"}
+                "owner", "owner_group", "cable_bundle",
+                "config_context", "export_template", "webhook", "event_rule"}
     for kind in sorted(expected - kinds.keys()):
         report("operations-coverage", kind, "Operations coverage requires a connected example of this kind.")
     for kind, field, target in (("tenant", "group", "tenant_group"), ("cluster", "group", "cluster_group"),

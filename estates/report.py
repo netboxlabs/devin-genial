@@ -166,6 +166,39 @@ def _operations_walkthrough(objects, kinds):
     return lines
 
 
+def _automation_walkthrough(objects, kinds):
+    """Name the automation records and where the demo opens each one."""
+    rows = []
+    for context in sorted(kinds["config_context"], key=lambda obj: obj["key"]):
+        data = context["attrs"].get("data") or {}
+        scope = ", ".join(objects.get(role, {}).get("attrs", {}).get("name", role)
+                          for role in context["refs"].get("roles", [])) or "Global (no scope)"
+        rows.append(("Config context", context["attrs"].get("name", context["key"]),
+                     f"weight {context['attrs'].get('weight')}; {scope}",
+                     "; ".join(sorted(data)) or "No data"))
+    for template in sorted(kinds["export_template"], key=lambda obj: obj["key"]):
+        rows.append(("Export template", template["attrs"].get("name", template["key"]),
+                     ", ".join(template["attrs"].get("object_types", [])),
+                     template["attrs"].get("description", "")))
+    for hook in sorted(kinds["webhook"], key=lambda obj: obj["key"]):
+        rows.append(("Webhook", hook["attrs"].get("name", hook["key"]),
+                     hook["attrs"].get("payload_url", ""), "Unreachable by design"))
+    for rule in sorted(kinds["event_rule"], key=lambda obj: obj["key"]):
+        rows.append(("Event rule", rule["attrs"].get("name", rule["key"]),
+                     ", ".join(rule["attrs"].get("event_types", [])),
+                     "Enabled" if rule["attrs"].get("enabled") else "Disabled: nothing is sent"))
+    if not rows:
+        return []
+    lines = ["## Automation records", "",
+             "Inventory for an automation conversation. The global config context lists this estate's "
+             "own service addresses, taken from the services that bind them; the export templates describe "
+             "the estate's own devices and cables for NetBox to render on request. Nothing here is executed: "
+             "no device is configured, the webhook endpoint is a reserved `.invalid` host, and its event rule is disabled. "
+             "The pinned Diode package cannot carry these four kinds — the target-aware loader delivers them.", ""]
+    _table(lines, ["Record", "Name", "Scope", "Note"], rows)
+    return lines
+
+
 def _wireless_walkthrough(plan, objects, kinds):
     """Bounded navigation examples from actual wired APs and WLAN dependencies."""
     aps = [o for o in kinds["device"] if o["refs"].get("role") == "role/ap"]
@@ -602,7 +635,9 @@ def markdown(plan):
         lines[offset:offset] = block
 
     offset = lines.index("## Estate topology")
-    lines[offset:offset] = (_operations_walkthrough(objects, kinds) + _ipv6_walkthrough(plan, objects, kinds)
+    lines[offset:offset] = (_operations_walkthrough(objects, kinds)
+                            + _automation_walkthrough(objects, kinds)
+                            + _ipv6_walkthrough(plan, objects, kinds)
                             + _wireless_walkthrough(plan, objects, kinds)
                             + _optics_walkthrough(objects, kinds, cable_peer, passive_peer, cable_at))
 

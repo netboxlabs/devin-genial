@@ -16,7 +16,8 @@ import re
 import subprocess
 import time
 
-from .diode import _PRIMARY_IPS, _deferred_fields, _phases
+from .diode import (LOADER_ONLY_KINDS, LOADER_ONLY_REASON, _PRIMARY_IPS, _deferred_fields,
+                    _phases, deliverable, deliverable_plan, loader_only_records)
 from .model import digest
 from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, MAX_JOB_ROWS, Client, LoadError, SPECS, _artifact, _branch,
                         _numeric_ids, _schema_preflight, _verify_paths, _write_receipt,
@@ -308,9 +309,13 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
         if manifest.get("local_compatibility_required"):
             diode_reasons.append("artifact requires a local-only compatibility bridge")
     # Endpoint probes catch target-version model gaps before any Diode request.
-    diode_reasons.extend(_probe_endpoints(client, kinds))
+    # Only the kinds this transport delivers matter; it never writes the rest.
+    diode_reasons.extend(_probe_endpoints(client, kinds - LOADER_ONLY_KINDS))
     candidates["diode"] = {"available": not diode_reasons, "reasons": diode_reasons,
                             "transport": "diode+rest-readback",
+                            # Loud, recorded partial delivery: this transport
+                            # loads and verifies the estate without these.
+                            "loader_only_records": loader_only_records(plan),
                             "external_configuration": diode_evidence}
     candidates["rest"] = {"available": False,
                            "reasons": ["standalone canonical REST creation adapter is not implemented yet"],
@@ -542,14 +547,30 @@ def _continue_diode(plan, objects, directory, manifest, client, receipt, receipt
 
 def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=900,
                delivery_policy="reviewable"):
-    """Replay verified Diode phases with REST visibility barriers and checkpoints."""
+    """Replay verified Diode phases with REST visibility barriers and checkpoints.
+
+    The Diode package carries only the records the pinned SDK can express, so
+    this lane loads and verifies the artifact restricted to them; the omitted
+    loader-only records are recorded in the receipt and printed before any
+    write. Delivering the complete estate requires the TurboBulk transport.
+    """
     started = time.monotonic()
-    plan_path, raw, plan, objects, offline = _artifact(artifact)
+    plan_path, raw, artifact_plan, artifact_objects, offline = _artifact(artifact)
+    omitted = loader_only_records(artifact_plan)
+    if omitted["total"]:
+        print("Diode transport delivers a partial estate: "
+              f"{omitted['total']} loader-only records are omitted "
+              f"({', '.join(f'{kind}={count}' for kind, count in sorted(omitted['counts'].items()))}). "
+              + LOADER_ONLY_REASON, file=os.sys.stderr, flush=True)
+    # The artifact plan stays the binding identity (its digest is what the
+    # manifest and every other receipt record); only target comparison and
+    # phase scheduling drop what this package cannot carry.
+    plan, objects = deliverable_plan(artifact_plan), deliverable(artifact_objects)
     client, status, branch_row = _target(url, token, branch)
     evidence, config_reasons = _diode_config(client, branch, status.get("plugins", {}))
     if config_reasons:
         raise LoadError("; ".join(config_reasons))
-    package, reasons = _diode_manifest(plan_path, plan)
+    package, reasons = _diode_manifest(plan_path, artifact_plan)
     if reasons or package is None:
         raise LoadError("; ".join(reasons))
     directory, manifest = package
@@ -557,7 +578,7 @@ def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=
     binding = {
         "receipt_version": RECEIPT_VERSION, "adapter_version": ADAPTER_VERSION,
         "artifact": str(plan_path), "plan_sha256": hashlib.sha256(raw).hexdigest(),
-        "canonical_sha256": digest(plan), "manifest_sha256": hashlib.sha256(
+        "canonical_sha256": digest(artifact_plan), "manifest_sha256": hashlib.sha256(
             (directory / "manifest.json").read_bytes()).hexdigest(),
         "target": client.base, "branch": branch or None, "branch_id": client.branch_id,
         "diode_target": evidence["target"], "diode_client_id_sha256": evidence["client_id_sha256"],
@@ -585,6 +606,7 @@ def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=
         if initial["matched_objects"] or conflicts:
             raise LoadError("fresh Diode load found matching or ambiguous canonical identities; use a fresh branch")
         receipt = {**binding, "started_at": _now(), "success": False, "result": "preflight",
+                   "loader_only_records": omitted,
                    "target_status": status, "offline_checks": offline, "selection": decision,
                    "external_configuration": evidence, "branch_record": branch_row,
                    "baseline": _baseline(inventory), "phases": [], "attempts": []}
@@ -683,8 +705,9 @@ def main(argv=None):
     try:
         if args.load_check:
             from .turbobulk import REST_CREATE_KINDS, SUPPORTED_REFS
-            _, _raw, _plan, objects, _offline = _artifact(args.artifact)
+            _, _raw, plan, objects, _offline = _artifact(args.artifact)
             kinds = sorted({obj["kind"] for obj in objects.values()})
+            loader_only = loader_only_records(plan)
             uncovered = sorted(set(kinds) - set(SPECS))
             unsupported_refs = sorted({
                 f"{obj['kind']}.{ref}" for obj in objects.values()
@@ -716,6 +739,10 @@ def main(argv=None):
                               "turbobulk_uncovered": uncovered,
                               "turbobulk_unsupported_refs": unsupported_refs,
                               "rest_create_kinds": rest_kinds,
+                              # Named here because these records exist only on
+                              # this transport: no Diode package carries them.
+                              "turbobulk_only_kinds": sorted(loader_only["counts"]),
+                              "turbobulk_only_records": loader_only["total"],
                               "verdict": verdict}, indent=2, sort_keys=True))
             print(verdict, file=os.sys.stderr)
             return 0 if loadable else 2

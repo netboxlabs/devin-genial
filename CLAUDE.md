@@ -100,14 +100,26 @@ Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
 builtin `module_type_profile` plus the Branching-exempt main-scoped kinds —
-`owner`/`owner_group` and the custom_field/choice_set/custom_link definitions)
+`owner`/`owner_group`, the custom_field/choice_set/custom_link definitions and
+the automation export_template/webhook/event_rule records)
 with plain-attribute identities disjoint from the plan, recorded exactly in the
 receipt; a collision stays a hard block. The allowlist is assessed at preflight
 and again at final readback, so concurrent neighbour loads are excused. Those
 main-scoped rows survive branch deletion and create no branch ChangeDiffs
-(`BRANCH_EXEMPT_KINDS` excludes the extras trio from the exact-count gate,
-verified against Branching 1.2.1 EXEMPT_MODELS): disjoint namespaces coexist on
-one target, and same-namespace leftovers need `just retire`.
+(`BRANCH_EXEMPT_KINDS` excludes those six kinds from the exact-count gate,
+verified against the running Branching 1.2.1 EXEMPT_MODELS): disjoint namespaces
+coexist on one target, and same-namespace leftovers need `just retire`, which
+deletes them before the owner rows. `config_context` is deliberately absent from
+both sets: `get_branchable_object_types()` lists `extras.configcontext`, so
+config contexts are branch-scoped and keep their exact create-ChangeDiff count.
+Automation records (config contexts, export templates, the webhook and its event
+rule) have no Diode SDK 1.14.0 entity (`LOADER_ONLY_KINDS`), so the wire package
+omits them, records the omission in its manifest, and only `just load` delivers
+them; the Diode lane prints and records that partial delivery while still
+binding the whole artifact's digest, and `just lab-verify`
+(`--diode-delivered-only`) verifies a replayed target under the same
+restriction. Keep the webhook endpoint reserved-invalid and its rule disabled:
+this is inert inventory, never an executed integration.
 The loader supplies three model defaults the raw bulk path would otherwise
 manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`);
 strict readback compares only emitted fields and does not verify them.
@@ -182,6 +194,11 @@ for the separately recorded pinned-target live qualification.
   [IPv6 guide](docs/modeling.md#optional-ipv6), pinned live receipts in `lab/README.md`.
 - `estates/operations_context.py`: shared scoped contacts and immutable dated notes;
   `validate_operations.py` independently checks their actual scope and claims.
+- `estates/automation.py`: the shared automation pack every estate carries —
+  two config contexts (one carrying the estate's own service endpoints), two CSV
+  export templates, and an inert webhook with its disabled event rule;
+  `validate_operations.py` independently checks the endpoints against the
+  services that bind them, the scopes, the template shape and the inert wiring.
 - `catalog/type-coverage.json`: pinned SDK/native audit; builds derive `coverage.json`.
 - `estates/scenarios.py`: acquisition/refresh candidates and before/after checks.
 - `estates/power_scenario.py`: property-selected shared defect, exact finding and restoration checks.
@@ -194,7 +211,7 @@ for the separately recorded pinned-target live qualification.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
   `estates/turbobulk.py`: the bounded TurboBulk/REST adapter, including the
-  29-kind Cloud qualification and the full 98-kind contract (every current profile,
+  29-kind Cloud qualification and the full 102-kind contract (every current profile,
   the complete bank included), live-qualified
   only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
@@ -417,6 +434,16 @@ for the separately recorded pinned-target live qualification.
   reuse old target-ID receipts after a reset. Archive predecessor source before edits.
 - Shared operational owners need a real owner_group reference; the pinned REST
   serializer rejects omission. Validate that obligation without emitted contracts.
+- Automation records are unconditional shared enrichment, like contacts and
+  journals: no recipe key selects them. A config context may cite only addresses
+  the estate's own service listeners bind, derived from the finished graph and
+  rechecked independently; growth may append a workload's endpoints but must
+  never reroll an existing one or rename a record. Export templates must render
+  on object types the estate actually emits. The webhook is inventory only — an
+  https reserved `.invalid` endpoint whose event rule ships disabled — so nothing
+  is ever sent; never point one at a reachable host or enable the rule. Config
+  contexts, export templates, webhooks and event rules configure nothing: they
+  are documentation intent, not applied device or NetBox behavior.
 - Capture `just lab-bootstrap <new-receipt>` before the first load of a fresh
   prepared target. It permits only the nine expected bootstrap identities across
   all supported endpoints; keep its IDs fixed for initial/repeat readback and

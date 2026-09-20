@@ -119,6 +119,17 @@ for _kind, _fields in {
     _attrs, _refs = _IDENTITY[_kind]
     _IDENTITY[_kind] = (_attrs + _fields, _refs)
 
+# The pinned SDK's IngestRequest has no Entity for these NetBox models, so no
+# Diode request can carry them: verified against
+# netboxlabs.diode.sdk.diode.v1.ingester_pb2.Entity (107 fields, none of them
+# extras automation records), and recorded in catalog/type-coverage.json under
+# native_without_sdk. The TurboBulk/REST loader delivers them; the manifest
+# below records exactly what this package omits.
+LOADER_ONLY_KINDS = {"config_context", "export_template", "webhook", "event_rule"}
+LOADER_ONLY_REASON = (
+    "No entity exists for these models in Diode SDK "
+    f"{SDK_VERSION}; only the TurboBulk/REST loader (just load) delivers them.")
+
 _GENERIC_REFS = {
     ("ip_address", "assigned_object"): {"interface", "vm_interface", "fhrp_group"},
     ("mac_address", "assigned_object"): {"interface", "vm_interface"},
@@ -227,6 +238,37 @@ def _phases(objects):
     return phases
 
 
+def deliverable(objects):
+    """Canonical objects this wire format can carry, with the omission proven safe.
+
+    A delivered record may never reference a loader-only one: the Diode package
+    would then describe a relationship it cannot create.
+    """
+    delivered = {key: obj for key, obj in objects.items()
+                 if obj["kind"] not in LOADER_ONLY_KINDS}
+    dangling = sorted(f"{key}.{field}" for key, obj in delivered.items()
+                      for field, ref in obj["refs"].items()
+                      for target in _keys(ref) if target not in delivered)
+    if dangling:
+        raise ValueError("Diode-delivered records reference loader-only records: "
+                         + ", ".join(dangling[:8]))
+    return delivered
+
+
+def deliverable_plan(plan):
+    """The plan restricted to records a Diode package delivers."""
+    return {**plan, "objects": [obj for obj in plan["objects"]
+                                if obj["kind"] not in LOADER_ONLY_KINDS]}
+
+
+def loader_only_records(plan):
+    """What a Diode package leaves to the loader, counted from the plan."""
+    counts = Counter(obj["kind"] for obj in plan["objects"]
+                     if obj["kind"] in LOADER_ONLY_KINDS)
+    return {"total": sum(counts.values()), "counts": dict(sorted(counts.items())),
+            "kinds": sorted(LOADER_ONLY_KINDS), "reason": LOADER_ONLY_REASON}
+
+
 class _References:
     def __init__(self, objects):
         self.objects = objects
@@ -316,13 +358,14 @@ def export(plan, output_dir, keys=None):
     request IDs carry a distinct prefix so a projection never collides with the
     whole-estate export of the same plan.
     """
-    objects = _index(plan)
+    estate = _index(plan)
+    objects = deliverable(estate)
     if keys is None:
         selected = set(objects)
     else:
         selected = set(keys)
         if missing := sorted(selected - set(objects)):
-            raise ValueError(f"projected export requests absent records: {', '.join(missing[:8])}")
+            raise ValueError(f"projected export requests absent or loader-only records: {', '.join(missing[:8])}")
         if not selected:
             raise ValueError("a projected export must emit at least one record")
     groups = [[key for key in group if key in selected] for group in _phases(objects)]
@@ -338,7 +381,14 @@ def export(plan, output_dir, keys=None):
     if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("generator_version must be a numeric major.minor.patch version")
     emitted = [objects[key] for key in sorted(selected)]
-    estate_hash = _sha(_json(emitted))
+    if keys is None:
+        # The estate digest names the whole plan, including the loader-only
+        # records this package omits; canonical_records counts what it carries.
+        estate_hash = _sha(_json(sorted(estate.values(), key=lambda obj: obj["key"])))
+    else:
+        # A projection's digest names exactly what it emits, so its request IDs
+        # can never collide with a whole-estate load of the same plan.
+        estate_hash = _sha(_json(emitted))
     plan_hash = _sha(_json(plan))
     manifest = {
         "format_version": 1, "diode_sdk_schema": SDK_VERSION,
@@ -347,7 +397,8 @@ def export(plan, output_dir, keys=None):
         "canonical_records": len(emitted), "ingestion_entities": len(emitted) + len(deferred),
         "counts": dict(sorted(Counter(obj["kind"] for obj in emitted).items())),
         "external_references": [{"kind": obj["kind"], "identity": obj["attrs"]}
-                                for obj in emitted if obj.get("meta", {}).get("external")],
+                                for obj in objects.values() if obj.get("meta", {}).get("external")],
+        "loader_only_records": loader_only_records(plan),
         "limits": {"entities_per_request": MAX_ENTITIES, "json_bytes_per_request": MAX_REQUEST_BYTES},
         "phases": [], "files": [],
         "replay_notes": [
@@ -355,6 +406,8 @@ def export(plan, output_dir, keys=None):
             "Wait for successful reconciliation of each phase before submitting the next.",
             "Ingest acceptance does not establish applied NetBox state; verify live results.",
             "Replaying a baseline may reverse an active demo scenario; omission does not delete objects.",
+            "This package omits the plan's loader_only_records; a Diode-seeded target "
+            "holds the estate without them, so verify it against the same restriction.",
         ],
     }
     if keys is not None:

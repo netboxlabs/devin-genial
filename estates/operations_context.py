@@ -7,6 +7,7 @@ current utilization, or an assertion that a change or recovery test was executed
 from collections import defaultdict
 from datetime import date, timedelta
 
+from .automation import enrich as automation_records
 from .model import DesignError
 from .wireless_context import enrich as wireless_context
 
@@ -207,3 +208,4 @@ def enrich(world):
             journal(key, "optic-replacement-plan", dated(key, "optic-replacement-plan", as_of, 40, 20), "Optical replacement preparation",
                 f"Device: {attrs['name']}\nInterface: {port['attrs']['name']}\nInstalled part: {maker} {module_type['attrs']['model']}\nInstalled serial: {module['attrs']['serial']}\nBay: {bay}\nFacilities contact: {facilities}\nUse the installed part and current device technical contact to review a like-for-like replacement. For a captive AOC end, replace the complete assembly. Preserve the interface and its dependent records; no module deletion, hot-swap or replacement is recorded as executed.")
     wireless_context(world)
+    automation_records(world)

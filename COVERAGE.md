@@ -103,8 +103,12 @@ be revisited when an actual facility or service demand calls for them.
 
 **Unsupported in the pinned loading surface** is a different category.
 `catalog/type-coverage.json` and SDK 1.14's Entity definition distinguish native
-component/service templates, configuration contexts/templates/data files and
-image attachments from directly supported estate entities. BGP-session objects
+component/service templates, configuration templates/data files and
+image attachments from directly supported estate entities. Four models in that
+audit are nevertheless *generated* since phase 11: config contexts, export
+templates, the webhook and its event rule (still `native_without_sdk`, now
+marked `loader_only`). No Diode request can carry them, so the wire package
+omits them and `just load` is the only transport that delivers them. BGP-session objects
 are not an SDK Entity either; that needs an explicitly researched optional
 integration, not a promise of core Diode support. `device_config` has an SDK
 entry but the audited native/plugin pair does not provide a matching model.
@@ -224,7 +228,7 @@ government/defense (enterprise/campus plus `site_names`).
 | 8 | Manufacturing profile (IT/OT zones; pays for the OT concept) | **complete 2026-09-19** — merged and review-hardened (994 tests; panels collision and the console-server third crossing fixed and declared); three-plant estate live: 9,352/9,352 objects, 0 mismatches, verify + idempotent repeat clean |
 | 9 | Utility profile (control centers + substations; reuses phase 8 OT semantics) | **complete 2026-09-19** — merged and review-hardened (1,096 tests; console crossing declared + pinned, mgmt_only gating, two shared engine gaps closed); two-center/six-substation estate live: 9,364/9,364 objects, 0 mismatches, verify + idempotent repeat clean |
 | 10 | Assurance drift twin: baseline + believably-drifted observed Diode payload with an expected-deviation manifest; live-prove via Diode ingestion on the Assurance-equipped Cloud instance (4.6-compatible subset) | **merged offline 2026-09-19** — `just drift` / `just drift-check` over any healthy frozen plan (a subcommand, not a `demo` recipe key); 14 property-selected items across all four advertised detections, 15 observed records projected out of the plan, restricted to the reviewed NetBox 4.6 kind set, 67 new tests, CI-qualified on all eight access-bearing profiles. **Live gate still open**: no Assurance-equipped target has ever seen this payload. Two corrections from the source review — Diode has no delete/tombstone change type, so documented-but-missing emits nothing and is declared `requires-target-side-comparison`; and there is no fixed four-name product deviation taxonomy, so the manifest predicts wire-level create/update and uses its own class labels. |
-| 11 | Automation demo pack: config contexts, export templates and event-rule/webhook inventory as new loader kinds, so the Ansible/ServiceNow talk track has real objects | pending |
+| 11 | Automation demo pack: config contexts, export templates and event-rule/webhook inventory as new loader kinds, so the Ansible/ServiceNow talk track has real objects | **merged offline 2026-09-19** — 4 kinds (102-kind contract), 6 records per estate, unconditional shared enrichment; global context cites only addresses the estate's own listeners bind; REST-create path with config contexts branch-scoped and the export-template/webhook/event-rule trio main-scoped (Branching 1.2.1 `EXEMPT_MODELS`, read from the running stack) through allowlist and `just retire`; no Diode SDK entity exists for any of them, so the wire package omits and records them. 1,119 tests; `load-check` clean on bank/hospital/utility/MSP. **Live load/verify/repeat on the pinned 4.7.1 stack still owed** (standing gate). |
 | 12 | Demo composer: one command assembling profile × vendor × feature packs × customer names into a loaded, verified branch plus a DEMO.md talk track with deep links | pending |
 
 Demand evidence (2026-09-19 review of live sales calls, community feature

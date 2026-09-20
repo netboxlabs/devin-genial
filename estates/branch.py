@@ -103,12 +103,19 @@ def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
 
 
 # Main-scoped rows a namespace leaves behind, in deletion-dependency order:
-# links and fields reference choice sets and owners. custom_field names use
+# the event rule names its webhook, and links and fields reference choice sets;
+# every row references the namespace's owner. custom_field names use
 # the namespace's underscore form, where prefix matching is UNSAFE (namespace
 # "cedar" would prefix-match "cedar_v7_…" belonging to namespace "cedar-v7"),
 # so those rows match by exact generated name; the rest are "<namespace> "
 # prefixed, which is safe because namespaces cannot contain spaces.
+# The automation records are Branching-exempt for the same reason as the
+# custom-field trio (estates/turbobulk.py BRANCH_EXEMPT_KINDS); config contexts
+# are branch-scoped and go with the branch, so they are not listed here.
 RETIREMENT_ENDPOINTS = (
+    ("/api/extras/event-rules/", "prefix"),
+    ("/api/extras/webhooks/", "prefix"),
+    ("/api/extras/export-templates/", "prefix"),
     ("/api/extras/custom-links/", "prefix"),
     ("/api/extras/custom-fields/", "exact"),
     ("/api/extras/custom-field-choice-sets/", "prefix"),
@@ -118,16 +125,19 @@ RETIREMENT_ENDPOINTS = (
 # Exact custom-field names the generator emits per namespace; extend alongside
 # estates/operations.py when a profile adds a field.
 CUSTOM_FIELD_NAMES = ("{ns}_operations_tier",)
-OWNER_ENDPOINTS = tuple(endpoint for endpoint, _ in RETIREMENT_ENDPOINTS)
+RETIREMENT_PATHS = tuple(endpoint for endpoint, _ in RETIREMENT_ENDPOINTS)
 
 
-def retire_namespace_rows(client, namespace, *, endpoints=OWNER_ENDPOINTS,
+def retire_namespace_rows(client, namespace, *, endpoints=RETIREMENT_PATHS,
                           attempts=8, poll_interval=3, sleep=time.sleep):
-    """Delete the namespace's own main-scoped owner/owner_group rows.
+    """Delete the namespace's own main-scoped rows.
 
-    These rows are not branch-isolated, so branch deletion leaves them behind
-    and they block the namespace's next fresh load. Names are authored as
-    "<namespace> …", so an exact prefix match selects only this estate's rows.
+    These are the Branching-exempt records a branch load writes to main: the
+    automation event rule, webhook and export templates, the custom-link,
+    custom-field and choice-set definitions, and the owner/owner_group pair.
+    Branch deletion leaves them behind and they block the namespace's next fresh
+    load. Names are authored as "<namespace> …", so an exact prefix match
+    selects only this estate's rows.
     A just-deleted branch's schema drop can briefly hold PROTECT references to
     these rows, so a still-present row is retried within a bounded window.
     """
@@ -172,7 +182,9 @@ def main(argv=None):
                         help="permanently delete the named branch instead of creating one")
     parser.add_argument("--retire-namespace",
                         help="after deleting the branch, also delete this namespace's "
-                             "main-scoped owner/owner_group rows (full demo retirement)")
+                             "main-scoped rows — automation event rule, webhook and export "
+                             "templates, custom links/fields/choice sets, owners and owner "
+                             "groups (full demo retirement)")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not token:
