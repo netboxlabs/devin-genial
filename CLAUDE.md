@@ -27,6 +27,10 @@ Images were explicitly deferred after assessing the separate renderer/REST path.
 Do not add image dependencies, uploaders or write credentials for this goal.
 v0.9 requires a new baseline: generator version participates in stable choices,
 and previous-plan reuse rejects another generator version or hardware digest.
+v0.11 is likewise a new baseline: every estate gained the six-record automation
+pack, so 0.10 plans reject growth by version and must be regenerated. Any change
+that alters every estate's canonical graph must bump `estates/__version__` so
+those guards fire with their own messages, not a validator's.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under

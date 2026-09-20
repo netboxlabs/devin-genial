@@ -113,18 +113,27 @@ def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
 # custom-field trio (estates/turbobulk.py BRANCH_EXEMPT_KINDS); config contexts
 # are branch-scoped and go with the branch, so they are not listed here.
 RETIREMENT_ENDPOINTS = (
-    ("/api/extras/event-rules/", "prefix"),
-    ("/api/extras/webhooks/", "prefix"),
-    ("/api/extras/export-templates/", "prefix"),
+    ("/api/extras/event-rules/", "exact"),
+    ("/api/extras/webhooks/", "exact"),
+    ("/api/extras/export-templates/", "exact"),
     ("/api/extras/custom-links/", "prefix"),
     ("/api/extras/custom-fields/", "exact"),
     ("/api/extras/custom-field-choice-sets/", "prefix"),
     ("/api/users/owners/", "prefix"),
     ("/api/users/owner-groups/", "prefix"),
 )
-# Exact custom-field names the generator emits per namespace; extend alongside
-# estates/operations.py when a profile adds a field.
+# Exact per-namespace names the generator emits for kinds where a prefix match
+# could reach a customer's own live row (a webhook is an integration, not an
+# inert owner record); extend alongside estates/operations.py and
+# estates/automation.py when a profile adds one.
 CUSTOM_FIELD_NAMES = ("{ns}_operations_tier",)
+EXACT_RETIREMENT_NAMES = {
+    "/api/extras/custom-fields/": CUSTOM_FIELD_NAMES,
+    "/api/extras/event-rules/": ("{ns} Device change notification",),
+    "/api/extras/webhooks/": ("{ns} NetOps automation endpoint",),
+    "/api/extras/export-templates/": ("{ns} Device inventory (CSV)",
+                                      "{ns} Cable report (CSV)"),
+}
 RETIREMENT_PATHS = tuple(endpoint for endpoint, _ in RETIREMENT_ENDPOINTS)
 
 
@@ -142,11 +151,13 @@ def retire_namespace_rows(client, namespace, *, endpoints=RETIREMENT_PATHS,
     these rows, so a still-present row is retried within a bounded window.
     """
     matchers = dict(RETIREMENT_ENDPOINTS)
-    exact_names = {pattern.format(ns=namespace.replace("-", "_"))
-                   for pattern in CUSTOM_FIELD_NAMES}
     deleted = []
     for endpoint in endpoints:
         mode = matchers.get(endpoint, "prefix")
+        # Custom-field names use the underscored namespace form; the automation
+        # records carry the raw namespace like every other shared record.
+        ns = namespace.replace("-", "_") if endpoint == "/api/extras/custom-fields/" else namespace
+        exact_names = {pattern.format(ns=ns) for pattern in EXACT_RETIREMENT_NAMES.get(endpoint, ())}
         for row in client.all(endpoint):
             name = row.get("name") or ""
             if mode == "exact":

@@ -397,7 +397,7 @@ def export(plan, output_dir, keys=None):
         "canonical_records": len(emitted), "ingestion_entities": len(emitted) + len(deferred),
         "counts": dict(sorted(Counter(obj["kind"] for obj in emitted).items())),
         "external_references": [{"kind": obj["kind"], "identity": obj["attrs"]}
-                                for obj in objects.values() if obj.get("meta", {}).get("external")],
+                                for obj in emitted if obj.get("meta", {}).get("external")],
         "loader_only_records": loader_only_records(plan),
         "limits": {"entities_per_request": MAX_ENTITIES, "json_bytes_per_request": MAX_REQUEST_BYTES},
         "phases": [], "files": [],

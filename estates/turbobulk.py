@@ -2138,7 +2138,15 @@ def _trace_contains_cable(value, cable_id, label):
 # identity (never a reference) so disjointness needs no resolution. Keeping
 # these explicit sets prevents the allowlist from silently adopting leftover
 # population of arbitrary kinds.
-ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile"}  # factory rows (4.7 profiles)
+ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile",  # factory rows (4.7 profiles)
+                             # A customer's own config contexts are among the
+                             # most commonly pre-populated extras on a real
+                             # target, and branch provisioning copies main into
+                             # every fresh branch — so pre-existing rows with
+                             # plan-disjoint names are allowlisted (branch-scoped:
+                             # they add no create ChangeDiffs of ours and strict
+                             # readback excuses recorded allowlisted identities).
+                             "config_context"}
 # NetBox 4.7 owner/owner_group rows live on main and are not branch-isolated:
 # another estate's rows are always visible to a fresh branch load on a shared
 # target, and branch deletion does not remove them. Their names carry the
