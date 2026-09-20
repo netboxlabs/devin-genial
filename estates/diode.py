@@ -303,16 +303,31 @@ class _References:
         return {"timestamp": timestamp, obj["kind"]: data}
 
 
-def export(plan, output_dir):
+def export(plan, output_dir, keys=None):
     """Write a new/empty directory of deterministic requests; return its manifest.
 
     JSON byte size bounds protobuf size conservatively for this scalar/object
     format. Optional SDK verification additionally parses each complete request
     and checks its actual ByteSize(); no SDK or network is required here.
+
+    `keys` projects the request stream onto a subset of the plan: those records
+    are emitted in full and every other record exists only to resolve nested
+    matching identities. Dependency order, bounds and determinism are unchanged;
+    request IDs carry a distinct prefix so a projection never collides with the
+    whole-estate export of the same plan.
     """
     objects = _index(plan)
-    phases = [("create", keys) for keys in _phases(objects)]
-    deferred = sorted(key for key, obj in objects.items() if _deferred_fields(obj) & obj["refs"].keys())
+    if keys is None:
+        selected = set(objects)
+    else:
+        selected = set(keys)
+        if missing := sorted(selected - set(objects)):
+            raise ValueError(f"projected export requests absent records: {', '.join(missing[:8])}")
+        if not selected:
+            raise ValueError("a projected export must emit at least one record")
+    groups = [[key for key in group if key in selected] for group in _phases(objects)]
+    phases = [("create", group) for group in groups if group]
+    deferred = sorted(key for key in selected if _deferred_fields(objects[key]) & objects[key]["refs"].keys())
     if deferred:
         purpose = "primary-addresses" if all(
             (_deferred_fields(objects[key]) & objects[key]["refs"].keys()) <= _PRIMARY_IPS
@@ -322,16 +337,17 @@ def export(plan, output_dir):
     version = plan["generator_version"]
     if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("generator_version must be a numeric major.minor.patch version")
-    estate_hash = _sha(_json(sorted(objects.values(), key=lambda obj: obj["key"])))
+    emitted = [objects[key] for key in sorted(selected)]
+    estate_hash = _sha(_json(emitted))
     plan_hash = _sha(_json(plan))
     manifest = {
         "format_version": 1, "diode_sdk_schema": SDK_VERSION,
         "generator_version": version, "as_of": timestamp,
         "estate_sha256": estate_hash, "plan_sha256": plan_hash,
-        "canonical_records": len(objects), "ingestion_entities": len(objects) + len(deferred),
-        "counts": dict(sorted(Counter(obj["kind"] for obj in objects.values()).items())),
+        "canonical_records": len(emitted), "ingestion_entities": len(emitted) + len(deferred),
+        "counts": dict(sorted(Counter(obj["kind"] for obj in emitted).items())),
         "external_references": [{"kind": obj["kind"], "identity": obj["attrs"]}
-                                for obj in objects.values() if obj.get("meta", {}).get("external")],
+                                for obj in emitted if obj.get("meta", {}).get("external")],
         "limits": {"entities_per_request": MAX_ENTITIES, "json_bytes_per_request": MAX_REQUEST_BYTES},
         "phases": [], "files": [],
         "replay_notes": [
@@ -341,8 +357,11 @@ def export(plan, output_dir):
             "Replaying a baseline may reverse an active demo scenario; omission does not delete objects.",
         ],
     }
+    if keys is not None:
+        manifest["projection"] = {"emitted_records": len(emitted), "plan_records": len(objects),
+                                  "unemitted_records_resolve_identities_only": len(objects) - len(emitted)}
     legacy_mapping = any(obj["kind"] == "front_port" and "rear_port" in obj["refs"]
-                         for obj in objects.values())
+                         for obj in emitted)
     expanded = tuple(map(int, version.split("."))) >= (0, 7, 0)
     manifest["source_checked_target"] = {
         "netbox": "4.4.10" if legacy_mapping and not expanded else "4.7.0",
@@ -376,6 +395,8 @@ def export(plan, output_dir):
             "https://github.com/netboxlabs/diode-netbox-plugin/blob/v1.17.0/netbox_diode_plugin/api/compat.py",
             "https://github.com/netboxlabs/diode-netbox-plugin/blob/v1.17.0/netbox_diode_plugin/api/transformer.py",
         ])
+    # A projection of the same plan must not reuse the whole-estate request IDs.
+    scope = "" if keys is None else f"projection:{estate_hash}:"
     output = Path(output_dir)
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
         raise ValueError(f"export destination must be new or empty: {output}")
@@ -393,7 +414,7 @@ def export(plan, output_dir):
             def envelope(part_number):
                 return {"stream": "latest", "entities": [],
                         "id": str(uuid.uuid5(uuid.NAMESPACE_URL,
-                                            f"devin-generator:{plan_hash}:{phase_number}:{part_number}")),
+                                            f"devin-generator:{scope}{plan_hash}:{phase_number}:{part_number}")),
                         "producer_app_name": "devin-generator", "producer_app_version": version,
                         "sdk_name": "devin-generator", "sdk_version": version}
 

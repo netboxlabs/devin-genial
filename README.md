@@ -209,9 +209,12 @@ progress. See the [transport model](docs/transports.md#one-command-several-inter
 for configuration, safety boundaries, and evidence.
 
 Existing [scenario guides](docs/scenarios.md) cover branch acquisition and refresh,
-a power-diversity defect, and provider span maintenance. Each derives its subjects
-and relationships from the estate and explains which changes have been qualified
-for live replay.
+a power-diversity defect, provider span maintenance, and an
+[Assurance discovery-drift twin](docs/scenarios.md#assurance-discovery-drift) —
+`just drift PLAN OUT` writes a believably drifted "observed" Diode payload plus
+the exact expected deviation set, so Assurance has something other than flawless
+data to review. Each derives its subjects and relationships from the estate and
+explains which changes have been qualified for live replay.
 For a worked customer story, try [Harbor Supply](profiles/harbor-supply.md).
 
 **Scale has separate generation and loading proofs.** Recorded offline generation

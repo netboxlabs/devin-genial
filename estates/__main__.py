@@ -15,7 +15,7 @@ from .diode import export, verify_export
 from .model import DesignError, canonical, digest, hardware_catalog
 from .report import markdown, summary, type_coverage
 from .scenarios import create as create_scenario, markdown as scenario_markdown
-from . import __version__, power_scenario
+from . import __version__, drift, power_scenario
 from .validate import validate
 
 
@@ -157,6 +157,53 @@ def check_snapshot_scenario(path):
             "evidence": checks, "wire_snapshots_match": True, "applied_to_target": False}
 
 
+def build_drift(plan, destination):
+    """Write the observed Diode payload, its exact manifest and the walkthrough."""
+    checked(plan)
+    envelope = drift.create(plan)
+    observed_plan = envelope.pop("observed_plan")
+    records = envelope["observed"]["records"]
+    checks, _, _ = drift.verify(envelope, plan)
+    with new_output(destination) as temporary:
+        (temporary / "baseline").mkdir()
+        (temporary / "baseline/plan.json").write_bytes(canonical(plan) + b"\n")
+        manifest = export(observed_plan, temporary / "observed", keys=records)
+        (temporary / "manifest.json").write_bytes(canonical(envelope) + b"\n")
+        (temporary / "drift.md").write_text(drift.markdown(envelope, plan))
+        (temporary / "checks.json").write_bytes(canonical({"status": "expected-drift verified",
+            "scope": "offline drift twin", "live_ingestion": "not run",
+            "assurance_deviations": "predicted offline; not verified on a target", **checks}) + b"\n")
+    return {"artifact": envelope["artifact"], "site": envelope["selection"]["site"],
+            "output": str(destination), "checks": "expected-drift verified",
+            "items": envelope["counts"]["items"], "observed_records": envelope["counts"]["emitted_records"],
+            "observed_files": len(manifest["files"]), "applied_to_target": False}
+
+
+def check_drift(directory):
+    """Recompute the manifest from the bound baseline and rebind the wire bytes."""
+    envelope = json.loads((directory / "manifest.json").read_text())
+    if not isinstance(envelope, dict):
+        raise DesignError("Expected a drift manifest.json object")
+    baseline = checked(json.loads((directory / "baseline/plan.json").read_text()))
+    checks, observed_plan, records = drift.verify(envelope, baseline)
+    # Bind the loadable bytes to the checked graph: a schema-valid payload must
+    # not pass by claiming a manifest it does not encode.
+    actual = directory / "observed"
+    with tempfile.TemporaryDirectory() as temporary:
+        expected = Path(temporary) / "observed"
+        export(observed_plan, expected, keys=records)
+        names = {item.name for item in expected.iterdir()}
+        if not actual.is_dir() or {item.name for item in actual.iterdir()} != names:
+            raise DesignError("Observed Diode file inventory differs from the recomputed drift payload")
+        for name in sorted(names):
+            if not (actual / name).is_file() or (actual / name).read_bytes() != (expected / name).read_bytes():
+                raise DesignError(f"Observed Diode file {name} differs from the recomputed drift payload; rebuild the drift twin")
+    if (directory / "drift.md").read_text() != drift.markdown(envelope, baseline):
+        raise DesignError("drift.md differs from the walkthrough derived from the checked manifest")
+    return {"artifact": envelope["artifact"], "checks": "expected-drift verified", "evidence": checks,
+            "observed_payload_matches_manifest": True, "applied_to_target": False}
+
+
 def build_scenario(plan, site, destination):
     with new_output(destination) as temporary:
         scenario = create_scenario(plan, site)
@@ -196,6 +243,11 @@ def main(argv=None):
     p.add_argument("directory", type=Path)
     p = sub.add_parser("scenario-check", help="verify saved power or span-maintenance snapshots, exact findings and restoration")
     p.add_argument("scenario", type=Path, help="scenario.json inside a generated scenario directory")
+    p = sub.add_parser("drift", help="build the Assurance discovery-drift twin of a healthy baseline; no target writes")
+    p.add_argument("plan", type=Path)
+    p.add_argument("--out", type=Path, required=True)
+    p = sub.add_parser("drift-check", help="recompute a saved drift twin from its bound baseline plan")
+    p.add_argument("directory", type=Path, help="a directory written by the drift command")
     p = sub.add_parser("scenario", help="generate graph-selected demo snapshots; no target writes")
     p.add_argument("plan", type=Path)
     p.add_argument("--kind", choices=("acquire-and-refresh", "loss-of-power-diversity", "provider-span-maintenance"), default="acquire-and-refresh")
@@ -212,6 +264,12 @@ def main(argv=None):
             print(json.dumps(result, sort_keys=True) if args.json else
                   f"{result['scenario']}: exact expected findings and offline restoration verified; live workflow unverified")
             return 0
+        if args.command == "drift-check":
+            result = check_drift(args.directory)
+            print(json.dumps(result, sort_keys=True) if args.json else
+                  f"{result['artifact']}: exact expected deviation set and observed payload verified against the bound "
+                  "baseline; live Assurance behaviour unverified")
+            return 0
         if args.command in ("plan", "generate"):
             with open(args.recipe, "rb") as handle:
                 supplied = tomllib.load(handle)
@@ -226,6 +284,13 @@ def main(argv=None):
                 raise DesignError(
                     f"{args.plan} is not a frozen plan.json (a TOML recipe goes to "
                     "plan/generate, not this command)") from exc
+        if args.command == "drift":
+            result = build_drift(plan, args.out)
+            print(json.dumps(result, sort_keys=True) if args.json else
+                  f"{result['artifact']}: {args.out / 'drift.md'}; {result['items']} drift items over "
+                  f"{result['observed_records']} observed records at {result['site']}; {result['checks']}; "
+                  "no target contacted and live Assurance behaviour unverified")
+            return 0
         if args.command == "scenario":
             if args.span is not None and args.kind != "provider-span-maintenance":
                 raise DesignError("--span applies only to provider-span-maintenance; use --site for other scenarios")
