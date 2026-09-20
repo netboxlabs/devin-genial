@@ -1018,8 +1018,9 @@
     },
     {
       "native_model": "extras.configcontext",
-      "category": "unsupported_associated_configuration",
-      "reason": "Estate-associated configuration/documentation data, but no matching SDK Entity/runtime plugin model.",
+      "kind": "config_context",
+      "category": "loader_only",
+      "reason": "Generated automation record with no matching SDK Entity/runtime plugin model: the TurboBulk/REST loader creates it and the Diode package records it as omitted. Branch-scoped under Branching 1.2.1.",
       "sdk_top_level": false,
       "plugin_advertised_model": false
     },
@@ -1039,22 +1040,25 @@
     },
     {
       "native_model": "extras.eventrule",
-      "category": "excluded_runtime_admin",
-      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "kind": "event_rule",
+      "category": "loader_only",
+      "reason": "Generated automation record with no matching SDK Entity/runtime plugin model: the TurboBulk/REST loader creates it and the Diode package records it as omitted. Ships disabled, so no event is ever dispatched. Branching-exempt, so it lives on main.",
       "sdk_top_level": false,
       "plugin_advertised_model": false
     },
     {
       "native_model": "extras.webhook",
-      "category": "excluded_runtime_admin",
-      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "kind": "webhook",
+      "category": "loader_only",
+      "reason": "Generated automation record with no matching SDK Entity/runtime plugin model: the TurboBulk/REST loader creates it and the Diode package records it as omitted. Inert inventory — a reserved .invalid endpoint. Branching-exempt, so it lives on main.",
       "sdk_top_level": false,
       "plugin_advertised_model": false
     },
     {
       "native_model": "extras.exporttemplate",
-      "category": "excluded_runtime_admin",
-      "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
+      "kind": "export_template",
+      "category": "loader_only",
+      "reason": "Generated automation record with no matching SDK Entity/runtime plugin model: the TurboBulk/REST loader creates it and the Diode package records it as omitted. NetBox renders the template on demand; Genial never executes it. Branching-exempt, so it lives on main.",
       "sdk_top_level": false,
       "plugin_advertised_model": false
     },

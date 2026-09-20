@@ -7,7 +7,9 @@ university campus or managed service provider and change the demand to suit
 your customer.
 
 **The goal is the whole estate.** Sites, rooms, racks, devices, ports, cables,
-address plans, services and operational context should make sense together.
+address plans, services, operational context and automation inventory (config
+contexts carrying the estate's own service endpoints, CSV export templates, and
+an inert webhook with its disabled event rule) should make sense together.
 A demo can follow one branch, workload or customer circuit through that larger
 world. The relationships give the story substance.
 
@@ -173,7 +175,8 @@ These setup steps should take less than ten minutes; target processing time is
 separate and is recorded in the private receipt.
 
 To retire a finished demo — delete its branch and its namespace's main-scoped
-owner rows, leaving the target as found — use
+rows (owners, custom-field definitions and the automation export templates,
+webhook and event rule), leaving the target as found — use
 `just retire https://netbox.example "Demo branch" NAMESPACE`
 (see [first target §8](docs/first-target.md#8-retiring-a-demo)).
 To instead empty a disposable Cloud branch for another run, replace that
@@ -195,7 +198,7 @@ Use the printed replacement name for the next load and future reset. If Diode ro
 to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
 configuration attestation before loading.
 The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
-compiles the full 98-kind contract — every kind any current profile emits, the complete bank included — which covers the current 53-kind enterprise
+compiles the full 102-kind contract — every kind any current profile emits, the complete bank included — which covers the current 57-kind enterprise
 data center artifact. The configured NetBox 4.6.8 tenant cannot represent the
 4.7-only module-bay compatibility model, so preflight rejects that exact rich
 artifact before writes. The complete 4.7 path is live-qualified only on the pinned

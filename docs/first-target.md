@@ -31,8 +31,10 @@ detail and [seeding](seeding.md) the database-restore alternative.
   plugin.
 - **Sharing a target with other estates works, with one rule: one live
   namespace, one branch.** On NetBox 4.7, each estate's `owner`/`owner_group`
-  rows — and its custom-field, choice-set and custom-link definitions — live
-  on main (Branching exempts them; they survive branch deletion). Rows from a *different* namespace are automatically allowlisted
+  rows — its custom-field, choice-set and custom-link definitions, and its
+  automation export templates, webhook and event rule — live
+  on main (Branching exempts them; they survive branch deletion). Its config
+  contexts are branch-scoped and go with the branch. Rows from a *different* namespace are automatically allowlisted
   and recorded in the receipt — assessed at preflight and again at the final
   readback, so a neighbour loading concurrently does not fail your run. The *same* namespace cannot fresh-load a
   second time — into a new branch or after deleting the old one — until its
@@ -159,10 +161,19 @@ screen share:
 - **Merging a TurboBulk-loaded branch to main is currently blocked** by
   upstream defects (see [qualification](qualification.md)); the working
   pattern is branch-per-demo, then `just reset` or branch deletion.
-- On NetBox 4.7, `owner`/`owner_group` rows are **not branch-isolated**: a
-  branch load writes them to main and branch deletion does not remove them.
-  Other namespaces coexist over them automatically (§1); re-loading the
-  *same* namespace fresh refuses until its leftovers are removed.
+- On NetBox 4.7, `owner`/`owner_group` rows, the custom-field trio and the
+  automation export templates, webhook and event rule are **not
+  branch-isolated**: a branch load writes them to main and branch deletion does
+  not remove them. Other namespaces coexist over them automatically (§1);
+  re-loading the *same* namespace fresh refuses until its leftovers are removed.
+- The estate's **automation records** are on the branch tour too: its config
+  contexts (Customization → Config Contexts — the global one lists this
+  estate's own DNS and service addresses), its two CSV export templates (NetBox
+  offers a loaded template in the Export menu of the object list it is bound to
+  — devices and cables here), and its webhook with the event rule bound to it.
+  The webhook points at a reserved `.invalid` host and the
+  rule ships **disabled**: inventory to demonstrate the wiring, never a live
+  integration. Enabling it during a demo is a deliberate act.
 
 ## 7. Growing a loaded estate
 
@@ -185,8 +196,9 @@ An estate using `[site_names]` (the customer's real site names) grows the same
 way: append entries for the new sites in the same recipe change. Changing or
 removing an *existing* entry is a rename and needs a new baseline.
 
-**Retiring v1 is a deliberate, destructive step.** The namespace's
-`owner`/`owner_group` rows on main block the v2 load; deleting them (the
+**Retiring v1 is a deliberate, destructive step.** The namespace's main-scoped
+rows — `owner`/`owner_group`, the custom-field trio and the automation export
+templates, webhook and event rule — block the v2 load; deleting them (the
 refusal names the exact rows) also nulls `owner` across the already-loaded v1
 branch and permanently invalidates its receipt — v1 becomes display-only and
 can no longer pass `verify-target`. (That display-only state only arises if
@@ -207,16 +219,19 @@ before/after demo therefore needs **two namespaces planned from the start**
 ## 8. Retiring a demo
 
 When the demo cycle ends, two things carry your namespace on the target: the
-branch, and the namespace's `owner`/`owner_group` rows on main. One command
-removes both:
+branch (which holds the estate, including its config contexts), and the
+namespace's main-scoped rows — `owner`/`owner_group`, the custom-field trio and
+the automation export templates, webhook and event rule. One command removes
+both:
 
 ```
 just retire https://target.example demo-acme acme
 ```
 
 It deletes the named branch, then deletes exactly the main-scoped rows
-carrying your namespace — custom links, custom fields, choice sets, owners
-and owner groups, in that dependency order — reporting each. (Separately,
+carrying your namespace — event rules, webhooks, export templates, custom
+links, custom fields, choice sets, owners and owner groups, in that dependency
+order — reporting each. (Separately,
 `just branch-delete` removes only the branch — and if the branch is already
 gone, `just retire` still clears the namespace's owner rows, reporting the
 branch as already absent. `just reset` *replaces* a branch with a fresh empty
@@ -228,6 +243,9 @@ curl -s -H "Authorization: Token $NETBOX_TOKEN" \
   "https://target.example/api/plugins/branching/branches/?limit=0" \
   "https://target.example/api/users/owners/?limit=0" \
   "https://target.example/api/users/owner-groups/?limit=0" \
+  "https://target.example/api/extras/webhooks/?limit=0" \
+  "https://target.example/api/extras/event-rules/?limit=0" \
+  "https://target.example/api/extras/export-templates/?limit=0" \
   | { grep -c acme || true; }   # expect 0
 ```
 

@@ -211,7 +211,7 @@ Open `build/school-demo/report.md` alongside NetBox to walk the classrooms,
 district service VMs, addressing, and power paths. Substitute another profile
 and new build/receipt names for the bank or enterprise DC.
 
-`lab-bootstrap` reads all 102 supported endpoints and requires exactly the two
+`lab-bootstrap` reads all 106 supported endpoints and requires exactly the two
 prepared users (`admin`, `diode`) and seven native module type profiles. It fails
 if an estate or unexpected record already exists, or a required bootstrap record
 is absent. It captures current IDs; it does not load or modify records. The profile
@@ -403,6 +403,12 @@ Each phase has a finite deadline and failures leave a partial receipt.
 These global queue/log checks require an otherwise idle disposable target.
 They are not a portable monitoring contract for shared or customer systems.
 Use the separate `lab/verify.py` readback to establish the resulting graph.
+A Diode replay never delivers the plan's automation records — the pinned SDK has
+no entity for config contexts, export templates, webhooks or event rules — so
+`just lab-verify` passes `--diode-delivered-only`: it compares the delivered
+scope and records the excluded count and a limit in every receipt it writes.
+Only `just load` (TurboBulk) delivers those records, and only
+`just verify-target` gates the complete estate.
 The current checks qualify initial load, identical replay, and the documented
 additive branch/DC-capacity expansion. They do not qualify arbitrary resizing,
 deletions, new observation timestamps, scenario transitions, every edition, or

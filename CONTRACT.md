@@ -22,7 +22,12 @@ integer slots), `reservations` (scope -> immutable key -> integer slot),
 duplicate or negative slots are invalid. Capacity is checked before allocation.
 
 Each object is `{key, kind, attrs, refs, meta}`. `key` is an immutable plan-local
-identity. `kind` is a Diode snake_case entity type. `attrs` contains scalar/list
+identity. `kind` is a snake_case NetBox model name, normally a Diode entity type;
+the four automation kinds (`config_context`, `export_template`, `webhook`,
+`event_rule`) have no entity in the pinned SDK, so the wire export omits them and
+declares the omission, and only the TurboBulk/REST loader delivers them
+(`estates/diode.py: LOADER_ONLY_KINDS`). A delivered record may never reference a
+loader-only one. `attrs` contains scalar/list
 values using SDK field names. `refs` maps SDK field names to object keys (or lists
 of keys). `meta` contains generator-only reasoning and assertions, never sent as
 ordinary NetBox fields. Nested references must resolve to exactly one canonical
@@ -56,8 +61,10 @@ and records their incompatible NetBox version range rather than silently droppin
 them. The graph validator establishes local correctness, not target support.
 
 Other generic relationships use their base name (`object`, `member`, `component`,
-`interface`, `assigned_object`, `termination`); the exporter selects the finite
-typed SDK variant from the referenced object's kind. Back-references for primary
+`interface`, `assigned_object`, `termination`, `action_object`); the exporter
+selects the finite typed SDK variant from the referenced object's kind, and the
+loader writes the native `<base>_type`/`<base>_id` pair (`event_rule.action_object`
+is loader-only and therefore has no SDK variant). Back-references for primary
 addresses, primary MACs, virtual-chassis masters and installed modules are emitted
 after their members exist. Other dependency cycles are rejected.
 
@@ -65,6 +72,13 @@ Custom-field values use the SDK's explicit typed values, such as
 `{"selection": "tier-1"}`. A consuming object's `meta.requires` lists the canonical
 custom-field definitions that must reconcile first. Definitions are ordinary
 generated objects; this ordering metadata is never sent as a NetBox field.
+
+Automation records carry `meta.automation = true` alongside `meta.operations`.
+A config context's `data` is a graph derivation, not authored text: its
+`service_endpoints` and `dns_servers` list only addresses the estate's own
+service listeners bind. Export-template `object_types` must be object types the
+plan emits. The webhook's `payload_url` is a reserved `.invalid` host and its
+event rule is `enabled: false`, so the estate dispatches nothing.
 
 `meta.external = true` marks a matching dependency, currently only an existing
 `user` with `attrs.username`. `reservation_user` binds that username explicitly;

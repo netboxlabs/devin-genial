@@ -119,6 +119,17 @@ for _kind, _fields in {
     _attrs, _refs = _IDENTITY[_kind]
     _IDENTITY[_kind] = (_attrs + _fields, _refs)
 
+# The pinned SDK's IngestRequest has no Entity for these NetBox models, so no
+# Diode request can carry them: verified against
+# netboxlabs.diode.sdk.diode.v1.ingester_pb2.Entity (107 fields, none of them
+# extras automation records), and recorded in catalog/type-coverage.json under
+# native_without_sdk. The TurboBulk/REST loader delivers them; the manifest
+# below records exactly what this package omits.
+LOADER_ONLY_KINDS = {"config_context", "export_template", "webhook", "event_rule"}
+LOADER_ONLY_REASON = (
+    "No entity exists for these models in Diode SDK "
+    f"{SDK_VERSION}; only the TurboBulk/REST loader (just load) delivers them.")
+
 _GENERIC_REFS = {
     ("ip_address", "assigned_object"): {"interface", "vm_interface", "fhrp_group"},
     ("mac_address", "assigned_object"): {"interface", "vm_interface"},
@@ -227,6 +238,37 @@ def _phases(objects):
     return phases
 
 
+def deliverable(objects):
+    """Canonical objects this wire format can carry, with the omission proven safe.
+
+    A delivered record may never reference a loader-only one: the Diode package
+    would then describe a relationship it cannot create.
+    """
+    delivered = {key: obj for key, obj in objects.items()
+                 if obj["kind"] not in LOADER_ONLY_KINDS}
+    dangling = sorted(f"{key}.{field}" for key, obj in delivered.items()
+                      for field, ref in obj["refs"].items()
+                      for target in _keys(ref) if target not in delivered)
+    if dangling:
+        raise ValueError("Diode-delivered records reference loader-only records: "
+                         + ", ".join(dangling[:8]))
+    return delivered
+
+
+def deliverable_plan(plan):
+    """The plan restricted to records a Diode package delivers."""
+    return {**plan, "objects": [obj for obj in plan["objects"]
+                                if obj["kind"] not in LOADER_ONLY_KINDS]}
+
+
+def loader_only_records(plan):
+    """What a Diode package leaves to the loader, counted from the plan."""
+    counts = Counter(obj["kind"] for obj in plan["objects"]
+                     if obj["kind"] in LOADER_ONLY_KINDS)
+    return {"total": sum(counts.values()), "counts": dict(sorted(counts.items())),
+            "kinds": sorted(LOADER_ONLY_KINDS), "reason": LOADER_ONLY_REASON}
+
+
 class _References:
     def __init__(self, objects):
         self.objects = objects
@@ -310,7 +352,8 @@ def export(plan, output_dir):
     format. Optional SDK verification additionally parses each complete request
     and checks its actual ByteSize(); no SDK or network is required here.
     """
-    objects = _index(plan)
+    estate = _index(plan)
+    objects = deliverable(estate)
     phases = [("create", keys) for keys in _phases(objects)]
     deferred = sorted(key for key, obj in objects.items() if _deferred_fields(obj) & obj["refs"].keys())
     if deferred:
@@ -322,7 +365,9 @@ def export(plan, output_dir):
     version = plan["generator_version"]
     if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise ValueError("generator_version must be a numeric major.minor.patch version")
-    estate_hash = _sha(_json(sorted(objects.values(), key=lambda obj: obj["key"])))
+    # The estate digest names the whole plan, including the records this
+    # package omits; canonical_records below counts only what it carries.
+    estate_hash = _sha(_json(sorted(estate.values(), key=lambda obj: obj["key"])))
     plan_hash = _sha(_json(plan))
     manifest = {
         "format_version": 1, "diode_sdk_schema": SDK_VERSION,
@@ -332,6 +377,7 @@ def export(plan, output_dir):
         "counts": dict(sorted(Counter(obj["kind"] for obj in objects.values()).items())),
         "external_references": [{"kind": obj["kind"], "identity": obj["attrs"]}
                                 for obj in objects.values() if obj.get("meta", {}).get("external")],
+        "loader_only_records": loader_only_records(plan),
         "limits": {"entities_per_request": MAX_ENTITIES, "json_bytes_per_request": MAX_REQUEST_BYTES},
         "phases": [], "files": [],
         "replay_notes": [
@@ -339,6 +385,8 @@ def export(plan, output_dir):
             "Wait for successful reconciliation of each phase before submitting the next.",
             "Ingest acceptance does not establish applied NetBox state; verify live results.",
             "Replaying a baseline may reverse an active demo scenario; omission does not delete objects.",
+            "This package omits the plan's loader_only_records; a Diode-seeded target "
+            "holds the estate without them, so verify it against the same restriction.",
         ],
     }
     legacy_mapping = any(obj["kind"] == "front_port" and "rear_port" in obj["refs"]

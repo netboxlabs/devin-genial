@@ -26,7 +26,11 @@ full mismatch list. It is the acceptance check for any seeding path that bypasse
 the loader, records a `verify-*` receipt under `build/load-receipts/`, exits 2 on
 mismatch, and refuses to overwrite anything but a prior verify receipt.
 It does not check change history: a database-restored estate has none, and a
-branch's review evidence remains the loading receipt's job. It is also distinct
+branch's review evidence remains the loading receipt's job. It expects the
+*complete* plan, including the automation records only `just load` delivers, so a
+target seeded by a Diode replay fails it by design — verify that one with
+`just lab-verify` instead ([loading](loading.md#artifacts-and-diode)). A database
+restore taken from a loaded target carries them like any other row. It is also distinct
 from `just verify`, the offline plan check that never contacts a target.
 
 ## Enterprise: seed by database restore (database-restore path)

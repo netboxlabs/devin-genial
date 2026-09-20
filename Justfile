@@ -49,7 +49,8 @@ branch target name timeout='300':
 branch-delete target name:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete
 
-# Full demo retirement: delete the branch AND the namespace's main-scoped owner rows
+# Full demo retirement: delete the branch AND the namespace's main-scoped rows
+# (event rule, webhook, export templates, custom-field trio, owners/owner groups)
 retire target name namespace:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete --retire-namespace {{quote(namespace)}}
 
@@ -117,9 +118,11 @@ lab-status:
 lab-load directory receipt compatibility='official':
     python3 -m lab.replay {{quote(directory)}} --receipt {{quote(receipt)}} --phase-timeout 600 {{if compatibility == 'front-ports' { '--front-port-compat' } else { '' }}}
 
-# Compare the live graph; an optional prior successful receipt checks stable IDs
+# Compare the live graph after a Diode replay; an optional prior successful receipt checks stable IDs.
+# The pinned SDK cannot carry the plan's automation records, so this lane compares
+# the delivered scope and records the exclusion; just verify-target is the complete gate.
 lab-verify plan receipt previous='' existing='':
-    python3 -m lab.verify {{quote(plan)}} --url http://127.0.0.1:8000 --token-file build/local-target/netbox-token --receipt {{quote(receipt)}} --strict-inventory {{if previous == '' { '' } else { '--previous-receipt ' + quote(previous) }}} {{if existing == '' { '' } else { '--allow-existing-receipt ' + quote(existing) }}}
+    python3 -m lab.verify {{quote(plan)}} --url http://127.0.0.1:8000 --token-file build/local-target/netbox-token --receipt {{quote(receipt)}} --strict-inventory --diode-delivered-only {{if previous == '' { '' } else { '--previous-receipt ' + quote(previous) }}} {{if existing == '' { '' } else { '--allow-existing-receipt ' + quote(existing) }}}
 
 # Capture the pinned target's built-in identities before any estate ingestion
 lab-bootstrap receipt:

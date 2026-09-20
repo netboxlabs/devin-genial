@@ -247,9 +247,13 @@ SPECS = {
     "cooling_intake": ("dcim.coolingintake", "/api/dcim/cooling-intakes/"),
     "cooling_outflow": ("dcim.coolingoutflow", "/api/dcim/cooling-outflows/"),
     "cooling_source": ("dcim.coolingsource", "/api/dcim/cooling-sources/"),
+    "config_context": ("extras.configcontext", "/api/extras/config-contexts/"),
     "custom_field": ("extras.customfield", "/api/extras/custom-fields/"),
     "custom_field_choice_set": ("extras.customfieldchoiceset", "/api/extras/custom-field-choice-sets/"),
     "custom_link": ("extras.customlink", "/api/extras/custom-links/"),
+    "event_rule": ("extras.eventrule", "/api/extras/event-rules/"),
+    "export_template": ("extras.exporttemplate", "/api/extras/export-templates/"),
+    "webhook": ("extras.webhook", "/api/extras/webhooks/"),
     "device_bay": ("dcim.devicebay", "/api/dcim/device-bays/"),
     "fhrp_group": ("ipam.fhrpgroup", "/api/ipam/fhrp-groups/"),
     "fhrp_group_assignment": ("ipam.fhrpgroupassignment", "/api/ipam/fhrp-group-assignments/"),
@@ -311,10 +315,13 @@ CONTENT_TYPES = {
 # circuits.provideraccount insert emits COALESCE("account", 0) and fails with a
 # varchar/integer type error. Create those few rows through REST until upstream
 # matches the default to the column type.
-REST_CREATE_KINDS = {"module_bay_type", "provider_account",
-                     # extras rows carry object_types M2Ms and choice lists that
-                     # the raw bulk path cannot express; they are singletons.
-                     "custom_field", "custom_field_choice_set", "custom_link"}
+# extras rows carry object_types M2Ms, choice lists, JSON payloads, scope M2Ms
+# (config_context.roles) and a generic action reference, none of which the raw
+# bulk path can express; they are singletons, and their REST payload compiles
+# from attrs plus refs directly.
+EXTRAS_CREATE_KINDS = {"custom_field", "custom_field_choice_set", "custom_link",
+                       "config_context", "event_rule", "export_template", "webhook"}
+REST_CREATE_KINDS = {"module_bay_type", "provider_account"} | EXTRAS_CREATE_KINDS
 # Model-default values REST/Diode apply server-side but TurboBulk's raw path
 # would otherwise manufacture as invalid '' (choice columns have no CHECK
 # constraint, so the row inserts and only surfaces at the next full_clean —
@@ -422,9 +429,13 @@ SUPPORTED_REFS = {
     "cooling_intake": {"cooling_outflow", "device"},
     "cooling_outflow": {"cooling_intake", "device"},
     "cooling_source": {"location", "site"},
+    "config_context": {"owner", "roles"},
     "custom_field": {"choice_set", "owner"},
     "custom_field_choice_set": {"owner"},
     "custom_link": {"owner"},
+    "event_rule": {"action_object", "owner"},
+    "export_template": {"owner"},
+    "webhook": {"owner"},
     "device_bay": {"device", "installed_device"},
     "fhrp_group": set(),
     "fhrp_group_assignment": {"group", "interface"},
@@ -646,7 +657,7 @@ def _matches(obj, row, ids, objects=None):
                 "platform", "rack_role", "rir", "site_group", "wireless_lan_group"}:
         return row.get("slug") == attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group",
-                "cable_bundle", "circuit_group", "cluster_group", "custom_field", "custom_field_choice_set", "custom_link", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy"}:
+                "cable_bundle", "circuit_group", "cluster_group", "config_context", "custom_field", "custom_field_choice_set", "custom_link", "event_rule", "export_template", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy", "webhook"}:
         return row.get("name") == attrs["name"]
     if kind == "region":
         return (row.get("slug") == attrs["slug"]
@@ -804,7 +815,7 @@ def _candidate_bucket_key(obj, ids, objects=None):
         return "slug", attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
                 "virtual_machine",
-                "cable_bundle", "circuit_group", "cluster_group", "custom_field", "custom_field_choice_set", "custom_link", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy"}:
+                "cable_bundle", "circuit_group", "cluster_group", "config_context", "custom_field", "custom_field_choice_set", "custom_link", "event_rule", "export_template", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy", "webhook"}:
         return "name", attrs["name"]
     if kind == "aggregate":
         return "prefix-rir", attrs["prefix"], _ref_id(obj, "rir", ids)
@@ -909,7 +920,7 @@ def _row_bucket_keys(kind, row):
         return [("slug", row.get("slug"))]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
                 "virtual_machine",
-                "cable_bundle", "circuit_group", "cluster_group", "custom_field", "custom_field_choice_set", "custom_link", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy"}:
+                "cable_bundle", "circuit_group", "cluster_group", "config_context", "custom_field", "custom_field_choice_set", "custom_link", "event_rule", "export_template", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy", "webhook"}:
         return [("name", row.get("name"))]
     if kind == "aggregate":
         return [("prefix-rir", row.get("prefix"), nested(row.get("rir")))]
@@ -1299,8 +1310,15 @@ def _change_diff_count(client, branch_id, *, object_type_id=None, action=None):
 # Branching explicitly disables support for these models (netbox_branching
 # constants.EXEMPT_MODELS, verified against the pinned 1.2.1 source): their
 # writes land on main and create no ChangeDiffs, so the exact-count gate must
-# not expect any.
-BRANCH_EXEMPT_KINDS = {"custom_field", "custom_field_choice_set", "custom_link"}
+# not expect any. Read back from the running pinned stack, EXEMPT_MODELS is
+# ('core.*', 'extras.branch', 'extras.customfield', 'extras.customfieldchoiceset',
+# 'extras.customlink', 'extras.eventrule', 'extras.exporttemplate',
+# 'extras.notificationgroup', 'extras.savedfilter', 'extras.webhook',
+# 'netbox_branching.*', 'netbox_changes.*'). extras.configcontext is NOT exempt:
+# get_branchable_object_types() lists it, so config contexts are branch-scoped
+# and keep their exact create-ChangeDiff count like any estate record.
+BRANCH_EXEMPT_KINDS = {"custom_field", "custom_field_choice_set", "custom_link",
+                       "event_rule", "export_template", "webhook"}
 
 
 def _expected_change_diff_counts(objects):
@@ -1326,8 +1344,9 @@ def _arbitrate_worker_death(client, receipt, entry):
 
     Reviewable inserts create exactly one create-ChangeDiff per row inside the
     same transaction as the rows, and no other writer touches these models on
-    the branch (REST_CREATE_KINDS — module_bay_type and provider_account — are
-    never TurboBulk job models; REST completion PATCHes do not change a diff's
+    the branch (no REST_CREATE_KINDS member is ever a TurboBulk job model, and
+    of those only module_bay_type, provider_account and config_context are
+    branch-scoped at all; REST completion PATCHes do not change a diff's
     create action).
     The model's create-diff count therefore equals the rows of previously
     verified entries, plus this entry's rows exactly when its transaction
@@ -1885,12 +1904,17 @@ def _rest_create_fields(kind, obj):
         return set(obj["attrs"]) | {"manufacturer"}
     if kind == "provider_account":
         return set(obj["attrs"]) | {"provider"} | ({"owner"} if "owner" in obj["refs"] else set())
-    if kind in {"custom_field", "custom_field_choice_set", "custom_link"}:
-        return set(obj["attrs"]) | set(obj["refs"])
+    if kind in EXTRAS_CREATE_KINDS:
+        fields = set(obj["attrs"]) | set(obj["refs"])
+        if "action_object" in fields:
+            # The serializer writes the generic action through its two native
+            # fields; "action_object" is only the canonical reference name.
+            fields = (fields - {"action_object"}) | {"action_object_type", "action_object_id"}
+        return fields
     raise LoadError(f"no REST create compiler for {kind}")
 
 
-def _render_rest_create(obj, ids):
+def _render_rest_create(obj, ids, objects=None):
     if obj["kind"] == "module_bay_type":
         return {**obj["attrs"], "manufacturer": ids[obj["refs"]["manufacturer"]]}
     if obj["kind"] == "provider_account":
@@ -1898,9 +1922,18 @@ def _render_rest_create(obj, ids):
         if "owner" in obj["refs"]:
             payload["owner"] = ids[obj["refs"]["owner"]]
         return payload
-    if obj["kind"] in {"custom_field", "custom_field_choice_set", "custom_link"}:
-        payload = {**obj["attrs"],
-                   **{name: ids[key] for name, key in obj["refs"].items()}}
+    if obj["kind"] in EXTRAS_CREATE_KINDS:
+        payload = {**obj["attrs"]}
+        for name, key in obj["refs"].items():
+            if name == "action_object":
+                if not objects:
+                    raise LoadError(f"{obj['key']}: generic action reference needs the canonical index")
+                payload["action_object_type"] = API_CONTENT_TYPES[objects[key]["kind"]]
+                payload["action_object_id"] = ids[key]
+            elif isinstance(key, list):
+                payload[name] = sorted(ids[member] for member in key)
+            else:
+                payload[name] = ids[key]
         if "extra_choices" in payload:
             # Canonical choices use Diode's "value:label" strings; REST wants
             # [value, label] pairs.
@@ -1936,7 +1969,7 @@ def _create_rest(client, kind, candidates, ids, receipt, receipt_path, objects=N
         _write_receipt(receipt_path, receipt)
         started = time.monotonic()
         status, row = client.request(endpoint, method="POST",
-                                     body=json.dumps(_render_rest_create(obj, ids)).encode(),
+                                     body=json.dumps(_render_rest_create(obj, ids, objects)).encode(),
                                      headers={"Content-Type": "application/json"})
         target_id = _nested_id(row)
         if not isinstance(target_id, int) or not _matches(obj, row, ids):
@@ -2114,8 +2147,12 @@ ALLOWLISTED_BUILTIN_KINDS = {"module_type_profile"}  # factory rows (4.7 profile
 MAIN_SCOPED_KINDS = {"owner", "owner_group",
                      # extras definitions are not branch-isolated either; their
                      # names carry the namespace (custom_field uses its
-                     # underscore form), so disjoint estates coexist.
-                     "custom_field", "custom_field_choice_set", "custom_link"}
+                     # underscore form), so disjoint estates coexist. The
+                     # automation event rule, export templates and webhook are
+                     # Branching-exempt for the same reason (BRANCH_EXEMPT_KINDS);
+                     # the config context is branch-scoped and is not listed here.
+                     "custom_field", "custom_field_choice_set", "custom_link",
+                     "event_rule", "export_template", "webhook"}
 ALLOWLISTED_KINDS = ALLOWLISTED_BUILTIN_KINDS | MAIN_SCOPED_KINDS
 
 
@@ -2151,8 +2188,9 @@ def _bootstrap_allowlist(plan, inventory, extras_only=False):
     """Allow pre-existing rows that provably cannot collide with the artifact.
 
     Two declared groups qualify: target-native factory rows (for example the
-    eight ModuleTypeProfiles on 4.7.1) and main-scoped owner/owner_group rows
-    another estate left on a shared 4.7 target. A fresh load may proceed over
+    eight ModuleTypeProfiles on 4.7.1) and the MAIN_SCOPED_KINDS rows another
+    estate left on a shared 4.7 target (owner/owner_group, the custom-field
+    trio, and the automation export templates, webhook and event rule). A fresh load may proceed over
     them only for kinds in ALLOWLISTED_KINDS when every existing identity is
     disjoint from the plan's — the exact ids are recorded and allowlisted
     through strict readback, mirroring the lab bootstrap receipt. Anything

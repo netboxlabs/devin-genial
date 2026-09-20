@@ -71,9 +71,11 @@ model schema cannot write. Each job is transactional; the full estate is not one
 transaction.
 A disposable [NetBox branch](https://netboxlabs.com/docs/turbobulk/branching/) is
 the practical whole-run rollback boundary, except the Branching-exempt
-main-scoped rows — NetBox 4.7 `owner`/`owner_group` plus custom-field,
-choice-set and custom-link definitions: those are written to main and survive
-branch deletion and `just reset` (`just retire` removes them).
+main-scoped rows — NetBox 4.7 `owner`/`owner_group`, the custom-field,
+choice-set and custom-link definitions, and the automation export templates,
+webhook and event rule: those are written to main and survive
+branch deletion and `just reset` (`just retire` removes them). Config contexts
+are branch-scoped and go with the branch.
 
 REST is the compatibility layer and the universal fallback. NetBox supports
 [atomic bulk updates within one model](https://netbox.readthedocs.io/en/stable/integrations/rest-api/#updating-multiple-objects), so Genial should batch bounded completion
@@ -200,13 +202,13 @@ For a new receipt, every inventory represented by the artifact must be empty,
 with two recorded exceptions, both requiring every existing plain-attribute
 identity to be disjoint from the plan's: rows of a declared builtin kind
 (currently `module_type_profile`; NetBox's factory ModuleTypeProfiles — eight on
-4.7.1, seven on 4.7.0), and main-scoped `owner`/`owner_group` rows another
-estate left on a shared 4.7 target (they are not branch-isolated and carry
-their estate's namespace in their names, so distinct namespaces coexist).
+4.7.1, seven on 4.7.0), and the main-scoped rows another estate left on a shared
+4.7 target — `owner`/`owner_group`, the custom-field trio and the automation
+export templates, webhook and event rule (none of them branch-isolated; each
+carries its estate's namespace in its name, so distinct namespaces coexist).
 The exact ids and identities are stored in the receipt and honored by strict
 readback. An identity collision — the same namespace's leftovers — is a hard
-block until REST cleanup at `/api/users/owners/` and `/api/users/owner-groups/`
-clears it. Anything else stops the command before writes. Treat the branch as
+block until `just retire` clears those endpoints in dependency order. Anything else stops the command before writes. Treat the branch as
 exclusively owned by that receipt until loading and verification finish.
 Never pass a token on the command line or store one in a recipe, artifact,
 receipt, source file or shell history.
@@ -216,16 +218,21 @@ is present, `TURBOBULK_WRITES=1`, a disposable branch was named, and the entire
 artifact fits the qualified compiler. Diode is eligible only with complete
 credentials, explicit write enablement, externally confirmed direct auto-apply
 and branch scope from the last 24 hours, matching source-checked target versions,
-and working REST endpoints for every emitted kind. The Diode ingestion API does
+and working REST endpoints for every kind it delivers. Diode delivers a
+*partial* estate: the pinned SDK has no entity for the four automation kinds, so
+that lane loads and verifies the artifact restricted to what the package
+carries, printing the omitted counts before any write and recording them in the
+receipt. Only TurboBulk delivers the whole plan. The Diode ingestion API does
 not control or introspect its downstream NetBox branch or Assurance mode, so the
 loader records that operator confirmation as an external boundary. It does not
 execute Assurance-review mode. A standalone REST loader is not implemented yet,
 so the selector reports that gap rather than silently omitting unsupported objects.
 
 The frozen v0.2 bank qualifies 29 canonical kinds through TurboBulk on Cloud.
-The compiler now covers 98 kinds — every kind any current profile emits, the complete bank included — with all 53 in the current enterprise data
+The compiler now covers 102 kinds — every kind any current profile emits, the complete bank included — with all 57 in the current enterprise data
 center artifact, with REST relationship completion and resumable REST creation for
-models absent from TurboBulk. The configured NetBox 4.6.8 target lacks the 4.7
+models absent from TurboBulk — including the four automation kinds, which no
+Diode package can carry at all (see [loading](loading.md#artifacts-and-diode)). The configured NetBox 4.6.8 target lacks the 4.7
 module-bay model entirely, so it rejects that artifact before any write. The
 complete rich path is live-qualified only on the pinned local 4.7.1 stack; Cloud
 and Enterprise remain unqualified. The remote Diode
