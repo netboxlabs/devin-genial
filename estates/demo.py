@@ -901,10 +901,19 @@ def demo_markdown(spec, facts, artifacts, live):
                          _ui(live, "/wireless/wireless-lans/"),
                          f"`{_cell(facts['wlan']['ssid'])}` comments name the exact DNS and RADIUS "
                          "hosts, protocols and ports it depends on — quoted below"])
-        rows.append(["Where config contexts live", _ui(live, "/extras/config-contexts/"),
-                     "**Empty in this estate — author one live.** See the honesty note below"])
-        rows.append(["Where export templates live", _ui(live, "/extras/export-templates/"),
-                     "**Empty in this estate — author one live.** See the honesty note below"])
+        ns = spec["namespace"]
+        rows.append(["Config contexts merging onto devices", _ui(live, "/extras/config-contexts/"),
+                     f"`{ns} Global service baseline` — its ntp/syslog/dns/service endpoints are "
+                     "THIS estate's own service VM addresses — and the role-scoped "
+                     f"`{ns} Switch platform baseline` weighted above it. Open any access switch's "
+                     "Config Context tab to show the merge"])
+        rows.append(["Export templates that render", _ui(live, "/extras/export-templates/"),
+                     f"`{ns} Device inventory (CSV)` and `{ns} Cable report (CSV)` — working Jinja "
+                     "over dcim.device and dcim.cable; render either live from its object list"])
+        rows.append(["Event rule + webhook (inert by design)", _ui(live, "/extras/event-rules/"),
+                     f"`{ns} Device change notification` → `{ns} NetOps automation endpoint`: the "
+                     "shape of a ServiceNow/ITSM hook, deliberately disabled with an unreachable "
+                     "host — nothing fires, and the records say so"])
         _table(lines, ["What", "Where", "What is actually there"], rows)
         if facts["wlan"]:
             lines.extend([
@@ -915,15 +924,11 @@ def demo_markdown(spec, facts, artifacts, live):
                 "Those hostnames are real VMs in this estate with real service records and real "
                 "addresses. That is the join an export template or a playbook would make.", ""])
         lines.extend([
-            "**Say this, do not skip it.** This generator emits no config context, config "
-            "template or export template object — that is a known gap (COVERAGE.md phase 11, "
-            "pending), not an oversight. The strong version of the demo is to author one live: "
-            "add an export template over `dcim.device` on the branch and render it against "
-            "this estate's real names, roles and addresses. The data underneath is genuine; the "
-            "automation artifact is something you write on the call.", "",
-            "Equally: nothing here executes. No device is configured, no playbook has run, no "
-            "state is reconciled against hardware. Every address, VLAN and service record is "
-            "documented inventory.", ""])
+            "**Say this, do not skip it.** Nothing here executes. The event rule is disabled and "
+            "its webhook host is unreachable by design; no device is configured, no playbook has "
+            "run, no state is reconciled against hardware. Every address, VLAN, context key and "
+            "service record is documented inventory — the config context values are provably this "
+            "estate's own service addresses, which is exactly the join a playbook would make.", ""])
     if "scenario" in spec["features"]:
         scenario = artifacts["scenario"]
         lines.extend([

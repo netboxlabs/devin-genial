@@ -267,17 +267,21 @@ class ComposerTests(unittest.TestCase):
             self.assertEqual(sorted(path.name for path in plain.iterdir()),
                              sorted(path.name for path in flagged.iterdir()),
                              "automation must add narration, never artifacts")
-            # The records the section points at exist either way.
+            # The records the section points at exist either way (the pack is
+            # unconditional enrichment since 0.11.0).
             for directory in (plain, flagged):
                 plan = json.loads((directory / "estate" / "plan.json").read_text())
                 self.assertTrue([obj for obj in plan["objects"] if obj["kind"] == "service"])
+                kinds = {obj["kind"] for obj in plan["objects"]}
+                self.assertLessEqual({"config_context", "export_template", "webhook", "event_rule"}, kinds)
             sheet, bare = (flagged / "DEMO.md").read_text(), (plain / "DEMO.md").read_text()
             self.assertIn("Automation — the data the tooling consumes", sheet)
             self.assertNotIn("Automation — the data the tooling consumes", bare)
             self.assertIn("/extras/config-contexts/", sheet)
             self.assertIn("/extras/export-templates/", sheet)
-            self.assertIn("emits no config context", sheet)
-            self.assertIn("COVERAGE.md phase 11", sheet)
+            self.assertIn("Global service baseline", sheet)
+            self.assertIn("inert by design", sheet)
+            self.assertIn("Nothing here executes", sheet)
 
     def test_the_zone_profiles_quote_their_own_contexts_and_distribution_pair(self):
         for profile, contexts in (("manufacturing", ("-process", "-supervisory")),
@@ -302,14 +306,18 @@ class ComposerTests(unittest.TestCase):
                 for name in pair:
                     self.assertIn(f"`{name}`", sheet)
 
-    def test_the_composed_estate_never_carries_a_config_context_object(self):
+    def test_the_composed_estate_carries_the_automation_pack_it_narrates(self):
+        # Inverted from the pre-0.11 guard: the pack is unconditional now, and
+        # the section must never claim emptiness again.
         with tempfile.TemporaryDirectory() as temporary:
             out = Path(temporary) / "demo"
             self.compose(out, "--features", "automation")
             plan = json.loads((out / "estate" / "plan.json").read_text())
             kinds = {obj["kind"] for obj in plan["objects"]}
-            self.assertFalse(kinds & {"config_context", "config_template", "export_template"},
-                             "the automation section's honesty note would become false")
+            self.assertLessEqual({"config_context", "export_template", "webhook", "event_rule"}, kinds)
+            sheet = (out / "DEMO.md").read_text()
+            self.assertNotIn("Empty in this estate", sheet)
+            self.assertNotIn("emits no config context", sheet)
 
     # -- the cheat sheet --------------------------------------------------
 
