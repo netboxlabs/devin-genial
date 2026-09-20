@@ -1201,6 +1201,8 @@ def demo_markdown(spec, facts, artifacts, live):
         f"#      sheet under build/demos/{spec['namespace']}-vN/ (the next free",
         "#      generation directory) for the second call.",
         f"just retire {origin} {branch} {_shell(spec['namespace'])}   # 3. now retire this branch",
+        "#    (if the v2 load then fails, v1 is not lost: its artifact is still on",
+        "#    disk — reload it into a fresh branch to restore the original demo)",
         "# 4. go live with the commands the NEW sheet prints (branch, load, verify),",
         "#    and close the grown demo out with ITS branch per that sheet.",
         "```", "",
@@ -1211,7 +1213,8 @@ def demo_markdown(spec, facts, artifacts, live):
         "deletes the rows, which breaks any other live branch's readback (the command "
         "warns).", "",
         "```sh",
-        f"just retire {origin} {branch} {_shell(spec['namespace'])}   # skip if growth step 3 already retired it",
+        f"just retire {origin} {branch} {_shell(spec['namespace'])}   # skip if growth step 3 ran: after a v2 load this",
+        "#   deletes rows the LIVE v2 branch depends on — no prompt, no undo",
         "```", "",
         "One namespace has one verifiable branch at a time. A side-by-side before/after demo "
         "needs two namespaces planned from the start.", "",
