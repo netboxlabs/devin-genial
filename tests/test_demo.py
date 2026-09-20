@@ -57,6 +57,26 @@ class ComposerTests(unittest.TestCase):
         self.assertEqual(payload.get("error"), "DesignError", payload)
         return payload["message"]
 
+    def test_the_merger_step_is_a_graph_fact_not_a_template_assumption(self):
+        # Cold-start run #23: a custom bank without design_mix has no merger,
+        # so the sheet must not send the SE to a site with nothing to show.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stock = root / "stock"
+            self.compose(stock, profile="regional-bank", name="Stock Bank")
+            stock_sheet = (stock / "DEMO.md").read_text()
+            self.assertIn("Show the merger.", stock_sheet)
+            self.assertNotIn("br-s0002", stock_sheet)  # display name, not the internal id
+            recipe = root / "plain.toml"
+            recipe.write_text('profile = "regional-bank"\nnamespace = "plainbank"\n'
+                              'name = "Plain Bank"\nheadquarters = 0\n\n[branches]\nsmall = 1\n')
+            out = root / "plain"
+            status, text, _ = self.call("--json", "demo", "--recipe", recipe, "--out", out)
+            self.assertEqual(status, 0, text)
+            sheet = (out / "DEMO.md").read_text()
+            self.assertNotIn("Show the merger.", sheet)
+            self.assertNotIn("Birch", sheet)
+
     def test_a_customer_shaped_recipe_composes_with_its_own_identity(self):
         # Cold-start run #22: taking the customer's real shape must not cost
         # the cheat sheet.

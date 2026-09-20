@@ -80,7 +80,10 @@ just demo-recipe build/lakeshore/recipe.toml scenario https://netbox.example dem
 `name`, `namespace`, `seed`, `[hardware]` and `[site_names]` — copies it
 verbatim into the output, and writes a cheat sheet that follows the customer's
 shape instead of the stock template. The identity flags conflict with it by
-design: edit the recipe, not the command line.
+design: edit the recipe, not the command line. Walkthrough steps are graph
+facts: a bank recipe without `design_mix`/`site_designs` has no inherited
+branch, so the merger step is omitted rather than pointed at a site with no
+merger — add those keys if the acquisition story should be on screen.
 
 Counts below are measured at the default `--name` (`Genial Demo Estate` →
 namespace `genial-demo-estate`) with the default vendor line, and reproduce

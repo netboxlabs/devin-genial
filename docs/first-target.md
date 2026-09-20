@@ -161,8 +161,15 @@ selector in the top bar, or open any page with `?_branch=<schema_id>` appended
 and Branching keeps it active for the session (an `active_branch` cookie).
 The same parameter works on the REST API for post-load confirmation:
 `curl …/api/dcim/sites/?_branch=<schema_id>`.
-The whole estate is there; main stays clean. Two boundaries to know before a
-screen share:
+The whole estate is there; main stays clean.
+
+**"What does a change look like?"** is answered by the branch itself: every
+loaded object is a reviewable change record on the branch, never on main. Show
+the branch's own page in the Branching plugin UI and its change list, or read
+`/api/plugins/branching/changes/?_branch=<schema_id>` — and the load receipt's
+exact per-model create-ChangeDiff counts (expected == observed for every model)
+are the auditable evidence that the change set is complete. Two boundaries to
+know before a screen share:
 
 - **Merging a TurboBulk-loaded branch to main is currently blocked** by
   upstream defects (see [qualification](qualification.md)); the working

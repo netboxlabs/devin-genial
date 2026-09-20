@@ -118,7 +118,7 @@ br-s0001 = "modern"
 br-s0002 = "inherited"
 br-s0003 = "refreshed"
 """,
-        ("**Show the merger.** The inherited branch `br-s0002` renders under the authored "
+        ("**Show the merger.** The inherited branch {inherited} renders under the authored "
          "predecessor brand *Birch* — device names, DNS, VRFs, route targets, its own tenant "
          "and WAN accounts. Filter devices by that site and read the names. That lineage is "
          "the acquisition story's substance, and it survives an equipment refresh.")),
@@ -734,6 +734,12 @@ def _facts(plan):
         "device": subject["attrs"]["name"] if subject else None,
         "devices_at_site": len(at_site),
         "racked_at_site": len([obj for obj in at_site if obj["refs"].get("rack")]),
+        # The merger step is a graph fact, not a template assumption: a custom
+        # bank recipe without design_mix has no inherited branch to show.
+        "inherited_site": next((index[obj["refs"]["site"]]["attrs"]["name"]
+                                for obj in kinds.get("device", [])
+                                if obj["refs"].get("device_type") == "hardware/inherited-access"
+                                and obj["refs"].get("site") in index), None),
         "rack": rack["attrs"]["name"] if rack else None,
         "listener": listener,
         "desks": desks,
@@ -902,7 +908,15 @@ def demo_markdown(spec, facts, artifacts, live):
             + (f" at `{listener['address']}`" if listener["address"] else "")
             + f". {counts.get('service', 0)} service records, each bound to a real interface "
               "address. This is the row the official demo dataset ships empty."))
-    steps.append(("", template.step))
+    step = template.step
+    if "{inherited}" in step:
+        if facts.get("inherited_site"):
+            step = step.format(inherited=f"**{_cell(facts['inherited_site'])}**")
+        else:
+            # No merger in this estate: the recipe carries no inherited design.
+            step = None
+    if step:
+        steps.append(("", step))
     for index, (lead, text) in enumerate(steps, start=1):
         lines.append(f"{index}. {('**' + _cell(lead) + '** ') if lead else ''}{text}")
     lines.append("")
@@ -921,7 +935,8 @@ def demo_markdown(spec, facts, artifacts, live):
             f"**Read `{out}/drift/drift.md` before the call.** It carries the run sequence, the "
             "per-item talk track and the review-versus-auto-apply warning, and it is byte-bound "
             "to the manifest — `just drift-check` re-renders and compares it, so it is never "
-            "restated here and never edited by hand.", "",
+            "restated here and never edited by hand. Where its step 1 says "
+            f"`<original-baseline-build-dir>`, for this compose that is `{estate}`.", "",
             "Honest line, from that walkthrough: expected deviations are a prediction from the "
             "public Diode changeset contract. **No Assurance-equipped target has seen this "
             "payload.** Do not claim live matching, deviation routing or clearing behaviour.", ""])
