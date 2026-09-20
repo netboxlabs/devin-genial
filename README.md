@@ -41,6 +41,26 @@ each build; existing artifacts are never overwritten. The
 [generation guide](docs/usage.md) covers recipe options, repeatable growth and
 optional devenv/Just setup. All commands run from the repository root.
 
+## One command, twenty minutes before the call
+
+You know the industry, the vendor in their racks and which product story is
+being sold. `just demo` turns those three into a validated estate plus a
+`DEMO.md` cheat sheet written from that estate's own data — and, given a target
+and branch, a loaded and strictly verified branch in the same run:
+
+```sh
+just demo regional-bank "Acme Regional Bank" juniper assurance,automation
+# …and to go live in the same run:
+just demo msp "Acme Managed" default automation https://netbox.example demo-acme
+```
+
+Without a target it stops after the offline gates and the cheat sheet prints
+the exact go-live commands. It composes existing commands and skips no gate:
+generate, check, load-check, the feature packs, then branch, load and
+verify-target. The [demo composer guide](docs/demo.md) has the flags, the
+per-profile template sizes and the feature packs; it is the fastest path
+through everything below.
+
 ## Choose an industry
 
 | Estate | Start with | What shapes it | Loadable to a target today? |
@@ -234,6 +254,7 @@ once the tenant runs a TurboBulk build with the reaper; see the
 
 | I want to… | Read |
 | --- | --- |
+| Build a customer demo in one command | [Demo composer](docs/demo.md) |
 | Load my first estate into a target, start to finish | [First target](docs/first-target.md) |
 | Grow a loaded estate and get the new version live | [First target §7](docs/first-target.md#7-growing-a-loaded-estate) |
 | Generate, configure or grow an estate | [Usage](docs/usage.md) · [Recipe reference](docs/recipes.md) |

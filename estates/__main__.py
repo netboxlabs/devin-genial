@@ -15,7 +15,7 @@ from .diode import export, verify_export
 from .model import DesignError, canonical, digest, hardware_catalog
 from .report import markdown, summary, type_coverage
 from .scenarios import create as create_scenario, markdown as scenario_markdown
-from . import __version__, drift, power_scenario
+from . import __version__, demo, drift, power_scenario
 from .validate import validate
 
 
@@ -256,6 +256,22 @@ def main(argv=None):
     p.add_argument("--out", type=Path, required=True)
     p = sub.add_parser("drift-check", help="recompute a saved drift twin from its bound baseline plan")
     p.add_argument("directory", type=Path, help="a directory written by the drift command")
+    p = sub.add_parser("demo", help="compose one customer demo: recipe, artifact, feature packs and DEMO.md")
+    # Not argparse choices: these three enums share one resolver, so one error
+    # shape names the real options and the profile/feature interaction.
+    p.add_argument("--profile", default="regional-bank", metavar="PROFILE",
+                   help="industry template (default: regional-bank): " + ", ".join(demo.PROFILES))
+    p.add_argument("--vendor", default="default", metavar="VENDOR",
+                   help="[hardware] vendor line: " + ", ".join(demo.VENDORS))
+    p.add_argument("--name", default="Genial Demo Estate", help="customer-visible estate name")
+    p.add_argument("--namespace", default="", help="DNS-label namespace (default: derived from --name)")
+    p.add_argument("--seed", type=int, help="bounded-variation seed (default: derived from the namespace)")
+    p.add_argument("--features", default="", metavar="LIST",
+                   help="comma list: " + ", ".join(demo.FEATURES))
+    p.add_argument("--sites", type=Path, help="TOML or JSON file of [site_names] overrides")
+    p.add_argument("--out", type=Path, help="new demo directory (default: build/demos/<namespace>)")
+    p.add_argument("--target", default="", help="NetBox root URL; with --branch, go live in this run")
+    p.add_argument("--branch", default="", help="branch name to create and load into")
     p = sub.add_parser("scenario", help="generate graph-selected demo snapshots; no target writes")
     p.add_argument("plan", type=Path)
     p.add_argument("--kind", choices=("acquire-and-refresh", "loss-of-power-diversity", "provider-span-maintenance"), default="acquire-and-refresh")
@@ -277,6 +293,23 @@ def main(argv=None):
             print(json.dumps(result, sort_keys=True) if args.json else
                   f"{result['artifact']}: exact expected deviation set and observed payload verified against the bound "
                   "baseline; live Assurance behaviour unverified")
+            return 0
+        if args.command == "demo":
+            spec = demo.resolve(profile=args.profile, vendor=args.vendor, name=args.name,
+                                namespace=args.namespace, seed=args.seed, features=args.features,
+                                sites=args.sites, out=args.out, target=args.target,
+                                branch=args.branch)
+            result = demo.run(spec, cli=main)
+            if args.json:
+                print(json.dumps(result, sort_keys=True))
+            else:
+                print(f"{result['name']}: {result['sites']} sites, {result['devices']} devices, "
+                      f"{result['cables']} cables — {result['objects']:,} objects in {result['seconds']}s")
+                print(f"Cheat sheet: {result['demo']}")
+                if result["loaded"]:
+                    print(f"Loaded and verified: {result['ui_url']}")
+                else:
+                    print("Offline only; no target contacted. The cheat sheet carries the go-live commands.")
             return 0
         if args.command in ("plan", "generate"):
             with open(args.recipe, "rb") as handle:

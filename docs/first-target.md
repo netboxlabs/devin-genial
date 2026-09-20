@@ -5,6 +5,12 @@ target but has never loaded one. Commands are the Justfile surface; every step
 before `just load` is read-only. [Loading](loading.md) holds the transport
 detail and [seeding](seeding.md) the database-restore alternative.
 
+**The [demo composer](demo.md) automates §3 to §6** — artifact check, branch,
+preflight, load and the strict readback — from one command, through these exact
+entry points. It does not replace §1, §2 or §10: the target prerequisites, the
+token shape and the failure playbook are still yours to know before you point
+anything at a customer's NetBox. Read this page once, then use `just demo`.
+
 ## 1. What the target must have
 
 - **NetBox 4.7 or newer for anything you generate today.** Every current
