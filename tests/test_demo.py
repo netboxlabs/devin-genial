@@ -57,6 +57,34 @@ class ComposerTests(unittest.TestCase):
         self.assertEqual(payload.get("error"), "DesignError", payload)
         return payload["message"]
 
+    def test_growth_composes_with_previous_and_keeps_identities(self):
+        # Cold-start run #28: the second call deserves a fresh cheat sheet.
+        base = ('profile = "utility"\nnamespace = "growco"\nname = "Growco Power"\n'
+                'control_centers = 1\n\n[[substations]]\nkey = "alpha"\n'
+                'kind = "distribution"\nbays = 4\n')
+        grown = base + '\n[[substations]]\nkey = "briar"\nkind = "distribution"\nbays = 4\n'
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "v1.toml").write_text(base)
+            (root / "v2.toml").write_text(grown)
+            s, text, _ = self.call("--json", "demo", "--recipe", root / "v1.toml",
+                                   "--out", root / "one")
+            self.assertEqual(s, 0, text)
+            s, text, _ = self.call("--json", "demo", "--recipe", root / "v2.toml",
+                                   "--previous", root / "one/estate/plan.json",
+                                   "--out", root / "two")
+            self.assertEqual(s, 0, text)
+            v1 = {o["key"]: o for o in json.loads((root / "one/estate/plan.json").read_text())["objects"]}
+            v2 = {o["key"]: o for o in json.loads((root / "two/estate/plan.json").read_text())["objects"]}
+            self.assertLessEqual(set(v1), set(v2))
+            self.assertIn("sub-briar", {k.removeprefix("site/") for k in v2 if k.startswith("site/")})
+            self.assertTrue((root / "two/DEMO.md").exists())
+            # --previous without --recipe is a named refusal.
+            s, text, _ = self.call("--json", "demo", "--previous", root / "one/estate/plan.json",
+                                   "--out", root / "three")
+            self.assertEqual(s, 2, text)
+            self.assertIn("--recipe", text)
+
     def test_the_maintenance_pack_is_provider_only_and_builds_the_span_story(self):
         # Cold-start run #26: the flagship provider scenario is reachable from
         # the flagship command, with the same snapshot boundary stated.
@@ -72,7 +100,8 @@ class ComposerTests(unittest.TestCase):
             sheet = (out / "DEMO.md").read_text()
             self.assertIn("Maintenance — a planned span window", sheet)
             self.assertIn("refuses to load `changed/`", sheet)
-            self.assertIn("just span-scenario", sheet)
+            self.assertIn("just demo-recipe", sheet)
+            self.assertIn("maintenance https://netbox.example", sheet)
 
     def test_a_scenario_snapshot_refusal_names_the_policy(self):
         # Run #26's second S2: the guardrail must name itself, not read as a
@@ -104,9 +133,9 @@ class ComposerTests(unittest.TestCase):
             self.assertIn("Show the wireless story.", sheet)
             self.assertIn("/wireless/wireless-lans/", sheet)
             # The closing block scopes its retire to whichever branch is live.
-            self.assertIn("Close the grown demo out from here, with ITS branch", sheet)
+            self.assertIn("recompose from the edited recipe plus this plan", sheet)
             self.assertIn("did **not** run the growth block", sheet)
-            self.assertIn("narrate the second call", sheet)
+            self.assertIn("fresh cheat sheet", sheet)
             # Feature-aware growth block: scenario regen, no drift line here.
             self.assertNotIn("just drift ", sheet)
 
@@ -481,7 +510,10 @@ class ComposerTests(unittest.TestCase):
             self.assertIn("Nothing has been written to a NetBox target", sheet)
             self.assertIn("no NetBox target has seen this estate", sheet)
             self.assertIn("TURBOBULK_WRITES=1", sheet)
-            self.assertNotIn("_branch=", sheet, "no branch can be active before a load")
+            # The API-proof placeholders are fine; a real schema id is not.
+            import re as _re
+            for match in _re.findall(r"_branch=([^&\"\s)]+)", sheet):
+                self.assertEqual(match, "<schema-id>", "no branch can be active before a load")
 
     def test_compose_json_records_the_entry_points_that_actually_ran(self):
         with tempfile.TemporaryDirectory() as temporary:

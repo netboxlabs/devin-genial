@@ -55,7 +55,12 @@ just plan
 just generate
 ```
 
-`just plan` previews a validated inventory without writing files. `just generate`
+`just plan` previews a validated inventory without writing files.
+Two different digests appear on this journey and they are not the same value:
+the CLI's `Canonical plan SHA256` is the digest of the plan's canonical
+encoding (receipts record it as `canonical_sha256`), while a receipt's
+`plan_sha256` is the sha256 of the `plan.json` file bytes. Match like with
+like when reconciling an artifact against a receipt. `just generate`
 builds the default bank under `build/bank-v9/`. Open `build/bank-v9/report.md` for its
 topology, IP plan, rack elevations, service placement, and questions to explore.
 Build destinations must be new; rerunning never overwrites an existing artifact.

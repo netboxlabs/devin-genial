@@ -324,9 +324,9 @@ rooms = 100
 reading_seats = 120
 aps = 6
 """,
-        ("**Open a residence hall floor.** Every room holds a permanent reserved position and its "
-         "wired port is *installed capacity* — no resident-owned device is modeled. Identity and "
-         "WLAN records use eduroam-style naming only; no authentication protocol is configured "
+        ("**Open a residence hall floor.**{dorm} Every room holds a permanent reserved position and "
+         "its wired port is *installed capacity* — no resident-owned device is modeled. Identity "
+         "and WLAN records use eduroam-style naming only; no authentication protocol is configured "
          "anywhere, so do not let the room infer 802.1X from an SSID name.")),
 
     "msp": _Template(
@@ -428,8 +428,12 @@ def _vendor_note(resolved_hardware):
 
 
 def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, target, branch,
-            recipe=None):
+            recipe=None, previous=None):
     """Validate the flags and return the frozen compose specification."""
+    if previous is not None and recipe is None:
+        raise DesignError("--previous grows an estate from your own edited recipe: supply "
+                          "--recipe with the grown demand (growth by editing a stock template "
+                          "is not expressible). Retire the previous branch before going live.")
     if recipe is not None:
         # The customer's real shape: everything identity- and demand-shaped
         # comes from the recipe file; only features/out/target/branch are flags.
@@ -447,10 +451,13 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
             raise DesignError(f"--recipe {recipe}: {exc}") from exc
         except tomllib.TOMLDecodeError as exc:
             raise DesignError(f"--recipe {recipe} is not valid TOML: {exc}") from exc
+        if previous is not None and not Path(previous).is_file():
+            raise DesignError(f"--previous {previous}: not a readable plan.json")
         spec = resolve(profile=resolved["profile"], vendor="default", name=resolved["name"],
                        namespace=resolved["namespace"], seed=resolved["seed"], features=features,
                        sites=None, out=out, target=target, branch=branch)
-        return spec | {"seed_source": "from the recipe", "recipe_path": str(recipe),
+        return spec | {"previous": str(previous) if previous else None,
+                       "seed_source": "from the recipe", "recipe_path": str(recipe),
                        "recipe_source": source, "site_names": resolved.get("site_names", {}),
                        "vendor_note": _vendor_note(resolved.get("hardware", {}))}
     if profile not in PROFILES:
@@ -508,7 +515,7 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
             "features": sorted(set(chosen), key=FEATURES.index),
             "site_names": _site_overrides(sites), "sites_file": str(sites) if sites else None,
             "out": str(out).rstrip("/") or ".", "target": target or None, "branch": branch or None,
-            "recipe_path": None, "vendor_note": VENDORS[vendor][1],
+            "recipe_path": None, "previous": None, "vendor_note": VENDORS[vendor][1],
             "generator_version": __version__}
 
 
@@ -743,6 +750,13 @@ def _facts(plan):
                                 for obj in kinds.get("device", [])
                                 if obj["refs"].get("device_type") == "hardware/inherited-access"
                                 and obj["refs"].get("site") in index), None),
+        # The residence step names a real hall, room port and link.
+        "dorm": next(({"site": index[obj["refs"]["site"]]["attrs"]["name"],
+                       "slug": index[obj["refs"]["site"]]["attrs"]["slug"],
+                       "device": obj["attrs"]["name"]}
+                      for obj in kinds.get("device", [])
+                      if "Residence Port" in (obj["attrs"].get("description") or "")
+                      and obj["refs"].get("site") in index), None),
         # Wireless claims are graph facts too: guest only when a guest SSID
         # exists, and the second radio only when a WLAN actually rides it.
         "guest_wireless": any("guest" in (obj["attrs"].get("ssid") or "").lower()
@@ -947,6 +961,12 @@ def demo_markdown(spec, facts, artifacts, live):
         else:
             # No merger in this estate: the recipe carries no inherited design.
             step = None
+    if step and "{dorm}" in step:
+        dorm = facts.get("dorm")
+        step = step.format(dorm=(
+            f" **{_cell(dorm['site'])}** — " + _ui(live, "/dcim/devices/", f"site={dorm['slug']}")
+            + f" — open `{_cell(dorm['device'])}` and its cable."
+            if dorm else ""))
     if step and "{guest}" in step:
         step = step.format(guest=(" Guest wireless is open access intent with no portal and no "
                                   "clinical execution." if facts.get("guest_wireless") else
@@ -1071,6 +1091,25 @@ def demo_markdown(spec, facts, artifacts, live):
             "qualified end to end on the pinned local Diode stack; claim exactly that and no "
             "more.", ""])
 
+    if spec["profile"] != "msp":
+        # Every profile gets live proofs; MSP's richer tenancy pair follows below.
+        api = (f"{live['origin']}/api" if live else "https://<target>/api")
+        scope = f"_branch={live['schema']}" if live else "_branch=<schema-id>"
+        lines.extend([
+            "## Prove it from the API", "",
+            "Counts recomputed from this estate's own graph — run them on the call when a "
+            "claim needs more than a screen:", "", "```sh",
+            f"# {facts['devices_at_site']} devices at {facts['site']['name']}",
+            f"curl -s -H \"Authorization: Token $NETBOX_TOKEN\" \\",
+            f"  \"{api}/dcim/devices/?site={facts['site']['slug']}&{scope}&limit=0\" | jq .count",
+            f"# {counts['cable']} cables estate-wide",
+            f"curl -s -H \"Authorization: Token $NETBOX_TOKEN\" \\",
+            f"  \"{api}/dcim/cables/?{scope}&limit=0\" | jq .count",]
+            + ([f"# {counts.get('wireless_lan', 0)} WLANs",
+                f"curl -s -H \"Authorization: Token $NETBOX_TOKEN\" \\",
+                f"  \"{api}/wireless/wireless-lans/?{scope}&limit=0\" | jq .count"]
+               if counts.get("wireless_lan") else [])
+            + ["```", ""])
     if spec["profile"] == "msp":
         first = facts["customer_tenants"][0] if facts["customer_tenants"] else f"{spec['namespace']}-cust-…"
         account = first.split("-cust-", 1)[-1]
@@ -1128,27 +1167,16 @@ def demo_markdown(spec, facts, artifacts, live):
         "# Re-run the full strict readback at any time. Zero writes.",
         f"just verify-target {estate} {origin} {branch}", "",
         "# Grow it without renaming anything. FIRST edit a copy of the recipe (append",
-        "# the new demand — running it unedited regenerates this same estate), then the",
-        "# full go-live sequence in this order (one namespace = one live branch, so v1",
-        "# retires before v2 loads; the preflight names any blocking rows first):",
+        "# the new demand — running it unedited regenerates this same estate). Then",
+        "# retire this branch and recompose from the edited recipe plus this plan:",
+        "# identities, ports and addresses survive, and you get a fresh cheat sheet",
+        "# for the second call (one namespace = one live branch, so retire first).",
         f"cp {out}/recipe.toml {out}/recipe-v2.toml   # then edit: append demand",
-        f"just generate {out}/recipe-v2.toml {out}-v2 {estate}/plan.json",
-        f"just load-check {out}-v2",
-        f"just branch {origin} '<v2 branch name>'",
-        f"just load-explain {out}-v2 {origin} '<v2 branch name>'",
         f"just retire {origin} {branch} {_shell(spec['namespace'])}",
-        f"just load {out}-v2 {origin} '<v2 branch name>'",
-        f"just verify-target {out}-v2 {origin} '<v2 branch name>'",
-        *([f"just drift {out}-v2/plan.json {out}-v2-drift   # the drift twin binds one plan; regenerate it after growth"]
-          if "assurance" in spec["features"] else []),
-        *([f"just power-scenario {out}-v2/plan.json {out}-v2-scenario   # the what-if binds one plan; regenerate it after growth"]
-          if "scenario" in spec["features"] else []),
-        *([f"just span-scenario {out}-v2/plan.json {out}-v2-maintenance   # the maintenance story binds one plan; regenerate it after growth"]
-          if "maintenance" in spec["features"] else []),
-        "# The grown estate has no regenerated cheat sheet: this DEMO.md's links die",
-        f"# with the v1 branch — narrate the second call from {out}-v2/report.md.",
-        "# Close the grown demo out from here, with ITS branch:",
-        f"# just retire {origin} '<v2 branch name>' {_shell(spec['namespace'])}",
+        f"just demo-recipe {out}/recipe-v2.toml {_shell(','.join(spec['features']))} "
+        f"{origin} '<v2 branch name>' {out}/estate/plan.json",
+        "# Prefer the manual sequence? first-target.md §7 is the same journey",
+        "# step by step; regenerate any feature artifacts against the grown plan.",
         "```", "",
         "If you did **not** run the growth block, leave the target exactly as you found "
         "it — the branch AND the namespace's main-scoped rows, which branch deletion "
@@ -1268,7 +1296,11 @@ def run(spec, *, cli, stream=None):
     recipe.write_text(recipe_text(spec))
     runner, estate = _Runner(cli, stream), out / "estate"
 
-    runner.estates("generate the estate", ["generate", recipe, "--out", estate])
+    generate_argv = ["generate", recipe, "--out", estate]
+    if spec.get("previous"):
+        generate_argv += ["--previous", spec["previous"]]
+    runner.estates("generate the estate" + (" (growth from the previous plan)" if spec.get("previous") else ""),
+                   generate_argv)
     runner.estates("validate the finished graph", ["check", estate / "plan.json"])
     contract = runner.module("check the TurboBulk contract offline", "load", [estate, "--load-check"])
 

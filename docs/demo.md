@@ -59,6 +59,7 @@ shape. `python3 -m estates demo --help` has the rest.
 | `--features` | none | Comma list of `assurance`, `automation`, `scenario`, `maintenance` (provider only) |
 | `--sites` | none | TOML or JSON file of `[site_names]` overrides — the customer's real site names. Either the bare mapping or a file wrapping it in `site_names` |
 | `--recipe` | none | Compose from this recipe file instead of a template; conflicts with the identity flags — see [Template sizes](#template-sizes) |
+| `--previous` | none | Grow: reuse this frozen `plan.json` as the allocation ledger (requires `--recipe` with the grown demand; retire the old branch first). The grown compose gets its own fresh cheat sheet |
 | `--out` | `build/demos/<namespace>/` | New directory |
 | `--target` / `--branch` | none | Both or neither. Supplying both goes live in the same run, and requires `NETBOX_TOKEN` (checked before anything is generated) |
 
@@ -83,7 +84,10 @@ just demo-recipe build/lakeshore/recipe.toml scenario https://netbox.example dem
 `name`, `namespace`, `seed`, `[hardware]` and `[site_names]` — copies it
 verbatim into the output, and writes a cheat sheet that follows the customer's
 shape instead of the stock template. The identity flags conflict with it by
-design: edit the recipe, not the command line. Walkthrough steps are graph
+design: edit the recipe, not the command line. Growth composes too:
+`just demo-recipe recipe-v2.toml FEATURES TARGET BRANCH v1/plan.json` reuses the
+previous plan as the allocation ledger and writes a fresh cheat sheet for the
+second call — retire the previous branch first. Walkthrough steps are graph
 facts: a bank recipe without `design_mix`/`site_designs` has no inherited
 branch, so the merger step is omitted rather than pointed at a site with no
 merger — add those keys if the acquisition story should be on screen.

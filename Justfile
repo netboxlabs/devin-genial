@@ -19,8 +19,8 @@ demo profile='regional-bank' name='Genial Demo Estate' vendor='default' features
 # Compose from the customer's own recipe file: profile, name, namespace, seed,
 # [hardware] and [site_names] all come from it; the cheat sheet follows the
 # customer's shape instead of the stock template.
-demo-recipe recipe features='' target='' branch='':
-    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates demo --recipe {{quote(recipe)}} --features {{quote(features)}} {{if target == '' { '' } else { '--target ' + quote(target) + ' --branch ' + quote(branch) } }}
+demo-recipe recipe features='' target='' branch='' previous='':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates demo --recipe {{quote(recipe)}} --features {{quote(features)}} {{if previous == '' { '' } else { '--previous ' + quote(previous) } }} {{if target == '' { '' } else { '--target ' + quote(target) + ' --branch ' + quote(branch) } }}
 
 # Preview a validated estate without writing files
 plan recipe='profiles/bank.toml':
