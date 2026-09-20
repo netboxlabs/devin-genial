@@ -256,11 +256,15 @@ class DriftCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             plan = json.loads(plan_bytes("regional-bank"))
-            from estates.diode import export
+            from estates.diode import LOADER_ONLY_KINDS, export
             whole = export(plan, directory / "whole")
-            projected = export(plan, directory / "projected", keys=[obj["key"] for obj in plan["objects"]])
+            projected = export(plan, directory / "projected",
+                               keys=[obj["key"] for obj in plan["objects"]
+                                     if obj["kind"] not in LOADER_ONLY_KINDS])
             self.assertEqual(whole["canonical_records"], projected["canonical_records"])
-            self.assertEqual(whole["estate_sha256"], projected["estate_sha256"])
+            # The whole-estate digest names the full plan (loader-only records
+            # included); a projection's digest names exactly what it emits.
+            self.assertNotEqual(whole["estate_sha256"], projected["estate_sha256"])
             self.assertNotIn("projection", whole)
             requests = {name: (directory / "whole" / name).read_bytes()
                         for name in sorted(path.name for path in (directory / "whole").glob("phase-*.json"))}
@@ -278,7 +282,7 @@ class DriftCliTests(unittest.TestCase):
             plan = json.loads(plan_bytes("regional-bank"))
             with self.assertRaises(ValueError) as caught:
                 export(plan, Path(temporary) / "bad", keys=["device/invented/nowhere"])
-            self.assertIn("absent records", str(caught.exception))
+            self.assertIn("absent or loader-only records", str(caught.exception))
             with self.assertRaises(ValueError):
                 export(plan, Path(temporary) / "empty", keys=[])
             self.assertFalse((Path(temporary) / "bad").exists())
