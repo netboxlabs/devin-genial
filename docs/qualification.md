@@ -498,6 +498,16 @@ component placements, plus clean zero-write verify and idempotent repeat
 sibling). This qualifies the variant hardware through the identical loader
 path; default-line estates remain the primary receipts above.
 
+The automation pack passed the full lifecycle gate on the pinned local 4.7.1
+stack on September 19, 2026 (generator 0.11.0): a two-customer MSP estate
+carrying all six automation records loaded 3,881/3,881 objects and 4,553/4,553
+create ChangeDiffs with zero mismatches and 338/338 cable traces, verified
+zero-write, repeated idempotently, and then retired — `just retire` removed
+exactly the six main-scoped rows by exact generated name (event rule, webhook,
+both export templates, owner and owner group) with zero residue on any
+endpoint (receipt `v1-Keystone-Managed-Services-99c8101c7a38.json` and its
+`verify-` sibling; the branch-scoped config contexts left with the branch).
+
 Discovery-drift Cloud probe, September 19, 2026: a one-entity Diode SDK ingest
 against the Assurance-equipped Cloud tenant (NetBox 4.6.9, Diode plugin 1.14.1,
 Assurance plugin 1.5.4) was acknowledged by the SDK, was **not** applied to
