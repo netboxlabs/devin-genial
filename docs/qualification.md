@@ -508,6 +508,13 @@ both export templates, owner and owner group) with zero residue on any
 endpoint (receipt `v1-Keystone-Managed-Services-99c8101c7a38.json` and its
 `verify-` sibling; the branch-scoped config contexts left with the branch).
 
+The demo composer closed its live gate on September 20, 2026: one command
+(`just demo regional-bank "First Cedar Bank" juniper assurance,automation
+<target> <branch>`) assembled the recipe, generated, checked, built the drift
+twin, created the branch, loaded and strictly verified 8,474 objects with zero
+mismatches in 227 seconds on the pinned local 4.7.1 stack, writing DEMO.md
+beside the artifact (receipt `estate-First-Cedar-Bank-Demo-d76f317008ff.json`).
+
 Discovery-drift Cloud probe, September 19, 2026: a one-entity Diode SDK ingest
 against the Assurance-equipped Cloud tenant (NetBox 4.6.9, Diode plugin 1.14.1,
 Assurance plugin 1.5.4) was acknowledged by the SDK, was **not** applied to
