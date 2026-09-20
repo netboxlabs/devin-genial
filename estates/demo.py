@@ -221,8 +221,7 @@ exam_rooms = 4
 """,
         ("**Follow the biomedical split.** Imaging and clinical equipment carry distinct roles "
          "and segments, and a separate biomedical contact from the network desk. Beds and desks "
-         "are installed capacity — never patient throughput or staffing. Guest wireless is open "
-         "access intent with no portal and no clinical execution.")),
+         "are installed capacity — never patient throughput or staffing.{guest}")),
 
     "provider-backbone": _Template(
         "Provider backbone",
@@ -740,6 +739,22 @@ def _facts(plan):
                                 for obj in kinds.get("device", [])
                                 if obj["refs"].get("device_type") == "hardware/inherited-access"
                                 and obj["refs"].get("site") in index), None),
+        # Wireless claims are graph facts too: guest only when a guest SSID
+        # exists, and the second radio only when a WLAN actually rides it.
+        "guest_wireless": any("guest" in (obj["attrs"].get("ssid") or "").lower()
+                              for obj in kinds.get("wireless_lan", [])),
+        "second_radio_assigned": any(obj["attrs"].get("name") == "wlan1"
+                                     and obj["refs"].get("wireless_lans")
+                                     for obj in kinds.get("interface", [])),
+        "wireless": next(({"device": index[obj["refs"]["device"]]["attrs"]["name"],
+                           "radio": obj["attrs"]["name"],
+                           "channel": obj["attrs"]["rf_channel"],
+                           "ssid": index[obj["refs"]["wireless_lans"][0]]["attrs"]["ssid"],
+                           "count": len(kinds.get("wireless_lan", []))}
+                          for obj in kinds.get("interface", [])
+                          if obj["attrs"].get("rf_channel") and obj["refs"].get("wireless_lans")
+                          and obj["refs"].get("device") in index
+                          and obj["refs"]["wireless_lans"][0] in index), None),
         "rack": rack["attrs"]["name"] if rack else None,
         "listener": listener,
         "desks": desks,
@@ -908,6 +923,14 @@ def demo_markdown(spec, facts, artifacts, live):
             + (f" at `{listener['address']}`" if listener["address"] else "")
             + f". {counts.get('service', 0)} service records, each bound to a real interface "
               "address. This is the row the official demo dataset ships empty."))
+    if facts.get("wireless"):
+        w = facts["wireless"]
+        steps.append(("Show the wireless story.",
+                      f"{_ui(live, '/wireless/wireless-lans/')} — {w['count']} WLANs. Open "
+                      f"**{_cell(w['device'])}** → *Interfaces*: radio `{w['radio']}` carries "
+                      f"`{_cell(w['ssid'])}` on channel `{w['channel']}`, and its `eth0` uplink is "
+                      "a real tagged trunk (untagged wireless management, tagged client VLANs) — "
+                      "segmentation you can trace, not describe."))
     step = template.step
     if "{inherited}" in step:
         if facts.get("inherited_site"):
@@ -915,6 +938,12 @@ def demo_markdown(spec, facts, artifacts, live):
         else:
             # No merger in this estate: the recipe carries no inherited design.
             step = None
+    if step and "{guest}" in step:
+        step = step.format(guest=(" Guest wireless is open access intent with no portal and no "
+                                  "clinical execution." if facts.get("guest_wireless") else
+                                  " Guest wireless is not requested in this recipe (guest demand "
+                                  "defaults to zero); the clinical/medical/imaging segmentation "
+                                  "carries the story."))
     if step:
         steps.append(("", step))
     for index, (lead, text) in enumerate(steps, start=1):
@@ -1084,10 +1113,16 @@ def demo_markdown(spec, facts, artifacts, live):
         f"just retire {origin} {branch} {_shell(spec['namespace'])}",
         f"just load {out}-v2 {origin} '<v2 branch name>'",
         f"just verify-target {out}-v2 {origin} '<v2 branch name>'",
-        f"just drift {out}-v2/plan.json {out}-v2-drift   # the drift twin binds one plan; regenerate it after growth", "",
+        f"just drift {out}-v2/plan.json {out}-v2-drift   # the drift twin binds one plan; regenerate it after growth",
+        "# The grown estate has no regenerated cheat sheet: this DEMO.md's links die",
+        f"# with the v1 branch — narrate the second call from {out}-v2/estate/report.md.", "",
         "# Leave the target exactly as you found it: the branch AND the namespace's",
-        "# main-scoped rows, which branch deletion alone does not remove.",
-        f"just retire {origin} {branch} {_shell(spec['namespace'])}",
+        "# main-scoped rows, which branch deletion alone does not remove. Retire the",
+        "# branch that is actually live — this one if you never ran the growth block,",
+        "# the v2 branch if you did. Retiring with the branch already gone still",
+        "# deletes the namespace's rows, which breaks any OTHER live branch's readback.",
+        f"just retire {origin} {branch} {_shell(spec['namespace'])}          # without the growth block",
+        f"# just retire {origin} '<v2 branch name>' {_shell(spec['namespace'])}   # after the growth block",
         "```", "",
         "One namespace has one verifiable branch at a time. A side-by-side before/after demo "
         "needs two namespaces planned from the start.", "",
@@ -1108,9 +1143,14 @@ def demo_markdown(spec, facts, artifacts, live):
     ]
     if spec["vendor"] == "aruba":
         honesty.append(
-            "`--vendor aruba` declares the AP-505's real 5 GHz + 2.4 GHz split, so whichever "
-            "WLAN rides `wlan1` carries 2.4 GHz channels on this line. The reference AP models "
-            "two 5 GHz radios; say which you are showing."
+            ("`--vendor aruba` declares the AP-505's real 5 GHz + 2.4 GHz split, and a WLAN "
+             "rides `wlan1` in this estate, so that SSID carries 2.4 GHz channels — say which "
+             "band you are showing."
+             if facts.get("second_radio_assigned") else
+             "`--vendor aruba` declares the AP-505's real 5 GHz + 2.4 GHz split, but nothing "
+             "rides `wlan1` in this profile: the second radio renders as an unused interface "
+             "(no channel, no WLAN). Show `wlan0`'s 5 GHz plan; do not click into `wlan1` "
+             "expecting a 2.4 GHz story.")
             if counts.get("wireless_lan") else
             "`--vendor aruba` was requested, but this profile models no radio, WLAN or wireless "
             "endpoint of any kind — the AP line changes the hardware digest and nothing on screen.")

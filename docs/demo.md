@@ -57,13 +57,15 @@ shape. `python3 -m estates demo --help` has the rest.
 | `--seed` | derived from the namespace | `0 ≤ seed < 2^63`. Derived so two composes for one customer agree without anybody remembering a number |
 | `--features` | none | Comma list of `assurance`, `automation`, `scenario` |
 | `--sites` | none | TOML or JSON file of `[site_names]` overrides — the customer's real site names. Either the bare mapping or a file wrapping it in `site_names` |
+| `--recipe` | none | Compose from this recipe file instead of a template; conflicts with the identity flags — see [Template sizes](#template-sizes) |
 | `--out` | `build/demos/<namespace>/` | New directory |
 | `--target` / `--branch` | none | Both or neither. Supplying both goes live in the same run, and requires `NETBOX_TOKEN` (checked before anything is generated) |
 
 `--vendor` moves the families it actually covers: `juniper` has no AP line in
 the catalog, `aruba` has no switch line. `aruba` also declares the AP-505's real
-5 GHz + 2.4 GHz split, so whichever WLAN rides `wlan1` changes band — the cheat
-sheet says so, and says so again when the profile models no wireless at all.
+5 GHz + 2.4 GHz split. The cheat sheet states which case applies from the graph:
+a WLAN actually riding `wlan1` (2.4 GHz on screen), an unused second radio
+(most profiles — show `wlan0`'s 5 GHz plan instead), or no wireless at all.
 
 ## Template sizes
 
@@ -120,7 +122,11 @@ decides what gets built beside the artifact and what the cheat sheet narrates.
   restates it — that walkthrough is byte-bound to its manifest, and
   `just drift-check` re-renders and compares it. Needs a profile with campus
   access; `enterprise-data-center` models fabric only and is refused at the
-  flag.
+  flag. Know before you pick it: the drift artifact and its talk track are
+  the *documented* half of the Assurance story — **showing deviations on screen
+  needs a Diode/Assurance-equipped target**; the TurboBulk branch you load
+  carries the documented baseline only, and `drift.md` says exactly what may
+  and may not be claimed.
 - **`automation`** adds narration only, no files — since 0.11.0 the records are
   already in every estate. It points at the inventory a playbook reads, the
   service records a template renders, the custom field and custom link where

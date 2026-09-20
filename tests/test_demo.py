@@ -57,6 +57,25 @@ class ComposerTests(unittest.TestCase):
         self.assertEqual(payload.get("error"), "DesignError", payload)
         return payload["message"]
 
+    def test_wireless_claims_are_graph_facts(self):
+        # Cold-start run #24: no guest promise without a guest SSID, no 2.4 GHz
+        # promise when nothing rides wlan1, and a wireless step when APs exist.
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary) / "demo"
+            self.compose(out, "--vendor", "aruba", profile="hospital-clinics",
+                         name="Riverbend Health")
+            sheet = (out / "DEMO.md").read_text()
+            self.assertIn("Guest wireless is not requested in this recipe", sheet)
+            self.assertNotIn("Guest wireless is open access intent", sheet)
+            self.assertIn("nothing", sheet)
+            self.assertIn("rides `wlan1` in this profile", sheet)
+            self.assertIn("Show the wireless story.", sheet)
+            self.assertIn("/wireless/wireless-lans/", sheet)
+            # The closing block scopes its retire to whichever branch is live.
+            self.assertIn("without the growth block", sheet)
+            self.assertIn("after the growth block", sheet)
+            self.assertIn("narrate the second call", sheet)
+
     def test_the_merger_step_is_a_graph_fact_not_a_template_assumption(self):
         # Cold-start run #23: a custom bank without design_mix has no merger,
         # so the sheet must not send the SE to a site with nothing to show.

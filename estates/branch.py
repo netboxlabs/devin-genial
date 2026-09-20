@@ -215,6 +215,15 @@ def main(argv=None):
                 row = {"name": args.name, "deleted": False, "branch": "already absent"}
             if args.retire_namespace:
                 row["retired_rows"] = retire_namespace_rows(client, args.retire_namespace)
+                if row.get("branch") == "already absent" and row["retired_rows"]:
+                    # The named branch was gone but rows still existed — likely a
+                    # second live branch under this namespace, whose strict
+                    # readback these deletions have just broken. Say so loudly.
+                    print(f"WARNING: branch {args.name!r} was already absent, yet "
+                          f"{len(row['retired_rows'])} main-scoped rows for namespace "
+                          f"{args.retire_namespace!r} were deleted. If another live branch "
+                          "holds this namespace's estate, its readback can no longer verify.",
+                          file=os.sys.stderr)
             print(json.dumps(row, sort_keys=True))
             return 0
         row = create_branch(Client(args.target, token), args.name, timeout=args.timeout)
