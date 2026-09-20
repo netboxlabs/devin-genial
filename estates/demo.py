@@ -163,7 +163,7 @@ groups = 1
 replicas = 2
 network = "backup"
 """,
-        ("**Prove the failure domain.** Open two replicas of the same `payments` group and "
+        ("**Prove the failure domain.** Open two replicas of the same `{workload}` group and "
          "compare their cluster, host and rack. `failure_domain = \"rack\"` also separates the "
          "paired fabric and WAN devices they depend on. The reserve is exact decimal headroom, "
          "not a promise that a spare host exists to recover onto.")),
@@ -455,8 +455,11 @@ def resolve(*, profile, vendor, name, namespace, seed, features, sites, out, tar
             raise DesignError(f"--previous {previous}: not a readable plan.json")
         if previous is not None and out is None:
             # A grown compose must not collide with its predecessor's default
-            # directory; give it its own deterministic home.
-            out = f"build/demos/{resolved['namespace']}-v2"
+            # directory (or an earlier generation's): first free -vN home.
+            generation = 2
+            while Path(f"build/demos/{resolved['namespace']}-v{generation}").exists():
+                generation += 1
+            out = f"build/demos/{resolved['namespace']}-v{generation}"
         spec = resolve(profile=resolved["profile"], vendor="default", name=resolved["name"],
                        namespace=resolved["namespace"], seed=resolved["seed"], features=features,
                        sites=None, out=out, target=target, branch=branch)
@@ -849,6 +852,11 @@ def demo_markdown(spec, facts, artifacts, live):
     template = PROFILES[spec["profile"]]
     counts, out = facts["counts"], spec["out"]
     estate = f"{out}/estate"
+    # One derivation for every command in the sheet: a grown compose suggests a
+    # branch name distinct from v1's, so no line — go-live, verify, recompose or
+    # the closing retire — can be mistaken for the predecessor's.
+    example_branch = (f"{spec['namespace']}-v2" if spec.get("previous")
+                      else spec["namespace"])
     hook, size = template.hook, template.size
     if spec["profile"] == "regional-bank" and not facts.get("inherited_site"):
         hook = "Paired data centers carry the shared services; the branches consume them."
@@ -893,10 +901,6 @@ def demo_markdown(spec, facts, artifacts, live):
             f"The load verified {live['objects_matched']} objects with {live['mismatches']} "
             f"mismatches and re-verified clean with zero writes.", ""])
     else:
-        # A grown compose suggests a branch name distinct from v1's, so its
-        # closing retire cannot be mistaken for the predecessor's.
-        example_branch = (f"{spec['namespace']}-v2" if spec.get("previous")
-                          else spec["namespace"])
         lines.extend([
             "Nothing is on a target yet. Every offline gate passed; these are the exact "
             "commands to go live, in order:", "", "```sh",
@@ -969,6 +973,11 @@ def demo_markdown(spec, facts, artifacts, live):
             step = step.format(inherited=f"**{_cell(facts['inherited_site'])}**")
         else:
             # No merger in this estate: the recipe carries no inherited design.
+            step = None
+    if step and "{workload}" in step:
+        if facts.get("listener"):
+            step = step.format(workload=facts["listener"]["name"])
+        else:
             step = None
     if step and "{dorm}" in step:
         dorm = facts.get("dorm")
@@ -1176,7 +1185,7 @@ def demo_markdown(spec, facts, artifacts, live):
 
     lines.extend(["## Repeat, verify, retire", "", "```sh"])
     origin = live["origin"] if live else "https://netbox.example"
-    branch = _shell(live["branch"] if live else spec["namespace"])
+    branch = _shell(live["branch"] if live else example_branch)
     lines.extend([
         "# Re-run the full strict readback at any time. Zero writes.",
         f"just verify-target {estate} {origin} {branch}", "",
@@ -1185,7 +1194,8 @@ def demo_markdown(spec, facts, artifacts, live):
         f"cp {out}/recipe.toml {out}/recipe-v2.toml   # 1. edit: append the new demand",
         f"just demo-recipe {out}/recipe-v2.toml {_shell(','.join(spec['features']))} '' '' {out}/estate/plan.json",
         "#    ^ 2. offline compose: identities survive, and it writes a fresh cheat",
-        f"#      sheet at build/demos/{spec['namespace']}-v2/DEMO.md for the second call.",
+        f"#      sheet under build/demos/{spec['namespace']}-vN/ (the next free",
+        "#      generation directory) for the second call.",
         f"just retire {origin} {branch} {_shell(spec['namespace'])}   # 3. now retire this branch",
         "# 4. go live with the commands the NEW sheet prints (branch, load, verify),",
         "#    and close the grown demo out with ITS branch per that sheet.",

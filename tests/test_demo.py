@@ -86,11 +86,32 @@ class ComposerTests(unittest.TestCase):
             self.assertNotIn("--profile utility --name", grown_sheet)
             self.assertIn("New in this growth", grown_sheet)
             self.assertIn("growco-v2", grown_sheet)  # distinct suggested branch
+            # Run #31: EVERY command line uses the grown branch, including the
+            # closing retire and verify — the v1 name must not appear in any.
+            for line in grown_sheet.splitlines():
+                if line.startswith("just retire ") or line.startswith("just verify-target "):
+                    self.assertIn("growco-v2", line, line)
             # --previous without --recipe is a named refusal.
             s, text, _ = self.call("--json", "demo", "--previous", root / "one/estate/plan.json",
                                    "--out", root / "three")
             self.assertEqual(s, 2, text)
             self.assertIn("--recipe", text)
+
+    def test_the_enterprise_failure_domain_step_names_a_real_workload(self):
+        # Run #31: the stock key must never leak into a renamed-workload sheet.
+        recipe = ('profile = "enterprise-data-center"\nnamespace = "halbtest"\n'
+                  'name = "Halbtest Trading"\ndata_centers = 1\nwan_peak_mbps = 300\n\n'
+                  '[[workloads]]\nkey = "order-gateway"\ngroups = 1\nreplicas = 2\n'
+                  'failure_domain = "rack"\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "halb.toml"
+            path.write_text(recipe)
+            out = Path(temporary) / "demo"
+            s, text, _ = self.call("--json", "demo", "--recipe", path, "--out", out)
+            self.assertEqual(s, 0, text)
+            sheet = (out / "DEMO.md").read_text()
+            self.assertNotIn("`payments`", sheet)
+            self.assertIn("order-gateway", sheet)
 
     def test_the_maintenance_pack_is_provider_only_and_builds_the_span_story(self):
         # Cold-start run #26: the flagship provider scenario is reachable from
