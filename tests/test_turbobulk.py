@@ -984,7 +984,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
         with self.assertRaises(LoadError) as caught:
             load("missing-artifact", url="http://t.example", token="0" * 40,
                  branch="b", receipt_path=Path("unused.json"),
-                 max_job_rows=MAX_JOB_ROWS + 1)
+                 max_job_rows=MAX_JOB_ROWS + 1, upload_format="jsonl")
         self.assertIn("silently drop columns", str(caught.exception))
 
     def test_wireless_lan_identity_uses_ssid_group_and_vlan(self):
@@ -1808,8 +1808,10 @@ class TurboBulkLoaderTests(unittest.TestCase):
                     patch("estates.turbobulk._verify_review_history", return_value={
                         "expected": 5, "observed": 5}), \
                     patch("estates.turbobulk._poll", return_value=terminal) as poll:
+                # The fixture receipt predates the Parquet writer; resuming it
+                # is only compatible with the JSONL format it was written under.
                 result = load(root, url="https://netbox.example", token="fixture",
-                              branch="Demo", receipt_path=receipt_path)
+                              branch="Demo", receipt_path=receipt_path, upload_format="jsonl")
             poll.assert_called_once_with(ANY, "terms-job", 900)
             self.assertTrue(result["success"])
             self.assertTrue(result["jobs"][0]["request_verified"])

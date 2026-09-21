@@ -88,10 +88,14 @@ TurboBulk jobs default to at most 2,000 rows. Keep deterministic batch purposes,
 receipt-bound request settings, one ID-resolution read per completed model, and
 all global hooks out of data-bearing jobs. Run required maintenance, cable, and
 search hooks as separate zero-row finalizers after data and REST completion. A
-fourth `just load` argument changes the bound for measured qualification runs.
-`estates.turbobulk.load` itself rejects a bound outside 1..10,000: TurboBulk's JSONL
-reader fixes the column set from the first 10,000 rows, so a sparse payload spanning
-chunks would silently drop later columns.
+fourth `just load` argument changes the bound for measured qualification runs;
+a fifth forces the upload format (`auto`/`jsonl`/`parquet`, default auto).
+Data jobs upload Parquet when pyarrow is available (devenv provides it; generation
+stays stdlib) with a 1..50,000 bound; JSONL keeps 1..10,000 because TurboBulk's
+JSONL reader fixes the column set from the first 10,000 rows, so a sparse payload
+spanning chunks would silently drop later columns. The Parquet writer compiles the
+column union explicitly, refuses `_tags` and non-custom_field_data JSON objects,
+keeps zero-row finalizers JSONL, and binds the format into the receipt.
 Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
 the parent device in the original TurboBulk row; derive the device location from
 its rack when NetBox would inherit it on save. Require the corresponding REST

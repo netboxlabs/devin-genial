@@ -69,6 +69,11 @@ DEFAULT_JOB_ROWS = 2_000
 # TurboBulk's JSONL reader fixes the column set from the first chunk (10,000
 # rows), so a sparse payload spanning chunks can silently drop columns.
 MAX_JOB_ROWS = 10_000
+# The Parquet reader takes the column set from file metadata, so the JSONL
+# constraint does not apply; this ceiling bounds server memory at job end
+# (changelog flush scales with rows) rather than any format rule.
+PARQUET_MAX_JOB_ROWS = 50_000
+UPLOAD_FORMATS = ("auto", "jsonl", "parquet")
 REST_PATCH_ROWS = 100
 READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
@@ -118,6 +123,65 @@ def delivery_contract(policy):
             "post_hooks": dict(POST_HOOKS),
         },
     }
+
+
+def _pyarrow():
+    try:
+        import pyarrow
+        import pyarrow.parquet  # noqa: F401 — write_table lives in the submodule
+        return pyarrow
+    except ImportError:
+        return None
+
+
+def resolve_upload_format(requested):
+    """Resolve auto/jsonl/parquet to the concrete data-job upload format."""
+    if requested not in UPLOAD_FORMATS:
+        raise LoadError(f"unsupported upload format {requested!r}; choose one of {', '.join(UPLOAD_FORMATS)}")
+    if requested == "auto":
+        return "parquet" if _pyarrow() else "jsonl"
+    if requested == "parquet" and not _pyarrow():
+        raise LoadError("parquet upload requires pyarrow (the devenv shell provides it); "
+                        "re-enter the shell or choose jsonl")
+    return requested
+
+
+def _parquet_payload(rows):
+    """Compile one model's rows into Parquet bytes.
+
+    Columns are the explicit union over every row (``from_pylist`` would take
+    them from the first row alone — the JSONL sparse-column bug, client-side),
+    and PyArrow applies the same type inference the server's own JSONL reader
+    uses (``RecordBatch.from_pydict``). The server routes both formats into the
+    identical staging COPY, so a Parquet job is behaviorally the JSONL job
+    without the 10,000-row column-set cap.
+    """
+    import io
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    prepared = []
+    columns = {}
+    for row in rows:
+        clean = {}
+        for column, value in row.items():
+            if column == "_tags":
+                # copy_from_parquet never forwards the _tags virtual column,
+                # so tagged rows would silently lose their tags.
+                raise LoadError("TurboBulk's Parquet reader drops _tags; use a jsonl upload for tagged rows")
+            if isinstance(value, dict):
+                if column != "custom_field_data":
+                    raise LoadError(f"column {column} carries a JSON object; only custom_field_data "
+                                    "is JSON-serializable on the Parquet path")
+                # A struct column would union keys across rows; the server
+                # accepts the already-serialized JSON string unchanged.
+                value = json.dumps(value, separators=(",", ":"), sort_keys=True)
+            clean[column] = value
+            columns[column] = True
+        prepared.append(clean)
+    table = pa.table({column: [row.get(column) for row in prepared] for column in columns})
+    sink = io.BytesIO()
+    pq.write_table(table, sink, compression="zstd")
+    return sink.getvalue()
 
 
 def _batch_request_settings(base):
@@ -1162,12 +1226,12 @@ def _rendered_columns(obj, service_shape="protocol_ports"):
     return columns
 
 
-def _multipart(fields, filename, payload):
+def _multipart(fields, filename, payload, content_type="application/gzip"):
     boundary = "----genial" + uuid.uuid4().hex
     chunks = []
     for name, value in fields.items():
         chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
-    chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: application/gzip\r\n\r\n'.encode() + payload + b"\r\n")
+    chunks.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'.encode() + payload + b"\r\n")
     chunks.append(f"--{boundary}--\r\n".encode())
     return boundary, b"".join(chunks)
 
@@ -1524,11 +1588,19 @@ def _record_failure(receipt, receipt_path, ids, overall, exc):
 
 
 def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_path, timeout,
-            mode="insert", request_settings=None):
+            mode="insert", request_settings=None, upload_format="jsonl"):
     request_settings = request_settings or delivery_contract("reviewable")["request_settings"]
     compile_started = time.monotonic()
-    payload = gzip.compress(b"".join((json.dumps(row, separators=(",", ":")) + "\n").encode()
-                                     for row in rows), mtime=0)
+    if upload_format == "parquet" and rows:
+        payload = _parquet_payload(rows)
+        filename, content_type = model + ".parquet", "application/x-parquet"
+    else:
+        # Zero-row jobs (finalizers) stay JSONL: an empty Parquet schema has
+        # nothing for the server's reader to type.
+        upload_format = "jsonl"
+        payload = gzip.compress(b"".join((json.dumps(row, separators=(",", ":")) + "\n").encode()
+                                         for row in rows), mtime=0)
+        filename, content_type = model + ".jsonl.gz", "application/gzip"
     compile_seconds = round(time.monotonic() - compile_started, 6)
     fields = {"model": model, "mode": mode, "branch": branch_name,
               "validation_mode": request_settings["validation_mode"],
@@ -1537,8 +1609,9 @@ def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_pa
               "dispatch_events": str(request_settings["dispatch_events"]).lower()}
     fields.update({f"post_hooks.{name}": str(enabled).lower()
                    for name, enabled in request_settings["post_hooks"].items()})
-    boundary, body = _multipart(fields, model + ".jsonl.gz", payload)
+    boundary, body = _multipart(fields, filename, payload, content_type)
     entry = {"purpose": purpose, "model": model, "mode": mode, "canonical_keys": keys,
+             "upload_format": upload_format,
              "rows_expected": len(rows), "compressed_bytes": len(payload),
              "payload_sha256": hashlib.sha256(payload).hexdigest(),
              "compile_seconds": compile_seconds, "status": "submitting",
@@ -1609,7 +1682,7 @@ def _require_job_settings(entry, expected):
 
 def _load_model_batches(client, branch_name, kind, candidates, objects, ids, content_types,
                         service_shape, purpose, receipt, receipt_path, timeout, max_job_rows,
-                        base_settings):
+                        base_settings, *, upload_format):
     """Submit deterministic model batches and checkpoint IDs after each one."""
     batches = _batches(candidates, max_job_rows)
     for number, batch in enumerate(batches, 1):
@@ -1633,14 +1706,15 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                     for obj in pending]
             _submit(client, branch_name, SPECS[kind][0], rows, batch_purpose,
                     [obj["key"] for obj in pending], receipt, receipt_path, timeout,
-                    request_settings=settings)
+                    request_settings=settings, upload_format=upload_format)
     _refresh(client, kind, candidates, ids, objects=objects)
     receipt["resolved_ids"] = ids
     _write_receipt(receipt_path, receipt)
 
 
 def _load_termination_batches(client, branch_name, terminations, purpose, receipt,
-                              receipt_path, timeout, max_job_rows, base_settings):
+                              receipt_path, timeout, max_job_rows, base_settings, *,
+                              upload_format):
     """Submit deterministic cable-termination batches without global hooks."""
     batches = _batches(terminations, max_job_rows)
     for number, batch in enumerate(batches, 1):
@@ -1661,7 +1735,8 @@ def _load_termination_batches(client, branch_name, terminations, purpose, receip
         if prior is not None:
             continue
         _submit(client, branch_name, "dcim.cabletermination", batch, batch_purpose, [],
-                receipt, receipt_path, timeout, request_settings=settings)
+                receipt, receipt_path, timeout, request_settings=settings,
+                upload_format=upload_format)
 
 
 def _run_finalizers(client, branch_name, objects, receipt, receipt_path, timeout,
@@ -2473,16 +2548,20 @@ def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
 
 
 def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
-         delivery_policy="reviewable", max_job_rows=DEFAULT_JOB_ROWS):
+         delivery_policy="reviewable", max_job_rows=DEFAULT_JOB_ROWS, upload_format="auto"):
     """Load one frozen artifact into a branch and strictly read it back."""
     started_at = _now()
     overall = time.monotonic()
+    upload_format = resolve_upload_format(upload_format)
+    row_bound = PARQUET_MAX_JOB_ROWS if upload_format == "parquet" else MAX_JOB_ROWS
     if (not isinstance(max_job_rows, int) or isinstance(max_job_rows, bool)
-            or not 1 <= max_job_rows <= MAX_JOB_ROWS):
+            or not 1 <= max_job_rows <= row_bound):
+        rationale = ("the ceiling bounds server memory at job end, not a format rule"
+                     if upload_format == "parquet" else
+                     "TurboBulk's JSONL reader fixes the column set from the first chunk, so a "
+                     "sparse payload spanning chunks can silently drop columns")
         raise LoadError(
-            f"TurboBulk maximum job rows must be an integer from 1 through {MAX_JOB_ROWS}: "
-            "TurboBulk's JSONL reader fixes the column set from the first chunk, so a "
-            "sparse payload spanning chunks can silently drop columns")
+            f"TurboBulk maximum job rows must be an integer from 1 through {row_bound}: " + rationale)
     plan_path, raw, plan, objects, offline = _artifact(plan_path)
     unsupported = sorted({obj["kind"] for obj in objects.values()} - SPECS.keys())
     if unsupported:
@@ -2511,14 +2590,22 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                "delivery_warning": delivery["warning"],
                "branch_capabilities": delivery["branch_capabilities"],
                "turbobulk_request_settings": delivery["request_settings"],
-               "turbobulk_max_job_rows": max_job_rows}
+               "turbobulk_max_job_rows": max_job_rows,
+               "turbobulk_upload_format": upload_format}
 
     receipt = None
     history_preflight = None
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text())
+        # Receipts written before the Parquet writer are JSONL by construction.
+        receipt.setdefault("turbobulk_upload_format", "jsonl")
         for key, value in binding.items():
             if receipt.get(key) != value:
+                if key == "turbobulk_upload_format":
+                    raise LoadError(
+                        f"receipt {receipt_path} was written under upload format "
+                        f"{receipt.get(key)!r}, not {value!r}; resume with --upload-format "
+                        f"{receipt.get(key)} or choose a new receipt and fresh branch")
                 raise LoadError(f"receipt {receipt_path} has different {key}; choose a new receipt and fresh branch")
         for entry in receipt.get("jobs", []):
             if entry.get("mode") != "insert":
@@ -2757,7 +2844,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                     _load_model_batches(
                         client, branch, kind, candidates, objects, ids, content_types,
                         service_shape, purpose, receipt, receipt_path, timeout, max_job_rows,
-                        delivery["request_settings"])
+                        delivery["request_settings"], upload_format=upload_format)
                 if kind == "cable":
                     termination_purpose = purpose + ":terminations"
                     terminations = []
@@ -2769,7 +2856,8 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                                                  "termination_id": ids[target["key"]]})
                     _load_termination_batches(
                         client, branch, terminations, termination_purpose, receipt, receipt_path,
-                        timeout, max_job_rows, delivery["request_settings"])
+                        timeout, max_job_rows, delivery["request_settings"],
+                        upload_format=upload_format)
                 receipt["resolved_ids"] = ids
                 _write_receipt(receipt_path, receipt)
 
@@ -2828,6 +2916,8 @@ def main(argv=None):
     parser.add_argument("--max-job-rows", type=int, default=DEFAULT_JOB_ROWS,
                         help=f"maximum rows per TurboBulk job (default: {DEFAULT_JOB_ROWS})")
     parser.add_argument("--delivery-policy", choices=DELIVERY_POLICIES, default="reviewable")
+    parser.add_argument("--upload-format", choices=UPLOAD_FORMATS, default="auto",
+                        help="data-job upload format; auto uses parquet when pyarrow is available")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not args.target or not token:
@@ -2838,7 +2928,8 @@ def main(argv=None):
                   file=os.sys.stderr, flush=True)
         result = load(args.artifact, url=args.target, token=token, branch=args.branch,
                       receipt_path=args.receipt, timeout=args.timeout,
-                      delivery_policy=args.delivery_policy, max_job_rows=args.max_job_rows)
+                      delivery_policy=args.delivery_policy, max_job_rows=args.max_job_rows,
+                      upload_format=args.upload_format)
         print(json.dumps({"success": True, "result": result["result"], "transport": result["transport"],
                           "objects": result["verification"]["matched_objects"],
                           "receipt": str(args.receipt)}, sort_keys=True))

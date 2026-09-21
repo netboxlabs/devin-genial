@@ -46,12 +46,12 @@ sdk-check directory='build/bank-v9/diode':
 # so a caller-supplied environment (for example a local lab token) always wins.
 
 # Inspect the target, choose a faithful transport, load, and strictly verify
-load artifact target branch='' turbobulk_job_rows='2000':
-    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
+load artifact target branch='' turbobulk_job_rows='2000' upload_format='auto':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} {{if branch == '' { '' } else { '--branch ' + quote(branch) }}} --delivery-policy reviewable --turbobulk-job-rows {{quote(turbobulk_job_rows)}} --upload-format {{quote(upload_format)}}
 
 # Faster baseline for a fresh throwaway branch; it cannot be reviewed, merged, or reverted
-load-disposable artifact target branch turbobulk_job_rows='2000':
-    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}}
+load-disposable artifact target branch turbobulk_job_rows='2000' upload_format='auto':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}} --upload-format {{quote(upload_format)}}
 
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:

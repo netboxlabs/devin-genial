@@ -369,9 +369,27 @@ then become the dependency checkpoint for later models. Table-wide hooks do not 
 on intermediate batches, and cable-link and path rebuilding wait until every
 generated termination is present. For an evidence-driven experiment, the optional
 fourth argument changes the bound: `just load ARTIFACT TARGET BRANCH 1000`. A
-different bound requires a fresh branch and receipt. The loader rejects any bound
-outside 1..10,000: TurboBulk's JSONL reader fixes the column set from the first
-10,000 rows, so a sparse payload spanning chunks would silently drop later columns.
+different bound requires a fresh branch and receipt. For JSONL the loader rejects
+any bound outside 1..10,000: TurboBulk's JSONL reader fixes the column set from
+the first 10,000 rows, so a sparse payload spanning chunks would silently drop
+later columns.
+
+Data-bearing jobs upload Parquet when pyarrow is available (the devenv shell
+provides it); the optional fifth argument forces a format:
+`just load ARTIFACT TARGET BRANCH 2000 jsonl`. TurboBulk's Parquet reader takes
+the column set from file metadata, so the JSONL constraint does not apply and the
+bound may rise to 1..50,000 — a ceiling on server memory at job end, not a format
+rule. The client compiles the column union over every row explicitly and lets
+PyArrow apply the same type inference the server's own JSONL reader uses, so a
+Parquet job is behaviorally the JSONL job — and allows fewer, larger batches
+when the bound is raised; the server routes both formats into the identical
+staging COPY. Zero-row finalizers always
+stay JSONL, each job's receipt entry records its `upload_format`, and the receipt
+binds the format for the whole load — resuming under a different format requires
+a fresh branch and receipt (receipts written before the Parquet writer count as
+JSONL). Rows carrying `_tags` or JSON objects outside `custom_field_data` are
+refused rather than silently reshaped; none of the current contract's TurboBulk
+kinds emit either.
 
 Read-only API requests retry transient disconnects four times with bounded
 backoff. Mutating requests are never retried automatically; their durable intent
@@ -443,9 +461,10 @@ branch dry-run rollback, simultaneous save hooks and changelogs, branch tag
 associations, and a model default bypassed by raw insertion. See the complete
 [transport findings and implementation path](transports.md#what-the-first-cloud-run-taught-us).
 
-Start with compressed JSONL. The public guide recommends Parquet primarily for
-larger repeated loads; add that dependency only if measurements show file parsing
-is material. Record job queue time, server duration, relationship completion,
+The public guide names Parquet the fastest format for 100K+ rows, and the
+loader now defaults to it whenever pyarrow is available (see above); JSONL
+remains the dependency-free fallback and the zero-row finalizer format.
+Record job queue time, server duration, relationship completion,
 cable-path rebuilding, and final readback separately. A high table-row rate by
 itself is not a successful connected-estate load. See the [TurboBulk branching
 guide](https://netboxlabs.com/docs/turbobulk/branching/).

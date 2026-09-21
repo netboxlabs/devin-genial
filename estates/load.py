@@ -19,9 +19,10 @@ import time
 from .diode import (LOADER_ONLY_KINDS, LOADER_ONLY_REASON, _PRIMARY_IPS, _deferred_fields,
                     _phases, deliverable, deliverable_plan, loader_only_records)
 from .model import digest
-from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, MAX_JOB_ROWS, Client, LoadError, SPECS, _artifact, _branch,
+from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, MAX_JOB_ROWS, PARQUET_MAX_JOB_ROWS,
+                        UPLOAD_FORMATS, Client, LoadError, SPECS, _artifact, _branch,
                         _numeric_ids, _schema_preflight, _verify_paths, _write_receipt,
-                        disposable_rest_blocker, load as load_turbobulk)
+                        disposable_rest_blocker, load as load_turbobulk, resolve_upload_format)
 from lab.verify import ENDPOINTS, fetch_inventory, verify_plan
 
 
@@ -638,7 +639,8 @@ def load_diode(artifact, *, url, token, branch, receipt_path, decision, timeout=
 
 
 def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeout=900,
-         explain=False, delivery_policy="reviewable", turbobulk_job_rows=DEFAULT_JOB_ROWS):
+         explain=False, delivery_policy="reviewable", turbobulk_job_rows=DEFAULT_JOB_ROWS,
+         upload_format="auto"):
     decision = inspect(artifact, url=url, token=token, branch=branch, transport=transport,
                        delivery_policy=delivery_policy, occupancy=explain)
     if explain:
@@ -652,7 +654,8 @@ def load(artifact, *, url, token, branch, receipt_path, transport="auto", timeou
         return load_turbobulk(artifact, url=url, token=token, branch=branch,
                               receipt_path=receipt_path, timeout=timeout,
                               delivery_policy=delivery_policy,
-                              max_job_rows=turbobulk_job_rows)
+                              max_job_rows=turbobulk_job_rows,
+                              upload_format=upload_format)
     if decision["selected"] == "diode":
         return load_diode(artifact, url=url, token=token, branch=branch,
                           receipt_path=receipt_path, decision=decision, timeout=timeout,
@@ -688,16 +691,25 @@ def main(argv=None):
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--turbobulk-job-rows", type=int, default=DEFAULT_JOB_ROWS,
                         help=f"maximum rows per TurboBulk job (default: {DEFAULT_JOB_ROWS})")
+    parser.add_argument("--upload-format", choices=UPLOAD_FORMATS, default="auto",
+                        help="TurboBulk data-job upload format; auto uses parquet when pyarrow is available")
     parser.add_argument("--explain", action="store_true", help="inspect and explain without writing")
     parser.add_argument("--verify-only", action="store_true",
                         help="strictly verify the target against the artifact with zero writes")
     parser.add_argument("--load-check", action="store_true",
                         help="offline: report whether the artifact fits the TurboBulk compiler contract")
     args = parser.parse_args(argv)
-    if not 1 <= args.turbobulk_job_rows <= MAX_JOB_ROWS:
-        parser.error(f"--turbobulk-job-rows must be between 1 and {MAX_JOB_ROWS}: TurboBulk's "
-                     f"JSONL reader fixes the column set from the first {MAX_JOB_ROWS} rows, so "
-                     "a sparse payload spanning chunks can silently drop columns")
+    try:
+        resolved_format = resolve_upload_format(args.upload_format)
+    except LoadError as exc:
+        parser.error(str(exc))
+    row_bound = PARQUET_MAX_JOB_ROWS if resolved_format == "parquet" else MAX_JOB_ROWS
+    if not 1 <= args.turbobulk_job_rows <= row_bound:
+        rationale = ("the ceiling bounds server memory at job end, not a format rule"
+                     if resolved_format == "parquet" else
+                     f"TurboBulk's JSONL reader fixes the column set from the first {MAX_JOB_ROWS} rows, "
+                     "so a sparse payload spanning chunks can silently drop columns")
+        parser.error(f"--turbobulk-job-rows must be between 1 and {row_bound}: " + rationale)
     token = os.environ.get("NETBOX_TOKEN")
     if not args.load_check and (not args.target or not token):
         parser.error("target/NETBOX_URL and NETBOX_TOKEN are required")
@@ -780,7 +792,8 @@ def main(argv=None):
                       receipt_path=receipt, transport=args.transport,
                       timeout=args.timeout, explain=args.explain,
                       delivery_policy=args.delivery_policy,
-                      turbobulk_job_rows=args.turbobulk_job_rows)
+                      turbobulk_job_rows=args.turbobulk_job_rows,
+                      upload_format=args.upload_format)
         if args.explain:
             decision = result["decision"]
             print(json.dumps(decision, indent=2, sort_keys=True))

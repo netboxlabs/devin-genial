@@ -1,5 +1,7 @@
 { pkgs, ... }: {
-  packages = [ pkgs.python3 pkgs.just ];
+  # pyarrow serves only the loader's optional Parquet upload path; generation,
+  # validation and export stay Python-standard-library.
+  packages = [ (pkgs.python3.withPackages (ps: [ ps.pyarrow ])) pkgs.just ];
   profiles.diode.module = {
     languages.python = {
       enable = true;

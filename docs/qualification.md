@@ -650,6 +650,33 @@ The unmodified official Diode plugin still needs mapping support for full passiv
 paths on current NetBox. The [opt-in local patch](../lab/README.md#opt-in-local-front-port-compatibility)
 is deliberately limited to this pinned qualification target and one-position mappings.
 
+## Parquet upload qualification
+
+On September 21, 2026 the loader gained the Parquet data-job format
+([loading guide](loading.md#turbobulk-as-a-scale-transport)) and was
+live-qualified on the pinned local 4.7.1 / Branching 1.2.1 / TurboBulk-source
+stack. The full-contract bank demo artifact `hartwell-precision-i-v2` (9,813
+canonical objects) loaded onto fresh branch "Parquet Qual" with default 2,000-row
+bounds: 81 Parquet data jobs (11,762 rows, 261,918 payload bytes, 0.14 s total
+client compile) plus 55 zero-row JSONL finalizers. Initial load reached exact
+strict readback in 150.8 s wall — 9,813/9,813 objects, zero mismatches, 983/983
+cable traces, 11,775/11,775 create ChangeDiffs — and the repeat run resumed all
+terminal jobs to `already-matched` in 34.5 s. Receipt:
+`build/load-receipts/hartwell-precision-i-v2-Parquet-Qual-607f23f4b61a.json`
+(local evidence, not shipped). Every data-job receipt entry records
+`upload_format: parquet`; the zero-row finalizers record `jsonl`.
+
+The raised 50,000-row Parquet bound was then exercised on the same stack with
+the historical 128,932-object scale artifact at `just load … 50000`: 39 Parquet
+data jobs carried all 155,698 rows (versus 74+ under the JSONL bound), the
+largest a genuine 50,000-row `dcim.interface` job, in 787,078 total payload
+bytes and 0.21 s client compile. The run reached exact strict readback in
+986.1 s wall — 128,932/128,932 objects, zero mismatches, 13,383/13,383 cable
+traces, 155,698/155,698 create ChangeDiffs — with 34 zero-row JSONL finalizers.
+Receipt: `build/load-receipts/scale-v2-Parquet-50k-10fdbca54e4c.json`. Cloud
+and Enterprise Parquet uploads remain unqualified until a recorded run says
+otherwise.
+
 ## Current offline scale evidence
 
 The corrected v0.9 source was measured on the same 64-PoP, 128-customer recipe
