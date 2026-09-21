@@ -107,7 +107,11 @@ def delivery_contract(policy):
             "revertible_after_merge": reviewable,
         },
         "request_settings": {
-            "validation_mode": "full",
+            # "auto" (TurboBulk's own default: database + IP-hierarchy checks),
+            # not "full": per-row Python validation is substantially slower and
+            # redundant here — strict readback independently re-verifies every
+            # emitted attribute and reference after the load.
+            "validation_mode": "auto",
             "create_changelogs": reviewable,
             "apply_save_hooks": False,
             "dispatch_events": False,

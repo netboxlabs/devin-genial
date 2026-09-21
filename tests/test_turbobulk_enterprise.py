@@ -259,7 +259,7 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
             body = target.body.decode(errors="ignore")
             for field, value in (("create_changelogs", "false"),
                                  ("dispatch_events", "false"),
-                                 ("validation_mode", "full")):
+                                 ("validation_mode", "auto")):
                 self.assertIn(f'name="{field}"\r\n\r\n{value}\r\n', body)
             for hook in settings["post_hooks"]:
                 self.assertIn(f'name="post_hooks.{hook}"\r\n\r\ntrue\r\n', body)
