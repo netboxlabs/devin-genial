@@ -673,9 +673,25 @@ largest a genuine 50,000-row `dcim.interface` job, in 787,078 total payload
 bytes and 0.21 s client compile. The run reached exact strict readback in
 986.1 s wall — 128,932/128,932 objects, zero mismatches, 13,383/13,383 cable
 traces, 155,698/155,698 create ChangeDiffs — with 34 zero-row JSONL finalizers.
-Receipt: `build/load-receipts/scale-v2-Parquet-50k-10fdbca54e4c.json`. Cloud
-and Enterprise Parquet uploads remain unqualified until a recorded run says
-otherwise.
+Receipt: `build/load-receipts/scale-v2-Parquet-50k-10fdbca54e4c.json`.
+
+On September 22, 2026 the same 128,932-object artifact reached exact strict
+readback on NetBox **Cloud** (rksd1051: 4.7.1, Branching 1.2.1, TurboBulk
+0.4.0) — the first complete six-figure estate on a Cloud tenant. 40 Parquet
+data jobs (155,698 rows, 788,332 payload bytes, 85.5 s summed server duration,
+`GENIAL_REVIEWABLE_SCALE=1` qualification override), 126 REST completion
+batches, 35 zero-row finalizers, then 128,932/128,932 objects, zero
+mismatches, 13,383/13,383 cable traces and 155,698/155,698 create ChangeDiffs.
+Receipt: `scale-v2-Genial-Scale-47-Parquet-r2-f2fb2bff2bff.json` (six
+attempts; the interruptions were environmental, each arbitrated by the
+receipt: one origin 502 mid-PATCH, one worker death, two client-side kills
+and a broken local IPv6 path — see the loading guide's scale-risk section).
+The decisive datapoint: the `finalize:dcim.cable:rebuild_search_index`
+finalizer, killed at exactly 107 s on two prior attempts (at 2000Mi and
+immediately after a RAM raise, before platform cleanup), completed in 31 s
+once the tenant ran with raised memory and without four stranded 128k branch
+schemas. This run predates the reviewable-scale gate and is the reason it
+exists; Enterprise Parquet uploads remain unqualified.
 
 ## Current offline scale evidence
 
