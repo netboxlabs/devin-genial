@@ -406,8 +406,14 @@ the loader now enforces the first one.
    stranded branches proved it). The loader refuses a reviewable load over
    100,000 rows; use `just load-disposable` for throwaway scale loads, or set
    `GENIAL_REVIEWABLE_SCALE=1` only for deliberate qualification on a target
-   you control end to end. Deletes were observed to succeed up to ~21k rows
-   and fail from ~104k on one Cloud tenant; between is unmeasured.
+   you control end to end. The deletion wall is environmental, not a fixed
+   size: on the degraded tenant (2000Mi containers, ~588k accumulated
+   ChangeDiffs) deletes succeeded up to ~21k rows and failed from ~104k, but
+   after the memory raise and stranded-schema cleanup a 155,698-row reviewable
+   branch deleted normally through the API. The gate stays: the vendor
+   guidance is about changelog growth itself, and a tenant that has been
+   allowed to degrade reintroduces the wall exactly when cleanup is most
+   needed.
 2. **Search reindex finalizers can OOM small containers.** The public guide
    recommends disabling `rebuild_search_index` above 100K rows; a zero-row
    reindex finalizer over 13,383 cables in a 155,698-row schema was killed at

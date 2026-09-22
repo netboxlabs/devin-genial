@@ -99,9 +99,11 @@ keeps zero-row finalizers JSONL, and binds the format into the receipt.
 Reviewable loads over 100,000 rows are refused (`GENIAL_REVIEWABLE_SCALE=1`
 overrides, only for qualification on a target controlled end to end): the
 TurboBulk user guide says large/ephemeral imports must disable changelogs, and
-the per-row ChangeDiffs make the branch undeletable through the API — branch
-deletion drops the schema plus the diff cascade in one synchronous request,
-proven fatal at scale on Cloud. Throwaway scale loads use `load-disposable`.
+on a degraded tenant the per-row ChangeDiffs made branches undeletable through
+the API — deletion drops the schema plus the diff cascade in one synchronous
+request, which died at scale until the tenant was resized and decluttered (a
+155,698-row branch then deleted normally). Throwaway scale loads use
+`load-disposable`; the deletion wall returns whenever a tenant degrades.
 Never delete a job row in the NetBox Jobs UI: it destroys the receipt's proof
 and forces a fresh branch. Delete branches before upgrading a target, or they
 strand in pending-migrations. `GENIAL_FORCE_IPV4=1` routes the loader over
