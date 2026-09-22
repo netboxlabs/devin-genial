@@ -154,7 +154,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                 object(), "Demo", "tag", candidates, {obj["key"]: obj for obj in candidates},
                 ids, {}, "protocol_ports", "phase-1:tag", receipt,
                 Path(temporary) / "receipt.json", 1, DEFAULT_JOB_ROWS,
-                delivery_contract("reviewable")["request_settings"])
+                delivery_contract("reviewable")["request_settings"], upload_format="jsonl")
 
         self.assertEqual([(row[0], row[1]) for row in submissions], [
             ("phase-1:tag:batch-1-of-3", 2_000),
@@ -177,7 +177,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
             _load_termination_batches(
                 object(), "Demo", rows, "phase-9:cable:terminations", {"jobs": []},
                 Path(temporary) / "receipt.json", 1, DEFAULT_JOB_ROWS,
-                delivery_contract("reviewable")["request_settings"])
+                delivery_contract("reviewable")["request_settings"], upload_format="jsonl")
 
         self.assertEqual([row[1] for row in submissions], [2_000, 2_000, 1])
         self.assertTrue(all(not any(row[2]["post_hooks"].values()) for row in submissions))
@@ -451,7 +451,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                 object(), "Demo", "tag", candidates, {obj["key"]: obj for obj in candidates},
                 {}, {}, "protocol_ports", "phase-1:tag", receipt,
                 Path(temporary) / "receipt.json", 1, 2,
-                base)
+                base, upload_format="jsonl")
 
         self.assertEqual(submitted, ["phase-1:tag:batch-2-of-3", "phase-1:tag:batch-3-of-3"])
 
@@ -471,7 +471,8 @@ class TurboBulkLoaderTests(unittest.TestCase):
                 _load_model_batches(
                     object(), "Demo", "tag", candidates,
                     {obj["key"]: obj for obj in candidates}, {}, {}, "protocol_ports",
-                    "phase-1:tag", receipt, Path(temporary) / "receipt.json", 1, 2, base)
+                    "phase-1:tag", receipt, Path(temporary) / "receipt.json", 1, 2, base,
+                    upload_format="jsonl")
         submit.assert_not_called()
         refresh.assert_not_called()
 
