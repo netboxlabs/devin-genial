@@ -13,6 +13,7 @@ import hashlib
 import http.client
 import json
 import os
+import socket
 from pathlib import Path
 import tempfile
 import time
@@ -231,6 +232,35 @@ def rest_mutation_requirements(objects):
                       for field in set(obj["refs"]) & DEFERRED})
     return {"create_kinds": creates,
             "patch_fields": [f"{kind}.{field}" for kind, field in patches]}
+
+
+# TurboBulk's public user guide says to disable changelogs for large imports
+# (">100K rows where changelog table growth is a concern") and ephemeral data.
+# A reviewable load writes one Branching ChangeDiff per row: at this scale that
+# bloats the review UI by six figures, slows every branch write, and — proven
+# on Cloud 2026-09-21 — makes the branch UNDELETABLE through the API, because
+# branch deletion drops the schema and cascades those diffs inside one
+# synchronous HTTP request that dies before committing. Four stranded branches
+# needed platform-side removal. Ephemeral scale loads must be disposable.
+REVIEWABLE_SCALE_ROWS = 100_000
+REVIEWABLE_SCALE_OVERRIDE = "GENIAL_REVIEWABLE_SCALE"
+
+
+def reviewable_scale_blocker(total_rows, delivery_policy):
+    """Refuse changelog-bearing loads above the vendor's large-import guidance."""
+    if (delivery_policy != "reviewable" or total_rows <= REVIEWABLE_SCALE_ROWS
+            or os.environ.get(REVIEWABLE_SCALE_OVERRIDE)):
+        return None
+    return (
+        f"a reviewable load of {total_rows:,} rows exceeds {REVIEWABLE_SCALE_ROWS:,}: TurboBulk's "
+        "user guide says to disable changelogs for large imports and ephemeral data, and each row's "
+        "Branching ChangeDiff makes the branch too heavy to ever delete through the API (observed on "
+        "Cloud: branch deletion runs DROP SCHEMA plus the diff cascade in one synchronous request, "
+        "which dies at this scale and rolls back — the branch then needs platform-side removal). "
+        "Use --delivery-policy disposable-baseline for throwaway scale loads, or set "
+        f"{REVIEWABLE_SCALE_OVERRIDE}=1 only for deliberate qualification on a target you control "
+        "end to end (for example the pinned local stack)"
+    )
 
 
 def disposable_rest_blocker(objects):
@@ -624,8 +654,34 @@ def _read_json(opener, request, timeout):
             time.sleep(0.5 * 2 ** attempt)
 
 
+def _ipv4_first(results):
+    """Keep only AF_INET addrinfo entries, falling back to the input when none exist."""
+    v4 = [info for info in results if info[0] == socket.AF_INET]
+    return v4 or results
+
+
+def _apply_force_ipv4():
+    """Route loader connections over IPv4 when GENIAL_FORCE_IPV4 is set.
+
+    urllib connects to getaddrinfo results sequentially with no happy-eyeballs
+    fallback and no connection reuse, so a network whose IPv6 path silently
+    drops SYNs taxes every request with a full connect timeout before the
+    working IPv4 attempt.
+    """
+    if not os.environ.get("GENIAL_FORCE_IPV4") or getattr(socket.getaddrinfo, "_genial_ipv4", False):
+        return
+    real = socket.getaddrinfo
+
+    def resolve(*args, **kwargs):
+        return _ipv4_first(real(*args, **kwargs))
+
+    resolve._genial_ipv4 = True
+    socket.getaddrinfo = resolve
+
+
 class Client:
     def __init__(self, url, token, branch_id=None):
+        _apply_force_ipv4()
         parsed = urllib.parse.urlsplit(url)
         if (parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password
                 or parsed.query or parsed.fragment or parsed.path not in {"", "/"}):
@@ -2567,6 +2623,10 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     if unsupported:
         raise LoadError("TurboBulk compiler does not yet cover canonical kinds: " + ", ".join(unsupported))
     delivery = delivery_contract(delivery_policy)
+    total_rows = len(objects) + 2 * sum(1 for obj in objects.values() if obj["kind"] == "cable")
+    scale_blocker = reviewable_scale_blocker(total_rows, delivery_policy)
+    if scale_blocker:
+        raise LoadError(scale_blocker)
     if delivery_policy == "disposable-baseline":
         blocker = disposable_rest_blocker(objects)
         if blocker:

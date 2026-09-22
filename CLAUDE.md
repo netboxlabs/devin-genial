@@ -96,6 +96,17 @@ JSONL reader fixes the column set from the first 10,000 rows, so a sparse payloa
 spanning chunks would silently drop later columns. The Parquet writer compiles the
 column union explicitly, refuses `_tags` and non-custom_field_data JSON objects,
 keeps zero-row finalizers JSONL, and binds the format into the receipt.
+Reviewable loads over 100,000 rows are refused (`GENIAL_REVIEWABLE_SCALE=1`
+overrides, only for qualification on a target controlled end to end): the
+TurboBulk user guide says large/ephemeral imports must disable changelogs, and
+the per-row ChangeDiffs make the branch undeletable through the API — branch
+deletion drops the schema plus the diff cascade in one synchronous request,
+proven fatal at scale on Cloud. Throwaway scale loads use `load-disposable`.
+Never delete a job row in the NetBox Jobs UI: it destroys the receipt's proof
+and forces a fresh branch. Delete branches before upgrading a target, or they
+strand in pending-migrations. `GENIAL_FORCE_IPV4=1` routes the loader over
+IPv4 when a broken local IPv6 path stalls every urllib request; see
+[scale-load risks](docs/loading.md#scale-load-risks--read-before-any-load-over-30k-rows).
 Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
 the parent device in the original TurboBulk row; derive the device location from
 its rack when NetBox would inherit it on save. Require the corresponding REST

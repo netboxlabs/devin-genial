@@ -391,6 +391,40 @@ JSONL). Rows carrying `_tags` or JSON objects outside `custom_field_data` are
 refused rather than silently reshaped; none of the current contract's TurboBulk
 kinds emit either.
 
+### Scale-load risks — read before any load over ~30k rows
+
+Every item below was learned the hard way on a live Cloud tenant (2026-09-21);
+the loader now enforces the first one.
+
+1. **Changelogs at scale are a one-way door.** TurboBulk's own user guide says
+   to disable changelogs for "large imports (>100K rows) where changelog table
+   growth is a concern" and for "ephemeral or test data". A reviewable load
+   writes one Branching ChangeDiff per row; on Cloud, branch deletion performs
+   `DROP SCHEMA … CASCADE` plus that diff cascade in one synchronous HTTP
+   request, which dies at scale and rolls back — the branch then **cannot be
+   deleted through the API at all** and needs platform-side removal (four
+   stranded branches proved it). The loader refuses a reviewable load over
+   100,000 rows; use `just load-disposable` for throwaway scale loads, or set
+   `GENIAL_REVIEWABLE_SCALE=1` only for deliberate qualification on a target
+   you control end to end. Deletes were observed to succeed up to ~21k rows
+   and fail from ~104k on one Cloud tenant; between is unmeasured.
+2. **Search reindex finalizers can OOM small containers.** The public guide
+   recommends disabling `rebuild_search_index` above 100K rows; a zero-row
+   reindex finalizer over 13,383 cables in a 155,698-row schema was killed at
+   107s on a 2000Mi Cloud worker. No skip flag exists in the loader yet; size
+   the container or keep scale loads off small tenants.
+3. **Branches that exist across a NetBox upgrade go `pending-migrations`** and
+   large ones can then neither migrate nor be deleted. Delete branches before
+   upgrading the target.
+4. **Never delete a job row in the NetBox Jobs UI.** The bound job ID is the
+   loader's only proof of what a killed job committed; deleting the row makes
+   the receipt unresumable and forces a fresh branch.
+5. **A stalled loader with near-zero CPU may be your network, not the target.**
+   Python's urllib tries IPv6 first with no happy-eyeballs fallback and no
+   connection reuse; a broken IPv6 path taxes every request with a full connect
+   timeout. Set `GENIAL_FORCE_IPV4=1` to route the loader over IPv4 (compare
+   `curl -6`/`curl -4` against the target to confirm the diagnosis first).
+
 Read-only API requests retry transient disconnects four times with bounded
 backoff. Mutating requests are never retried automatically; their durable intent
 and returned job ID remain the resume boundary.

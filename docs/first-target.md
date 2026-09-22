@@ -291,6 +291,20 @@ Every refusal is one of these shapes, and each names itself:
 - **Fresh-load occupancy** ("fresh load requires empty inventories…"): the
   refusal names the exact colliding rows; retire your namespace (§8) or pick
   a new one. Nothing was written.
+- **Reviewable scale refusal** ("a reviewable load of N rows exceeds
+  100,000…"): the vendor's own guidance says large/ephemeral imports must not
+  carry changelogs, and at this scale the branch also becomes undeletable
+  through the API (see [scale-load risks](loading.md#scale-load-risks--read-before-any-load-over-30k-rows)).
+  Use `just load-disposable`; override only for qualification on a target you
+  control end to end. Nothing was written.
+- **Vanished bound job** (a poll returning HTTP 404 for a recorded job ID):
+  someone deleted the job row in the NetBox Jobs UI. The receipt can no longer
+  prove what that job committed, so the branch is unresumable — delete it and
+  start a fresh branch; never delete job rows from the UI.
+- **Loader "hangs" with no error and near-idle CPU**: likely a broken IPv6
+  path on your own network (urllib pays a full connect timeout per request).
+  Confirm with `curl -6` vs `curl -4` against the target; rerun with
+  `GENIAL_FORCE_IPV4=1`.
 - **Guardrail failure** (a failed job whose error names a `guardrail`): the
   target operator enabled TurboBulk 0.4.0's server-side resource limits
   (statement/lock timeouts, max rows per operation, concurrency caps) and this
