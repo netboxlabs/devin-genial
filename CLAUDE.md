@@ -107,6 +107,16 @@ and forces a fresh branch. Delete branches before upgrading a target, or they
 strand in pending-migrations. `GENIAL_FORCE_IPV4=1` routes the loader over
 IPv4 when a broken local IPv6 path stalls every urllib request; see
 [scale-load risks](docs/loading.md#scale-load-risks--read-before-any-load-over-30k-rows).
+Verification depth follows purpose. Full qualification rigor — initial plus
+repeat runs, resume drills, belt-over-belt cross-checks — is paid ONCE per new
+code path or target version, on the pinned local stack first, and its receipts
+live in docs/qualification.md. On demo targets, an already-qualified path runs
+each load exactly once: no repeat gates, no extra verification loads, no
+re-proving what a recorded receipt already proves. Demo speed is the product;
+do not instruct or schedule redundant passes there. (Each load's own built-in
+strict readback stays — it is the load's success gate, not an extra pass; a
+lighter spot-readback lane for large demo loads is reviewed backlog in
+COVERAGE.md.)
 Compile device-component `_site_id`, `_location_id`, and `_rack_id` caches from
 the parent device in the original TurboBulk row; derive the device location from
 its rack when NetBox would inherit it on save. Require the corresponding REST

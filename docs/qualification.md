@@ -691,7 +691,22 @@ finalizer, killed at exactly 107 s on two prior attempts (at 2000Mi and
 immediately after a RAM raise, before platform cleanup), completed in 31 s
 once the tenant ran with raised memory and without four stranded 128k branch
 schemas. This run predates the reviewable-scale gate and is the reason it
-exists; Enterprise Parquet uploads remain unqualified.
+exists; an identical repeat invocation then re-verified the branch byte-stable
+(same exact counts, nothing resubmitted). Enterprise Parquet uploads remain
+unqualified.
+
+Later the same day, a **current-generation** large estate qualified on the same
+tenant in a single uninterrupted attempt: `Continental Fiber Networks`
+(provider backbone, 32 PoPs, 62 customers, 6 regions over the four authored
+metros — 85,081 objects, 98,909 rows, deliberately under the reviewable-scale
+gate). 93 Parquet data jobs (98,825 rows, 722,338 payload bytes, 115.3 s summed
+server duration), 109 REST batches, 59 finalizers — the cable search-reindex
+included, passing first try — then exact strict readback: 85,081/85,081
+objects, zero mismatches, 6,914/6,914 cable traces, 98,905/98,905 create
+ChangeDiffs, 3,440 s wall in one attempt. Receipt:
+`continental-fiber-Continental-Fiber-100k-3c999566dcab.json`. This is the
+standing Cloud scale showcase; per the verification-depth policy no repeat
+gate was run, and none is owed.
 
 ## Current offline scale evidence
 

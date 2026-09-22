@@ -260,7 +260,20 @@ PDU outlet connectors to chassis inlets (the default bank cables C13 outlets to
 the C9200L's C16 inlets, a pre-existing physical impossibility the Juniper line
 does not share). Not scheduled; weigh against phases 3–9.
 
+Loader backlog (from the 2026-09-22 Cloud scale work): a lighter spot-readback
+verify lane for large demo loads — the full strict readback over 85k+ objects
+costs 5–10 minutes per run and each resume re-verifies resolved IDs for ~20
+more; on an already-qualified path a demo tenant needs the load's own per-job
+verification plus a bounded sample, not the full sweep. Also: a
+skip-search-reindex option for >100K-row loads (the public TurboBulk guide
+recommends it; deprioritized since the reindex passes on a properly sized
+tenant), and a purpose-built TurboBulk-only large artifact to test whether
+changelog-free branches at scale are API-deletable (self-service cleanup).
+
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
 cold-start-se runs to two consecutive cleans whenever the loading surface or
-operator docs change. The "no other teams" gate remains closed.
+operator docs change. The "no other teams" gate remains closed. Live gates
+apply to new code paths and target versions; already-qualified paths on demo
+targets run once per load with no repeat gate (see CLAUDE.md verification-depth
+policy).
