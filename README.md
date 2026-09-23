@@ -1,10 +1,11 @@
 # Genial
 
-Generate a believable, connected NetBox estate from a small recipe. Target-aware
-loading is in active qualification. Start with a regional bank, enterprise data
-center, school district, hospital network, provider backbone, retail chain,
-university campus or managed service provider and change the demand to suit
-your customer.
+Generate a believable, connected NetBox estate from a small recipe, then load
+it into a live NetBox branch and verify every object made it exactly. Start
+with a regional bank, enterprise data center, school district, hospital
+network, provider backbone, retail chain, university campus, managed service
+provider, manufacturer or electric utility and change the demand to suit your
+customer.
 
 **The goal is the whole estate.** Sites, rooms, racks, devices, ports, cables,
 address plans, services, operational context and automation inventory (config
@@ -87,7 +88,7 @@ School and hospital also have a locally qualified **Diode** procedure — see th
 [local lab guide](lab/README.md) — which, unlike the TurboBulk branch-per-demo
 pattern, needs a Diode-equipped target and one estate per target.
 
-**Profile not loadable to your target?** A working demo still has three shapes:
+**Target still on NetBox 4.6 or older?** A working demo still has three shapes:
 ship the generated `report.md` and a scenario walkthrough as the offline
 industry deliverable; run the Diode lab path against a clean Diode-equipped
 target for real screens; or load a TurboBulk-clean profile (enterprise-dc or
@@ -159,38 +160,30 @@ just load-disposable build/my-dc https://netbox.example "Scale baseline"
 ```
 
 That branch cannot be reviewed, merged, or reverted. The command says so before
-writes; use the data in place and delete the branch afterward. This mode accepts
-only artifacts that TurboBulk can write completely: if any object or relationship
-needs REST creation or completion, `load-explain-disposable` reports it and the
-loader refuses before target writes. The current rich and scale artifacts need
-REST completion, so they must use the reviewable policy until NetBox provides a
-way to make those REST writes non-reviewable under the same branch contract. Both
-policies keep full validation and schedule every required TurboBulk post-hook at
-its safe dependency boundary. Genial limits each data job to 2,000 rows and runs
-no global hooks inside those jobs. After every row and REST relationship is in
-place, separate zero-row jobs run denormalization, counters, cable links, cable
-paths, and search one hook at a time. A completed job is accepted
-only when it reports the exact enabled or explicitly skipped hook results and,
-for reviewable inserts, one changelog per inserted row. The policy, row bound,
-and exact per-job settings are bound to the receipt, so changing them requires a
-new receipt and fresh branch. Keep the default unless a measured qualification
-run justifies the optional fourth `turbobulk_job_rows` argument to `just load`;
-the loader rejects a bound outside 1..10,000 because TurboBulk's JSONL reader fixes
-the column set from the first 10,000 rows and would silently drop later sparse
-columns.
-Device-component placement caches are compiled into the original insert from
-the parent device, including the location inherited from its rack, so each
-component row is valid as soon as it is inserted,
-before final maintenance runs. Before writes, the target OpenAPI
-schema must expose the three cache-backed placement filters on every emitted
-component kind. Final readback then compares exact component IDs with one query
-per distinct component-kind and site/location/rack placement, including explicit
-null location and rack placement. This adds bounded readback requests without
-adding repair rows, jobs, ObjectChanges, or ChangeDiffs.
-REST completion writes its exact intent before each 100-row PATCH. A lost response
-resumes only when readback proves the batch committed; unresolved batches stop
-with a fresh-branch instruction. Receipts preserve failed attempts and can recover
-one exact zero-row finalizer from unique core-job evidence.
+writes; use the data in place and delete the branch afterward. If any object or
+relationship needs REST creation or completion, `load-explain-disposable`
+reports it and the loader refuses before target writes.
+
+A few behaviors worth knowing before your first load; the
+[loading guide](docs/loading.md) has the full mechanics:
+
+- **Data uploads use Parquet automatically** when pyarrow is available (the
+  devenv shell provides it), falling back to gzipped JSONL otherwise. Each data
+  job defaults to 2,000 rows; an optional fourth `just load` argument raises it
+  (up to 50,000 under Parquet, 10,000 under JSONL), and a fifth forces the
+  format.
+- **Reviewable loads over 100,000 rows are refused** with the reasoning and the
+  remedies in the error — see the
+  [scale-load risks](docs/loading.md#scale-load-risks--read-before-any-load-over-30k-rows)
+  before planning anything that size.
+- **Every load is checkpointed and resumable.** The private receipt under
+  `build/` binds every job, payload and setting; a killed or interrupted load
+  resumes losslessly with the same command, and nothing is ever blindly resent.
+- **Success means strict readback passed**: every object, attribute and
+  reference compared against the artifact, plus exact per-model change-record
+  counts. The result line says how many objects matched and how many cables
+  traced.
+
 These setup steps should take less than ten minutes; target processing time is
 separate and is recorded in the private receipt.
 
@@ -217,12 +210,11 @@ quarantine name and the same command resumes by the old immutable branch ID.
 Use the printed replacement name for the next load and future reset. If Diode routes
 to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
 configuration attestation before loading.
-The TurboBulk adapter is Cloud-qualified for the frozen 29-kind contract and now
-compiles the full 102-kind contract — every kind any current profile emits, the complete bank included — which covers the current 57-kind enterprise
-data center artifact. The configured NetBox 4.6.8 tenant cannot represent the
-4.7-only module-bay compatibility model, so preflight rejects that exact rich
-artifact before writes. The complete 4.7 path is live-qualified only on the pinned
-local 4.7.1 stack; Cloud and Enterprise remain unqualified. The remote Diode
+The TurboBulk adapter compiles the full 102-kind contract — every kind any
+current profile emits, the complete bank included — and the complete path is
+live-qualified on both the pinned local 4.7.1 stack and a NetBox Cloud 4.7.1
+tenant (full-contract estates and a 128,932-object load, each to exact strict
+readback). Enterprise remains unqualified. The remote Diode
 adapter is implemented for
 externally confirmed direct auto-apply, with request checkpoints and strict REST
 visibility barriers, but still needs a live qualification run. Assurance review
@@ -241,17 +233,15 @@ explains which changes have been qualified for live replay.
 For a worked customer story, try [Harbor Supply](profiles/harbor-supply.md).
 
 **Scale has separate generation and loading proofs.** Recorded offline generation
-reaches 239,058 objects. A 12,702-object estate has passed local Diode qualification,
-an 8,432-object estate has passed strict readback after a Cloud TurboBulk load, and
-a 128,932-object reviewable TurboBulk load has passed strict readback and exact
-ChangeDiff verification on the pinned local stack. Cloud and Enterprise remain
-unqualified at that size. See the
-[scale measurements](docs/qualification.md#current-offline-scale-evidence) and
-[live results](lab/README.md#current-v09-qualification) for scope and limits.
-The stuck-job behavior that blocked the earlier Cloud attempts is diagnosed and
-handled in the loader; the next gate is a clean one-command Cloud run at that size
-once the tenant runs a TurboBulk build with the reaper; see the
-[qualification plan](docs/loading.md#cloud-qualification-plan).
+reaches 239,058 objects. A 12,702-object estate has passed local Diode
+qualification; 128,932-object reviewable TurboBulk loads have passed strict
+readback and exact ChangeDiff verification on **both** the pinned local 4.7.1
+stack and a NetBox Cloud 4.7.1 tenant (initial and repeat), and an 85,081-object
+current-generation estate loaded on that tenant in a single uninterrupted
+attempt. Enterprise remains unqualified at size. See the
+[scale measurements](docs/qualification.md#current-offline-scale-evidence),
+[Parquet and Cloud results](docs/qualification.md#parquet-upload-qualification)
+and [live results](lab/README.md#current-v09-qualification) for scope and limits.
 
 ## Documentation
 
