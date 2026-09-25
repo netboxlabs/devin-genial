@@ -708,6 +708,26 @@ ChangeDiffs, 3,440 s wall in one attempt. Receipt:
 standing Cloud scale showcase; per the verification-depth policy no repeat
 gate was run, and none is owed.
 
+## Main-seed qualification
+
+On September 25, 2026 the main-seed delivery policy was live-qualified on a
+dedicated NetBox Cloud visualization tenant (crsk8600: 4.7.1, TurboBulk 0.4.0,
+Branching 1.2.1 installed but unused — no branch, no X-NetBox-Branch header).
+The 17,389-object provider estate `Aurora Peak Networks` (20,179 rows) seeded
+directly onto an empty main in one uninterrupted attempt at the 10,000-row
+Parquet bound: exact strict readback (17,389/17,389, zero mismatches),
+1,395/1,395 cable traces and 10,841 component placements, followed by a
+zero-write `verify-target` pass, also exact. Receipt:
+`aurora-peak-main-3bd7a869241a.json`. An earlier attempt on the same tenant at
+its stock container sizing was killed by a worker death 101 s into a 2-row job;
+live readback proved the clean rollback (the row-count arbitration's evidence
+path), and — with the tenant's TurboBulk reaper grace not yet elapsed under its
+configured job timeout — recovery took the documented cheap route instead:
+delete the 37 committed scaffolding rows, archive the receipt
+(`…failed-worker-death.json`), reseed fresh. The dead job row remains
+nonterminal on the tenant as a cosmetic leftover. Branch-policy behavior on
+shared targets is unchanged and separately qualified above.
+
 ## Current offline scale evidence
 
 The corrected v0.9 source was measured on the same 64-PoP, 128-customer recipe
