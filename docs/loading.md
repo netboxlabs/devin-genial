@@ -53,7 +53,9 @@ receipt and its rows are submitted as a fresh job — a new mutation, never a re
 of the dead one; before that resubmit the loader cross-checks RQ's own record and
 refuses when RQ affirmatively reports the job still alive. Any other count is
 unexplained state and still requires a fresh branch, as does an orphaned job on a
-receipt without the reviewable history preflight. The same arbitration runs on the
+branch receipt without the reviewable history preflight. (Main-seed receipts
+arbitrate from the model's live row count on main instead — see
+[seeding a dedicated tenant's main](#seeding-a-dedicated-tenants-main).) The same arbitration runs on the
 already-matched fast path, so an exactly matching target is not failed by a dead
 job row. Orphaned zero-row finalizers follow the existing retry-once rule. Write
 requests are never retried after an ambiguous transport failure; their recorded
@@ -81,28 +83,7 @@ for artifacts requiring no REST creation or completion PATCH; the explain comman
 lists those blockers, and the load command repeats that check before target writes.
 The current rich and scale artifacts therefore remain on the reviewable path.
 
-### Seeding a dedicated tenant's main
-
-For a tenant that exists to be *looked at* — a visualization or analytics demo
-instance whose data should live on main rather than behind a branch selector —
-the explicit main-seed policy loads a complete estate (REST creation and
-completion included) directly onto main:
-
-```sh
-ALLOW_MAIN_WRITES=1 just seed-main build/my-estate https://netbox.example
-```
-
-It refuses without both `--delivery-policy main-seed` and `ALLOW_MAIN_WRITES=1`,
-refuses when a branch is named, and requires empty emitted-kind inventories on
-main (the same fresh-load occupancy preflight as every load). Changelogs stay
-off per the vendor's large-import guidance, and no review history exists —
-ChangeDiffs are a Branching branch concept — so the ChangeDiff gates are a
-policy exemption here, while strict readback, cable traces and component-cache
-checks apply in full. Treat the result as **essentially permanent**: un-seeding
-main means per-object deletion or a platform reset (see
-[seeding](seeding.md)), so never use this on a tenant whose branches or history
-matter. Offline-verified only until a recorded live run says otherwise.
-It still requests full validation and schedules every required post-hook. TurboBulk
+Every policy still requests `auto` validation and schedules every required post-hook. TurboBulk
 data jobs are limited to 2,000 rows and explicitly skip all global hooks. After
 all rows and bounded REST completion, zero-row finalizer jobs run denormalization,
 counters, cable-link repair, cable-path rebuilding, and search indexing one hook
@@ -115,6 +96,38 @@ reported result is retained in the receipt. A terminal zero-row finalizer whose
 job or hook result fails its contract is recorded and retried once; a second failure
 requires a new receipt and fresh branch. A nonterminal job remains the exclusive
 checkpoint and is never duplicated.
+
+### Seeding a dedicated tenant's main
+
+For a tenant that exists to be *looked at* — a visualization or analytics demo
+instance whose data should live on main rather than behind a branch selector —
+the explicit main-seed policy loads a complete estate (REST creation and
+completion included) directly onto main:
+
+```sh
+ALLOW_MAIN_WRITES=1 just seed-main build/my-estate https://netbox.example
+```
+
+Preflight it first with zero writes:
+`ALLOW_MAIN_WRITES=1 just seed-main-explain build/my-estate https://netbox.example`.
+It refuses without both `--delivery-policy main-seed` and `ALLOW_MAIN_WRITES=1`,
+refuses when a branch is named, and requires empty emitted-kind inventories on
+main (the same fresh-load occupancy preflight as every load). TurboBulk data
+jobs write no changelogs, per the vendor's large-import guidance — but the
+bounded REST creation and completion writes go through NetBox's ordinary
+change-logging middleware, so the target's change log is populated by those
+records and PATCHes. No review history exists — ChangeDiffs are a Branching
+branch concept — so the ChangeDiff gates are a policy exemption here, while
+strict readback, cable traces and component-cache checks apply in full. A
+worker-death resume arbitrates from the model's live row count on main
+(baseline = recorded allowlisted rows plus verified rows; anything but the two
+exact counts is a hard stop), which rests on main having no other writer during
+the load — an assumption the loader cannot enforce, so keep humans out of the
+tenant while a seed runs. Treat the result as **essentially permanent**:
+un-seeding main means per-object deletion or a platform reset (see
+[seeding](seeding.md)), so never use this on a tenant whose branches or history
+matter.
+
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings, including the compiler version: a
 receipt written by an older compiler is refused with "different compiler_version;

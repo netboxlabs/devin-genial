@@ -1492,9 +1492,11 @@ def _arbitrate_worker_death(client, receipt, entry):
     verified entries, plus this entry's rows exactly when its transaction
     committed before the worker died. Anything else is unexplained state.
     """
+    model = entry["model"]
+    if receipt.get("delivery_policy") == "main-seed":
+        return _arbitrate_worker_death_by_rows(client, receipt, entry)
     preflight = receipt.get("review_history_preflight") or {}
     object_types = preflight.get("object_types") or {}
-    model = entry["model"]
     if "branch_id" not in preflight or model not in object_types:
         raise LoadError(
             f"cannot arbitrate the orphaned job for {model}: the receipt lacks the "
@@ -1517,6 +1519,57 @@ def _arbitrate_worker_death(client, receipt, entry):
         f"orphaned job for {model} left unexplained branch state: {observed} create "
         f"ChangeDiffs with {verified_rows} verified rows and {entry['rows_expected']} "
         "in question; use a new branch and receipt"
+    )
+
+
+def _arbitrate_worker_death_by_rows(client, receipt, entry):
+    """Main-seed arbitration: count the model's actual rows on main.
+
+    A main-seed load writes no ChangeDiffs, so the decisive evidence is the
+    model's live row count: the occupancy preflight required empty emitted-kind
+    inventories (recorded allowlisted extras excepted) and a TurboBulk insert
+    commits or rolls back atomically, so the count equals allowlisted
+    pre-existing rows plus previously verified rows, plus this entry's rows
+    exactly when its transaction committed. Unlike the branch-isolated
+    ChangeDiff arbitration, this rests on an unenforced quiescence assumption —
+    nothing stops another client writing main mid-load — which is why anything
+    other than the two exact counts is a hard stop, never a guess.
+    """
+    model = entry["model"]
+    if model == "dcim.cabletermination":
+        endpoint = "/api/dcim/cable-terminations/"
+    else:
+        endpoint = next((spec[1] for spec in SPECS.values() if spec[0] == model), None)
+    if endpoint is None:
+        raise LoadError(f"cannot arbitrate the orphaned job for {model}: no readback endpoint")
+    verified_rows = sum(
+        job["rows_expected"] for job in receipt["jobs"]
+        if job is not entry and job.get("model") == model and job.get("mode") == "insert"
+        and job.get("request_verified") is True and not job.get("superseded"))
+    # allowed_existing carries _bootstrap_allowlist's shape: ids per kind live
+    # under "target_ids", never at the top level.
+    target_ids = (receipt.get("allowed_existing") or {}).get("target_ids") or {}
+    allowlisted = sum(
+        len(ids) for kind, ids in target_ids.items()
+        if SPECS.get(kind, (None,))[0] == model)
+    _, page = client.request(f"{endpoint}?limit=1&brief=1", branch=False)
+    observed = page.get("count")
+    if not isinstance(observed, int) or isinstance(observed, bool) or observed < 0:
+        raise LoadError(
+            f"cannot arbitrate the orphaned job for {model}: the readback count is not a "
+            f"non-negative integer ({observed!r}); inspect the target before any further main writes")
+    evidence = {"model": model, "observed_rows": observed,
+                "allowlisted_pre_existing": allowlisted,
+                "verified_rows_before": verified_rows,
+                "rows_expected": entry["rows_expected"], "read_at": _now()}
+    if observed == allowlisted + verified_rows + entry["rows_expected"]:
+        return "committed", evidence
+    if observed == allowlisted + verified_rows:
+        return "rolled-back", evidence
+    raise LoadError(
+        f"orphaned job for {model} left unexplained main state: {observed} rows with "
+        f"{allowlisted} allowlisted, {verified_rows} verified and {entry['rows_expected']} "
+        "in question; inspect the target before any further main writes"
     )
 
 

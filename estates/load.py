@@ -801,8 +801,10 @@ def main(argv=None):
                 print("DISPOSABLE BASELINE: this branch cannot be reviewed, merged, or reverted; delete it after use.",
                       file=os.sys.stderr, flush=True)
             if args.delivery_policy == "main-seed":
-                print("MAIN SEED: writes directly to main with no branch, no changelogs and "
-                      "no review history; only for a dedicated tenant with an empty main.",
+                print("MAIN SEED: writes directly to main with no branch, no TurboBulk "
+                      "changelogs and no review history (REST records and completion "
+                      "PATCHes still write ordinary changelog entries); only for a "
+                      "dedicated tenant with an empty main.",
                       file=os.sys.stderr, flush=True)
         result = load(args.artifact, url=args.target, token=token, branch=args.branch,
                       receipt_path=receipt, transport=args.transport,

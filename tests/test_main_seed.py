@@ -89,5 +89,66 @@ class BranchlessSubmission(unittest.TestCase):
         self.assertIn(b"Demo", body)
 
 
+
+
+class MainSeedWorkerDeathArbitration(unittest.TestCase):
+    class _Client:
+        def __init__(self, count):
+            self.count = count
+            self.paths = []
+
+        def request(self, path, **kwargs):
+            self.paths.append(path)
+            return 200, {"count": self.count}
+
+    def _receipt(self, verified_rows=0, allowlisted=None):
+        jobs = []
+        if verified_rows:
+            jobs.append({"model": "circuits.provider", "mode": "insert",
+                         "rows_expected": verified_rows, "request_verified": True})
+        return {"delivery_policy": "main-seed", "jobs": jobs,
+                "allowed_existing": allowlisted or {}}
+
+    def _entry(self, rows=2):
+        return {"model": "circuits.provider", "mode": "insert", "rows_expected": rows}
+
+    def test_committed_when_count_includes_the_entry(self):
+        from estates.turbobulk import _arbitrate_worker_death
+        verdict, evidence = _arbitrate_worker_death(self._Client(2), self._receipt(), self._entry())
+        self.assertEqual(verdict, "committed")
+        self.assertEqual(evidence["observed_rows"], 2)
+
+    def test_rolled_back_when_count_excludes_the_entry(self):
+        from estates.turbobulk import _arbitrate_worker_death
+        verdict, _ = _arbitrate_worker_death(self._Client(0), self._receipt(), self._entry())
+        self.assertEqual(verdict, "rolled-back")
+
+    def test_unexplained_count_is_a_hard_stop(self):
+        from estates.turbobulk import LoadError, _arbitrate_worker_death
+        with self.assertRaisesRegex(LoadError, "unexplained main state"):
+            _arbitrate_worker_death(self._Client(1), self._receipt(), self._entry())
+
+    def test_allowlisted_pre_existing_rows_count_toward_baseline(self):
+        from estates.turbobulk import _arbitrate_worker_death
+        # Pin the real _bootstrap_allowlist shape: per-kind ids under target_ids.
+        receipt = self._receipt(allowlisted={
+            "success": True,
+            "target_ids": {"module_type_profile": [1, 2]},
+            "target_identities": {"module_type_profile": [{"name": "a"}, {"name": "b"}]}})
+        entry = {"model": "dcim.moduletypeprofile", "mode": "insert", "rows_expected": 3}
+        verdict, evidence = _arbitrate_worker_death(self._Client(5), receipt, entry)
+        self.assertEqual(verdict, "committed")
+        self.assertEqual(evidence["allowlisted_pre_existing"], 2)
+
+    def test_termination_model_resolves_its_endpoint(self):
+        from estates.turbobulk import _arbitrate_worker_death
+        client = self._Client(4)
+        receipt = {"delivery_policy": "main-seed", "jobs": [], "allowed_existing": {}}
+        entry = {"model": "dcim.cabletermination", "mode": "insert", "rows_expected": 4}
+        verdict, _ = _arbitrate_worker_death(client, receipt, entry)
+        self.assertEqual(verdict, "committed")
+        self.assertIn("/api/dcim/cable-terminations/?limit=1&brief=1", client.paths[0])
+
+
 if __name__ == "__main__":
     unittest.main()

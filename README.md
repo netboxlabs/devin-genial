@@ -164,6 +164,13 @@ writes; use the data in place and delete the branch afterward. If any object or
 relationship needs REST creation or completion, `load-explain-disposable`
 reports it and the loader refuses before target writes.
 
+For a dedicated visualization/analytics tenant whose data should live on main
+rather than behind a branch selector, `ALLOW_MAIN_WRITES=1 just seed-main
+ARTIFACT TARGET` loads a complete estate directly onto an empty main
+(`seed-main-explain` is the zero-write preflight) — see
+[seeding a dedicated tenant's main](docs/loading.md#seeding-a-dedicated-tenants-main)
+for the guardrails and the essentially-permanent caveat.
+
 A few behaviors worth knowing before your first load; the
 [loading guide](docs/loading.md) has the full mechanics:
 
