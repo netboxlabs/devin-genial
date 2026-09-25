@@ -367,7 +367,9 @@ def seed(artifact_dir, *, url, token, receipt_path):
         _write_receipt(receipt_path, receipt)
         try:
             status_code, created = client.request(endpoint, method="POST",
-                                                  body=json.dumps(payload).encode(), branch=False)
+                                                  body=json.dumps(payload).encode(),
+                                                  headers={"Content-Type": "application/json"},
+                                                  branch=False)
         except LoadError as exc:
             text = str(exc)
             if kind == "floorplan" and "name" in text and ("unique" in text or "exist" in text):

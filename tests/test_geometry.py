@@ -334,5 +334,17 @@ class Seeder(unittest.TestCase):
                 self._seed(client, root)
 
 
+class SeederContentType(unittest.TestCase):
+    def test_every_post_declares_json(self):
+        """The live plugin 415s form-encoded bodies; every POST must say JSON."""
+        import inspect
+        from estates import geometry
+        source = inspect.getsource(geometry)
+        posts = source.count('method="POST"')
+        self.assertGreater(posts, 0)
+        self.assertEqual(source.count('"Content-Type": "application/json"'), posts)
+
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -728,6 +728,22 @@ delete the 37 committed scaffolding rows, archive the receipt
 nonterminal on the tenant as a cosmetic leftover. Branch-policy behavior on
 shared targets is unchanged and separately qualified above.
 
+## Floorplan geometry qualification
+
+Immediately after the main-seed qualification above, the floorplan-geometry
+sidecar was live-qualified on the same tenant: `just geometry` derived 61
+floorplans (7 from the generator's authored `position_m` coordinates — the
+Chicago NOC data hall keeps its validated 120 cm rack pitch and separate
+network/compute zones — and 54 from the derived row fallback) with 70 rack
+shapes from the Aurora Peak plan, and `just seed-geometry` wrote them through
+`/api/plugins/physical-geometry/` (0.2.0) with exact readback verifying every
+shape's `object_id`, `object_type` and `layer` binding. Receipt:
+`aurora-peak-geometry-geometry-d7136153f69f.json`. One live finding fixed in
+the same pass: the plugin rejects form-encoded bodies with HTTP 415, so every
+seeder POST declares `Content-Type: application/json` (regression-pinned).
+These are geometry records seeded and read back; what Visual Explorer renders
+from them is verified separately by inspection, never claimed from the receipt.
+
 ## Current offline scale evidence
 
 The corrected v0.9 source was measured on the same 64-PoP, 128-customer recipe
