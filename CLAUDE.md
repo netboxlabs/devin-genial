@@ -142,6 +142,11 @@ worker-death resume arbitrates from the model's live row count on main
 (allowlisted `target_ids` plus verified rows; only the two exact counts decide),
 which assumes no other writer touches main mid-load — keep humans out during a
 seed.
+Floorplan geometry (`just geometry PLAN OUT`, `geometry-check`, and
+`GEOMETRY_WRITES=1 just seed-geometry OUT TARGET`) is a drift-style sidecar over
+a frozen plan for the physical-geometry plugin: no canonical-graph change, no
+rebaseline, append-stable layouts, fresh-only seeding with exact readback, and
+no claim about what any visualization renders.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
@@ -257,6 +262,11 @@ for the separately recorded pinned-target live qualification.
 - `estates/drift.py`: the Assurance discovery-drift twin — property-selected
   observed drift, its exact expected deviation manifest and the SE walkthrough;
   `just drift PLAN OUT` and `just drift-check OUT`.
+- `estates/geometry.py`: the floorplan-geometry sidecar for the
+  physical-geometry plugin — deterministic append-stable rack layouts bound to
+  a plan's SHA, plus the fresh-only REST seeder with exact readback;
+  `just geometry PLAN OUT`, `just geometry-check OUT PLAN`,
+  `just seed-geometry OUT TARGET`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;

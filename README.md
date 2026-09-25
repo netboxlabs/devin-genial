@@ -169,7 +169,11 @@ rather than behind a branch selector, `ALLOW_MAIN_WRITES=1 just seed-main
 ARTIFACT TARGET` loads a complete estate directly onto an empty main
 (`seed-main-explain` is the zero-write preflight) — see
 [seeding a dedicated tenant's main](docs/loading.md#seeding-a-dedicated-tenants-main)
-for the guardrails and the essentially-permanent caveat.
+for the guardrails and the essentially-permanent caveat. To give such a tenant
+floorplan rack placements too, `just geometry PLAN OUT` derives a deterministic
+layout from the same frozen plan and `seed-geometry` writes it through the
+physical-geometry plugin — see
+[floorplan geometry](docs/loading.md#floorplan-geometry-for-visual-explorer).
 
 A few behaviors worth knowing before your first load; the
 [loading guide](docs/loading.md) has the full mechanics:

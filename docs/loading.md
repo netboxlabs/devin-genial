@@ -128,6 +128,30 @@ un-seeding main means per-object deletion or a platform reset (see
 [seeding](seeding.md)), so never use this on a tenant whose branches or history
 matter.
 
+### Floorplan geometry for Visual Explorer
+
+Floorplan rack placements live in the separate `netbox_physical_geometry`
+plugin, not the canonical graph, so they follow the drift-twin sidecar pattern:
+a derived artifact over a frozen plan, never a graph change and never a
+rebaseline. `just geometry PLAN OUT` derives one floorplan, one base layer and
+one rack shape per rack-bearing location — an authored deterministic layout
+(rows of eight 60×107 cm racks, 122 cm aisles, 100 cm margins, alternating row
+orientation) in each rack's plan appearance order, which is append-only under
+growth, so growing an estate appends shapes without moving existing ones. The
+artifact binds the plan's canonical SHA-256; `just geometry-check OUT PLAN`
+recomputes it and byte-compares.
+
+`GEOMETRY_WRITES=1 just seed-geometry OUT TARGET` resolves each location by
+slug and each rack by room-scoped name (cross-checked against its asset tag),
+refuses when a target location already carries a floorplan (fresh-only; delete
+the plugin rows to redo), confirms accepted `orientation` values against the
+live OPTIONS metadata before emitting them (omitted and recorded in the receipt
+otherwise), writes floorplans, layers and shapes with intent recorded before
+every POST — `object_type` and `object_id` always travel together — and
+finishes with an exact readback of every emitted record. Seed the estate itself
+first: a missing rack is a hard stop. Geometry records are seeded and read
+back; nothing here claims what Visual Explorer renders.
+
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings, including the compiler version: a
 receipt written by an older compiler is refused with "different compiler_version;

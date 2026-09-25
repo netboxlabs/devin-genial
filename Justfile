@@ -63,6 +63,20 @@ seed-main artifact target turbobulk_job_rows='2000' upload_format='auto':
 seed-main-explain artifact target:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --delivery-policy main-seed --explain
 
+# Derive deterministic floorplan geometry (physical-geometry plugin records)
+# from a frozen plan — a sidecar artifact bound to the plan's SHA, like drift
+geometry plan out:
+    python3 -m estates.geometry build {{quote(plan)}} --out {{quote(out)}}
+
+# Recompute a saved geometry artifact from its bound plan
+geometry-check out plan:
+    python3 -m estates.geometry check {{quote(out)}} --plan {{quote(plan)}}
+
+# Write the geometry records through the physical-geometry REST API and read
+# them back exactly. Requires GEOMETRY_WRITES=1 and a seeded estate on the target.
+seed-geometry out target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.geometry seed {{quote(out)}} {{quote(target)}}
+
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:
     python3 -m estates.load {{quote(artifact)}} --load-check
