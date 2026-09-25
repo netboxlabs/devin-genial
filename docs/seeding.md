@@ -47,8 +47,10 @@ the estate must have been written through NetBox so trigger-maintained state
 (ltree paths on 4.7) is correct.
 
 1. On a scratch instance of the exact target NetBox `major.minor`, run
-   `just load` against main (with `ALLOW_MAIN_WRITES=1`, since a TurboBulk branch
-   cannot currently be merged) and keep its receipt.
+   `ALLOW_MAIN_WRITES=1 just seed-main` against main (the explicit main-seed
+   policy: no branch, changelogs off, strict readback kept — see the
+   [loading guide](loading.md#seeding-a-dedicated-tenants-main), since a
+   TurboBulk branch cannot currently be merged) and keep its receipt.
 2. Dump: `pg_dump -Fc --no-owner --no-privileges` of the netbox database,
    **excluding per-instance tables** (this list is authored for this pipeline,
    not taken from upstream documentation; validate it on a scratch instance):

@@ -89,7 +89,7 @@ SEARCH_FINALIZER_EXCLUDED_KINDS = {
     "l2vpn_termination", "tunnel_termination",
 }
 
-DELIVERY_POLICIES = ("reviewable", "disposable-baseline")
+DELIVERY_POLICIES = ("reviewable", "disposable-baseline", "main-seed")
 POST_HOOKS = {
     "fix_denormalized": True,
     "rebuild_search_index": True,
@@ -103,10 +103,16 @@ def delivery_contract(policy):
     if policy not in DELIVERY_POLICIES:
         raise LoadError(f"unsupported delivery policy {policy!r}")
     reviewable = policy == "reviewable"
+    if policy == "main-seed":
+        warning = ("Writes directly to main with no branch, no changelogs and no review "
+                   "history; intended for dedicated demo/visualization tenants with an "
+                   "empty main")
+    else:
+        warning = (None if reviewable else
+                   "This branch cannot be reviewed, merged, or reverted; delete it after use.")
     return {
         "policy": policy,
-        "warning": (None if reviewable else
-                    "This branch cannot be reviewed, merged, or reverted; delete it after use."),
+        "warning": warning,
         "branch_capabilities": {
             "reviewable": reviewable,
             "mergeable": reviewable,
@@ -1658,11 +1664,15 @@ def _submit(client, branch_name, model, rows, purpose, keys, receipt, receipt_pa
                                          for row in rows), mtime=0)
         filename, content_type = model + ".jsonl.gz", "application/gzip"
     compile_seconds = round(time.monotonic() - compile_started, 6)
-    fields = {"model": model, "mode": mode, "branch": branch_name,
+    fields = {"model": model, "mode": mode,
               "validation_mode": request_settings["validation_mode"],
               "create_changelogs": str(request_settings["create_changelogs"]).lower(),
               "apply_save_hooks": str(request_settings["apply_save_hooks"]).lower(),
               "dispatch_events": str(request_settings["dispatch_events"]).lower()}
+    if branch_name:
+        # A main-seed load names no branch; omitting the field (never sending
+        # an empty string) makes the server target main.
+        fields["branch"] = branch_name
     fields.update({f"post_hooks.{name}": str(enabled).lower()
                    for name, enabled in request_settings["post_hooks"].items()})
     boundary, body = _multipart(fields, filename, payload, content_type)
@@ -2618,6 +2628,16 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                      "sparse payload spanning chunks can silently drop columns")
         raise LoadError(
             f"TurboBulk maximum job rows must be an integer from 1 through {row_bound}: " + rationale)
+    main_seed = delivery_policy == "main-seed"
+    if main_seed:
+        if branch:
+            raise LoadError("main-seed writes directly to main; omit the branch argument")
+        if os.environ.get("ALLOW_MAIN_WRITES", "").strip().lower() not in ("1", "true", "yes", "on"):
+            raise LoadError("writing to main requires both --delivery-policy main-seed and "
+                            "ALLOW_MAIN_WRITES=1 in the environment")
+    elif not branch:
+        raise LoadError("a ready branch is required; writing to main requires both "
+                        "--delivery-policy main-seed and ALLOW_MAIN_WRITES=1")
     plan_path, raw, plan, objects, offline = _artifact(plan_path)
     unsupported = sorted({obj["kind"] for obj in objects.values()} - SPECS.keys())
     if unsupported:
@@ -2637,14 +2657,20 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
     receipt_path = Path(receipt_path)
     client = Client(url, token)
     _, status = client.request("/api/status/", branch=False)
-    branch_row = _branch(client, branch)
+    if main_seed:
+        # No Branching branch exists for a main write; requests carry no
+        # X-NetBox-Branch header and the preflight stub keeps receipt shape.
+        branch_row = {"id": None, "name": "main", "schema_id": None, "status": None}
+    else:
+        branch_row = _branch(client, branch)
     raw_sha = hashlib.sha256(raw).hexdigest()
     target_contract = {"netbox": status.get("netbox-version"),
                        "plugins": {name: status.get("plugins", {}).get(name) for name in
                                    ("netbox_turbobulk", "netbox_branching")}}
     binding = {"receipt_version": RECEIPT_VERSION, "compiler_version": COMPILER_VERSION,
                "artifact": str(plan_path), "plan_sha256": raw_sha, "canonical_sha256": digest(plan),
-               "target": client.base, "branch": branch, "branch_id": client.branch_id,
+               "target": client.base, "branch": "main" if main_seed else branch,
+               "branch_id": client.branch_id,
                "transport": "turbobulk+rest", "target_contract": target_contract,
                "delivery_policy": delivery_policy,
                "delivery_warning": delivery["warning"],
@@ -2681,6 +2707,10 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                 )
             _require_job_settings(entry, expected_settings)
 
+    # Review history is verified only under the reviewable policy: ChangeDiffs
+    # are a Branching branch concept and do not exist for disposable branches
+    # (changelogs off) or main-seed writes (no branch at all). This is a policy
+    # exemption, not error tolerance — strict readback below applies to every policy.
     if delivery_policy == "reviewable":
         if receipt is None:
             history_preflight = _review_history_preflight(client, branch_row, objects)
@@ -2970,7 +3000,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Load one frozen Genial plan through TurboBulk plus bounded REST completion")
     parser.add_argument("artifact", help="generated directory or plan.json")
     parser.add_argument("--target", default=os.environ.get("NETBOX_URL"))
-    parser.add_argument("--branch", required=True, help="ready disposable NetBox branch name")
+    parser.add_argument("--branch", default="",
+                        help="ready disposable NetBox branch name (omit only with "
+                             "--delivery-policy main-seed and ALLOW_MAIN_WRITES=1)")
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--max-job-rows", type=int, default=DEFAULT_JOB_ROWS,

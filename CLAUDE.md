@@ -131,6 +131,12 @@ TARGET BRANCH` is the explicit scale-only path: it requires a fresh empty branch
 which cannot be reviewed, merged, or reverted and must be deleted after use. It
 also requires a TurboBulk-only artifact with no REST create or completion writes;
 the explain and load preflights reject other artifacts before target writes.
+`ALLOW_MAIN_WRITES=1 just seed-main ARTIFACT TARGET` is the explicit main-seed
+policy for dedicated visualization/analytics tenants: no branch, changelogs off,
+REST writes allowed, strict readback kept, ChangeDiff gates exempt by policy
+(they are a Branching branch concept), empty-main occupancy required, and the
+result is essentially permanent — never on a tenant whose branches or history
+matter. Offline-verified only until a recorded live run says otherwise.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:

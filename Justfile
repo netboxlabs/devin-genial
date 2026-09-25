@@ -53,6 +53,11 @@ load artifact target branch='' turbobulk_job_rows='2000' upload_format='auto':
 load-disposable artifact target branch turbobulk_job_rows='2000' upload_format='auto':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --branch {{quote(branch)}} --delivery-policy disposable-baseline --turbobulk-job-rows {{quote(turbobulk_job_rows)}} --upload-format {{quote(upload_format)}}
 
+# Seed a dedicated tenant's main directly: no branch, no changelogs, no review
+# history. Requires ALLOW_MAIN_WRITES=1 exported and an empty target main.
+seed-main artifact target turbobulk_job_rows='2000' upload_format='auto':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --delivery-policy main-seed --turbobulk-job-rows {{quote(turbobulk_job_rows)}} --upload-format {{quote(upload_format)}}
+
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:
     python3 -m estates.load {{quote(artifact)}} --load-check

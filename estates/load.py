@@ -22,7 +22,8 @@ from .model import digest
 from .turbobulk import (DEFAULT_JOB_ROWS, DELIVERY_POLICIES, MAX_JOB_ROWS, PARQUET_MAX_JOB_ROWS,
                         UPLOAD_FORMATS, Client, LoadError, SPECS, _artifact, _branch,
                         _numeric_ids, _schema_preflight, _verify_paths, _write_receipt,
-                        disposable_rest_blocker, load as load_turbobulk, resolve_upload_format)
+                        delivery_contract, disposable_rest_blocker,
+                        load as load_turbobulk, resolve_upload_format)
 from lab.verify import ENDPOINTS, fetch_inventory, verify_plan
 
 
@@ -274,13 +275,22 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
         blocker = disposable_rest_blocker(objects)
         if blocker:
             tb_reasons.append(blocker)
-    if not branch:
+    if delivery_policy == "main-seed":
+        if branch:
+            tb_reasons.append("main-seed writes directly to main; omit the branch argument")
+        if not _enabled("ALLOW_MAIN_WRITES"):
+            tb_reasons.append("main-seed requires ALLOW_MAIN_WRITES=1")
+    elif not branch:
         tb_reasons.append("the qualified TurboBulk adapter requires a ready branch; "
                           "create one with just branch TARGET NAME")
     if branch and not branch_row:
         tb_reasons.append("requested branch is unavailable on this target")
+    # main-seed's write scope is main itself, so the schema preflight needs no
+    # resolved branch row.
+    scope_ready = (branch_row is not None if branch
+                   else delivery_policy == "main-seed" and _enabled("ALLOW_MAIN_WRITES"))
     tb_preflight = None
-    if plugins.get("netbox_turbobulk") and not unsupported and branch_row:
+    if plugins.get("netbox_turbobulk") and not unsupported and scope_ready:
         try:
             tb_preflight = _schema_preflight(client, objects)
         except LoadError as exc:
@@ -291,6 +301,8 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
     package, diode_reasons = _diode_manifest(plan_path, plan)
     if delivery_policy == "disposable-baseline":
         diode_reasons.append("disposable-baseline is implemented only by the TurboBulk adapter")
+    if delivery_policy == "main-seed":
+        diode_reasons.append("main-seed is implemented only by the TurboBulk adapter")
     if not plugins.get("netbox_diode_plugin"):
         diode_reasons.append("Diode NetBox plugin is absent")
     diode_evidence, config_reasons = _diode_config(client, branch, plugins)
@@ -334,8 +346,7 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
         "kinds": sorted(kinds),
         "target": client.base,
         "delivery_policy": delivery_policy,
-        "delivery_warning": (None if delivery_policy == "reviewable" else
-                             "This branch cannot be reviewed, merged, or reverted; delete it after use."),
+        "delivery_warning": delivery_contract(delivery_policy)["warning"],
         # What the operator can actually do with the branch today: merge-to-main
         # is blocked upstream for TurboBulk-loaded branches regardless of policy.
         "branch_capabilities": {
@@ -351,7 +362,8 @@ def inspect(artifact, *, url, token, branch, transport="auto", delivery_policy="
             key: branch_row.get(key) for key in ("id", "name", "schema_id", "status")},
         "candidates": candidates,
     }
-    if occupancy and branch_row is not None:
+    if occupancy and (branch_row is not None
+                      or (delivery_policy == "main-seed" and not branch)):
         decision["fresh_load_occupancy"] = _fresh_load_occupancy(client, plan, objects)
     return decision
 
@@ -787,6 +799,10 @@ def main(argv=None):
                       file=os.sys.stderr, flush=True)
             if args.delivery_policy == "disposable-baseline":
                 print("DISPOSABLE BASELINE: this branch cannot be reviewed, merged, or reverted; delete it after use.",
+                      file=os.sys.stderr, flush=True)
+            if args.delivery_policy == "main-seed":
+                print("MAIN SEED: writes directly to main with no branch, no changelogs and "
+                      "no review history; only for a dedicated tenant with an empty main.",
                       file=os.sys.stderr, flush=True)
         result = load(args.artifact, url=args.target, token=token, branch=args.branch,
                       receipt_path=receipt, transport=args.transport,

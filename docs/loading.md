@@ -80,6 +80,28 @@ reviewed, merged, or reverted. Delete the branch after use. It is available only
 for artifacts requiring no REST creation or completion PATCH; the explain command
 lists those blockers, and the load command repeats that check before target writes.
 The current rich and scale artifacts therefore remain on the reviewable path.
+
+### Seeding a dedicated tenant's main
+
+For a tenant that exists to be *looked at* — a visualization or analytics demo
+instance whose data should live on main rather than behind a branch selector —
+the explicit main-seed policy loads a complete estate (REST creation and
+completion included) directly onto main:
+
+```sh
+ALLOW_MAIN_WRITES=1 just seed-main build/my-estate https://netbox.example
+```
+
+It refuses without both `--delivery-policy main-seed` and `ALLOW_MAIN_WRITES=1`,
+refuses when a branch is named, and requires empty emitted-kind inventories on
+main (the same fresh-load occupancy preflight as every load). Changelogs stay
+off per the vendor's large-import guidance, and no review history exists —
+ChangeDiffs are a Branching branch concept — so the ChangeDiff gates are a
+policy exemption here, while strict readback, cable traces and component-cache
+checks apply in full. Treat the result as **essentially permanent**: un-seeding
+main means per-object deletion or a platform reset (see
+[seeding](seeding.md)), so never use this on a tenant whose branches or history
+matter. Offline-verified only until a recorded live run says otherwise.
 It still requests full validation and schedules every required post-hook. TurboBulk
 data jobs are limited to 2,000 rows and explicitly skip all global hooks. After
 all rows and bounded REST completion, zero-row finalizer jobs run denormalization,
