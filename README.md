@@ -170,9 +170,10 @@ ARTIFACT TARGET` loads a complete estate directly onto an empty main
 (`seed-main-explain` is the zero-write preflight) — see
 [seeding a dedicated tenant's main](docs/loading.md#seeding-a-dedicated-tenants-main)
 for the guardrails and the essentially-permanent caveat. To give such a tenant
-floorplan rack placements too, `just geometry PLAN OUT` derives a deterministic
-layout from the same frozen plan and `seed-geometry` writes it through the
-physical-geometry plugin — see
+floorplan rack placements too, `just geometry PLAN OUT` derives a layout from
+the same frozen plan — the estate's own authored rack coordinates where it has
+them, a deterministic row layout elsewhere — and `seed-geometry` writes it
+through the physical-geometry plugin — see
 [floorplan geometry](docs/loading.md#floorplan-geometry-for-visual-explorer).
 
 A few behaviors worth knowing before your first load; the

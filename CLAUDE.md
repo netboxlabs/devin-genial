@@ -142,11 +142,17 @@ worker-death resume arbitrates from the model's live row count on main
 (allowlisted `target_ids` plus verified rows; only the two exact counts decide),
 which assumes no other writer touches main mid-load — keep humans out during a
 seed.
-Floorplan geometry (`just geometry PLAN OUT`, `geometry-check`, and
-`GEOMETRY_WRITES=1 just seed-geometry OUT TARGET`) is a drift-style sidecar over
-a frozen plan for the physical-geometry plugin: no canonical-graph change, no
-rebaseline, append-stable layouts, fresh-only seeding with exact readback, and
-no claim about what any visualization renders.
+Floorplan geometry (`just geometry PLAN OUT`, `geometry-check PLAN OUT`, and
+`GEOMETRY_WRITES=1 just seed-geometry OUT TARGET [RECEIPT]`) is a drift-style
+sidecar over a frozen plan for the physical-geometry plugin: no canonical-graph
+change, no rebaseline. Positions are authored-first — racks carrying
+`meta.position_m` keep the estate's own validated cabinet-grid coordinates (cm
+from a fixed origin, ordering-independent); only unpositioned rooms use the
+derived row fallback, and mixing the two in one location is refused. Seeding is
+fresh-only on resume too (only receipt-created or name-adopted rows are
+tolerated), re-runs the plan-free invariants before any write, and the exact
+readback verifies each shape's `dcim.rack` object_type, resolved rack id and
+layer — never a claim about what any visualization renders.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
@@ -263,10 +269,11 @@ for the separately recorded pinned-target live qualification.
   observed drift, its exact expected deviation manifest and the SE walkthrough;
   `just drift PLAN OUT` and `just drift-check OUT`.
 - `estates/geometry.py`: the floorplan-geometry sidecar for the
-  physical-geometry plugin — deterministic append-stable rack layouts bound to
-  a plan's SHA, plus the fresh-only REST seeder with exact readback;
-  `just geometry PLAN OUT`, `just geometry-check OUT PLAN`,
-  `just seed-geometry OUT TARGET`.
+  physical-geometry plugin — authored-first (`meta.position_m`) rack layouts
+  with a deterministic row fallback, bound to a plan's SHA, plus the
+  fresh-only REST seeder with exact protected-field readback;
+  `just geometry PLAN OUT`, `just geometry-check PLAN OUT`,
+  `just seed-geometry OUT TARGET [RECEIPT]`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;

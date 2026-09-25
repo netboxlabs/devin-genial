@@ -68,14 +68,14 @@ seed-main-explain artifact target:
 geometry plan out:
     python3 -m estates.geometry build {{quote(plan)}} --out {{quote(out)}}
 
-# Recompute a saved geometry artifact from its bound plan
-geometry-check out plan:
+# Recompute a saved geometry artifact from its bound plan (operands match `geometry`)
+geometry-check plan out:
     python3 -m estates.geometry check {{quote(out)}} --plan {{quote(plan)}}
 
 # Write the geometry records through the physical-geometry REST API and read
 # them back exactly. Requires GEOMETRY_WRITES=1 and a seeded estate on the target.
-seed-geometry out target:
-    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.geometry seed {{quote(out)}} {{quote(target)}}
+seed-geometry out target receipt='':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.geometry seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:
