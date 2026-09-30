@@ -505,6 +505,42 @@ explicitly authorised.
 > screenshot has been taken. Until both exist, this entry claims implementation
 > only, not target behaviour.
 
+### Second visual pass, 2026-09-30 (v0.14.0 reseed, `crsk8600` main)
+
+Verified through the interface after reseeding at v0.14.0 (3,064/3,064 objects,
+0 mismatches, plus 7 floorplans and 13 rack shapes):
+
+- **Power chain fixed, proven in the view.** Status bar went from
+  `Power: 0 W / 11.8 kW | Util: 0.0%` to **`Power: 828 W / 11.8 kW | Util: 7.0%`**,
+  feeds report `249 W / 3.7 kW` and PDUs `249 W / 496 W` with live utilisation
+  bars. This is the claim the offline work could not settle: NetBox does consume
+  a populated PDU input port.
+- **Feed names fixed, proven in the view.** Four identical
+  `lakes-fiber-pop-chica…` labels are now `Network 01 A`, `Network 02 A`,
+  `Network 01 B`, `Network 02 B`.
+- **BGP renders.** `bgp-topology` scoped to a PoP shows
+  `3 sessions | 3 active | 1 iBGP | 2 eBGP | 3 ASNs`, iBGP purple, eBGP blue,
+  external ASes as dashed nodes with health status.
+- **Floorplans render.** `MDF | 2 racks | 48 RU | 8% avg util`.
+
+Two new findings, both surfaced only by rendering:
+
+**6. ASN labels carry the namespace (ours).** NetBox's ASN model has no `name`
+field, so Visual Explorer labels external AS nodes from `description`, and ours
+read `lakes-fiber transit-a routing identity`. Same truncation-and-prefix defect
+as power feeds, on a third family. Worse, the label does not match the provider
+name shown everywhere else in the estate: the node for Atlas Upstream's AS says
+"transit-a". An authored, namespace-free description naming the actual provider
+would fix both at once. Needs a baseline bump and a reseed.
+
+**7. iBGP remote endpoints render as a bare database ID (product, not ours).**
+One node in the topology renders as `1177`, which is the NetBox id of IP address
+`10.255.128.1/32` - pe-b's loopback. `BGPSession` carries a single `device`
+field for the local end only, so the viewer resolves the remote end from
+`remote_address` and, failing to find a device, falls back to the IP object's
+**id** rather than its address or its `dns_name` (which we do populate). Our
+data is correct and complete; nothing on our side can improve that label.
+
 **Product-side observations (not ours, not filed).** The WAN geo map never fits
 the viewport to the data: it opens at full globe and stays there whether scoped
 by URL or by clicking a marker, so a regional estate is one indistinct dot with
