@@ -431,6 +431,32 @@ populated on every circuit** (tonight's save-hook fix, visible in the UI);
 device types reading as real hardware (`MX204`, `Catalyst 9200L-24P-4X`);
 interface names in real vendor form (`xe-0/1/6`, `TenGigabitEthernet1/1/1`).
 
+**5. BGP is not modelled at all, and it leaves a whole plugin and a whole
+Visual Explorer view dark.** `netbox_bgp` 0.20.1 is installed on the tenant and
+its API answers (`/api/plugins/bgp/session/`, `routing-policy/`,
+`bgppeergroup/` all return HTTP 200) with `count=0` for every one. The string
+"bgp" appears nowhere in the generator except an acronym entry in
+`estates/naming.py`. Interface evidence: the `bgp-topology` view renders
+"No BGP Sessions" with `0 sessions | 0 active | 0 iBGP | 0 eBGP | 0 ASNs`,
+and every site detail page carries an empty "BGP Sessions" tab.
+
+This is the largest believability gap found. The view is fully featured -
+iBGP/eBGP filtering, peer groups, colour by type, AS-number labels, force
+layout - and a provider backbone is precisely the estate a customer expects to
+populate it: we already emit ASNs, PE routers, loopbacks, transit circuits to
+two upstreams and private-L3 customer services, which is the exact scaffolding
+BGP sessions attach to. A provider network with zero BGP sessions is the single
+most obvious "this is synthetic" tell to a network engineer.
+
+Feasibility notes gathered while reviewing: TurboBulk's `_resolve_model`
+(`jobs/base.py`) has no model allowlist, so plugin models are loadable through
+the existing bulk path; the Diode SDK has no entity for them, so they would be
+`LOADER_ONLY_KINDS` like the automation pack, omitted from the wire package and
+delivered only by `just load`. Scope would be new canonical kinds, loader
+support, independent validators, docs and a new baseline - a reviewed addition,
+not a quick fix, and per this file's own standing rule it is backlog until
+explicitly authorised.
+
 **Product-side observations (not ours, not filed).** The WAN geo map never fits
 the viewport to the data: it opens at full globe and stays there whether scoped
 by URL or by clicking a marker, so a regional estate is one indistinct dot with
