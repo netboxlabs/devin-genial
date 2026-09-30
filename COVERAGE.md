@@ -270,6 +270,81 @@ recommends it; deprioritized since the reindex passes on a properly sized
 tenant), and a purpose-built TurboBulk-only large artifact to test whether
 changelog-free branches at scale are API-deletable (self-service cleanup).
 
+## Visual review, 2026-09-29 (first run)
+
+The first [visual review](.claude/skills/visual-review/SKILL.md) — the
+17,389-object `Aurora Peak Networks` provider estate seeded onto a NetBox Cloud
+tenant's main and inspected through Visual Explorer's nine views and the NetBox
+UI. Every offline gate had passed; none of them could see any of this. Ranked
+by what it costs a demo.
+
+**1. Breaks a view or a core NetBox question.**
+
+- *Circuits have no termination pointers.* `CircuitTermination.save()` caches
+  scope fields on the termination and back-fills `Circuit.termination_a/_z`;
+  TurboBulk runs without save hooks and its `fix_denormalized` map covers only
+  device components. Result: every circuit's SIDE A/SIDE Z reads "—" in NetBox,
+  `/api/circuits/circuits/?site_id=<id>` returns **0** for a site that
+  terminates many, and Visual Explorer's WAN map draws **0 circuits** over 61
+  correctly-placed sites. The general lesson is broader than circuits: wherever
+  a NetBox model maintains a cache inside `save()`, the bulk path must compile
+  it in or complete it afterwards. Cables were checked and are fine.
+- *Rooms render as corridors.* Rack `position_m` coordinates were authored for
+  validation with a 30 m compute/network zone offset. Rendered as an actual
+  floorplan the NOC data hall is **7.8 m × 37 m** with two racks at each end and
+  thirty metres of empty floor between — correct by every offline check, absurd
+  on screen.
+
+**2. Reads as synthetic.**
+
+- *Namespace prefixes in display names.* Sites got authored names in 0.10.0;
+  regions, site groups, tenants, providers, device and rack roles, circuit
+  types, owners, contact groups and tags did not. In graph views labels
+  truncate, so four distinct power panels all render as
+  `aurora-peak-pop-chica…` — indistinguishable. This is a readability defect,
+  not only a cosmetic one. (Supersedes the earlier "region display names leak
+  namespace" note above.)
+- *Racks are ~93% empty.* 70 racks averaging 4.9 devices in 42U; the racks list
+  SPACE column reads 7.1%, 2.4%, 9.5%, 16.7% down the page. 0U PDUs carry no
+  rack position and render as "Non-racked" beside the elevation.
+- *Device names are raw slugs* in every rendered label
+  (`popchicagoloop-console01`), and circuit IDs read
+  `aurora-peak-customer-ce-harbor-energy-chicago-loop-001`.
+
+**3. Leaves a feature dark** (a null field that disables a control):
+
+- Prefix `role` is null on all 299 prefixes — the IPAM views have no semantic
+  grouping to colour by.
+- Device-type `airflow` is null on all 11 types — the rack elevation's Airflow
+  toggle does nothing.
+- Rack `type` and `facility_id` are null on all 70 racks.
+- Device types carry no front/rear images, so elevations are role-coloured
+  rectangles rather than recognisable hardware (NDX is the intended source).
+- No BGP sessions, so the BGP topology view is empty by construction; the
+  plugin is installed and the estate models ASNs, so this is reachable scope
+  rather than a limitation — it would need a new canonical kind and a
+  rebaseline.
+- VLANs render disconnected in the L2/L3 view — worth confirming whether
+  interface VLAN membership reaches that view at all.
+- Power chain reports **0 W allocated against 11.8 kW** despite power ports
+  carrying `allocated_draw`; unresolved, needs one more look at how the view
+  sums draw.
+
+**Product defects found, not ours** (route via the SE vault's
+`capture-product-feedback`): Visual Explorer's Settings **Save silently
+persists an empty instance** when the pre-selected dropdown default is never
+changed — the store starts at `selectedNetboxId: ""` while the native `<select>`
+displays option[0], so the token saves and the instance does not, with no
+error; the documented "switch instances" workaround (ENGHLP-1677) is the
+symptom of exactly this. Its API token is also stored in plaintext
+`localStorage` in two places. Separately, the IPAM treemap labels every tile
+with the root aggregate and colours everything as Container although statuses
+are varied (216 active / 83 container), and a floorplan scoped to a parent
+location renders an empty canvas with no hint that the leaf carries the plan.
+
+**Demo hygiene:** the org's Assurance queue holds 51 stale OPEN deviations from
+retired `devin-generator` probes; they are noise in front of a customer.
+
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
 cold-start-se runs to two consecutive cleans whenever the loading surface or
