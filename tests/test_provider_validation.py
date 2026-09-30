@@ -206,13 +206,14 @@ class ProviderValidationTests(unittest.TestCase):
 
     def test_pop_rack_coordinates_and_actual_cross_rack_patch_length_are_checked(self):
         rack = "rack/pop-chicago-west/network-02"
-        self.assertEqual(self.objects[rack]["meta"]["position_m"], [5.2, 4, 0])
+        # Bayed beside network-01: one cabinet width along the row.
+        self.assertEqual(self.objects[rack]["meta"]["position_m"], [1.6, 1.0, 0])
         pair = self.cable(f"{self.pe}/if/et-0/0/0")
-        self.assertEqual(pair["attrs"]["length"], 5)
+        self.assertEqual(pair["attrs"]["length"], 4)
         pair["attrs"]["length"] = 3
         self.assertIn("provider-cable-geometry", self.codes())
         self.setUp()
-        self.objects[rack]["meta"]["position_m"] = [4, 4, 0]
+        self.objects[rack]["meta"]["position_m"] = [1.0, 1.0, 0]
         self.plan["contracts"] = []
         self.assertIn("provider-rack-geometry", self.codes())
 

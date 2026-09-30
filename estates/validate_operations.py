@@ -582,8 +582,9 @@ def validate(plan):
             occupied[device["refs"].get("rack")].update(range(math.floor(position), math.ceil(position+height)))
     for rack in kinds["rack"]:
         template = related(rack, "rack_type")
-        if template.get("kind") != "rack_type" or any(template.get("attrs", {}).get(field) != rack["attrs"].get(field) for field in ("u_height", "width")):
-            report("operations-rack-type", rack["key"], "Rack type must match the actual cabinet height and width.")
+        if template.get("kind") != "rack_type" or any(template.get("attrs", {}).get(field) != rack["attrs"].get(field)
+                                                      for field in ("u_height", "width", "form_factor")):
+            report("operations-rack-type", rack["key"], "Rack type must match the actual cabinet height, width and form factor.")
     username = plan["recipe"].get("reservation_user", "")
     reservations = kinds["rack_reservation"]
     if bool(username) != bool(reservations):

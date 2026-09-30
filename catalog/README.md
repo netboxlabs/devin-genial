@@ -182,8 +182,19 @@ both. The test asserts the capped figure, not the raw one.
 ## Fictional reference equipment
 
 The remaining aliases are original example designs under manufacturer
-`Devin Reference Designs`. Their dimensions, port counts, and supplies are
-explicit assumptions; they do not describe any vendor product.
+`Devin Reference Designs`. Their dimensions, port counts, supplies and airflow
+are explicit assumptions; they do not describe any vendor product.
+
+`airflow` is carried only where a source states it. Six real models declare
+`front-to-rear` in the pinned device-type library commit — the Arista
+DCS-7050SX3-48C8-F and DCS-7060CX-32S-F, the Juniper EX3400-24P, EX3300-24P,
+QFX5120-48Y-AFO2 and MX204 — and those values are copied unchanged. The pinned
+sources for the Cisco Catalyst 9200L-24P-4X and Fortinet FortiGate 100F declare
+no airflow, so neither carries one rather than inventing a direction. Among the
+reference designs, chassis models state `front-to-rear` and the passive patch
+panel states `passive` as authored assumptions; zero-height models (PDU, access
+point, endpoint, wall outlet, ATM, blade) carry none, because a chassis airflow
+direction would not describe them.
 NetBox model labels use `Reference ...`; ordinary equipment and service text
 uses operational wording. This catalog owns the original-design provenance.
 The final v0.8 label revision changes the catalog fingerprint: build a new

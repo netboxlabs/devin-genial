@@ -24,6 +24,25 @@ PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  "core": 220, "edge": 40, "server": 250,
                  "console-server": 40, "liquid-chassis": 400, "provider-edge": 320}
 
+# Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
+# along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the
+# cabinet depth plus a working aisle; the two equipment zones sit side by side
+# across one main aisle. Zone origins are fixed by the reviewed row length, not
+# by how many cabinets are installed, so appending a cabinet to either zone
+# never moves an existing one.
+CABINET_WIDTH_M = 0.6
+CABINET_ROW_PITCH_M = 2.4
+CABINETS_PER_ROW = 4
+ZONE_AISLE_M = 1.5
+ROOM_ORIGIN_M = 1.0
+ZONE_PITCH_M = CABINETS_PER_ROW * CABINET_WIDTH_M + ZONE_AISLE_M
+# One rack lane admits ten devices (see Site.device), each mounted in a single
+# rack unit, so a lane can never need more than eleven units of mounting space.
+# A 24U cabinet is the honest enclosure for that lane; a 42U cabinet would be
+# three quarters empty by construction.
+RACK_LANE_DEVICES = 10
+RACK_U_HEIGHT = 24
+
 
 def trunk(site, interfaces, networks):
     vlans = [site.network(n)[0] for n in dict.fromkeys(networks)]
@@ -74,7 +93,8 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
                   "slug": manufacturer.lower().replace(" ", "-")})
             manufacturers.add(manufacturer)
         w.add("device_type", f"hardware/{alias}",
-              {k: spec[k] for k in ("model", "slug", "u_height", "is_full_depth", "subdevice_role", "cooling_method") if k in spec},
+              {k: spec[k] for k in ("model", "slug", "u_height", "is_full_depth", "subdevice_role",
+                                   "cooling_method", "airflow") if k in spec},
               {"manufacturer": f"manufacturer/{manufacturer}"})
     for name in networks:
         w.add("vrf", f"vrf/{name}", {"name": f"{ns}-{name}", "enforce_unique": True}, {"tenant": "tenant"})
@@ -206,11 +226,14 @@ class Site:
                     raise DesignError("rack_domain must be an integer lane from 0 through 3")
                 scope += f"/domain-{rack_domain}"
             slot = self.w.reserve(scope, key, 1000)
-            rack_no, unit = divmod(slot, 10)
+            rack_no, unit = divmod(slot, RACK_LANE_DEVICES)
             if rack_domain is not None:
                 rack_no = 4 * rack_no + rack_domain
             rack = self.rack(group, rack_no, location)
-            attrs.update(position=unit * 2 + 1, face="front")
+            # Lane members mount contiguously from the bottom rail: real
+            # installs bay single-unit equipment together rather than leaving a
+            # spare unit between every device.
+            attrs.update(position=unit + 1, face="front")
             refs.update(rack=rack, location=location)
             self.rack_members[rack].append(key)
         self.w.add("device", key, attrs, refs, metadata)
@@ -236,7 +259,7 @@ class Site:
         room = self.room_prefix(location)
         key = f"rack/{self.id}/{room}{group}-{ordinal+1:02}"
         if key not in self.racks:
-            height = 24 if self.contract["kind"] == "branch" and self.w.obj(self.key)["meta"].get("branch_size") == "small" else 42
+            height = RACK_U_HEIGHT
             asset_tag = f"{self.name}-{room}{group}-{ordinal+1:02}"
             if len(asset_tag) > 50:
                 # Native Rack.asset_tag is globally unique and limited to 50.
@@ -244,7 +267,12 @@ class Site:
                 asset_tag = asset_tag[:33] + "-" + hashlib.sha256(asset_tag.encode()).hexdigest()[:16]
             self.w.add("rack", key, {"name": f"{'N' if group == 'network' else 'C'}{ordinal+1:02}", "u_height": height,
                   "width": 19, "status": "active", "asset_tag": asset_tag,
-                  "description": "Branch network cabinet" if height == 24 else f"{group.title()} equipment cabinet"},
+                  # Enclosed four-post cabinet: the enclosure these equipment
+                  # rooms are authored around. facility_id is the locally
+                  # assigned label stencilled on the cabinet, unique per room.
+                  "form_factor": "4-post-cabinet",
+                  "facility_id": f"{room}{group[0].upper()}{ordinal+1:02}",
+                  "description": f"{group.title()} equipment cabinet"},
                   {"site": self.key, "location": location, "tenant": self.tenant,
                    "role": f"rack-role/{group}"})
             self.racks[key] = True
@@ -254,8 +282,14 @@ class Site:
                 # ordinals retain positions during growth; unused lanes are space.
                 if ordinal >= 64:
                     raise DesignError(f"{self.id}: data hall supports 64 rack positions per equipment zone; extend the reviewed layout")
-                row, column = divmod(ordinal, 8)
-                self.w.obj(key)["meta"]["position_m"] = [4 + 1.2*column, 4 + 3*row + (30 if group == "compute" else 0), 0]
+                row, column = divmod(ordinal, CABINETS_PER_ROW)
+                zone = 0 if group == "network" else 1
+                # Rounded so a coordinate is exact in the plan, in the
+                # independent checks and after the geometry sidecar's
+                # metre-to-centimetre conversion.
+                self.w.obj(key)["meta"]["position_m"] = [
+                    round(ROOM_ORIGIN_M + ZONE_PITCH_M*zone + CABINET_WIDTH_M*column, 3),
+                    round(ROOM_ORIGIN_M + CABINET_ROW_PITCH_M*row, 3), 0]
         return key
 
     def interface(self, device, name):
@@ -541,7 +575,8 @@ class Site:
                     outlets[side].append(outlet)
             for device in members:
                 # Rack slots persist across growth; emission order need not.
-                i = (self.w.obj(device)["attrs"]["position"] - 1) // 2
+                # One outlet per lane member, indexed by its mounting unit.
+                i = self.w.obj(device)["attrs"]["position"] - 1
                 ports = self.w.catalog["models"][self.w.obj(device)["meta"]["hardware"]]["power_ports"]
                 allowance = PLANNED_WATTS.get(self.w.obj(device)["meta"]["hardware"], 0)
                 for j, port in enumerate(ports):
