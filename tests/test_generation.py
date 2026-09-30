@@ -219,13 +219,21 @@ class GenerationTests(unittest.TestCase):
         # Display names are authored and deliberately namespace-free (see
         # estates/naming.py): they no longer separate estates.  The matching
         # identities below still must.
-        for kind, field in (("tenant", "slug"), ("site", "slug"), ("vrf", "name"),
+        for kind, field in (("tenant", "slug"), ("site", "slug"),
                             ("circuit", "cid"), ("ip_address", "dns_name")):
             with self.subTest(kind=kind, field=field):
                 original_names = {obj["attrs"][field] for obj in self.baseline["objects"] if obj["kind"] == kind}
                 other_names = {obj["attrs"][field] for obj in other["objects"] if obj["kind"] == kind}
                 self.assertTrue(original_names)
                 self.assertTrue(original_names.isdisjoint(other_names))
+        # VRF names became authored labels in 0.15: two estates built from one
+        # recipe now share them on purpose, exactly like the tenants, roles and
+        # circuit types 0.12 authored.  A branch and the loader's fresh-load
+        # occupancy gate separate the estates; the display label never did.
+        vrfs = [{obj["attrs"]["name"] for obj in plan["objects"] if obj["kind"] == "vrf"}
+                for plan in (self.baseline, other)]
+        self.assertTrue(vrfs[0])
+        self.assertEqual(vrfs[0], vrfs[1])
         # Device/VM names are intentionally short and repeat across estates;
         # their fully qualified matching identities must still be disjoint.
         identities = []

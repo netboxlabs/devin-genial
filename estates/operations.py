@@ -144,8 +144,10 @@ def supporting_records(world):
     rir = "rir/private"
     if rir not in world.objects:
         world.add("rir", rir, {"name": "Private allocations", "slug": f"{ns}-private", "is_private": True})
+    # Aggregates carry no name; the description is the label NetBox renders.
+    estate = (world.objects.get("tenant") or {}).get("attrs", {}).get("name") or world.recipe["name"]
     world.add("aggregate", "aggregate/private", {"prefix": world.recipe["address_pool"],
-        "description": f"{ns} owned site allocation pool"}, {"rir": rir, "tenant": "tenant"})
+        "description": f"{estate} owned site allocation pool"}, {"rir": rir, "tenant": "tenant"})
     for obj in list(world.objects.values()):
         key = obj["key"]
         if obj["kind"] in {"site", "cluster", "circuit"}:

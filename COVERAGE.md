@@ -316,7 +316,9 @@ by what it costs a demo.
   truncate, so four distinct power panels all render as
   `aurora-peak-pop-chica…` — indistinguishable. This is a readability defect,
   not only a cosmetic one. (Supersedes the earlier "region display names leak
-  namespace" note above.)
+  namespace" note above.) *Closed across 0.12.0 → 0.15.0; 0.15.0 finished the
+  last families and replaced the opt-in check with an exhaustive sweep, so this
+  class of defect is now a test failure rather than a rendering discovery.*
 - *Racks are ~93% empty.* 70 racks averaging 4.9 devices in 42U; the racks list
   SPACE column reads 7.1%, 2.4%, 9.5%, 16.7% down the page. 0U PDUs carry no
   rack position and render as "Non-racked" beside the elevation.
@@ -525,13 +527,31 @@ Verified through the interface after reseeding at v0.14.0 (3,064/3,064 objects,
 
 Two new findings, both surfaced only by rendering:
 
-**6. ASN labels carry the namespace (ours).** NetBox's ASN model has no `name`
-field, so Visual Explorer labels external AS nodes from `description`, and ours
-read `lakes-fiber transit-a routing identity`. Same truncation-and-prefix defect
-as power feeds, on a third family. Worse, the label does not match the provider
-name shown everywhere else in the estate: the node for Atlas Upstream's AS says
-"transit-a". An authored, namespace-free description naming the actual provider
-would fix both at once. Needs a baseline bump and a reseed.
+**6. ASN labels carry the namespace (ours). — FIXED in 0.15.0.** NetBox's ASN
+model has no `name` field, so Visual Explorer labels external AS nodes from
+`description`, and ours read `lakes-fiber transit-a routing identity`. Same
+truncation-and-prefix defect as power feeds, on a third family. Worse, the label
+did not match the provider name shown everywhere else in the estate: the node
+for Atlas Upstream's AS said "transit-a".
+
+Fixed in 0.15.0 (a new baseline): ASN and Aggregate descriptions are authored,
+namespace-free and name the party that actually holds the record — that AS node
+now reads `Atlas Upstream routing identity`, and the bank's carrier ASes read
+`Northstar Transit routing domain` / `Meridian Carrier routing domain`. Pinned
+by `tests/test_naming_policy.py`:
+`GeneratedEstateNames.test_asn_descriptions_name_the_party_that_holds_the_as`
+(the description must start with the linked provider's own display name),
+`GeneratedEstateNames.test_label_bearing_descriptions_are_namespace_free` and
+`NameUniquenessAcrossProfiles.test_label_bearing_descriptions_do_not_move_when_the_namespace_does`
+(every profile, proven by regenerating under a second namespace).
+
+The same release finished the whole 0.12 sweep — VRFs, FHRP groups, the
+recovery crypto/tunnel/L2VPN records, config contexts, contacts, provider
+accounts, clusters, virtual chassis, VLANs and VLAN groups were all still
+namespaced — and inverted the guard so the next missed family fails a test
+instead of waiting for a rendering session. See CLAUDE.md's display-naming
+entry. Rendering evidence for the fixed labels has not been recaptured; the
+claim above is an offline check, not a fresh screenshot.
 
 **7. iBGP remote endpoints render as a bare database ID (product, not ours).**
 One node in the topology renders as `1177`, which is the NetBox id of IP address

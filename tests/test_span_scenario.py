@@ -228,8 +228,11 @@ class SpanScenarioTests(unittest.TestCase):
         self.assertIn(e["subject"], report)
         for end in e["edges"][e["subject"]]["ends"]:
             self.assertIn(end["interface"], report)
-        self.assertIn("cust-harbor-logistics", report)
-        self.assertIn("cust-cedar-retail", report)
+        # Both customers are named by their authored tenant display names: the
+        # per-tenant NOC desk dropped the "<namespace> cust-…" stem in 0.15.
+        self.assertIn("Harbor Logistics NOC duty desk", report)
+        self.assertIn("Cedar Retail NOC duty desk", report)
+        self.assertNotIn("cust-harbor-logistics", report)
         self.assertIn("offline", report)
         self.assertIn("not executed failover", report)
         self.assertIn("unchanged premise routes", report)

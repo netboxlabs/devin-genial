@@ -798,7 +798,9 @@ def _facts(plan):
         "custom_field": ({"name": field["attrs"]["name"], "label": field["attrs"].get("label")}
                          if field else None),
         "custom_link": link["attrs"]["name"] if link else None,
-        "vrfs": [obj["attrs"]["name"] for obj in kinds.get("vrf", [])],
+        # Keyed by the canonical object key, not by parsing the display name:
+        # names are authored (estates/naming.py) and carry no role token.
+        "vrfs": {obj["key"]: obj["attrs"]["name"] for obj in kinds.get("vrf", [])},
         "customer_tenants": [obj["attrs"]["slug"] for obj in kinds.get("tenant", [])
                              if (obj["refs"].get("group") or "").endswith("/customers")],
         "wlan": _wlan(kinds.get("wireless_lan", [])),
@@ -1167,8 +1169,9 @@ def demo_markdown(spec, facts, artifacts, live):
         zone = "plant-floor (OT)" if spec["profile"] == "manufacturing" else "station (OT)"
         segments = (["process", "supervisory"] if spec["profile"] == "manufacturing"
                     else ["protection", "telemetry", "station"])
-        present = [name for name in facts["vrfs"] if name.rsplit("-", 1)[-1] in set(segments)]
-        conduit = next((name for name in facts["vrfs"] if name.endswith("-conduit")), "conduit")
+        present = [name for segment in segments
+                   if (name := facts["vrfs"].get(f"vrf/{segment}")) is not None]
+        conduit = facts["vrfs"].get("vrf/conduit", "conduit")
         pair = facts["zone_devices"]
         lines.extend([
             "## The zone boundary, on screen", "",

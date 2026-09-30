@@ -26,6 +26,7 @@ import re
 from . import campus, datacenter, equipment, ipv6, networking, operations, places, poe, optics
 from .blocks import Site, foundation
 from .model import DesignError, World, resolve_bank_recipe, resolve_demo
+from .naming import titleize
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
@@ -315,7 +316,7 @@ def _accounts(world):
         guest = bool(sum(zone["guest"] for zone in item["wireless"].values()))
         for role in OFFICE_NETWORKS + (("wan", GUEST_NETWORK) if guest else ("wan",)):
             world.add("vrf", f"vrf/customer/{key}/{role}",
-                      {"name": f"{ns}-cust-{key}-{role}", "enforce_unique": True,
+                      {"name": f"{title} {titleize(role)}", "enforce_unique": True,
                        "description": f"{title} {role} routing context; customer address space is not shared between accounts"},
                       {"tenant": tenant})
 

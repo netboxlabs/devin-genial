@@ -74,15 +74,21 @@ def _automation(objects, kinds, ns, fail):
     bound = {workload: {address for served in served_by.values() for address in served}
              for workload, served_by in hosts.items()}
 
+    # The three Branching-exempt records land on main and `just retire` matches
+    # them by exact "<namespace> " prefix, so they keep it. Config contexts are
+    # branch-scoped and carry an authored, namespace-free display name.
     for obj in (listed("config_context") + listed("export_template")
                 + listed("webhook") + listed("event_rule")):
         name = obj["attrs"].get("name", "")
         description = obj["attrs"].get("description", "")
-        if (not isinstance(name, str) or not name.startswith(f"{ns} ") or len(name) > 100
+        main_scoped = obj["kind"] != "config_context"
+        if (not isinstance(name, str) or len(name) > 100
+                or name.startswith(f"{ns} ") is not main_scoped
                 or not isinstance(description, str) or not 1 <= len(description) <= 200
                 or objects.get(obj["refs"].get("owner"), {}).get("kind") != "owner"):
             fail("automation-record", obj["key"],
-                 "Automation records must carry the namespace, a native-length name and description, and the estate's owner.")
+                 "Main-scoped automation records must carry the namespace and branch-scoped "
+                 "config contexts must not; all need a native-length name, description and the estate's owner.")
 
     contexts = {obj["key"]: obj for obj in listed("config_context")}
     weights = {}
@@ -251,7 +257,7 @@ def _context(plan, objects, kinds):
         suffix = "" if key == "tenant" else f"/{key}"
         label = "" if key == "tenant" else f" {key.removeprefix('tenant/')}"
         mailbox = "noc" if key == "tenant" else f"{key.removeprefix('tenant/')}.noc"
-        expect_contact(f"contact/operations{suffix}", f"{ns}{label} NOC duty desk", "operations", tenant["attrs"].get("name", ""), mailbox)
+        expect_contact(f"contact/operations{suffix}", f"{tenant['attrs'].get('name', '')} NOC duty desk", "operations", tenant["attrs"].get("name", ""), mailbox)
     for obj in kinds["site"] + kinds["cluster"] + kinds["circuit"] + (kinds["virtual_circuit"] if recipe.get("profile") == "provider-backbone" else []):
         tenant = obj["refs"].get("tenant", "")
         suffix = "" if tenant == "tenant" else f"/{tenant}"
@@ -342,11 +348,11 @@ def _context(plan, objects, kinds):
             continue
         workload, tenant = parts[2], refs.get("tenant", "")
         label = "" if tenant == "tenant" else f" {tenant.removeprefix('tenant/')}"
-        contact_name = f"{ns}{label} {workload} service desk"
         mailbox = f"{label.strip()}." if label else ""
         # The tenant's authored display name is clipped in prose so the
         # description stays inside the native 200-character bound.
         tenant_label = str(attrs(tenant).get("name", ""))[:40].rstrip()
+        contact_name = f"{tenant_label} {workload} service desk"
         contact = expect_contact(f"contact/service/{tenant}/{workload}", contact_name, "service", f"{workload} within {tenant_label}", f"{mailbox}{workload}.service")
         expect_assignment(key, contact, "service")
         scope = (refs.get("cluster"), workload)

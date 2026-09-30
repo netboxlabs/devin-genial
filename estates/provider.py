@@ -200,10 +200,16 @@ def _registry(w):
     w.add("rir","rir/private",dict(name="Private allocations",slug=f"{ns}-private",is_private=True))
     w.add("asn_range","asn-range/private",dict(name="Provider routing domains",slug=f"{ns}-routing",
           start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASN reservation; peering records are inventory, never applied configuration"),{"rir":"rir/private"})
+    # NetBox's ASN model has no name: the visualization layer labels an AS node
+    # from its description, so it must name the party that holds the AS. The
+    # transit nodes previously read "transit-a", contradicting the provider
+    # name shown on every other record.
+    provider_names = (("operator",r["name"]),("transport-a","Northstar Transport"),("transport-b","Meridian Transport"),
+                      ("transit-a","Atlas Upstream"),("transit-b","Orion Upstream"))
+    held_by = dict(provider_names)
     for key,offset in (("operator",0),("transit-a",1),("transit-b",2)):
-        w.add("asn",f"asn/{key}",dict(asn=r["asn_base"]+offset,description=f"{ns} {key} routing identity"),{"rir":"rir/private"})
-    for label,name in (("operator",r["name"]),("transport-a","Northstar Transport"),("transport-b","Meridian Transport"),
-                       ("transit-a","Atlas Upstream"),("transit-b","Orion Upstream")):
+        w.add("asn",f"asn/{key}",dict(asn=r["asn_base"]+offset,description=f"{held_by[key]} routing identity"),{"rir":"rir/private"})
+    for label,name in provider_names:
         refs = {"asns":[f"asn/{'operator' if label == 'operator' else label}"]} if not label.startswith("transport-") else {}
         display = name
         # Retain ordinary branding; reserve thirteen characters for support-desk
@@ -226,9 +232,9 @@ def _registry(w):
     for c in r["customers"]:
         key = c["key"]; slot = w.reserve("provider-customers",key,256)
         tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=titleize(key),slug=f"{ns}-cust-{key}",description="Private-L3 service customer"))
-        w.add("asn",f"asn/customer/{key}",dict(asn=r["asn_base"]+256+slot,description=f"{ns} {key} customer routing identity"),{"rir":"rir/private"})
+        w.add("asn",f"asn/customer/{key}",dict(asn=r["asn_base"]+256+slot,description=f"{titleize(key)} customer routing identity"),{"rir":"rir/private"})
         target = w.add("route_target",f"route-target/customer/{key}",dict(name=f"{r['asn_base']}:{slot+1}",description=f"{key} private routing import/export domain"),{"tenant":tenant})
-        vrf = w.add("vrf",f"vrf/customer/{key}",dict(name=f"{ns}-customer-{key}",enforce_unique=True),
+        vrf = w.add("vrf",f"vrf/customer/{key}",dict(name=f"{titleize(key)} Private L3",enforce_unique=True),
                     dict(tenant=tenant,import_targets=[target],export_targets=[target]))
         w.add("prefix",f"root/customer/{key}",dict(prefix=r["address_pool"],status="container",description="Customer scoped private allocation space"),dict(vrf=vrf,tenant=tenant))
         account = _account(w,f"provider-account/customer/{key}","provider/operator",f"customer-{key}")
@@ -239,7 +245,9 @@ def _registry(w):
 
 
 def _account(w,key,provider,label):
-    return w.add("provider_account",key,dict(name=f"{w.recipe['namespace']} {label}",account=f"{w.recipe['namespace']}-{label}",
+    # The account number keeps the namespace (it is the matching identity); the
+    # name is the label NetBox renders, and is unique per provider.
+    return w.add("provider_account",key,dict(name=titleize(label),account=f"{w.recipe['namespace']}-{label}",
           description="Commercial inventory account; no credentials or live purchase"),dict(provider=provider))
 
 

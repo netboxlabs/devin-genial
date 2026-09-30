@@ -177,7 +177,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
         for role in ("applications", "database", "backup", "storage", "management"):
             vi = site.virtual_interface(gateway, f"Vlan{10*(NETWORKS.index(role)+1)}", role)
             site.address(vi, role, host=i+1, primary=role == "management", device=gateway)
-    cluster = w.add("cluster", f"cluster/{site.id}", {"name": f"{site.name}-compute", "status": "active"},
+    cluster = w.add("cluster", f"cluster/{site.id}", {"name": f"{site.display} Compute", "status": "active"},
                     {"type": "cluster-type", "scope_site": site.key, "tenant": "tenant"})
     hosts = []
     site.contract["required_services"] = {}

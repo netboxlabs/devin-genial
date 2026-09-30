@@ -210,7 +210,12 @@ that predecessor. Version 0.7 also requires a new baseline; its detail profile u
 
 Device names are site-local: `s0002-atm01`, `birch-s0002-as01`, and replacement
 `s0002-asr01`. `s`/`m`/`l`, `dc`, and `hq` preserve site identity; canonical keys
-and allocation ledgers remain separate from display names. Diode references
+and allocation ledgers remain separate from display names. Every other family's
+`name` is an authored label with no namespace in it — the policy and its two
+reasoned exception sets live in `estates/naming.py`, and anything composed from
+a site reads `Site.display`, never the namespaced `Site.name` slug stem. Since
+0.15.0 `tests/test_naming_policy.py` sweeps every emitted kind that has a
+`name`, so a new family is covered without being added to a list. Diode references
 retain both site and tenant, matching its
 [scoped device criteria](https://github.com/netboxlabs/diode-netbox-plugin/blob/v1.17.0/docs/matching-criteria-documentation.md).
 DNS retains the full namespace, such as `birch-s0002-atm01.cedar-demo.example`.

@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from .model import DesignError
 from .naming import titleize
-from . import places
+from . import naming, places
 
 NETWORKS = ("management", "users", "atm", "wireless", "security", "voice",
             "applications", "database", "backup", "wan", "storage")
@@ -98,12 +98,12 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
                                    "cooling_method", "airflow") if k in spec},
               {"manufacturer": f"manufacturer/{manufacturer}"})
     for name in networks:
-        w.add("vrf", f"vrf/{name}", {"name": f"{ns}-{name}", "enforce_unique": True}, {"tenant": "tenant"})
+        w.add("vrf", f"vrf/{name}", {"name": titleize(name), "enforce_unique": True}, {"tenant": "tenant"})
         # A one-site pool is already represented by the scoped site reservation.
         # Emitting an equal global root would duplicate the same VRF/prefix.
         if w.pool.prefixlen < w.site_prefixlen:
             w.add("prefix", f"root/{name}", {"prefix": w.recipe["address_pool"], "status": "container",
-                  "description": f"{ns} {name}: hierarchical site reservations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
+                  "description": f"{titleize(name)}: hierarchical site reservations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
     for side, provider in (("a", "Northstar Transit"), ("b", "Meridian Carrier")) if include_carriers else ():
         w.add("provider", f"provider/{side}", {"name": provider, "slug": f"{ns}-carrier-{side}",
               "comments": f"Minimum private access commitment {50 if side == 'a' else 100} Mbps. "
@@ -130,7 +130,6 @@ class Site:
         self.lineage = "birch" if self.design in {"inherited", "refreshed"} else "cedar"
         self.acquired = site_id in w.recipe.get("acquired_sites", []) or self.design == "refreshed"
         self.tenant = tenant or ("tenant/inherited" if self.lineage == "birch" and not self.acquired else "tenant")
-        self.equipment_prefix = f"{w.recipe['namespace']}-birch-{site_id}" if self.lineage == "birch" else self.name
         self.racks, self.rack_members, self.devices, self.nets = {}, {}, [], {}
         self.rack_grid = (kind == "dc" and w.recipe["profile"] in {"enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing", "utility"}
                           or kind == "pop" and w.recipe["profile"] == "provider-backbone")
@@ -185,6 +184,15 @@ class Site:
               "description": description,
               "comments": f"Network, compute and facilities inventory for {w.recipe['name']}."}, {"tenant": self.tenant, "tags": ["tag/estate"]})
         self.equipment_location = places.locate(self)
+
+    @property
+    def display(self):
+        """The authored site display name places.locate() settled on.
+
+        ``self.name`` is the namespaced *slug* stem; every human-facing label
+        built from a site reads this instead (estates/naming.py).
+        """
+        return naming.site_display(self.w, self.key)
 
     def display_name(self, label, inherited=False):
         # Names are scoped by the emitted site/tenant; full namespace stays in DNS.
@@ -373,17 +381,17 @@ class Site:
         net = ipaddress.ip_network((int(container.network_address) + index * (1 << (32-prefixlen)), prefixlen))
         vrf = self.vrf(role)
         if vrf not in self.w.objects:
-            self.w.add("vrf", vrf, {"name": f"{self.equipment_prefix}-{role}", "enforce_unique": True,
+            self.w.add("vrf", vrf, {"name": f"{self.display} {titleize(role)}", "enforce_unique": True,
                        "description": "Retained Birch site routing context; isolation and renumbering are explicit design choices"}, {"tenant": self.tenant})
         self.w.add("prefix", f"prefix/{self.id}/{role}/reservation", {"prefix": str(container), "status": "container",
               "description": f"Stable site reservation for {role}; child allocation fixed by network role"}, {"vrf": vrf, "tenant": self.tenant, "scope_site": self.key})
-        vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": f"{self.name}-{role}", "vid": 10 * (index+1),
+        vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": f"{self.display} {titleize(role)}", "vid": 10 * (index+1),
               "status": "active", "description": f"{role} segment"}, {"site": self.key, "tenant": self.tenant})
         # `wan` carries no gateway SVI and the conduit holds four, not two:
         # the reservation sentence belongs only to ordinary client segments.
         gateways = "" if role in ("wan", "conduit") else "; .1 and .2 reserved for gateway SVIs"
         self.w.add("prefix", f"prefix/{self.id}/{role}", {"prefix": str(net), "status": "active",
-              "description": f"{self.name} {role}{gateways}"},
+              "description": f"{self.display} {role}{gateways}"},
               {"vrf": vrf, "vlan": vlan, "scope_site": self.key, "tenant": self.tenant})
         self.nets[role] = vlan, net
         return vlan, net

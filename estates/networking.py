@@ -11,13 +11,18 @@ import ipaddress
 import math
 
 from .model import DesignError
+from . import naming
 from .naming import titleize
 
 
 def _site_display(w, sid):
     """The site's authored display name, when that site exists in the graph."""
-    site = w.objects.get(f"site/{sid}") if hasattr(w, "objects") else None
-    return (site or {}).get("attrs", {}).get("name")
+    return naming.site_display(w, f"site/{sid}")
+
+
+def _display(w, key, fallback=""):
+    """The display name of an object already in the graph, or ``fallback``."""
+    return (w.objects.get(key) or {}).get("attrs", {}).get("name") or fallback
 
 
 PROVENANCE = "Planning intent; no configuration, protocol convergence or measured performance is asserted."
@@ -71,10 +76,17 @@ def registry(w, sites):
     base = 4200000000 + _number(ns, "asn-block", 1000000)*64
     w.add("asn_range", "asn-range/private", {"name": "Routing domains", "slug": f"{ns}-routing",
           "start": base, "end": base+63, "description": "Private 32-bit ASNs reserved for this estate"}, {"rir": rir})
+    # NetBox's ASN model carries no name, so the visualization layer labels an
+    # AS node from its description. Name the party that actually holds the AS —
+    # a carrier AS reading "carrier-a" contradicted the provider named on every
+    # other record in the estate.
+    holders = {"bank": _display(w, "tenant"), "birch": _display(w, "tenant/inherited"),
+               "carrier-a": _display(w, "provider/a"), "carrier-b": _display(w, "provider/b")}
     for i, label in enumerate(("bank", "birch", "carrier-a", "carrier-b")):
         if label == "birch" and not any(o["meta"].get("lineage") == "birch" for o in sites):
             continue
-        w.add("asn", f"asn/{label}", {"asn": base+i, "description": f"{ns} {label} routing domain", "comments": PROVENANCE}, {"rir": rir})
+        holder = holders[label] or titleize(label)
+        w.add("asn", f"asn/{label}", {"asn": base+i, "description": f"{holder} routing domain", "comments": PROVENANCE}, {"rir": rir})
     for side in ("a", "b"):
         w.obj(f"provider/{side}")["refs"]["asns"] = [f"asn/carrier-{side}"]
     for role, description in (("routed", "Routed bank segment"), ("reserve", "Reserved address headroom")):
@@ -84,12 +96,15 @@ def registry(w, sites):
         pools.add("172.16.0.0/12")
     for network in ipaddress.collapse_addresses(ipaddress.ip_network(pool) for pool in pools):
         pool = str(network)
-        w.add("aggregate", f"aggregate/{pool}", {"prefix": pool, "description": f"{ns} private address allocation", "comments": PROVENANCE}, {"rir": rir})
+        # Aggregates have no name either; the description is the rendered label.
+        w.add("aggregate", f"aggregate/{pool}", {"prefix": pool,
+              "description": f"{holders['bank'] or w.recipe['name']} private address allocation",
+              "comments": PROVENANCE}, {"rir": rir})
     for site in sites:
         sid, tenant = site["key"].split("/", 1)[1], site["refs"]["tenant"]
         # Retained routing identity survives acquisition and access refresh.
         site["refs"]["asns"] = ["asn/birch" if site["meta"].get("lineage") == "birch" else "asn/bank"]
-        w.add("vlan_group", f"vlan-group/{sid}", {"name": titleize(sid), "slug": f"{ns}-{sid}",
+        w.add("vlan_group", f"vlan-group/{sid}", {"name": _site_display(w, sid) or titleize(sid), "slug": f"{ns}-{sid}",
               "description": "Site-local VLAN allocation"}, {"scope_site": site["key"], "tenant": tenant})
         prefix = w.objects.get(f"prefix/{sid}/users")
         if prefix:
@@ -132,7 +147,8 @@ def first_hop(w):
         if group_id in used:
             raise DesignError("FHRP global numeric identity collision; choose a new namespace")
         used.add(group_id)
-        w.add("fhrp_group", key, {"name": f"{ns}-{sid}-{network_role}", "protocol": "vrrp3", "group_id": group_id,
+        w.add("fhrp_group", key, {"name": f"{_site_display(w, sid) or titleize(sid)} {titleize(network_role)} Gateway",
+              "protocol": "vrrp3", "group_id": group_id,
               "description": "VRRPv3 virtual gateway with two physical owners",
               "comments": "Authored VRRPv3 gateway intent; target group-ID conflict preflight required. " + PROVENANCE})
         for i, port in enumerate(sorted(ports)):
@@ -168,26 +184,26 @@ def private_wan(w):
 
 def recovery_overlay(w):
     ns = w.recipe["namespace"]
-    w.add("ike_proposal", "ike-proposal/recovery", {"name": f"{ns}-recovery-ike", "authentication_method": "certificates",
+    w.add("ike_proposal", "ike-proposal/recovery", {"name": "Recovery IKE", "authentication_method": "certificates",
           "encryption_algorithm": "aes-256-cbc", "authentication_algorithm": "hmac-sha256", "group": "14", "sa_lifetime": 86400})
-    w.add("ike_policy", "ike-policy/recovery", {"name": f"{ns}-recovery-ikev2", "version": 2}, {"proposals": ["ike-proposal/recovery"]})
-    w.add("ip_sec_proposal", "ipsec-proposal/recovery", {"name": f"{ns}-recovery-esp", "encryption_algorithm": "aes-256-cbc",
+    w.add("ike_policy", "ike-policy/recovery", {"name": "Recovery IKEv2", "version": 2}, {"proposals": ["ike-proposal/recovery"]})
+    w.add("ip_sec_proposal", "ipsec-proposal/recovery", {"name": "Recovery ESP", "encryption_algorithm": "aes-256-cbc",
           "authentication_algorithm": "hmac-sha256", "sa_lifetime_seconds": 3600})
-    w.add("ip_sec_policy", "ipsec-policy/recovery", {"name": f"{ns}-recovery-ipsec", "pfs_group": "14"}, {"proposals": ["ipsec-proposal/recovery"]})
-    w.add("ip_sec_profile", "ipsec-profile/recovery", {"name": f"{ns}-recovery", "mode": "esp", "comments": PROVENANCE},
+    w.add("ip_sec_policy", "ipsec-policy/recovery", {"name": "Recovery IPsec", "pfs_group": "14"}, {"proposals": ["ipsec-proposal/recovery"]})
+    w.add("ip_sec_profile", "ipsec-profile/recovery", {"name": "Recovery Protection", "mode": "esp", "comments": PROVENANCE},
           {"ike_policy": "ike-policy/recovery", "ipsec_policy": "ipsec-policy/recovery"})
     w.add("tunnel_group", "tunnel-group/recovery", {"name": "Recovery", "slug": f"{ns}-recovery"})
-    w.add("tunnel", "tunnel/recovery", {"name": f"{ns}-dc-recovery", "status": "planned", "encapsulation": "ipsec-tunnel",
+    w.add("tunnel", "tunnel/recovery", {"name": "DC Recovery", "status": "planned", "encapsulation": "ipsec-tunnel",
           "description": "Planned protected DC recovery transport", "comments": PROVENANCE},
           {"group": "tunnel-group/recovery", "ipsec_profile": "ipsec-profile/recovery", "tenant": "tenant"})
-    w.add("vrf", "vrf/recovery", {"name": f"{ns}-recovery", "enforce_unique": True}, {"tenant": "tenant"})
+    w.add("vrf", "vrf/recovery", {"name": "Recovery", "enforce_unique": True}, {"tenant": "tenant"})
     base = w.obj("asn/bank")["attrs"]["asn"]
     target = w.add("route_target", "route-target/recovery", {"name": f"{base}:65535", "description": "Planned DC recovery broadcast domain"})
     w.obj("vrf/recovery")["refs"].update(import_targets=[target], export_targets=[target])
     net = ipaddress.ip_network((int(w.site_network("dc-01").network_address)+15*256, 31))
     w.add("prefix", "prefix/recovery", {"prefix": str(net), "status": "active", "description": "Planned DC overlay transit; addresses reserved for both ends"},
           {"vrf": "vrf/recovery", "tenant": "tenant", "role": "ip-role/routed"})
-    w.add("l2vpn", "l2vpn/recovery", {"name": f"{ns}-recovery-segment", "slug": f"{ns}-recovery-segment",
+    w.add("l2vpn", "l2vpn/recovery", {"name": "Recovery Segment", "slug": f"{ns}-recovery-segment",
           "type": "vxlan", "identifier": 1+_number(ns, "recovery-vni", 16777214), "status": "planned",
           "description": "Recovery segment awaiting workloads and configuration", "comments": PROVENANCE},
           {"tenant": "tenant", "import_targets": [target], "export_targets": [target]})
@@ -201,9 +217,10 @@ def recovery_overlay(w):
         w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "reserved", "dns_name": f"{sid}-recovery.{ns}.example"}, {"assigned_object": port, "vrf": "vrf/recovery", "tenant": "tenant"})
         w.add("tunnel_termination", f"tunnel/recovery/{sid}", {"role": "peer"},
               {"tunnel": "tunnel/recovery", "termination": port, "outside_ip": f"ip/{outside}"})
-        vlan = w.add("vlan", f"vlan/{sid}/recovery", {"name": f"{ns}-{sid}-recovery", "vid": 3900+i, "status": "reserved"},
+        label = _site_display(w, sid) or titleize(sid)
+        vlan = w.add("vlan", f"vlan/{sid}/recovery", {"name": f"{label} Recovery", "vid": 3900+i, "status": "reserved"},
                      {"site": f"site/{sid}", "group": f"vlan-group/{sid}", "tenant": "tenant", "role": "ip-role/routed"})
-        policy = w.add("vlan_translation_policy", f"vlan-translation/{sid}", {"name": f"{ns}-{sid}-recovery", "description": "Planned local-to-peer recovery VLAN translation"})
+        policy = w.add("vlan_translation_policy", f"vlan-translation/{sid}", {"name": f"{label} Recovery", "description": "Planned local-to-peer recovery VLAN translation"})
         w.add("vlan_translation_rule", f"vlan-translation/{sid}/rule", {"local_vid": 3900+i, "remote_vid": 3901-i}, {"policy": policy})
         service = w.add("interface", f"{device}/if/RecoveryLAN", {"name": "RecoveryLAN", "type": "virtual", "enabled": True,
                         "mode": "access", "description": "Planned recovery attachment; no production workload attached"},

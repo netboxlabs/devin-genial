@@ -34,7 +34,9 @@ def enrich_site(site, *, demonstrations=True):
         first, second = spec["stack_ports"]
         members = [site.device("access", f"stack-{i:02}", "stack") for i in (1, 2)]
         chassis = w.add("virtual_chassis", f"virtual-chassis/{site.id}",
-                        {"name": f"{site.name}-service-stack", "domain": f"{ns}-{site.code}",
+                        # The VC domain stays namespaced: it is a stack-domain
+                        # identity two estates must not share, not a label.
+                        {"name": f"{site.display} Service Stack", "domain": f"{ns}-{site.code}",
                          "description": f"Two {spec['manufacturer']} access chassis joined by their catalog "
                                         "stacking ports; auxiliary service stack"},
                         {"master": members[0]})

@@ -463,16 +463,22 @@ class ComposerTests(unittest.TestCase):
             self.assertIn("Nothing here executes", sheet)
 
     def test_the_zone_profiles_quote_their_own_contexts_and_distribution_pair(self):
-        for profile, contexts in (("manufacturing", ("-process", "-supervisory")),
-                                  ("utility", ("-protection", "-telemetry", "-station"))):
+        # The sheet quotes the VRFs' authored display names (estates/naming.py),
+        # resolved from their canonical keys — never from a namespaced stem.
+        for profile, contexts in (("manufacturing", ("process", "supervisory")),
+                                  ("utility", ("protection", "telemetry", "station"))):
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as temporary:
                 out = Path(temporary) / "demo"
                 self.compose(out, profile=profile, name=f"Zone {profile}")
                 sheet = (out / "DEMO.md").read_text()
                 namespace = f"zone-{profile}"[:20]
                 self.assertIn("## The zone boundary, on screen", sheet)
-                for suffix in contexts + ("-conduit",):
-                    self.assertIn(f"`{namespace}{suffix}`", sheet)
+                plan_objects = json.loads((out / "estate" / "plan.json").read_text())["objects"]
+                vrfs = {obj["key"]: obj["attrs"]["name"] for obj in plan_objects if obj["kind"] == "vrf"}
+                for segment in contexts + ("conduit",):
+                    name = vrfs[f"vrf/{segment}"]
+                    self.assertNotIn(namespace, name.lower(), "zone VRF names must be authored")
+                    self.assertIn(f"`{name}`", sheet)
                 self.assertIn("modeled, never enforced", sheet)
                 # The quoted OT pair must belong to the site the walkthrough opened.
                 plan = json.loads((out / "estate" / "plan.json").read_text())

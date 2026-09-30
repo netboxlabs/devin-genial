@@ -51,7 +51,11 @@ class AutomationRecordTests(unittest.TestCase):
                          if obj["kind"] in LOADER_ONLY_KINDS}
                 self.assertEqual({key: obj["kind"] for key, obj in found.items()}, AUTOMATION_KEYS)
                 for obj in found.values():
-                    self.assertTrue(obj["attrs"]["name"].startswith(f"{ns} "), obj["key"])
+                    # The three Branching-exempt records land on main and
+                    # `just retire` matches them by exact prefix; config
+                    # contexts are branch-scoped and carry an authored name.
+                    main_scoped = obj["kind"] != "config_context"
+                    self.assertIs(obj["attrs"]["name"].startswith(f"{ns} "), main_scoped, obj["key"])
                     self.assertEqual(obj["refs"]["owner"], "owner/operations")
                     self.assertTrue(obj["meta"]["automation"])
                 self.assertEqual(validate(plan), [])
@@ -212,8 +216,13 @@ class AutomationRecordTests(unittest.TestCase):
                     self.assertIn("automation-event-rule", self.codes())
 
     def test_automation_records_keep_namespace_ownership_and_native_bounds(self):
+        ns = self.plan["recipe"]["namespace"]
+        # Both directions are load-bearing: a main-scoped record that loses the
+        # prefix strands itself past `just retire`, and a branch-scoped config
+        # context that gains one is the display defect 0.15 removed.
         mutations = (
-            ("namespace", lambda obj: obj["attrs"].update(name="Global service baseline")),
+            ("namespace", lambda obj: obj["attrs"].update(
+                name=f"{ns} Renamed" if obj["kind"] == "config_context" else "Renamed")),
             ("long-name", lambda obj: obj["attrs"].update(name=obj["attrs"]["name"] + "x" * 100)),
             ("long-description", lambda obj: obj["attrs"].update(description="x" * 201)),
             ("unowned", lambda obj: obj["refs"].pop("owner")),

@@ -55,7 +55,9 @@ def enrich(world):
         suffix = "" if tenant == "tenant" else f"/{tenant}"
         label = "" if tenant == "tenant" else f" {tenant.removeprefix('tenant/')}"
         mailbox = "noc" if tenant == "tenant" else f"{tenant.removeprefix('tenant/')}.noc"
-        tenant_desks[tenant] = contact(f"contact/operations{suffix}", f"{ns}{label} NOC duty desk", "operations", mailbox,
+        # Contacts are branch-scoped and their Diode identity is the name, so
+        # the label names the tenant they answer for, not the namespace.
+        tenant_desks[tenant] = contact(f"contact/operations{suffix}", f"{obj['attrs']['name']} NOC duty desk", "operations", mailbox,
             f"Network triage and technical escalation for {obj['attrs']['name']}; coordinates site, platform and carrier specialists.")
     infrastructure_roles = {f"role/{role}" for role in (
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
@@ -147,7 +149,7 @@ def enrich(world):
             # the recipe may take up to its full length; clip it in prose so the
             # description stays inside the native 200-character limit.
             tenant_label = world.obj(refs["tenant"])["attrs"]["name"][:40].rstrip()
-            service_desks[scope] = contact(f"contact/service/{refs['tenant']}/{workload}", f"{ns}{label} {workload} service desk", "service", f"{mailbox}{workload}.service",
+            service_desks[scope] = contact(f"contact/service/{refs['tenant']}/{workload}", f"{tenant_label} {workload} service desk", "service", f"{mailbox}{workload}.service",
                 f"Resource sizing and listener configuration for {workload} within {tenant_label}; coordinate host incidents with the cluster technical desk.")
         assign(key, service_desks[scope], "service")
         anchors.setdefault((refs["cluster"], workload), vm)

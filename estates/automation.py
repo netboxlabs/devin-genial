@@ -11,6 +11,12 @@ applied configuration; the export templates are template text for NetBox to
 render on request; the webhook points at a host in the reserved `.invalid`
 top-level domain (RFC 2606) and its event rule ships disabled, so the estate
 dispatches nothing.
+
+Display naming splits this module in two (estates/naming.py): the export
+templates, webhook and event rule are Branching-exempt rows that land on main,
+so they keep the "<namespace> …" name `just retire` matches.  Config contexts
+are branch-scoped — `get_branchable_object_types()` lists extras.configcontext
+— so they go with the branch and carry an authored, namespace-free name.
 """
 
 from collections import defaultdict
@@ -99,7 +105,7 @@ def enrich(world):
 
     endpoints = _service_addresses(world)
     add("config_context", "config-context/global",
-        {"name": f"{ns} Global service baseline", "weight": 100, "is_active": True,
+        {"name": "Global service baseline", "weight": 100, "is_active": True,
          "description": "Estate-derived service endpoints for automation; documentation data, not applied configuration",
          "data": _context_data(ns, endpoints)})
 
@@ -107,7 +113,7 @@ def enrich(world):
     if not roles:
         raise DesignError("Automation context needs an access or leaf switching role in the estate")
     add("config_context", "config-context/switching",
-        {"name": f"{ns} Switch platform baseline", "weight": 1000, "is_active": True,
+        {"name": "Switch platform baseline", "weight": 1000, "is_active": True,
          "description": "Reference intent for this estate's switching roles; no device configuration is generated or applied",
          "data": {"logging": {"severity": "informational"},
                   "ports": {"disable_unused": True, "edge_protection": True},

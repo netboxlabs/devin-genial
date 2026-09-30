@@ -38,18 +38,31 @@ recipe key (authored by default; `legacy` restores namespace-ordinal names),
 and `[site_names]` overrides any site with the customer's real names — see the
 [recipe reference](recipes.md#common-keys). Both keys are rebaseline-frozen.
 
-Every other object family carries an authored display name too (since 0.12.0,
-extended to power feeds in 0.13.0): regions read `Illinois`, device roles `WAN
-Edge`, providers `Aurora Peak Networks`, power panels `MDF Supply A`, power
-feeds `Network 01 A` under that panel. The namespace lives in the identity —
-slugs, object keys, device names, circuit IDs, asset tags and DNS — which is
-what still separates two estates loaded onto one target. Two families keep the
-prefix on purpose: the main-scoped records `just retire` matches by exact
-`"<namespace> …"` name (owners and the automation pack), and the root contact
-group, whose canonical slug is derived from its name. The policy lives in
-`estates/naming.py`; a readable name matters because the visualization layer
-truncates graph labels, and a prefixed name renders distinct objects
-identically.
+Every other object family carries an authored display name too (0.12.0, extended
+to power feeds in 0.13.0 and completed in 0.15.0): regions read `Illinois`,
+device roles `WAN Edge`, providers `Aurora Peak Networks`, power panels
+`MDF Supply A`, power feeds `Network 01 A` under that panel, VRFs `Applications`
+or `Harbor Logistics Private L3`, VLANs `Brady and 9th Branch Users`, FHRP
+groups `Fulton Market Data Center Applications Gateway`, tunnels `DC Recovery`.
+Where NetBox gives a model no `name` field at all — ASN and Aggregate — the
+`description` is what the graph renders, so it is authored the same way and
+names the holder: `Northstar Transit routing domain`, not a role token.
+
+The namespace lives in the identity — slugs, object keys, device names, circuit
+IDs, asset tags, DNS, provider account numbers and WLAN SSIDs — which is what
+still separates two estates loaded onto one target. Three things keep the prefix
+on purpose: the main-scoped records `just retire` matches by exact
+`"<namespace> …"` name (owners and the export template / webhook / event rule /
+custom-field trio), the root contact group whose canonical slug is derived from
+its name, and route targets, whose name is the `<asn>:<n>` route distinguisher
+NetBox holds globally unique. Config contexts are branch-scoped, so unlike the
+rest of the automation pack they carry an authored name.
+
+The policy lives in `estates/naming.py`; a readable name matters because the
+visualization layer truncates graph labels, and a prefixed name renders distinct
+objects identically. `tests/test_naming_policy.py` sweeps it exhaustively — every
+emitted kind with a `name`, minus those exception sets — so a family added later
+is covered by default rather than silently skipped.
 
 `[hardware]` picks the vendor line for the access, leaf and AP role families
 (`access = "juniper"`, `leaf = "juniper"`, `ap = "aruba"`) when the audience is

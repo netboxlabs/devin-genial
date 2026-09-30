@@ -32,10 +32,13 @@ pack, so 0.10 plans reject growth by version and must be regenerated. Any change
 that alters every estate's canonical graph must bump `estates/__version__` so
 those guards fire with their own messages, not a validator's.
 v0.12 is a new baseline carrying two visual-realism changes found by rendering a
-seeded estate. Display names across every object family are now authored and
+seeded estate. Display names across most object families became authored and
 namespace-free (slugs and matching identities keep the namespace; the
 main-scoped families in `NAMESPACED_KINDS` keep it in the name too) — graph
-views truncate labels, so the prefix made distinct nodes indistinguishable. And
+views truncate labels, so the prefix made distinct nodes indistinguishable.
+That sweep was NOT exhaustive: it checked a curated opt-in list, and 0.13, 0.14
+and 0.15 each had to finish families it missed. 0.15 completed it and inverted
+the guard. And
 the equipment-room cabinet grid was compacted into a room rather than a
 corridor: cabinets became 24U four-post enclosures with a room-scoped
 `facility_id`, lane members mount contiguously from the bottom rail instead of
@@ -65,6 +68,24 @@ the provider profile changes, but the version bump is required so frozen plans
 reject growth with their own message rather than a validator's — and, because
 the generator version participates in stable choices, procurement dates and
 serials reroll across every profile.
+v0.15 is a new baseline that finishes the 0.12 display-naming sweep and makes
+under-specifying it impossible. Every remaining family that interpolated the
+namespace into a user-visible field is now authored: VRFs (estate, site, MSP
+and provider-customer), FHRP groups, the recovery IKE/IPsec/tunnel/L2VPN/VLAN
+records and their translation policy, config contexts, the per-tenant NOC and
+per-workload service contacts, provider accounts, clusters, virtual chassis,
+VLANs, VLAN groups, the site prefix descriptions, and — because NetBox gives
+those models no `name` — the ASN and Aggregate descriptions, which now name the
+provider or tenant that actually holds the record instead of a role token. The
+guard in `tests/test_naming_policy.py` was inverted from an opt-in list to an
+exhaustive sweep minus two reasoned exception sets, plus a namespace-invariance
+check, a per-family uniqueness check across every profile, a native
+name-limit check and a failing-mutation check. Identities are untouched: a
+regenerated 0.14 plan differs only in `name`, `description` and `comments`
+fields, with no object key and no identity attribute moved. Display names move
+across every estate, so 0.14 plans reject growth by version and must be
+regenerated, and the version bump rerolls procurement dates, serials and
+scenario selections as usual.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under
@@ -647,22 +668,47 @@ for the separately recorded pinned-target live qualification.
 - Rack asset tags retain accepted short labels; longer labels use a readable
   prefix and stable digest of the full site/room identity to fit native 50-character
   limits. Validate global tag uniqueness before export; site names are unchanged.
-- Display naming (since 0.12.0, `estates/naming.py` is the single policy home):
-  every object family emits an authored, namespace-free `name`; identities —
-  slugs, object keys, device names, circuit `cid`s, asset tags, DNS — keep the
-  stable `<namespace>-…` form and remain the only cross-estate separator. The
-  visualization layer truncates graph node labels, so a prefixed display name
-  rendered several distinct objects identically; readable names are functional,
-  not decoration. Two documented exceptions keep the prefix: `NAMESPACED_KINDS`
-  (owner/owner_group and the automation export_template/webhook/event_rule plus
-  custom_field/choice_set/custom_link records), because those main-scoped rows
-  coexist across namespaces on one main and `just retire` matches them by exact
-  `"<namespace> …"` prefix; and the root ContactGroup, whose canonical slug is
-  derived from its name and omitted on the wire for the auto-slug matcher.
+- Display naming (`estates/naming.py` is the single policy home since 0.12.0;
+  the sweep became exhaustive in 0.15.0): every object family emits an authored,
+  namespace-free `name`; identities — slugs, object keys, device names, circuit
+  `cid`s, asset tags, DNS, `account` numbers, WLAN `ssid`s and the virtual-chassis
+  `domain` — keep the stable `<namespace>-…` form and remain the only cross-estate
+  separator. The visualization layer truncates graph node labels, so a prefixed
+  display name rendered several distinct objects identically; readable names are
+  functional, not decoration. Where NetBox gives a model no `name` at all (ASN,
+  Aggregate) the rendered label is the `description`, so that is authored too and
+  names the party that actually holds the record — a carrier AS whose label read
+  `transit-a` contradicted the provider named everywhere else.
+  Two exception sets keep the prefix, each entry carrying its reason in
+  `naming.py`: `NAMESPACED_KINDS` (owner/owner_group and the automation
+  export_template/webhook/event_rule plus custom_field/choice_set/custom_link
+  records), because those main-scoped rows coexist across namespaces on one main
+  and `just retire` matches them by exact `"<namespace> …"` prefix; and
+  `IDENTITY_NAMED_KINDS` — the root ContactGroup, whose canonical slug is derived
+  from its name and omitted on the wire for the auto-slug matcher, and
+  `route_target`, whose name IS the `<asn>:<n>` route distinguisher NetBox holds
+  globally unique. Config contexts are branch-scoped
+  (`get_branchable_object_types()` lists `extras.configcontext`), so unlike the
+  other automation records they carry an authored name.
   Power panels are named from their room and side, not the namespaced site stem;
   power feeds (since 0.13.0) are named from their cabinet and side, which is
-  unique inside the room-and-side-scoped panel NetBox keys them on.
-  `tests/test_naming_policy.py` pins both halves of the split.
+  unique inside the room-and-side-scoped panel NetBox keys them on. Everything
+  built from a site reads `Site.display` / `naming.site_display`, never
+  `Site.name` — that attribute is the namespaced slug stem.
+  `tests/test_naming_policy.py` pins every half of the split and is INVERTED:
+  it sweeps every emitted kind that has a `name`, minus the two exception sets,
+  so a family added later is covered by default. 0.12's curated opt-in tuple is
+  what let VRFs, FHRP groups, tunnels, IKE/IPsec records, config contexts,
+  contacts, clusters, VLANs and the ASN/aggregate descriptions leak for three
+  releases. A prefix check alone cannot separate the namespace `northgate` from
+  the authored tenant `Northgate Power and Light`, so the all-profile sweep
+  regenerates each estate under a second namespace and requires every authored
+  name to be byte-identical: a leaked label moves with the namespace, an
+  authored one cannot. Authored names are composed from tenant and site display
+  names a recipe controls, so `Workspace.finish` rejects any name over its
+  native limit (`naming.NAME_LIMITS`: 64 for `vlan` and `virtual_chassis`,
+  read back from the pinned 4.7.1 source; 100 otherwise) naming the object,
+  rather than letting a target reject the row mid-load.
 - Site naming: authored display names, facility codes and metro-jittered
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`

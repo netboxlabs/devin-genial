@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from . import __version__
+from .naming import name_limit
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -360,6 +361,18 @@ class World:
             shown = ", ".join(overlong[:5]) + (" …" if len(overlong) > 5 else "")
             raise DesignError(f"{len(overlong)} descriptions exceed the native 200-character limit "
                               f"({shown}); shorten the site_names override that feeds them.")
+        # Authored display names (estates/naming.py) are composed from tenant and
+        # site display names, both of which a recipe controls. Fail here naming
+        # the object instead of letting the target reject the row mid-load.
+        overlong = sorted(f"{key} ({len(obj['attrs']['name'])} > {name_limit(obj['kind'])})"
+                          for key, obj in self.objects.items()
+                          if isinstance(obj["attrs"].get("name"), str)
+                          and len(obj["attrs"]["name"]) > name_limit(obj["kind"]))
+        if overlong:
+            shown = ", ".join(overlong[:5]) + (" …" if len(overlong) > 5 else "")
+            raise DesignError(f"{len(overlong)} display names exceed their native limit "
+                              f"({shown}); shorten the recipe name or the site_names override "
+                              "that feeds them.")
         return dict(schema_version=1, generator_version=__version__, recipe=self.recipe,
                     hardware_digest=digest(self.catalog), allocations=self.allocations,
                     reservations=self.reservations,
