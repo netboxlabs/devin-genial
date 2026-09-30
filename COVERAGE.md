@@ -398,9 +398,16 @@ CDC provisioning installs a Postgres event trigger,
 (`database.go:378-425`) walks every newly created `public` table, skips names
 matching a baked-in exclude list, sets `REPLICA IDENTITY FULL`, and then adds
 the table to every `dbz_pub_%` publication (`database.go:417`). **Its only
-exception handler is `duplicate_object`** (`database.go:419`). Postgres raises a
-different error for an unlogged relation, so that error is unhandled, propagates
-out of the trigger, and aborts the transaction that created the table.
+exception handler is `duplicate_object`** (`database.go:419`, SQLSTATE 42710).
+Postgres raises **`22023 invalid_parameter_value`** for an unlogged relation
+("cannot add relation ... to publication ... This operation is not supported for
+unlogged tables", `pg_publication.c`), which that handler cannot catch, so it
+propagates out of the trigger and aborts the transaction that created the table.
+Reproduced independently on throwaway PostgreSQL 16.15 and 18.6 by rendering the
+trigger through the real Go `Sprintf` from `database.go` rather than by
+transcription, and the non-catching was proven by raising a synthetic 22023
+under the shipped handler. The abort is fatal rather than noisy: everything else
+in the caller's transaction rolls back with it.
 
 TurboBulk creates `public._turbobulk_staging_<model>_<hash>` as
 `CREATE UNLOGGED TABLE` (`netbox-turbobulk/engine/staging.py`, hard-coded), and
@@ -417,10 +424,19 @@ otherwise). So "Analytics breaks TurboBulk" is wrong. **CDC breaks TurboBulk**;
 Analytics merely requires CDC. What enabled CDC on this instance, and when, is
 still unknown from our side and answerable only from the platform.
 
-**Fix, smallest correct form:** have the trigger skip unlogged relations
-(`relpersistence = 'u'`), which is semantically right because an unlogged table
-can never be replicated. Broadening the exception handler beyond
-`duplicate_object` would also stop the abort; adding `_turbobulk_staging_%` to
+Three qualifications from the reproduction, all narrowing or widening the claim:
+the trigger only acts on schema `public`, so branch-schema creates are untouched
+(and CDC correspondingly never captures branch data); `CREATE TABLE AS` and
+`SELECT INTO` carry different command tags and bypass it entirely; and creating
+the table logged then `SET UNLOGGED` is closed off, failing with 55000 precisely
+because the trigger already published it.
+
+**Fix, smallest correct form:** have the trigger skip non-permanent relations
+(`relpersistence <> 'p'`), which is semantically right because an unlogged table
+can never be replicated - verified to work while leaving normal tables published.
+Broadening the exception handler also works, but it should be `WHEN OTHERS`
+rather than a 22023 special case: a `FOR ALL TABLES` publication raises 55000
+instead and would abort *every* `CREATE TABLE`, not just unlogged ones. adding `_turbobulk_staging_%` to
 the exclude list works but needs a release (DATA-74, Backlog, would make that
 list dynamic). Operator-side, disabling CDC on the instance should restore
 loading, and testing that is itself strong confirmation.
