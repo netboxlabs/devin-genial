@@ -67,6 +67,18 @@ them before reporting: **wrong scope** (most common — heavy views also lie
 while loading), **data genuinely absent**, or **the viewer is broken**. Query
 the API for the same scope to decide which.
 
+**The same rule applies to a view that renders something incomplete**, and that
+case is more dangerous because it looks like a finding. In the 2026-09-30 run
+the cable topology drew four PDUs as empty boxes with no ports and no cables,
+while its legend advertised a red "Power" cable type that appeared nowhere. The
+obvious conclusion — the generator does not cable power — was wrong. The API
+said 108 power cables, 108 connected power ports, 82 connected power outlets.
+The view simply renders interface-type ports only, which its own legend admits
+if you read it (`PORT TYPES: Interface`). One API count separated a viewer
+limitation from a generator defect, and without it a false bug report would
+have gone out. **Never report an absence you have not confirmed against the
+API**, even when a rendered view seems to show it plainly.
+
 ## Known findings and their shape
 
 The first run (2026-09-29, Aurora Peak provider estate on a Cloud tenant)
