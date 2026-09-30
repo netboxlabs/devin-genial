@@ -477,6 +477,21 @@ require a release from another team, and testing it is itself strong
 confirmation of the diagnosis. It costs Analytics on that instance, which is
 gated on CDC; Visual Explorer does not use CDC and is unaffected.
 
+**Causation proven by same-instance A/B (2026-09-30).** With CDC enabled, the
+`phase-1:circuit_type` job errored immediately on three separate attempts with
+the publication error above. CDC was then disabled on that instance and the
+identical artifact, command and delivery policy were rerun against the same
+main: **152 jobs, zero errored, zero publication errors, 4,555 objects matched
+with 0 mismatches, 348/348 cables traced, 16 circuit terminations verified.**
+One variable changed. The failing receipt is preserved beside the passing one as
+`archived-cdc-failure-circuit-probe-main-*.json`. A cross-instance control
+already existed - the same artifact main-seeds normally on a sibling tenant
+without CDC - but the same-instance toggle removes every remaining alternative
+explanation. Note the first rerun attempt was invalid and was discarded: the
+loader resumed from the stale receipt and replayed the recorded failure without
+submitting a new job, so the receipt was archived and the load rerun from
+scratch.
+
 **Prior art: none (checked 2026-09-30).** Three independent read-only sweeps of
 Linear, Pylon, Slack and GitHub found no report of this interaction anywhere,
 and confirmed both defects are live on `main` in the platform monorepo and in
