@@ -404,12 +404,17 @@ been authored namespace-free too. The family was missed. Changing it alters
 display names across every estate, so it needs an `estates/__version__` bump
 and a new baseline.
 
-**3. Racks read as a lab.** `24U Rack | 21% utilized | 5 devices | 19U
-available` at a PoP: three racked devices at U1-U3 with twenty-one empty units
-above, plus two 0U PDUs. The 0U handling is correct (they appear under
-"Non-racked", exactly as NetBox models them). The density is not. Either size
-PoP cabinets to their actual lane or consolidate - from correct modelling,
-never padding.
+**3. Rack density: withdrawn after a survey.** The first observation was
+`24U Rack | 21% utilized | 5 devices | 19U available` at a PoP, which read as a
+lab. Surveying all thirteen racks shows that was the smallest rack in the
+estate: NOC racks carry 6, 6, 7 and 9 devices, PoP racks 3 to 5, customer sites
+5. Cabinets are sized to a ten-device lane, so 9-in-24U is essentially full, and
+a small provider exchange genuinely holds three racked devices plus two 0U PDUs.
+This is correct modelling, not sparseness, and padding it would be the wrong
+fix. Recorded as withdrawn rather than deleted so the reasoning survives.
+(Caveat on method: the per-rack utilisation percentage computed during the
+survey was wrong - the device list serializer does not return `u_height`, so it
+read 0% everywhere. The device counts are the load-bearing evidence.)
 
 **4. Circuit IDs render as long slugs.** The circuits list shows `cid` as its
 primary column, and ours read
