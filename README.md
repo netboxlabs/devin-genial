@@ -169,7 +169,12 @@ rather than behind a branch selector, `ALLOW_MAIN_WRITES=1 just seed-main
 ARTIFACT TARGET` loads a complete estate directly onto an empty main
 (`seed-main-explain` is the zero-write preflight) — see
 [seeding a dedicated tenant's main](docs/loading.md#seeding-a-dedicated-tenants-main)
-for the guardrails and the essentially-permanent caveat. To give such a tenant
+for the guardrails. To iterate, `ALLOW_MAIN_TEARDOWN=1 just teardown-main
+ARTIFACT TARGET` deletes exactly what that artifact seeded and leaves every
+other row alone, so an improved estate can replace it without a tenant wipe —
+destructive, with no undo, so read
+[tearing a seeded estate back off main](docs/loading.md#tearing-a-seeded-estate-back-off-main)
+first. To give such a tenant
 floorplan rack placements too, `just geometry PLAN OUT` derives a layout from
 the same frozen plan — the estate's own authored rack coordinates where it has
 them, a deterministic row layout elsewhere — and `seed-geometry` writes it
