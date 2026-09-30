@@ -125,6 +125,14 @@ its rack when NetBox would inherit it on save. Require the corresponding REST
 filters during preflight and prove exact component IDs by kind and placement at
 final readback, including null location/rack placements. Do not add a repair
 upsert: reviewable history must remain one create ChangeDiff per canonical object.
+Circuit terminations invert that rule (`SAVE_HOOK_KINDS`): their state lives off
+the inserted row — `CircuitTermination.save()` caches the termination's scope and
+back-fills `Circuit.termination_a/_z`, both `editable=False` and read-only in REST,
+so no PATCH can reach them. That one job requests TurboBulk's bounded
+`apply_save_hooks`; preflight requires the cache columns on both circuit models,
+the job contract requires `save_hooks_applied` for every submitted row, and
+readback proves the resolved pointers and a live `?site_id=` filter. Without it
+circuits read as unterminated and WAN maps draw no arcs.
 Those commands retain review and revert history; merging a TurboBulk branch to
 main is currently blocked upstream. `just load-disposable ARTIFACT
 TARGET BRANCH` is the explicit scale-only path: it requires a fresh empty branch

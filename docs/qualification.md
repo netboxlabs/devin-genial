@@ -728,6 +728,23 @@ delete the 37 committed scaffolding rows, archive the receipt
 nonterminal on the tenant as a cosmetic leftover. Branch-policy behavior on
 shared targets is unchanged and separately qualified above.
 
+That seed also exposed a gap every prior TurboBulk load shared, found on
+September 29, 2026 by opening Visual Explorer's WAN geo map against it: the map
+reported **0 circuits** and drew no arcs. The estate's 134 circuit terminations
+were correct and referenced sites carrying coordinates, but every circuit's
+`termination_a`/`termination_z` was null, every termination's scope cache was
+null, `/api/circuits/circuits/?site_id=59` returned 0 for a site terminating many
+circuits, and NetBox's own circuit table showed an empty Side A and Side Z for
+all 67 rows. Root cause: NetBox maintains both in `CircuitTermination.save()`,
+which the raw bulk path skips, and TurboBulk's `fix_denormalized` post-hook map
+covers only device components. The loader now requests the plugin's bounded
+`apply_save_hooks` on the circuit-termination job and proves the result at
+readback ([loading guide](loading.md#turbobulk-as-a-scale-transport)); the
+seeded tenant predates that fix, so its circuits need a reseed or a manual
+repair before its WAN map renders arcs. Strict readback never caught this because
+it compares emitted fields, and these columns are NetBox's to write, not ours —
+the same blind spot the component-cache verification was added for.
+
 ## Floorplan geometry qualification
 
 Immediately after the main-seed qualification above, the floorplan-geometry

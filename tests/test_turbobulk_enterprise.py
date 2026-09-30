@@ -11,7 +11,8 @@ from estates.model import canonical, digest, recipe_from_file
 from estates.turbobulk import (LoadError, REST_CREATE_KINDS, SPECS, SUPPORTED_REFS,
                                _bound_job_id, _complete_rest, _create_rest, _index,
                                _matches, _render, _rendered_columns, _required_content_types,
-                               _schema_preflight, _submit, delivery_contract, load)
+                               _schema_preflight, _submit, delivery_contract, load,
+                               SAVE_HOOK_REQUIRED_COLUMNS)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,11 @@ class SchemaClient:
         if any(obj["kind"] == "cable" for obj in objects.values()):
             self.schemas["dcim.cabletermination"] = {
                 "cable_id", "cable_end", "termination_type_id", "termination_id"}
+        # Columns NetBox maintains itself, which the loader never emits but does
+        # require the target to expose (the save-hook fixups write them).
+        for model, columns in SAVE_HOOK_REQUIRED_COLUMNS.items():
+            if model in self.schemas:
+                self.schemas[model].update(columns)
         self.rest = rest
 
     def request(self, path, method="GET", **_kwargs):

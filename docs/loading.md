@@ -203,6 +203,30 @@ component kind and placement and makes one query per group, including `null`
 location and rack values. This proves the caches without another mutation, so
 reviewable ChangeDiff counts remain exactly one create per canonical object.
 
+Circuit terminations need the opposite treatment, because the state NetBox
+maintains for them is not on the row being inserted. `CircuitTermination.save()`
+caches the termination's scope (`_site`, `_region`, `_site_group`, `_location`,
+`_provider_network`) *and* back-fills the parent `Circuit.termination_a` /
+`termination_z`. Neither is reachable from the client: both circuit fields are
+`editable=False` and `read_only` in the REST serializer, so no PATCH can set
+them, and a no-op PATCH on an existing termination would not either — NetBox
+guards that write behind `is_new`/`circuit_changed`/`term_side_changed`. Left
+undone, every circuit reads as unterminated: `?site_id=` returns nothing, the
+circuit table's Side A and Side Z columns are empty, and WAN maps draw no arcs.
+
+Genial therefore requests TurboBulk's `apply_save_hooks` on the
+`circuit_termination` job alone. The plugin's fixup is bounded to that job's own
+affected rows, replicates `cache_related_objects` per termination type in bulk
+SQL, and sets both circuit pointers; `CircuitTermination` is on the plugin's
+handled-save list, so no per-object save fallback runs. Preflight requires the
+five cache columns on `circuits.circuittermination` and
+`termination_a_id`/`termination_z_id` on `circuits.circuit` before any write, the
+job contract requires the server to report `save_hooks_applied` for every
+submitted row (a silently ignored flag fails the job), and strict readback proves
+the outcome two independent ways: each circuit's pointers resolve to the expected
+termination IDs, and a real `?site_id=` query returns the circuits that terminate
+there. No extra mutation is involved, so create-ChangeDiff counts are unchanged.
+
 ## Verify without loading
 
 `just verify-target ARTIFACT TARGET [BRANCH]` runs the loader's final strict

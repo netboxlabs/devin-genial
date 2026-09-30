@@ -787,6 +787,9 @@ def main(argv=None):
             caches = result.get("component_caches") or {}
             if caches.get("components_expected") is not None:
                 summary["components_checked"] = caches.get("components_expected")
+            circuits = result.get("circuit_terminations") or {}
+            if circuits.get("circuits_expected"):
+                summary["circuit_terminations_checked"] = circuits.get("circuits_expected")
             print(json.dumps(summary, sort_keys=True))
             return 0 if result["success"] else 2
         receipt = receipt or default_receipt(args.artifact, args.target, args.branch,
@@ -854,6 +857,9 @@ def main(argv=None):
             caches = result.get("component_caches") or {}
             if caches.get("components_expected") is not None:
                 summary["components_checked"] = caches.get("components_expected")
+            circuits = result.get("circuit_terminations") or {}
+            if circuits.get("circuits_expected"):
+                summary["circuit_terminations_checked"] = circuits.get("circuits_expected")
             # The next thing an operator needs after "loaded" is the estate on
             # screen: the branch-activating UI URL (Branching's _branch param).
             schema = ((result.get("preflight") or {}).get("branch") or {}).get("schema_id")
