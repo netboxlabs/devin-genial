@@ -440,6 +440,12 @@ SPECS = {
     "wireless_link": ("wireless.wirelesslink", "/api/wireless/wireless-links/"),
     "wireless_lan": ("wireless.wirelesslan", "/api/wireless/wireless-lans/"),
     "wireless_lan_group": ("wireless.wirelesslangroup", "/api/wireless/wireless-lan-groups/"),
+    # netbox_bgp 0.20.1 (provider-backbone only). A NetBox plugin's Django
+    # app_label is its package name, so the models are netbox_bgp.*; the REST
+    # router registers each viewset under /api/plugins/bgp/ (netbox_bgp/api/urls.py).
+    "bgp_routing_policy": ("netbox_bgp.routingpolicy", "/api/plugins/bgp/routing-policy/"),
+    "bgp_peer_group": ("netbox_bgp.bgppeergroup", "/api/plugins/bgp/bgppeergroup/"),
+    "bgp_session": ("netbox_bgp.bgpsession", "/api/plugins/bgp/session/"),
 }
 
 CONTENT_TYPES = {
@@ -479,7 +485,19 @@ CONTENT_TYPES = {
 # from attrs plus refs directly.
 EXTRAS_CREATE_KINDS = {"custom_field", "custom_field_choice_set", "custom_link",
                        "config_context", "event_rule", "export_template", "webhook"}
-REST_CREATE_KINDS = {"module_bay_type", "provider_account"} | EXTRAS_CREATE_KINDS
+# netbox_bgp rows take the same REST create path, for two independent reasons:
+# peer groups and sessions carry many-to-many routing-policy lists that the raw
+# bulk path cannot express, and a plugin's models are not guaranteed to appear
+# in an installed TurboBulk model registry (read live from a pinned 4.7.1
+# tenant: 172 writable models, none of them netbox_bgp), so a bulk job would
+# fail preflight on a target where the REST API is perfectly writable.
+# ponytail: _create_rest re-lists the endpoint once per row, so this is O(n^2)
+# reads in the session count. That is invisible at the tens-of-rows scale a
+# demo provider reaches; a batched resolve would be the upgrade if a
+# many-hundred-PoP estate ever loads.
+PLUGIN_CREATE_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
+REST_CREATE_KINDS = ({"module_bay_type", "provider_account"}
+                     | EXTRAS_CREATE_KINDS | PLUGIN_CREATE_KINDS)
 # Model-default values REST/Diode apply server-side but TurboBulk's raw path
 # would otherwise manufacture as invalid '' (choice columns have no CHECK
 # constraint, so the row inserts and only surfaces at the next full_clean —
@@ -622,6 +640,11 @@ SUPPORTED_REFS = {
     "wireless_link": {"interface_a", "interface_b", "tenant"},
     "wireless_lan": {"group", "scope_site", "tenant", "vlan"},
     "wireless_lan_group": {"parent"},
+    "bgp_routing_policy": set(),
+    "bgp_peer_group": {"local_as", "remote_as", "import_policies", "export_policies"},
+    "bgp_session": {"device", "site", "tenant", "peer_group", "local_address",
+                    "remote_address", "remote_prefix", "local_as", "remote_as",
+                    "import_policies", "export_policies"},
 }
 
 
@@ -851,6 +874,7 @@ def _matches(obj, row, ids, objects=None):
                 "platform", "rack_role", "rir", "site_group", "wireless_lan_group"}:
         return row.get("slug") == attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group",
+                "bgp_peer_group", "bgp_routing_policy", "bgp_session",
                 "cable_bundle", "circuit_group", "cluster_group", "config_context", "custom_field", "custom_field_choice_set", "custom_link", "event_rule", "export_template", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy", "webhook"}:
         return row.get("name") == attrs["name"]
     if kind == "region":
@@ -1009,6 +1033,7 @@ def _candidate_bucket_key(obj, ids, objects=None):
         return "slug", attrs["slug"]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
                 "virtual_machine",
+                "bgp_peer_group", "bgp_routing_policy", "bgp_session",
                 "cable_bundle", "circuit_group", "cluster_group", "config_context", "custom_field", "custom_field_choice_set", "custom_link", "event_rule", "export_template", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy", "webhook"}:
         return "name", attrs["name"]
     if kind == "aggregate":
@@ -1114,6 +1139,7 @@ def _row_bucket_keys(kind, row):
         return [("slug", row.get("slug"))]
     if kind in {"contact", "module_type_profile", "owner", "owner_group", "vrf", "cluster",
                 "virtual_machine",
+                "bgp_peer_group", "bgp_routing_policy", "bgp_session",
                 "cable_bundle", "circuit_group", "cluster_group", "config_context", "custom_field", "custom_field_choice_set", "custom_link", "event_rule", "export_template", "ike_policy", "ike_proposal", "inventory_item_role", "ip_sec_policy", "ip_sec_profile", "ip_sec_proposal", "l2vpn", "rack_group", "role", "tenant_group", "tunnel", "tunnel_group", "virtual_chassis", "virtual_machine_type", "vlan_translation_policy", "webhook"}:
         return [("name", row.get("name"))]
     if kind == "aggregate":
@@ -2190,7 +2216,7 @@ def _rest_create_fields(kind, obj):
         return set(obj["attrs"]) | {"manufacturer"}
     if kind == "provider_account":
         return set(obj["attrs"]) | {"provider"} | ({"owner"} if "owner" in obj["refs"] else set())
-    if kind in EXTRAS_CREATE_KINDS:
+    if kind in EXTRAS_CREATE_KINDS | PLUGIN_CREATE_KINDS:
         fields = set(obj["attrs"]) | set(obj["refs"])
         if "action_object" in fields:
             # The serializer writes the generic action through its two native
@@ -2208,7 +2234,7 @@ def _render_rest_create(obj, ids, objects=None):
         if "owner" in obj["refs"]:
             payload["owner"] = ids[obj["refs"]["owner"]]
         return payload
-    if obj["kind"] in EXTRAS_CREATE_KINDS:
+    if obj["kind"] in EXTRAS_CREATE_KINDS | PLUGIN_CREATE_KINDS:
         payload = {**obj["attrs"]}
         for name, key in obj["refs"].items():
             if name == "action_object":

@@ -51,6 +51,20 @@ input port now carries the draw of the inlets cabled to its outlets — NetBox
 does not roll that up, so an empty input made every feed report 0 W and left the
 utilisation view dark. Both change every estate's canonical graph, so 0.12 plans
 reject growth by version and must be regenerated.
+v0.14 is a new baseline adding BGP inventory to the **provider backbone only**
+(`estates/bgp.py`): four named routing policies, three peer groups and one
+session per modeled adjacency — an iBGP route-reflector pair at the first PoP in
+the permanent `provider-pop-order` ledger, an eBGP session per transit handoff
+and one per private-L3 customer access circuit. A provider estate with zero BGP
+sessions is the loudest synthetic tell to a network engineer, and both the
+`netbox_bgp` tables and Visual Explorer's `bgp-topology` view rendered empty.
+These are documentation records exactly like the inert webhook: nothing is
+configured, applied or established, no session state, convergence or route
+exchange is claimed, and the named policies deliberately carry no rules. Only
+the provider profile changes, but the version bump is required so frozen plans
+reject growth with their own message rather than a validator's — and, because
+the generator version participates in stable choices, procurement dates and
+serials reroll across every profile.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under
@@ -222,6 +236,13 @@ binding the whole artifact's digest, and `just lab-verify`
 (`--diode-delivered-only`) verifies a replayed target under the same
 restriction. Keep the webhook endpoint reserved-invalid and its rule disabled:
 this is inert inventory, never an executed integration.
+The provider's three `netbox_bgp` records join that set for the same reason —
+the SDK carries no plugin entity at all — and additionally take the REST create
+path rather than a TurboBulk job: their routing-policy lists are many-to-many,
+and an installed TurboBulk model registry need not expose a plugin's models
+(read live from a pinned 4.7.1 tenant: 172 writable models, none of them
+`netbox_bgp`). A target without the plugin refuses the load at the REST schema
+preflight, before any write. No live receipt covers these three models yet.
 The loader supplies three model defaults the raw bulk path would otherwise
 manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`);
 strict readback compares only emitted fields and does not verify them.
@@ -271,6 +292,12 @@ for the separately recorded pinned-target live qualification.
   `validate_hospital.py`: independent care-unit and actual physical obligations.
 - `estates/provider.py`: finite PoP growth, customer private-L3 services and real
   NOC handoffs; `validate_provider.py`: independent topology, ownership and flow checks.
+- `estates/bgp.py`: the provider-only BGP inventory — named routing policies,
+  peer groups and one session per modeled adjacency (iBGP route-reflector pair,
+  eBGP transit and eBGP customer), all attributed from the finished graph and
+  all documentation records; `validate_provider.py` independently re-derives
+  them and refuses any record that claims configured or established routing.
+  Pinned by `tests/test_provider_bgp.py`.
 - `estates/retail.py`: store-format fleet, distribution centres and shared commerce
   services; `validate_retail.py`: independent format, segment, radio and WAN checks.
 - `estates/university.py`: one campus of keyed academic buildings, residence halls
@@ -323,7 +350,7 @@ for the separately recorded pinned-target live qualification.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
   `estates/turbobulk.py`: the bounded TurboBulk/REST adapter, including the
-  29-kind Cloud qualification and the full 102-kind contract (every current profile,
+  29-kind Cloud qualification and the full 105-kind contract (every current profile,
   the complete bank included), live-qualified
   only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
@@ -507,6 +534,27 @@ for the separately recorded pinned-target live qualification.
   Customer spoke-to-hub capacity is a finite declared flow model, not total
   backbone/NOC/transit traffic. Catalog additions require an explicit baseline;
   preserve hospital source/artifacts and historical live evidence.
+- Provider BGP records (`estates/bgp.py`, since 0.14.0) are inventory, never
+  execution. They document intended peerings so the `netbox_bgp` tables and the
+  `bgp-topology` view describe the same estate the rest of the graph does.
+  Nothing is configured, applied or established: no convergence, session state,
+  route exchange or policy evaluation may be claimed in code, descriptions,
+  docs or contracts — the inert-webhook precedent, restated on every record's
+  `comments` and checked independently. The reviewed kind set is closed to
+  routing policies, peer groups and sessions; a policy *rule*, community or
+  prefix list would read as configuration and the validator refuses it, and the
+  named policies therefore carry no rules. Every field is attributed from the
+  finished graph — PE `lo0` addresses, the transit and access circuits' own
+  terminations and cables, and the ASNs sites already reference — never
+  invented per site. A transit peer keeps `remote_prefix` on the real /31
+  rather than an invented remote address, because the remote interface and its
+  owner are unknown. iBGP is a route-reflector pair at the first PoP in the
+  permanent `provider-pop-order` ledger, not a full mesh: linear growth keeps
+  the 64-PoP ceiling bounded (a full mesh would be 8,128 sessions there) and
+  appending a PoP or customer appends sessions without moving an existing one.
+  The three `netbox_bgp` models have no Diode SDK entity, so they are
+  `LOADER_ONLY_KINDS` delivered only by `just load`, over the REST create path.
+  Live loading of these plugin models is unqualified; see docs/loading.md.
 - Shared DC power checks derive hardware and supply allowances from actual
   device-type references; removing descriptive hardware metadata cannot skip them.
   A PDU's own input port carries the totalled draw of the inlets cabled to its

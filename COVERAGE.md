@@ -108,9 +108,10 @@ image attachments from directly supported estate entities. Four models in that
 audit are nevertheless *generated* since phase 11: config contexts, export
 templates, the webhook and its event rule (still `native_without_sdk`, now
 marked `loader_only`). No Diode request can carry them, so the wire package
-omits them and `just load` is the only transport that delivers them. BGP-session objects
-are not an SDK Entity either; that needs an explicitly researched optional
-integration, not a promise of core Diode support. `device_config` has an SDK
+omits them and `just load` is the only transport that delivers them. The
+provider profile's three `netbox_bgp` kinds joined that set in 0.14.0 for the
+same reason — the SDK carries no plugin Entity at all — and are likewise
+loader-only; that is a loader delivery, never a promise of core Diode support. `device_config` has an SDK
 entry but the audited native/plugin pair does not provide a matching model.
 Users are existing-identity bindings, not generated accounts. Cable paths and
 termination rows are derived, not missing seed records. Images remain explicitly
@@ -344,7 +345,8 @@ by what it costs a demo.
 - No BGP sessions, so the BGP topology view is empty by construction; the
   plugin is installed and the estate models ASNs, so this is reachable scope
   rather than a limitation — it would need a new canonical kind and a
-  rebaseline.
+  rebaseline. (Fixed in 0.14.0 for the provider backbone only; see item 5
+  below. Other profiles still render that view empty, by design.)
 - Power chain reports **0 W allocated against 11.8 kW** (fixed in 0.13.0; see
   the 2026-09-30 review below). Traced: the feed
   connects to the PDU's own `Input` power port, and that port carries
@@ -465,6 +467,43 @@ delivered only by `just load`. Scope would be new canonical kinds, loader
 support, independent validators, docs and a new baseline - a reviewed addition,
 not a quick fix, and per this file's own standing rule it is backlog until
 explicitly authorised.
+
+> **IMPLEMENTED in 0.14.0** (explicitly authorised). `estates/bgp.py` gives the
+> provider backbone — and only the provider backbone — four named routing
+> policies, three peer groups and one session per modeled adjacency: an iBGP
+> route-reflector pair at the first PoP in the permanent `provider-pop-order`
+> ledger with every other PE as a client, one eBGP session per transit handoff
+> attributed from that circuit's own termination, and one per private-L3
+> customer access circuit. The default profile emits 4 + 3 + 14 records.
+>
+> Two corrections to the feasibility note above. The models load over the
+> **REST create path**, not a TurboBulk job: peer groups and sessions carry
+> many-to-many routing-policy lists the raw bulk path cannot express, and
+> `/api/plugins/turbobulk/models/` on a pinned 4.7.1 tenant listed 172 writable
+> models with no `netbox_bgp` among them, so a bulk job would fail preflight on
+> a target whose REST API is writable. And the target must have the plugin
+> installed; without it the REST schema preflight refuses before any write.
+>
+> Scope limit, restated because it is load-bearing: these are documentation
+> records in exactly the sense the inert webhook is. Nothing is configured,
+> applied or established; no convergence, session state, route exchange or
+> policy evaluation is claimed; the named policies carry no rules, and the
+> reviewed kind set is closed to those three. The independent checks live in
+> `estates/validate_provider.py` (`provider-bgp-inventory`, `-policy`,
+> `-group`, `-session`, `-scope-text`) and are pinned by
+> `tests/test_provider_bgp.py` — in particular
+> `ProviderBgpValidationTests.test_removing_the_bgp_inventory_is_rejected`
+> (the failing-mutation check for a revert),
+> `test_a_misattributed_peering_is_rejected`,
+> `test_dropping_the_inventory_only_note_is_rejected`,
+> `ProviderBgpGrowthTests.test_appending_a_pop_and_a_customer_never_moves_an_existing_session`
+> and `ProviderBgpScopeTests.test_every_record_states_that_nothing_is_configured_or_established`.
+>
+> **Still owed: live evidence.** Offline generation, validation and
+> `just load-check` pass. No load receipt yet covers these three plugin models
+> against a `netbox_bgp`-equipped target, and no rendered `bgp-topology`
+> screenshot has been taken. Until both exist, this entry claims implementation
+> only, not target behaviour.
 
 **Product-side observations (not ours, not filed).** The WAN geo map never fits
 the viewport to the data: it opens at full globe and stays there whether scoped

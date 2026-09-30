@@ -229,7 +229,7 @@ execute Assurance-review mode. A standalone REST loader is not implemented yet,
 so the selector reports that gap rather than silently omitting unsupported objects.
 
 The frozen v0.2 bank qualifies 29 canonical kinds through TurboBulk on Cloud.
-The compiler now covers 102 kinds — every kind any current profile emits, the complete bank included — with all 57 in the current enterprise data
+The compiler now covers 105 kinds — every kind any current profile emits, the complete bank included, plus the provider's three netbox_bgp plugin models — with all 57 in the current enterprise data
 center artifact, with REST relationship completion and resumable REST creation for
 models absent from TurboBulk — including the four automation kinds, which no
 Diode package can carry at all (see [loading](loading.md#artifacts-and-diode)). The configured NetBox 4.6.8 target lacks the 4.7

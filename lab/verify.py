@@ -82,8 +82,18 @@ for _app, _kinds in {
         ENDPOINTS[_kind] = f"{_app}/{_slug[:-1] + 'ies' if _slug.endswith('policy') else _slug + 's'}"
 ENDPOINTS.update(mac_address="dcim/mac-addresses", virtual_chassis="dcim/virtual-chassis",
                  journal_entry="extras/journal-entries")
+# netbox_bgp 0.20.1 registers its viewsets under /api/plugins/bgp/.
+ENDPOINTS.update(bgp_routing_policy="plugins/bgp/routing-policy",
+                 bgp_peer_group="plugins/bgp/bgppeergroup",
+                 bgp_session="plugins/bgp/session")
 CONTENT_TYPES = {kind: f"{path.split('/')[0]}.{kind.replace('_', '')}"
                  for kind, path in ENDPOINTS.items()}
+# A plugin endpoint's first path segment is "plugins", not its Django app
+# label; name the real content types rather than leaving a wrong string that a
+# future generic reference would silently pick up.
+CONTENT_TYPES.update(bgp_routing_policy="netbox_bgp.routingpolicy",
+                     bgp_peer_group="netbox_bgp.bgppeergroup",
+                     bgp_session="netbox_bgp.bgpsession")
 # These are readback identities, not a reimplementation of every Diode matcher.
 IDENTITIES = {kind: ("name",) for kind in ENDPOINTS}
 IDENTITIES.update({

@@ -365,13 +365,40 @@ replacement name to TurboBulk loads.
 The export contract is pinned to **netboxlabs-diode-sdk 1.14.0**, whose
 `IngestRequest` has no entity for four kinds every estate carries: the
 automation records (`config_context`, `export_template`, `webhook`,
-`event_rule`). The wire package therefore omits them and records exactly what it
-left out in `diode/manifest.json` under `loader_only_records`; only
-`just load` (TurboBulk plus bounded REST) delivers them. A Diode-seeded target
-holds the estate without them, so verify it with `just lab-verify` (which passes
-`--diode-delivered-only`: the same restriction, recorded in its receipt).
-`just verify-target` is the complete gate and expects every record, including
-these.
+`event_rule`). The provider backbone adds three more — its BGP inventory
+(`bgp_routing_policy`, `bgp_peer_group`, `bgp_session`), carried by the
+`netbox_bgp` plugin, for which the SDK has no entity because it carries no
+plugin entity at all. The wire package therefore omits all of them and records
+exactly what it left out in `diode/manifest.json` under `loader_only_records`;
+only `just load` (TurboBulk plus bounded REST) delivers them. A Diode-seeded
+target holds the estate without them, so verify it with `just lab-verify`
+(which passes `--diode-delivered-only`: the same restriction, recorded in its
+receipt). `just verify-target` is the complete gate and expects every record,
+including these.
+
+### netbox_bgp: a plugin the target must already have
+
+The three BGP kinds take the bounded **REST create** path, not a TurboBulk job,
+for two independent reasons: peer groups and sessions carry many-to-many
+routing-policy lists the raw bulk path cannot express, and a plugin's models
+are not guaranteed to appear in an installed TurboBulk model registry — read
+live from a pinned 4.7.1 tenant, that registry listed 172 writable models and
+none of them `netbox_bgp`, while the plugin's REST API is perfectly writable
+where it is installed.
+
+Consequences to plan for:
+
+- **The target must have `netbox_bgp` installed** (verified against 0.20.1).
+  Without it, `_rest_schema_preflight` fails at
+  `/api/plugins/bgp/session/` **before any write**, naming the kind.
+- The rows are branch-scoped: they live and die with the branch, keep their own
+  create-ChangeDiff on a reviewable load, and need no `just retire` handling.
+- `_create_rest` re-lists the endpoint once per row, so creation cost is
+  quadratic in session count. That is invisible at the tens of rows a demo
+  provider reaches and is marked as a known ceiling in `turbobulk.py`.
+- **No live receipt covers these three models yet.** Offline generation,
+  validation and `load-check` pass; a live load against a `netbox_bgp`-equipped
+  target is owed qualification, not recorded evidence.
 
 The optional devenv `diode` profile installs the SDK in a devenv-managed
 environment:
@@ -459,7 +486,7 @@ assume that previously open deviations will be applied or replayed automatically
 
 One complete mixed TurboBulk/REST estate has passed strict Cloud readback. Its
 29-kind qualification compiler is callable through `just load`. The compiler now
-covers 102 kinds — every kind any current profile emits, the complete bank included — with all 57 kinds and references in the current enterprise
+covers 105 kinds — every kind any current profile emits, the complete bank included, plus the provider's three netbox_bgp plugin models — with all 57 kinds and references in the current enterprise
 data center artifact, with content-type-safe generic relationships, deferred
 many-to-many fields,
 and resumable REST creation when a required model is absent from TurboBulk. A fresh write

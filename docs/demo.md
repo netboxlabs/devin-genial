@@ -109,7 +109,7 @@ Changing `--vendor` moves counts similarly.
 | `enterprise-data-center` | 2 DCs, 4 workloads, 36 rack-diverse VMs | 2,973 | 2 | 60 | 248 |
 | `school-district` | 1 district DC, 2 campuses, 20 classrooms, 1 lab | 4,366 | 3 | 241 | 437 |
 | `hospital-clinics` | 1 DC, 1 hospital (3 wards, 2 imaging), 2 clinics | 4,682 | 4 | 177 | 402 |
-| `provider-backbone` | 3 PoPs in 3 metros, 2 customers, 5 premises | 3,532 | 9 | 97 | 267 |
+| `provider-backbone` | 3 PoPs in 3 metros, 2 customers, 5 premises (incl. 23 BGP records) | 3,555 | 9 | 97 | 267 |
 | `retail-chain` | 2 commerce DCs, support centre, 1 DC, 6 stores | 9,977 | 10 | 396 | 926 |
 | `university-campus` | Campus DC, 2 academic buildings, 1 hall, library | 8,490 | 5 | 491 | 881 |
 | `msp` | 1 NOC, 3 accounts, 5 managed offices | 5,623 | 6 | 225 | 508 |
@@ -163,7 +163,10 @@ With `--target` and `--branch` the composer additionally runs `just branch`,
 `just load` and `just verify-target`, in that order, through the loader's own
 gated path — so [first target](first-target.md)'s prerequisites still apply in
 full: NetBox 4.7+, the Branching and TurboBulk plugins, a token with
-`TURBOBULK_WRITES=1`, and one live namespace per branch. **The composer
+`TURBOBULK_WRITES=1`, and one live namespace per branch. A
+`provider-backbone` demo additionally needs the **`netbox_bgp`** plugin on the
+target, for its BGP inventory; without it the load stops at preflight, before
+any write. **The composer
 automates [§3 to §6](first-target.md#3-check-the-artifact-offline); read §1, §2
 and §10 before you point it at a customer target.** The Justfile recipe sources
 `.env` only when `NETBOX_TOKEN` is not already exported, exactly like `just

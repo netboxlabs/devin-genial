@@ -724,11 +724,15 @@ def markdown(plan):
             "Customer premises are single-homed. The backbone's router/link survival checks do not make a customer's CE or access circuit redundant. "
             "PE management uses lo0 in-band; fxp0 remains uncabled and unaddressed. NOC services have two physical PoP attachments. "
             "External transit remote interfaces and their owners are unknown.", "",
+            "BGP inventory documents the same graph a second way: open a PE's BGP Sessions tab to see its route-reflector "
+            "peerings over lo0, its transit peering at the carrier handoff, and one customer peering per access circuit. "
+            "A transit peering names the real /31 as its remote prefix rather than inventing the carrier's address.", "",
             "Traffic checks cover declared customer spoke-to-hub flows, with a stable shortest-hop path and each single inter-PoP span loss. "
             "They exclude NOC, transit and background demand; peer membership does not imply an all-to-all traffic matrix. "
             "Carrier-wide failures are outside these checks. Per-PoP carrier diversity is not guaranteed; "
             "the table shows actual inter-PoP span providers, which may share further unmodeled infrastructure. "
-            "No BGP session, MPLS forwarding, routing convergence or measured throughput is established.", ""])
+            "The estate's BGP records document intended peerings only: no session is established or configured, and "
+            "no MPLS forwarding, routing convergence or measured throughput is claimed.", ""])
         transport_by_site = defaultdict(Counter)
         for circuit in kinds["circuit"]:
             ends = terms[circuit["key"]]

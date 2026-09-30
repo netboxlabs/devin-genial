@@ -24,10 +24,14 @@ duplicate or negative slots are invalid. Capacity is checked before allocation.
 Each object is `{key, kind, attrs, refs, meta}`. `key` is an immutable plan-local
 identity. `kind` is a snake_case NetBox model name, normally a Diode entity type;
 the four automation kinds (`config_context`, `export_template`, `webhook`,
-`event_rule`) have no entity in the pinned SDK, so the wire export omits them and
+`event_rule`) and the provider profile's three `netbox_bgp` kinds
+(`bgp_routing_policy`, `bgp_peer_group`, `bgp_session`) have no entity in the
+pinned SDK, so the wire export omits them and
 declares the omission, and only the TurboBulk/REST loader delivers them
 (`estates/diode.py: LOADER_ONLY_KINDS`). A delivered record may never reference a
-loader-only one. `attrs` contains scalar/list
+loader-only one. A plugin kind's model label is its package name
+(`netbox_bgp.bgpsession`), not the `/api/plugins/bgp/` REST path segment.
+`attrs` contains scalar/list
 values using SDK field names. `refs` maps SDK field names to object keys (or lists
 of keys). `meta` contains generator-only reasoning and assertions, never sent as
 ordinary NetBox fields. Nested references must resolve to exactly one canonical
@@ -79,6 +83,20 @@ A config context's `data` is a graph derivation, not authored text: its
 service listeners bind. Export-template `object_types` must be object types the
 plan emits. The webhook's `payload_url` is a reserved `.invalid` host and its
 event rule is `enabled: false`, so the estate dispatches nothing.
+
+BGP records carry `meta.bgp = true` and exist only in the provider profile.
+They are documentation of intended peerings, in exactly the sense the inert
+webhook is: nothing is configured, applied or established, and no session
+state, convergence, route exchange or policy evaluation is claimed. Every one
+carries that statement in `attrs.comments`, and the independent provider
+validator rejects a record that drops it. `bgp_routing_policy` has no `refs` —
+a named policy is inventory, a rule set would be configuration — and the
+reviewed kind set is closed to those three; a policy rule, community or prefix
+list is refused. Session references are derived, never authored per site:
+`local_address`/`remote_address` are the estate's own loopback or `/31`
+addresses, `local_as`/`remote_as` are ASNs sites already reference, and a
+transit session carries `remote_prefix` on the real `/31` instead of inventing
+the carrier's address, because the remote interface and owner are unknown.
 
 `meta.external = true` marks a matching dependency, currently only an existing
 `user` with `attrs.username`. `reservation_user` binds that username explicitly;

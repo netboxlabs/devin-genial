@@ -324,6 +324,17 @@ preserving occupied ports, links, addresses and journals. The recipe supports
 demand must fit those ports and purchased headroom; unsupported demand fails
 with an explanation. The profile guide owns the complete limits.
 
+Since 0.14.0 the provider — and only the provider — also carries BGP inventory
+for the `netbox_bgp` plugin: four named routing policies, three peer groups, an
+iBGP route-reflector pair with every other PE as a client, one eBGP session per
+transit handoff and one per customer access circuit. Every field is attributed
+from the graph (PE loopbacks, the circuits' own terminations, the ASNs sites
+already reference). These are **documentation records**: nothing is configured,
+applied or established, and no session state or convergence is claimed. They
+need the plugin on the target and a `just load` delivery — no Diode package
+carries them. See [BGP inventory](modeling.md#provider-bgp-inventory) and
+[loading](loading.md#netbox_bgp-a-plugin-the-target-must-already-have).
+
 The report follows actual A/Z handoffs, service membership and support contacts.
 PE management is in-band. Backbone connectivity and scoped spoke-to-hub traffic
 checks do not establish customer access redundancy, routing convergence, or

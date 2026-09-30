@@ -33,7 +33,11 @@ class ProviderReportTests(unittest.TestCase):
         text = markdown(self.plan)
         self.assertEqual(before, canonical(self.plan))
         for phrase in ("Provider service walkthrough", "single-homed", "lo0 in-band", "fxp0",
-                       "spoke-to-hub", "exclude NOC, transit and background", "BGP session", "Wireless is outside"):
+                       "spoke-to-hub", "exclude NOC, transit and background",
+                       # The estate emits BGP records, so the walkthrough points at
+                       # them and the scope note denies execution rather than existence.
+                       "BGP inventory documents the same graph",
+                       "no session is established or configured", "Wireless is outside"):
             self.assertIn(phrase, text)
         self.assertNotIn("Provider interiors are abstracted.", text)
         self.assertNotIn("WAN capacity by provider and site", text)

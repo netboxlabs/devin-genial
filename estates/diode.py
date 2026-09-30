@@ -122,10 +122,13 @@ for _kind, _fields in {
 # The pinned SDK's IngestRequest has no Entity for these NetBox models, so no
 # Diode request can carry them: verified against
 # netboxlabs.diode.sdk.diode.v1.ingester_pb2.Entity (107 fields, none of them
-# extras automation records), and recorded in catalog/type-coverage.json under
-# native_without_sdk. The TurboBulk/REST loader delivers them; the manifest
-# below records exactly what this package omits.
-LOADER_ONLY_KINDS = {"config_context", "export_template", "webhook", "event_rule"}
+# extras automation records and none of them plugin models), and recorded in
+# catalog/type-coverage.json under native_without_sdk. The TurboBulk/REST
+# loader delivers them; the manifest below records exactly what this package
+# omits. The three netbox_bgp models are the provider profile's BGP inventory
+# (estates/bgp.py); the SDK carries no plugin entity at all.
+LOADER_ONLY_KINDS = {"config_context", "export_template", "webhook", "event_rule",
+                     "bgp_routing_policy", "bgp_peer_group", "bgp_session"}
 LOADER_ONLY_REASON = (
     "No entity exists for these models in Diode SDK "
     f"{SDK_VERSION}; only the TurboBulk/REST loader (just load) delivers them.")

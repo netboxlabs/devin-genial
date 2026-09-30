@@ -1,7 +1,9 @@
 """A finite private-L3 provider, composed from persistent physical attachments.
 
 The authored traffic model is directed customer spoke-to-hub demand only.
-No routing daemon, BGP session, forwarding or carrier duct survey is simulated.
+No routing daemon, forwarding or carrier duct survey is simulated. The BGP
+records `estates/bgp.py` attaches are documentation inventory in the same
+sense: an intended peering is recorded, nothing is configured or established.
 """
 
 from collections import Counter, defaultdict, deque
@@ -12,7 +14,7 @@ from hashlib import sha256
 import ipaddress
 import re
 
-from . import datacenter, equipment, ipv6, networking, operations, places, poe, optics
+from . import bgp, datacenter, equipment, ipv6, networking, operations, places, poe, optics
 from .blocks import Site, foundation, trunk
 from .model import DesignError, World, canonical, resolve_bank_recipe, resolve_demo
 from .naming import titleize
@@ -197,7 +199,7 @@ def _registry(w):
     ns,r = w.recipe["namespace"],w.recipe
     w.add("rir","rir/private",dict(name="Private allocations",slug=f"{ns}-private",is_private=True))
     w.add("asn_range","asn-range/private",dict(name="Provider routing domains",slug=f"{ns}-routing",
-          start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASN reservation; no BGP sessions are configured"),{"rir":"rir/private"})
+          start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASN reservation; peering records are inventory, never applied configuration"),{"rir":"rir/private"})
     for key,offset in (("operator",0),("transit-a",1),("transit-b",2)):
         w.add("asn",f"asn/{key}",dict(asn=r["asn_base"]+offset,description=f"{ns} {key} routing identity"),{"rir":"rir/private"})
     for label,name in (("operator",r["name"]),("transport-a","Northstar Transport"),("transport-b","Meridian Transport"),
@@ -533,4 +535,5 @@ def _generate(recipe,previous=None):
         transport_spans=len(recipe["pops"])*2-3,capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
         management_mode="in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
     equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w); operations.supporting_records(w)
+    bgp.enrich(w)
     return w.finish()

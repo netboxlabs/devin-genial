@@ -1180,6 +1180,30 @@
       "reason": "Authentication, authorization, runtime jobs/cache/audit, UI preferences, automation, internal join rows, or plugin operation; outside infrastructure estate expectations.",
       "sdk_top_level": false,
       "plugin_advertised_model": false
+    },
+    {
+      "native_model": "netbox_bgp.routingpolicy",
+      "kind": "bgp_routing_policy",
+      "category": "loader_only",
+      "reason": "Generated provider-backbone BGP inventory carried by the netbox_bgp plugin, with no matching SDK Entity: the TurboBulk/REST loader creates it and the Diode package records it as omitted. Documentation records only - nothing is configured, applied or established. Branch-scoped under Branching 1.2.1. Named policies carry no rules.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "netbox_bgp.bgppeergroup",
+      "kind": "bgp_peer_group",
+      "category": "loader_only",
+      "reason": "Generated provider-backbone BGP inventory carried by the netbox_bgp plugin, with no matching SDK Entity: the TurboBulk/REST loader creates it and the Diode package records it as omitted. Documentation records only - nothing is configured, applied or established. Branch-scoped under Branching 1.2.1.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
+    },
+    {
+      "native_model": "netbox_bgp.bgpsession",
+      "kind": "bgp_session",
+      "category": "loader_only",
+      "reason": "Generated provider-backbone BGP inventory carried by the netbox_bgp plugin, with no matching SDK Entity: the TurboBulk/REST loader creates it and the Diode package records it as omitted. Documentation records only - nothing is configured, applied or established. Branch-scoped under Branching 1.2.1.",
+      "sdk_top_level": false,
+      "plugin_advertised_model": false
     }
   ]
 }

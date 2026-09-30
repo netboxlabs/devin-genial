@@ -118,10 +118,19 @@ backbone-capacity guarantee. NOC peak only establishes local purchased handoff
 headroom. Router and local-pair failures have a connectivity witness only, not
 capacity or single-homed customer-availability guarantees.
 
-No BGP sessions, MPLS labels, firewall policies, running routing configuration,
-packet forwarding, public Internet service or application recovery are
-executed. Private ASN and route-target inventory express intended routing
-relationships. Use the common `loss-of-power-diversity` demo for a real NOC
+No MPLS labels, firewall policies, running routing configuration, packet
+forwarding, public Internet service or application recovery are executed.
+Private ASN and route-target inventory express intended routing
+relationships, and so — since 0.14.0 — do the estate's
+[BGP records](../docs/modeling.md#provider-bgp-inventory): four named routing
+policies (no rules), three peer groups, an iBGP route-reflector pair with every
+other PE as a client, one eBGP session per transit handoff and one per customer
+access circuit. They are documentation of intended peerings. Nothing is
+configured, applied or established; no convergence, session state, route
+exchange or policy evaluation is claimed, and a session's `active` status is
+the plugin's inventory status for an intended peering, not observed state.
+Delivering them needs the `netbox_bgp` plugin on the target and `just load`; no
+Diode package carries them, and no live receipt covers them yet. Use the common `loss-of-power-diversity` demo for a real NOC
 service-host power-path change, exact expected findings and inverse restoration;
 the provider-specific span-maintenance scenario below changes one inventory
 status while retaining all physical records.

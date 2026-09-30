@@ -72,7 +72,7 @@ through everything below.
 | Enterprise data center | [enterprise-dc.toml](profiles/enterprise-dc.toml) · [guide](docs/usage.md#enterprise-data-center) | Workload demand, replicas, placement and compute capacity | **Yes** (NetBox 4.7+) |
 | School district | [school-district.toml](profiles/school-district.toml) · [guide](profiles/school-district.md) | Classrooms, enrollment, wired seats, wireless demand and district services | **Yes** (NetBox 4.7+) |
 | Hospital and clinics | [hospital-clinics.toml](profiles/hospital-clinics.toml) · [guide](profiles/hospital-clinics.md) | Wards, clinics, medical endpoints, support responsibilities and shared services | **Yes** (NetBox 4.7+) |
-| Provider backbone | [provider-backbone.toml](profiles/provider-backbone.toml) · [guide](profiles/provider-backbone.md) | PoPs, customer premises, private-L3 services and purchased transport | **Yes** (NetBox 4.7+) |
+| Provider backbone | [provider-backbone.toml](profiles/provider-backbone.toml) · [guide](profiles/provider-backbone.md) | PoPs, customer premises, private-L3 services, purchased transport and [BGP inventory](docs/modeling.md#provider-bgp-inventory) | **Yes** (NetBox 4.7+, `netbox_bgp` plugin) |
 | Retail chain | [retail-chain.toml](profiles/retail-chain.toml) · [guide](profiles/retail-chain.md) | Store formats, point-of-sale lanes, distribution centres and shared commerce services | **Yes** (NetBox 4.7+) |
 | University campus | [university-campus.toml](profiles/university-campus.toml) · [guide](profiles/university-campus.md) | Academic buildings, residence halls, a library, dense per-zone wireless and shared campus services | **Yes** (NetBox 4.7+) |
 | Managed service provider | [msp.toml](profiles/msp.toml) · [guide](profiles/msp.md) | One NOC operating many customer accounts, each its own tenant, with nothing shared between them | **Yes** (NetBox 4.7+) |
@@ -227,7 +227,7 @@ quarantine name and the same command resumes by the old immutable branch ID.
 Use the printed replacement name for the next load and future reset. If Diode routes
 to the branch schema ID, copy the new ID into `DIODE_BRANCH` and refresh the
 configuration attestation before loading.
-The TurboBulk adapter compiles the full 102-kind contract — every kind any
+The TurboBulk adapter compiles the full 105-kind contract — every kind any
 current profile emits, the complete bank included — and the complete path is
 live-qualified on both the pinned local 4.7.1 stack and a NetBox Cloud 4.7.1
 tenant (full-contract estates and a 128,932-object load, each to exact strict

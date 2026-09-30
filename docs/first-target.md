@@ -30,6 +30,11 @@ anything at a customer's NetBox. Read this page once, then use `just demo`.
   worker death leaves its branch permanently unrecoverable — fresh branch
   only. Source builds may report version `0.0.0` even when they carry the
   reaper, so confirm with whoever built the target.
+- **The `netbox_bgp` plugin (0.20.1), for the provider-backbone profile only.**
+  Since 0.14.0 a provider estate emits routing policies, peer groups and BGP
+  sessions; those three models live in that plugin, and the loader's REST
+  schema preflight refuses the load — naming the kind, before any write — on a
+  target without it. Every other profile is unaffected.
 - On **NetBox Cloud** these are managed platform plugins: enabling or
   upgrading them on a tenant is a NetBox Labs operations action, not a tenant
   setting — request it through your account or support channel. On

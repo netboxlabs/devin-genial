@@ -155,7 +155,11 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         self.assertEqual(REST_CREATE_KINDS,
                          {"module_bay_type", "provider_account", "custom_field",
                           "custom_field_choice_set", "custom_link", "config_context",
-                          "event_rule", "export_template", "webhook"})
+                          "event_rule", "export_template", "webhook",
+                          # netbox_bgp rows (provider only): m2m policy lists the
+                          # raw bulk path cannot express, on a plugin model an
+                          # installed TurboBulk registry need not expose at all.
+                          "bgp_routing_policy", "bgp_peer_group", "bgp_session"})
 
     def test_missing_rest_completion_field_fails_preflight(self):
         client = SchemaClient(self.objects)

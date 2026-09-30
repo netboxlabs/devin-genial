@@ -27,6 +27,33 @@ SERVICE_POLICY = (("identity", "premises", 128, 4, 8192, 100000, 443),
                   ("dns", "pops", 16, 2, 4096, 40000, 53),
                   ("monitoring", "pops", 16, 4, 16384, 200000, 443),
                   ("provisioning", "premises", 128, 4, 8192, 100000, 443))
+# The BGP obligation, restated here rather than read from estates/bgp.py. These
+# records document an intended peering: nothing is configured, applied or
+# established anywhere in this generator, so the inert note below is mandatory
+# on every one of them and the reviewed kind set stays closed (a policy *rule*,
+# a community or a prefix list would read as configuration and is refused).
+BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
+BGP_NOTE = ("Documentation inventory: the intended peering is recorded, nothing is "
+            "configured, applied or established. No session state, route exchange or "
+            "policy evaluation is claimed.")
+BGP_POLICIES = {
+    "transit-in": ("Transit Import", 100,
+                   "Reference intent for prefixes accepted from an upstream transit peer"),
+    "transit-out": ("Transit Export", 110,
+                    "Reference intent for prefixes advertised to an upstream transit peer"),
+    "customer-in": ("Customer Import", 200,
+                    "Reference intent for prefixes accepted from a private-L3 customer edge"),
+    "customer-out": ("Customer Export", 210,
+                     "Reference intent for prefixes advertised to a private-L3 customer edge"),
+}
+BGP_GROUPS = {
+    "ibgp-core": ("iBGP Core", "Internal peerings between provider edge loopbacks",
+                  (), (), True),
+    "transit": ("Transit Upstream", "External upstream peerings at the backbone transit handoffs",
+                ("transit-in",), ("transit-out",), False),
+    "customer": ("Customer Private L3", "Customer edge peerings on private-L3 access circuits",
+                 ("customer-in",), ("customer-out",), False),
+}
 
 
 def _integer(value, low, high):
@@ -618,7 +645,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         used_pe_ports[router].add(port)
         return router, port
 
-    attachments = {}
+    attachments, customer_peerings, transit_peerings = {}, {}, {}
     for sid, (customer, pop, ordinal) in premises.items():
         tenant, vrf = f"tenant/cust-{customer['key']}", f"vrf/customer/{customer['key']}"
         cpe, switch = f"device/{sid}/edge-01", f"device/{sid}/access-01"
@@ -628,6 +655,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         hub = pop == customer["hub_pop"] and ordinal == 1
         rate = customer["hub_commit_mbps"] if hub else next(t for t in recipe["wan_tiers_mbps"] if Decimal(t) * usable >= customer["site_peak_mbps"])
         key = f"circuit/customer/{sid}"
+        customer_peerings[sid] = (router, port, cpe, cpe_wan, tenant, customer["key"], key)
         routed(key, (cpe_wan, port), vrf, tenant)
         circuit(key, cpe_wan, port, f"site/{sid}", f"site/pop-{pop}", "provider/operator", 1000000, rate * 1000,
                 tenant, f"provider-account/customer/{customer['key']}")
@@ -699,6 +727,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         port = f"{router}/if/xe-0/1/7"
         used_pe_ports[router].add(port)
         key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
+        transit_peerings[side] = (router, port, provider, key)
         if attrs(f"provider-network/transit/{side}").get("description") != "External transit interior and remote interface owner are unknown":
             report("provider-scope-text", f"provider-network/transit/{side}", "External transit must not invent an inspected remote interior or interface owner.")
         routed(key, (port,), "vrf/provider")
@@ -798,6 +827,105 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for (link, origin, destination), load in loads.items():
             if Decimal(load) > Decimal(capacity[link]) * usable:
                 report("provider-route-capacity", link, f"Customer spoke-to-hub flow {load/1000:g} Mbps from {origin} to {destination} exceeds purchased usable capacity after {removed or 'no span'} removal; NOC, transit and other traffic are excluded.")
+    # --- BGP inventory: documentation records, never applied configuration ---
+    def ipv4_of(port):
+        found = [key for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses]
+        return found[0] if len(found) == 1 else None
+
+    def name_of(key):
+        value = attrs(key).get("name")
+        return value if isinstance(value, str) else ""
+
+    if extra_bgp := {k for k in by_kind if k.startswith("bgp_")} - BGP_KINDS:
+        report("provider-bgp-inventory", "plan", "Only routing policies, peer groups and sessions "
+               "are modeled; " + ", ".join(sorted(extra_bgp)) + " would read as device configuration.")
+    if by_kind["bgp_routing_policy"] != {f"bgp-routing-policy/{slug}" for slug in BGP_POLICIES}:
+        report("provider-bgp-inventory", "plan", "The estate carries exactly the four authored "
+               "named routing policies.")
+    if by_kind["bgp_peer_group"] != {f"bgp-peer-group/{slug}" for slug in BGP_GROUPS}:
+        report("provider-bgp-inventory", "plan", "The estate carries exactly the three authored "
+               "peer groups.")
+    for slug, (name, weight, description) in BGP_POLICIES.items():
+        key = f"bgp-routing-policy/{slug}"
+        expected = {"name": name, "weight": weight, "description": description,
+                    "comments": BGP_NOTE}
+        if kind(key) != "bgp_routing_policy" or attrs(key) != expected or refs(key):
+            report("provider-bgp-policy", key, "Each named routing policy must retain its authored "
+                   "name, weight and reference-intent description and carry no rule references.")
+    for slug, (name, description, imports, exports, internal) in BGP_GROUPS.items():
+        key = f"bgp-peer-group/{slug}"
+        expected = {"local_as": "asn/operator"}
+        if internal:
+            expected["remote_as"] = "asn/operator"
+        for field, policies in (("import_policies", imports), ("export_policies", exports)):
+            if policies:
+                expected[field] = [f"bgp-routing-policy/{p}" for p in policies]
+        if (kind(key) != "bgp_peer_group" or refs(key) != expected or
+                attrs(key) != {"name": name, "description": description, "comments": BGP_NOTE}):
+            report("provider-bgp-group", key, "Each peer group must retain its authored name, the "
+                   "operator's own routing identity and exactly its authored import/export policies.")
+    reflector_pop = ordered[0]
+    reflectors = [f"device/pop-{reflector_pop}/pe-{side}" for side in ("a", "b")]
+    clients = [f"device/pop-{pop}/pe-{side}" for pop in ordered[1:] for side in ("a", "b")]
+    expected_sessions = {}
+
+    def peering(local, remote_label, remote_as, group, description, local_address,
+                remote_address=None, remote_prefix=None, tenant=None):
+        expected = {"device": local, "site": refs(local).get("site"),
+                    "local_address": local_address, "local_as": "asn/operator",
+                    "remote_as": remote_as, "peer_group": f"bgp-peer-group/{group}"}
+        if remote_address is not None:
+            expected["remote_address"] = remote_address
+        else:
+            expected["remote_prefix"] = remote_prefix
+        if tenant is not None:
+            expected["tenant"] = tenant
+        return {"name": f"{name_of(local)} to {remote_label}", "status": "active",
+                "description": description, "comments": BGP_NOTE}, expected
+
+    expected_sessions[f"bgp-session/ibgp/{reflectors[0].removeprefix('device/')}/"
+                      f"{reflectors[1].removeprefix('device/')}"] = peering(
+        reflectors[0], f"{name_of(reflectors[1])} iBGP", "asn/operator", "ibgp-core",
+        "Internal peering between the two backbone route reflectors",
+        ipv4_of(f"{reflectors[0]}/if/lo0"), remote_address=ipv4_of(f"{reflectors[1]}/if/lo0"))
+    for client in clients:
+        for reflector in reflectors:
+            expected_sessions[f"bgp-session/ibgp/{client.removeprefix('device/')}/"
+                              f"{reflector.removeprefix('device/')}"] = peering(
+                client, f"{name_of(reflector)} iBGP", "asn/operator", "ibgp-core",
+                "Route-reflector client peering to the backbone reflector at "
+                f"{name_of(refs(reflector).get('site'))}",
+                ipv4_of(f"{client}/if/lo0"), remote_address=ipv4_of(f"{reflector}/if/lo0"))
+    for side, (router, port, provider, circuit_key) in sorted(transit_peerings.items()):
+        network = link_network.get(circuit_key)
+        candidates = prefixes_by_vrf_network[("vrf/provider", str(network))]
+        expected_sessions[f"bgp-session/transit/{side}"] = peering(
+            router, f"{name_of(provider)} transit", f"asn/transit-{side}", "transit",
+            f"External transit peering over {attrs(circuit_key).get('cid')}; the remote address "
+            "and interface owner are unknown", ipv4_of(port),
+            remote_prefix=candidates[0] if len(candidates) == 1 else None)
+    for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key) in sorted(customer_peerings.items()):
+        expected_sessions[f"bgp-session/customer/{sid}"] = peering(
+            router, f"{name_of(cpe)} customer", f"asn/customer/{ckey}", "customer",
+            f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
+            ipv4_of(port), remote_address=ipv4_of(cpe_wan), tenant=tenant)
+    if by_kind["bgp_session"] != set(expected_sessions):
+        report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair, "
+               "every other provider edge against both reflectors, each actual transit handoff and "
+               "each actual customer access circuit.")
+    for key, (expected_attrs, expected_refs) in sorted(expected_sessions.items()):
+        if None in expected_refs.values():
+            report("provider-bgp-session", key, "The addresses, prefix and endpoints this peering "
+                   "record cites must resolve to exactly one real object each.")
+            continue
+        if kind(key) != "bgp_session" or attrs(key) != expected_attrs or refs(key) != expected_refs:
+            report("provider-bgp-session", key, "Each peering record must be attributed from the "
+                   "actual loopback, handoff address, routing identity and circuit it documents.")
+    for key in sorted(k for kind_name in BGP_KINDS for k in by_kind[kind_name]):
+        if attrs(key).get("comments") != BGP_NOTE:
+            report("provider-bgp-scope-text", key, "Every BGP record must state that it is "
+                   "documentation inventory and claims no configured or established session.")
+
     findings.extend(validate_power(objects, catalog, [d for d in infrastructure if d not in routers], children, peers, cable_of, poe_watts=poe_watts, optics_watts=optics_watts))
     findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),
                     peak=recipe["noc_peak_mbps"], reserve=recipe["reserve_fraction"], strict_sites=False, network_offsets=DC_OFFSETS, poe_watts=poe_watts, optics_watts=optics_watts))

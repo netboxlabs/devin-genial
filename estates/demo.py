@@ -267,7 +267,10 @@ pop = "cleveland-central"
         ("**Trace one customer to its hub.** Start at a `ce-harbor-logistics-…` premises, follow "
          "its access circuit into the PoP, through the PE to the hub. Offered kbps is a finite "
          "declared flow model per spoke, not total backbone traffic, and span providers are shown "
-         "per PoP without any promise of carrier diversity. [The profile guide]"
+         "per PoP without any promise of carrier diversity. Then open the BGP topology view for "
+         "the same graph as peerings: an iBGP reflector pair over the PE loopbacks, one eBGP "
+         "session per transit handoff and one per customer circuit. Those records document "
+         "intended peerings — nothing is configured or established. [The profile guide]"
          "(@ROOT@/profiles/provider-backbone.md#planned-span-maintenance) has the "
          "planned-span-maintenance scenario if you want an outage story.")),
 

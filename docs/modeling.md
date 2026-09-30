@@ -18,6 +18,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Installed optics policy](#installed-optics-policy)
 - [Contact and journal context](#contact-and-journal-context)
   - [Automation records](#automation-records)
+- [Provider BGP inventory](#provider-bgp-inventory)
 - [Extending it](#extending-it)
 
 ## Procedural design, without AI
@@ -536,6 +537,59 @@ operator would build, without asserting that any integration ran.
 The pinned Diode SDK 1.14.0 has no ingest entity for any of these four kinds, so
 the wire package omits them and names the omission in its manifest; only
 `just load` delivers them (see [loading](loading.md#artifacts-and-diode)).
+
+## Provider BGP inventory
+
+The provider backbone — and only the provider backbone — also carries BGP
+records for the `netbox_bgp` plugin, since 0.14.0. A provider network with no
+BGP is the loudest synthetic tell a network engineer can spot, and both the
+plugin's own tables and Visual Explorer's `bgp-topology` view rendered empty
+without them.
+
+**They are documentation, not configuration.** Genial generates no device
+configuration, applies nothing to any device, establishes no session and claims
+no protocol state — no convergence, no route exchange, no policy evaluation.
+A session's `status` is the plugin's inventory status for an *intended*
+peering, not observed state. Every record repeats that in its `comments`, and
+the independent validator refuses one that does not. This is the same rule the
+inert webhook follows.
+
+What the estate emits:
+
+| Kind | Count | Content |
+| --- | --- | --- |
+| Routing policy | 4 | `Transit Import/Export`, `Customer Import/Export`, each weighted and described as reference intent. **No rules**: a named policy is inventory, a rule set would read as configuration. |
+| Peer group | 3 | `iBGP Core`, `Transit Upstream`, `Customer Private L3`. Each carries the operator's own ASN as `local_as`; the transit and customer groups bind the matching import/export policies. |
+| Session | 1 + 2(2N−2) + T + C | One record per modeled adjacency, for N PoPs, T transit handoffs and C customer premises. |
+
+Sessions come in three families, and every field is attributed from the
+finished graph rather than authored per site:
+
+- **iBGP** runs over the PEs' in-band `lo0` loopbacks, as a **route-reflector
+  pair** rather than a full mesh. The two PEs at the first PoP in the permanent
+  `provider-pop-order` ledger are the reflectors; every other PE peers with
+  both, and the reflectors peer with each other. That is linear in PoP count,
+  so the 64-PoP recipe ceiling stays bounded — a full mesh would be 8,128
+  sessions there — and it is how a regional backbone of this size is actually
+  built. Exactly one record per adjacency; there is no reversed duplicate.
+- **eBGP transit** is attributed from the transit circuit's own termination and
+  cable: the PE that really hosts the handoff, its `/31` address, and the
+  upstream provider's own ASN. The far end stays `remote_prefix` on that real
+  `/31` rather than an invented remote address, because the remote interface
+  and its owner are unknown — the same limit the transit journals and the
+  provider network record already state.
+- **eBGP customer** is attributed from each private-L3 access circuit: the
+  serving PE and its `/31` address as local, the CE's address as remote, the
+  customer's own ASN from its site, and the customer tenant.
+
+Growth is stable. Appending a PoP or a customer appends sessions and never
+moves an existing one: the reflector pair is chosen by a permanent ordinal, and
+every other session is keyed by the circuit or device it documents.
+
+Transport: the three `netbox_bgp` models have no Diode SDK entity — the SDK
+carries no plugin entity at all — so they are loader-only like the automation
+pack, and they take the bounded REST create path
+(see [loading](loading.md#artifacts-and-diode)).
 The shared bank/DC/school milestone passed independent offline review and live
 Harbor qualification: 3,331 objects match initial/repeat strict readback with
 unchanged IDs. See `build/goal-richness/live/summary.json` and `walkthrough.md`

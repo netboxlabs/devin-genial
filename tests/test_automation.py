@@ -461,9 +461,12 @@ class AutomationTransportTests(unittest.TestCase):
         verdict = json.loads(output.getvalue())
         self.assertTrue(verdict["turbobulk_loadable"], verdict)
         self.assertEqual(verdict["turbobulk_uncovered"], [])
-        self.assertEqual(verdict["turbobulk_only_kinds"], sorted(LOADER_ONLY_KINDS))
+        # A bank estate carries the automation pack only; the remaining
+        # loader-only kinds are the provider profile's BGP inventory.
+        automation = set(AUTOMATION_KEYS.values())
+        self.assertEqual(verdict["turbobulk_only_kinds"], sorted(automation))
         self.assertEqual(verdict["turbobulk_only_records"], 6)
-        self.assertTrue(set(LOADER_ONLY_KINDS) <= set(verdict["rest_create_kinds"]))
+        self.assertTrue(automation <= set(verdict["rest_create_kinds"]))
 
 
 if __name__ == "__main__":
