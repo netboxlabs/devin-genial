@@ -761,6 +761,25 @@ seeder POST declares `Content-Type: application/json` (regression-pinned).
 These are geometry records seeded and read back; what Visual Explorer renders
 from them is verified separately by inspection, never claimed from the receipt.
 
+## Main teardown qualification
+
+On September 29, 2026 the main-teardown path was validated on the pinned local
+4.7.1 stack, closing the demo-tenant lifecycle that `seed-main` had left
+one-way. A 4,555-object probe estate was seeded onto an empty main, then
+`just teardown-main-explain` reported exactly 4,555 claimable objects at a
+match ratio of 1.0 while naming the rows it would not touch (19 owners, 19
+owner groups, 8 builtin module-type profiles and three foreign automation
+records belonging to other namespaces). `just teardown-main` then removed the
+estate: sites, devices, cables and circuits all returned to 0, and every
+foreign row survived. NetBox's own behaviour shaped the design and was verified
+in its 4.7.1 source: `DELETE /api/dcim/sites/<id>/` returns 409 naming its
+dependent objects (there is no cascade shortcut), bulk destroy wraps each batch
+in one transaction so a single PROTECT failure rolls the batch back, a batch
+naming an already-deleted object is rejected outright (so resume re-resolves
+rather than trusting the receipt), and a successful bulk delete returns 204
+with an empty body, which the shared client cannot parse — so the outcome is
+proven by re-reading the target rather than by the response.
+
 ## Current offline scale evidence
 
 The corrected v0.9 source was measured on the same 64-PoP, 128-customer recipe
