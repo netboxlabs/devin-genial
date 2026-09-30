@@ -379,6 +379,31 @@ containers earn their place in a demo even though they are defensible.
 **Demo hygiene:** the org's Assurance queue holds 51 stale OPEN deviations from
 retired `devin-generator` probes; they are noise in front of a customer.
 
+**Blocking platform incompatibility found while reseeding (2026-09-30):**
+TurboBulk stopped working entirely on the visualization tenant. Every job now
+fails with
+
+```
+cannot add relation "_turbobulk_staging_circuits_circuittype_..." to publication
+DETAIL:  This operation is not supported for unlogged tables.
+CONTEXT:  ALTER PUBLICATION dbz_pub_nb_46fca0360cbb ADD TABLE ...
+```
+
+A Debezium CDC publication now captures that instance's tables, and TurboBulk's
+staging tables are `UNLOGGED` — Postgres refuses to publish those. It is
+reproducible and deterministic, it fails on the very first job, and
+`engine/staging.py` hard-codes `CREATE UNLOGGED TABLE` with no plugin setting
+to change it, so there is no self-service workaround. The same artifact loads
+normally on a sibling tenant in the same org, so this is per-instance, not
+org-wide; the publication is named for the instance that has Analytics and
+Visual Explorer enabled, and the tenant loaded fine five days earlier — a
+strong inference that enabling Analytics provisions the publication, though we
+have not confirmed that from the platform side. Consequences: **Analytics and
+TurboBulk appear mutually exclusive on one instance as currently configured.**
+Candidate fixes are all platform- or plugin-side: exclude `_turbobulk_staging_*`
+from the publication, create staging tables in a schema the publication does not
+cover, or fall back to logged staging tables when a publication exists.
+
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
 cold-start-se runs to two consecutive cleans whenever the loading surface or
