@@ -30,7 +30,11 @@ def enrich(world):
         roles["biomedical"] = "Biomedical support"
         groups["biomedical"] = "Biomedical engineering"
     for key, name in roles.items():
-        add("contact_role", f"contact-role/{key}", {"name": f"{ns} {name}", "slug": f"{ns}-{name.lower().replace(' ', '-')}"})
+        add("contact_role", f"contact-role/{key}", {"name": name, "slug": f"{ns}-{name.lower().replace(' ', '-')}"})
+        # ContactGroup keeps the namespace in its display name: its canonical
+        # slug is derived from that name and is deliberately omitted on the
+        # wire so the pinned plugin's auto-slug matcher can resolve it, so a
+        # clean name would silently change the matching identity.
         name = f"{ns} {groups[key]}"
         add("contact_group", f"contact-group/{key}", {"name": name, "slug": name.lower().replace(" ", "-")})
 
@@ -139,8 +143,12 @@ def enrich(world):
         if scope not in service_desks:
             label = "" if refs["tenant"] == "tenant" else f" {refs['tenant'].removeprefix('tenant/')}"
             mailbox = f"{label.strip()}." if label else ""
+            # The estate tenant now carries the recipe's own display name, which
+            # the recipe may take up to its full length; clip it in prose so the
+            # description stays inside the native 200-character limit.
+            tenant_label = world.obj(refs["tenant"])["attrs"]["name"][:40].rstrip()
             service_desks[scope] = contact(f"contact/service/{refs['tenant']}/{workload}", f"{ns}{label} {workload} service desk", "service", f"{mailbox}{workload}.service",
-                f"Resource sizing and listener configuration for {workload} within {world.obj(refs['tenant'])['attrs']['name']}; coordinate host incidents with the cluster technical desk.")
+                f"Resource sizing and listener configuration for {workload} within {tenant_label}; coordinate host incidents with the cluster technical desk.")
         assign(key, service_desks[scope], "service")
         anchors.setdefault((refs["cluster"], workload), vm)
     # ponytail: two records per workload/site, not per replica; append-only VM

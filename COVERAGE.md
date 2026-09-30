@@ -249,6 +249,18 @@ own SE org ships an internal "Demo Data Loader" (July 2026 community meetup,
 C. Beye) with branch-scoped industry demo data and air-gapped bundles —
 overlapping framing; the no-other-teams gate stays closed.
 
+**Retired 2026-09-29 — "region display names leak the namespace."** The leak was
+never confined to regions: tenants, providers, device and rack roles, circuit
+types, cluster types, RIRs, IPAM roles, tags, VLAN/wireless groups and power
+panels all rendered as `<namespace> <thing>`. Visual Explorer truncates graph
+node labels, so four distinct power panels all drew as `aurora-peak-pop-chica…`
+— the leak was a functional defect in the rendered estate, not cosmetics.
+Fixed in 0.12.0 (a new baseline): `estates/naming.py` holds the policy, display
+names are authored and namespace-free, identities keep the namespace, and the
+two documented exceptions (main-scoped retirement-matched records, and the root
+contact group whose slug is derived from its name) keep the prefix. Pinned by
+`tests/test_naming_policy.py`.
+
 Depth backlog (from cold-start run #16, bank): FHRP groups, VPN tunnels and
 inventory items are modeled as single instances in a DC pair — enough to show
 the object type, not a per-branch redundancy *pattern*. Candidate enrichment:

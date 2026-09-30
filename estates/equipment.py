@@ -11,6 +11,8 @@ import json
 import math
 from pathlib import Path
 
+from .naming import titleize
+
 
 KINDS = {"console_port", "console_server_port", "device_bay", "inventory_item",
          "inventory_item_role", "module", "module_bay", "module_type",
@@ -25,7 +27,7 @@ def enrich_site(site, *, demonstrations=True):
     for role in ("console-server", "laboratory", "stack") if demonstrations else ("console-server",):
         if f"role/{role}" not in w.objects:
             w.add("device_role", f"role/{role}",
-                  {"name": f"{ns} {role}", "slug": f"{ns}-{role}", "color": "455a64"})
+                  {"name": titleize(role), "slug": f"{ns}-{role}", "color": "455a64"})
     if demonstrations and site.contract["kind"] == "dc":
         _laboratory(site)
         spec = w.hardware("access")
@@ -101,7 +103,7 @@ def _laboratory(site):
     role = "inventory-role/cooling"
     if role not in w.objects:
         ns = w.recipe["namespace"]
-        w.add("inventory_item_role", role, {"name": f"{ns} Cooling assembly", "slug": f"{ns}-cooling-assembly", "color": "00838f"})
+        w.add("inventory_item_role", role, {"name": "Cooling assembly", "slug": f"{ns}-cooling-assembly", "color": "00838f"})
     assembly = w.add("inventory_item", f"{child}/inventory/cold-plate",
                      {"name": "Cold plate assembly", "part_id": "REF-COLDPLATE-01", "status": "active",
                       "description": "Serviceable cold plate; original reference design"},

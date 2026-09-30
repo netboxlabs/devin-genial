@@ -150,7 +150,7 @@ created on a spare interface or an unmodeled far end of a circuit.
     infrastructure = int(pool.network_address) + (site_capacity << 80)
     namespace = world.recipe["namespace"]
     world.add("rir", "ipv6/rir", {
-        "name": f"{namespace} IPv6 documentation registry", "slug": f"{namespace}-ipv6-docs",
+        "name": "IPv6 documentation registry", "slug": f"{namespace}-ipv6-docs",
         "is_private": False, "description": "Documentation address registry"})
     world.add("aggregate", "ipv6/aggregate", {
         "prefix": str(pool), "description": "IPv6 address allocation"}, {"rir": "ipv6/rir"})

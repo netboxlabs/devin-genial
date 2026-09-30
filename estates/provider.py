@@ -15,6 +15,7 @@ import re
 from . import datacenter, equipment, ipv6, networking, operations, places, poe, optics
 from .blocks import Site, foundation, trunk
 from .model import DesignError, World, canonical, resolve_bank_recipe, resolve_demo
+from .naming import titleize
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
@@ -194,15 +195,15 @@ def generate(recipe,previous=None):
 
 def _registry(w):
     ns,r = w.recipe["namespace"],w.recipe
-    w.add("rir","rir/private",dict(name=f"{ns} Private allocations",slug=f"{ns}-private",is_private=True))
-    w.add("asn_range","asn-range/private",dict(name=f"{ns} Provider routing domains",slug=f"{ns}-routing",
+    w.add("rir","rir/private",dict(name="Private allocations",slug=f"{ns}-private",is_private=True))
+    w.add("asn_range","asn-range/private",dict(name="Provider routing domains",slug=f"{ns}-routing",
           start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASN reservation; no BGP sessions are configured"),{"rir":"rir/private"})
     for key,offset in (("operator",0),("transit-a",1),("transit-b",2)):
         w.add("asn",f"asn/{key}",dict(asn=r["asn_base"]+offset,description=f"{ns} {key} routing identity"),{"rir":"rir/private"})
     for label,name in (("operator",r["name"]),("transport-a","Northstar Transport"),("transport-b","Meridian Transport"),
                        ("transit-a","Atlas Upstream"),("transit-b","Orion Upstream")):
         refs = {"asns":[f"asn/{'operator' if label == 'operator' else label}"]} if not label.startswith("transport-") else {}
-        display = f"{ns} {name}"
+        display = name
         # Retain ordinary branding; reserve thirteen characters for support-desk
         # names. A digest preserves identity when the full display exceeds87.
         if len(display) > 87:
@@ -212,17 +213,17 @@ def _registry(w):
             attrs["comments"] = f"Private-L3 operator for {r['name']}; routing and commercial inventory only."
         w.add("provider",f"provider/{label}",attrs,refs)
         if label.startswith("transit-"):
-            w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=f"{ns}-{label}",description="External transit interior and remote interface owner are unknown"),{"provider":f"provider/{label}"})
+            w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=titleize(label),description="External transit interior and remote interface owner are unknown"),{"provider":f"provider/{label}"})
         if label != "operator":
             _account(w,f"provider-account/provider/{label}",f"provider/{label}",label)
-    w.add("provider_network","provider-network/operator",dict(name=f"{ns}-private-l3",description="Routed private service across actual modeled PoPs; control plane is not executed"),{"provider":"provider/operator"})
+    w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private service across actual modeled PoPs; control plane is not executed"),{"provider":"provider/operator"})
     _account(w,"provider-account/operator/noc","provider/operator","noc")
     for name in ("backbone","access","transit"):
-        w.add("circuit_type",f"circuit-type/{name}",dict(name=f"{ns} {name.title()}",slug=f"{ns}-{name}"))
-    w.add("virtual_circuit_type","virtual-circuit-type/private-l3",dict(name=f"{ns} Private L3",slug=f"{ns}-private-l3",color="e65100"))
+        w.add("circuit_type",f"circuit-type/{name}",dict(name=titleize(name),slug=f"{ns}-{name}"))
+    w.add("virtual_circuit_type","virtual-circuit-type/private-l3",dict(name="Private L3",slug=f"{ns}-private-l3",color="e65100"))
     for c in r["customers"]:
         key = c["key"]; slot = w.reserve("provider-customers",key,256)
-        tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=f"{ns} {key}",slug=f"{ns}-cust-{key}",description="Private-L3 service customer"))
+        tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=titleize(key),slug=f"{ns}-cust-{key}",description="Private-L3 service customer"))
         w.add("asn",f"asn/customer/{key}",dict(asn=r["asn_base"]+256+slot,description=f"{ns} {key} customer routing identity"),{"rir":"rir/private"})
         target = w.add("route_target",f"route-target/customer/{key}",dict(name=f"{r['asn_base']}:{slot+1}",description=f"{key} private routing import/export domain"),{"tenant":tenant})
         vrf = w.add("vrf",f"vrf/customer/{key}",dict(name=f"{ns}-customer-{key}",enforce_unique=True),

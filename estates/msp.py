@@ -303,13 +303,13 @@ def _accounts(world):
     """
     ns = world.recipe["namespace"]
     group = world.add("tenant_group", "tenant-group/customers",
-                      {"name": f"{ns} customers", "slug": f"{ns}-customers",
+                      {"name": "Customers", "slug": f"{ns}-customers",
                        "description": "Managed accounts; each customer owns its own sites, equipment and address space"})
     for item in world.recipe["customers"]:
         key = item["key"]
         title = key.replace("-", " ").title()
         tenant = world.add("tenant", f"tenant/{key}",
-                           {"name": f"{ns} {title}", "slug": f"{ns}-cust-{key}",
+                           {"name": title, "slug": f"{ns}-cust-{key}",
                             "description": f"Managed customer of {world.recipe['name']}; owns its offices, equipment and addressing"},
                            {"group": group})
         guest = bool(sum(zone["guest"] for zone in item["wireless"].values()))

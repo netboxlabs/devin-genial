@@ -11,6 +11,13 @@ import ipaddress
 import math
 
 from .model import DesignError
+from .naming import titleize
+
+
+def _site_display(w, sid):
+    """The site's authored display name, when that site exists in the graph."""
+    site = w.objects.get(f"site/{sid}") if hasattr(w, "objects") else None
+    return (site or {}).get("attrs", {}).get("name")
 
 
 PROVENANCE = "Planning intent; no configuration, protocol convergence or measured performance is asserted."
@@ -59,10 +66,10 @@ def enrich(w):
 
 def registry(w, sites):
     ns = w.recipe["namespace"]
-    rir = w.add("rir", "rir/private", {"name": f"{ns} private registry", "slug": f"{ns}-private",
+    rir = w.add("rir", "rir/private", {"name": "Private registry", "slug": f"{ns}-private",
                 "is_private": True, "description": "Local private-address and private-ASN registry", "comments": PROVENANCE})
     base = 4200000000 + _number(ns, "asn-block", 1000000)*64
-    w.add("asn_range", "asn-range/private", {"name": f"{ns} routing domains", "slug": f"{ns}-routing",
+    w.add("asn_range", "asn-range/private", {"name": "Routing domains", "slug": f"{ns}-routing",
           "start": base, "end": base+63, "description": "Private 32-bit ASNs reserved for this estate"}, {"rir": rir})
     for i, label in enumerate(("bank", "birch", "carrier-a", "carrier-b")):
         if label == "birch" and not any(o["meta"].get("lineage") == "birch" for o in sites):
@@ -71,7 +78,7 @@ def registry(w, sites):
     for side in ("a", "b"):
         w.obj(f"provider/{side}")["refs"]["asns"] = [f"asn/carrier-{side}"]
     for role, description in (("routed", "Routed bank segment"), ("reserve", "Reserved address headroom")):
-        w.add("role", f"ip-role/{role}", {"name": f"{ns} {role}", "slug": f"{ns}-{role}", "description": description})
+        w.add("role", f"ip-role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}", "description": description})
     pools = {w.recipe["address_pool"]}
     if any(o["meta"].get("lineage") == "birch" for o in sites):
         pools.add("172.16.0.0/12")
@@ -82,7 +89,7 @@ def registry(w, sites):
         sid, tenant = site["key"].split("/", 1)[1], site["refs"]["tenant"]
         # Retained routing identity survives acquisition and access refresh.
         site["refs"]["asns"] = ["asn/birch" if site["meta"].get("lineage") == "birch" else "asn/bank"]
-        w.add("vlan_group", f"vlan-group/{sid}", {"name": f"{ns}-{sid}", "slug": f"{ns}-{sid}",
+        w.add("vlan_group", f"vlan-group/{sid}", {"name": titleize(sid), "slug": f"{ns}-{sid}",
               "description": "Site-local VLAN allocation"}, {"scope_site": site["key"], "tenant": tenant})
         prefix = w.objects.get(f"prefix/{sid}/users")
         if prefix:
@@ -137,7 +144,7 @@ def first_hop(w):
 
 def private_wan(w):
     ns = w.recipe["namespace"]
-    w.add("virtual_circuit_type", "virtual-circuit-type/private-l3", {"name": f"{ns} managed L3 VPN", "slug": f"{ns}-managed-l3", "color": "e65100"})
+    w.add("virtual_circuit_type", "virtual-circuit-type/private-l3", {"name": "Managed L3 VPN", "slug": f"{ns}-managed-l3", "color": "e65100"})
     for side in ("a", "b"):
         w.add("virtual_circuit", f"virtual-circuit/{side}", {"cid": f"{ns}-private-{side}", "status": "active",
               "description": "Carrier-private routed bank WAN service", "comments": PROVENANCE},
@@ -169,7 +176,7 @@ def recovery_overlay(w):
     w.add("ip_sec_policy", "ipsec-policy/recovery", {"name": f"{ns}-recovery-ipsec", "pfs_group": "14"}, {"proposals": ["ipsec-proposal/recovery"]})
     w.add("ip_sec_profile", "ipsec-profile/recovery", {"name": f"{ns}-recovery", "mode": "esp", "comments": PROVENANCE},
           {"ike_policy": "ike-policy/recovery", "ipsec_policy": "ipsec-policy/recovery"})
-    w.add("tunnel_group", "tunnel-group/recovery", {"name": f"{ns} recovery", "slug": f"{ns}-recovery"})
+    w.add("tunnel_group", "tunnel-group/recovery", {"name": "Recovery", "slug": f"{ns}-recovery"})
     w.add("tunnel", "tunnel/recovery", {"name": f"{ns}-dc-recovery", "status": "planned", "encapsulation": "ipsec-tunnel",
           "description": "Planned protected DC recovery transport", "comments": PROVENANCE},
           {"group": "tunnel-group/recovery", "ipsec_profile": "ipsec-profile/recovery", "tenant": "tenant"})
@@ -271,11 +278,12 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
                 if any(w.objects.get(key, {}).get("kind") != "interface" for key in (ethernet, peers.get(ethernet))):
                     raise DesignError(f"{device}: {label} WLAN requires a real wired access path")
     group_label = "staff" if len(lan_roles) == 1 else "campus"
-    group = w.add("wireless_lan_group", f"wireless-group/{group_label}", {"name": f"{ns} {group_label}", "slug": f"{ns}-{group_label}"})
+    group = w.add("wireless_lan_group", f"wireless-group/{group_label}", {"name": titleize(group_label), "slug": f"{ns}-{group_label}"})
     for site in sites:
         devices = sorted(aps[site["key"]])
         sid, tenant = site["key"].split("/", 1)[1], site["refs"]["tenant"]
-        site_group = w.add("wireless_lan_group", f"wireless-group/{sid}", {"name": f"{ns}-{sid}", "slug": f"{ns}-{sid}"}, {"parent": group})
+        site_group = w.add("wireless_lan_group", f"wireless-group/{sid}",
+                           {"name": _site_display(w, sid) or titleize(sid), "slug": f"{ns}-{sid}"}, {"parent": group})
         memberships, vlans = defaultdict(list), set()
         for label, network, radio_name in roles_by_site[site["key"]]:
             vlan = f"vlan/{sid}/{network}"

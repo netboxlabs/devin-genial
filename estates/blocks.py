@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from .model import DesignError
+from .naming import titleize
 from . import places
 
 NETWORKS = ("management", "users", "atm", "wireless", "security", "voice",
@@ -35,11 +36,11 @@ def trunk(site, interfaces, networks):
 def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
                device_roles=None, hardware_aliases=None, site_kinds=None, include_carriers=True):
     ns = w.recipe["namespace"]
-    w.add("tenant", "tenant", {"name": f"{ns} estate", "slug": ns, "description": w.recipe['name']})
+    w.add("tenant", "tenant", {"name": w.recipe["name"], "slug": ns, "description": w.recipe['name']})
     if inherited:
-        w.add("tenant", "tenant/inherited", {"name": f"{ns} Birch Bank", "slug": f"{ns}-birch",
+        w.add("tenant", "tenant/inherited", {"name": "Birch Bank", "slug": f"{ns}-birch",
               "description": "Acquisition candidate with retained naming, addressing and carrier contracts"})
-    w.add("tag", "tag/estate", {"name": f"{ns}: generated", "slug": f"{ns}-generated", "color": "607d8b"})
+    w.add("tag", "tag/estate", {"name": "Generated", "slug": f"{ns}-generated", "color": "607d8b"})
     places.foundation(w, site_kinds=site_kinds)
     colors = {"wan-edge": "e65100", "distribution": "6a1b9a", "access": "1565c0",
               "spine": "4a148c", "leaf": "7b1fa2", "server": "2e7d32", "management": "546e7a",
@@ -52,14 +53,14 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
               "provider-edge": "5e35b1", "customer-edge": "00838f"}
     for role in device_roles if device_roles is not None else ("wan-edge", "distribution", "access", "spine", "leaf", "server", "management", "patch-panel",
                  "pdu", "workstation", "atm", "ap", "camera", "wall-outlet"):
-        w.add("device_role", f"role/{role}", {"name": f"{ns} {role}", "slug": f"{ns}-{role}", "color": colors[role]})
+        w.add("device_role", f"role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}", "color": colors[role]})
     for role, color in (("application", "2e7d32"), ("database", "6a1b9a"), ("backup-service", "546e7a")):
-        w.add("device_role", f"role/{role}", {"name": f"{ns} {role}", "slug": f"{ns}-{role}",
+        w.add("device_role", f"role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}",
               "color": color, "vm_role": True})
-    w.add("platform", "platform/services", {"name": f"{ns} Service Linux", "slug": f"{ns}-service-linux",
+    w.add("platform", "platform/services", {"name": "Service Linux", "slug": f"{ns}-service-linux",
           "description": "Linux service baseline; distribution and version are unspecified"})
     for group in ("network", "compute"):
-        w.add("rack_role", f"rack-role/{group}", {"name": f"{ns} {group}", "slug": f"{ns}-{group}",
+        w.add("rack_role", f"rack-role/{group}", {"name": titleize(group), "slug": f"{ns}-{group}",
               "color": "1565c0" if group == "network" else "2e7d32"})
     # Callers name role families; the recipe's selected vendor line decides which
     # catalog model that family actually emits.
@@ -84,14 +85,14 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
             w.add("prefix", f"root/{name}", {"prefix": w.recipe["address_pool"], "status": "container",
                   "description": f"{ns} {name}: hierarchical site reservations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
     for side, provider in (("a", "Northstar Transit"), ("b", "Meridian Carrier")) if include_carriers else ():
-        w.add("provider", f"provider/{side}", {"name": f"{ns} {provider}", "slug": f"{ns}-carrier-{side}",
+        w.add("provider", f"provider/{side}", {"name": provider, "slug": f"{ns}-carrier-{side}",
               "comments": f"Minimum private access commitment {50 if side == 'a' else 100} Mbps. "
                           "Separate modeled provider domains do not establish diverse ducts."})
-        w.add("provider_network", f"carrier/{side}", {"name": f"{ns}-private-wan-{side}",
+        w.add("provider_network", f"carrier/{side}", {"name": f"Private WAN {side.upper()}",
               "description": "Opaque managed L3 WAN; provider interior intentionally abstracted"}, {"provider": f"provider/{side}"})
     if include_carriers:
-        w.add("circuit_type", "circuit-type/wan", {"name": f"{ns} Private WAN access", "slug": f"{ns}-private-wan"})
-    w.add("cluster_type", "cluster-type", {"name": f"{ns} Virtualization", "slug": f"{ns}-virtualization"})
+        w.add("circuit_type", "circuit-type/wan", {"name": "Private WAN access", "slug": f"{ns}-private-wan"})
+    w.add("cluster_type", "cluster-type", {"name": "Virtualization", "slug": f"{ns}-virtualization"})
 
 
 class Site:
@@ -517,7 +518,11 @@ class Site:
         for location in self.contract["placement"]["equipment_locations"].values():
             room = self.room_prefix(location)
             for side in ("a", "b"):
-                self.w.add("power_panel", f"panel/{self.id}/{room}{side}", {"name": f"{self.name}-{room}supply-{side.upper()}"},
+                # Panel names are unique per site, so the room prefix and side
+                # are enough: the namespaced site stem only truncated to
+                # indistinguishable node labels in the visualization layer.
+                self.w.add("power_panel", f"panel/{self.id}/{room}{side}",
+                           {"name": f"{titleize(room.rstrip('-')) + ' ' if room else ''}Supply {side.upper()}"},
                            {"site": self.key, "location": location})
         for rack, members in self.rack_members.items():
             location = self.w.obj(rack)["refs"]["location"]

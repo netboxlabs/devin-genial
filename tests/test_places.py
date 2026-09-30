@@ -42,8 +42,12 @@ class PlacesTests(unittest.TestCase):
         ZoneInfo(initial["attrs"]["time_zone"])
         dc1, dc2 = sample("dc-01", "dc"), sample("dc-02", "dc")
         self.assertNotEqual(dc1.w.obj(dc1.key)["refs"]["region"], dc2.w.obj(dc2.key)["refs"]["region"])
-        self.assertTrue(all(o["attrs"]["name"].startswith("cedar ") for o in first.w.objects.values()
-                            if o["kind"] in {"region", "site_group"}))
+        # Display names are authored and namespace-free; the slug carries the
+        # namespace that still separates two estates on one target.
+        geography = [o for o in first.w.objects.values() if o["kind"] in {"region", "site_group"}]
+        self.assertTrue(geography)
+        self.assertTrue(all(not o["attrs"]["name"].startswith("cedar ") for o in geography))
+        self.assertTrue(all(o["attrs"]["slug"].startswith("cedar-") for o in geography))
 
     def test_rooms_are_owned_hierarchical_and_proportional_to_demand(self):
         for staff in (12, 36, 84):

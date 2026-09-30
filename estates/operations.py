@@ -24,7 +24,7 @@ def _wan_accounts(w, owner):
             suffix = "/inherited" if lineage == "inherited" else ""
             label = " Birch" if lineage == "inherited" else ""
             accounts[(key, lineage)] = w.add("provider_account", f"provider-account/{key}{suffix}",
-                {"name": f"{ns}{label} {code.upper()} private WAN",
+                {"name": f"{code.upper()} private WAN{label}",
                  "account": f"{ns}-{lineage}-{code}",
                  "description": "Retained Birch WAN procurement account" if suffix else "Commercial account for the estate's WAN purchases"},
                 {"provider": key, "owner": owner})
@@ -52,21 +52,21 @@ def enrich(w):
     owner = add("owner", "owner/operations", {"name": f"{ns} Network operations",
                 "description": "Accountable team; no authentication users are created"}, {"group": owner_group})
     w.obj(anchor)["refs"]["owner"] = owner
-    tenants = add("tenant_group", "tenant-group/banking", {"name": f"{ns} Banking entities", "slug": f"{ns}-banking"}, {"owner": owner})
+    tenants = add("tenant_group", "tenant-group/banking", {"name": "Banking entities", "slug": f"{ns}-banking"}, {"owner": owner})
     for tenant in by_kind["tenant"]:
         tenant["refs"]["group"] = tenants
 
     _wan_accounts(w, owner)
-    group = add("circuit_group", "circuit-group/dc-01/wan-01", {"name": f"{ns} DC01 WAN pair 01", "slug": f"{ns}-dc01-wan-01",
+    group = add("circuit_group", "circuit-group/dc-01/wan-01", {"name": "DC01 WAN pair 01", "slug": f"{ns}-dc01-wan-01",
                 "description": "Restoration inventory for the first provider pair; priorities do not configure failover"}, {"tenant": "tenant", "owner": owner})
     for side, priority in (("a", "primary"), ("b", "secondary")):
         add("circuit_group_assignment", f"circuit-group-assignment/dc-01/{side}/1", {"priority": priority},
             {"group": group, "member": f"circuit/dc-01/{side}/1"})
 
-    clusters = add("cluster_group", "cluster-group/services", {"name": f"{ns} Regional services", "slug": f"{ns}-regional-services"}, {"owner": owner})
+    clusters = add("cluster_group", "cluster-group/services", {"name": "Regional services", "slug": f"{ns}-regional-services"}, {"owner": owner})
     for cluster in by_kind["cluster"]:
         cluster["refs"]["group"] = clusters
-    vm_type = add("virtual_machine_type", "vm-type/services", {"name": f"{ns} Service VM", "slug": f"{ns}-service-vm",
+    vm_type = add("virtual_machine_type", "vm-type/services", {"name": "Service VM", "slug": f"{ns}-service-vm",
                   "description": "Common service platform; each VM retains its own explicit resource sizing"},
                   {"default_platform": "platform/services", "owner": owner})
     for vm in by_kind["virtual_machine"]:
@@ -75,10 +75,10 @@ def enrich(w):
             "description": "Provisioned service volume; matches the VM disk budget in MB, not additional storage"},
             {"virtual_machine": vm["key"], "owner": owner})
 
-    racks = add("rack_group", "rack-group/estate", {"name": f"{ns} Estate cabinets", "slug": f"{ns}-estate-cabinets"}, {"owner": owner})
+    racks = add("rack_group", "rack-group/estate", {"name": "Estate cabinets", "slug": f"{ns}-estate-cabinets"}, {"owner": owner})
     rack_types = {}
     for height in sorted({rack["attrs"]["u_height"] for rack in by_kind["rack"]}):
-        rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": f"{ns} Reference {height}U cabinet",
+        rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": f"Reference {height}U cabinet",
             "slug": f"{ns}-reference-{height}u", "u_height": height, "width": 19, "form_factor": "4-post-cabinet",
             "description": "Reference cabinet dimensions; no vendor product or environmental rating is asserted"},
             {"manufacturer": "manufacturer/Devin Reference Designs", "owner": owner})
@@ -104,7 +104,7 @@ def enrich(w):
     # Bundle only the two A-side service-host fibers, retaining the B-side
     # physical paths outside this example bundle.
     service_hosts = {"device/dc-01/identity-host-01", "device/dc-01/dns-host-01"}
-    bundle = add("cable_bundle", "cable-bundle/dc-01/service-hosts-a", {"name": f"{ns} DC01 service hosts A",
+    bundle = add("cable_bundle", "cable-bundle/dc-01/service-hosts-a", {"name": "DC01 service hosts A",
                  "description": "Modeled bundle of identity and DNS A-side host fibers; B-side links are separate"}, {"owner": owner})
     bundled = 0
     for cable in by_kind["cable"]:
@@ -143,7 +143,7 @@ def supporting_records(world):
         "description": "Accountable infrastructure team"}, {"group": owner_group})
     rir = "rir/private"
     if rir not in world.objects:
-        world.add("rir", rir, {"name": f"{ns} Private allocations", "slug": f"{ns}-private", "is_private": True})
+        world.add("rir", rir, {"name": "Private allocations", "slug": f"{ns}-private", "is_private": True})
     world.add("aggregate", "aggregate/private", {"prefix": world.recipe["address_pool"],
         "description": f"{ns} owned site allocation pool"}, {"rir": rir, "tenant": "tenant"})
     for obj in list(world.objects.values()):
