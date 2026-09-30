@@ -439,7 +439,14 @@ ran 39 jobs with **no publication error anywhere**, including the exact
 `phase-1:circuit_type` job that fails instantly against main. Branch-schema
 staging confirms the `public`-only reading of the trigger. So the outage is
 **`main-seed` only**: the documented reviewable path, the branch gallery, exports
-and maintenance jobs are unaffected. An earlier claim in this file that TurboBulk
+are unaffected, because `create_staging_table` is called only from
+`jobs/load.py`. **Maintenance finalizers are not exempt**, though: staging-table
+creation there is unconditional, so a zero-row job that only runs a post-hook
+fails identically - observed on `crsk8600` with a zero-row `dcim.site`
+`rebuild_search_index` job. That is also the cleanest reproduction of the whole
+defect, since it carries no rows, changelogs or save hooks at all. An earlier
+claim here and in NBC-7787 that maintenance jobs were unaffected was wrong and
+has been corrected in both. An earlier claim in this file that TurboBulk
 "stopped working entirely" was wrong and is corrected above.
 
 **A second, unrelated defect was hiding inside that run, and it was ours.** The
@@ -487,7 +494,15 @@ require a release from another team, and testing it is itself strong
 confirmation of the diagnosis. It costs Analytics on that instance, which is
 gated on CDC; Visual Explorer does not use CDC and is unaffected.
 
-**Causation proven by same-instance A/B (2026-09-30).** With CDC enabled, the
+**Causation proven by a completed same-instance A -> B -> A (2026-09-30).**
+CDC was later re-enabled on that instance and the failure returned immediately,
+so the sequence is fail / 152 clean jobs / fail, one instance throughout with
+artifact and command unchanged. Enabling CDC on an already-populated database is
+clean: after the successful seed and the re-enable, a full strict readback of
+all 3,043 objects passed with 0 mismatches, 231/231 cables and 10/10 circuit
+terminations resolved. The usable interim workaround is therefore to seed `main`
+with CDC off and enable it afterwards, then load into branches from then on;
+`main` cannot be re-seeded without disabling CDC again. With CDC enabled, the
 `phase-1:circuit_type` job errored immediately on three separate attempts with
 the publication error above. CDC was then disabled on that instance and the
 identical artifact, command and delivery policy were rerun against the same
