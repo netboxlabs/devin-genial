@@ -324,11 +324,20 @@ by what it costs a demo.
   plugin is installed and the estate models ASNs, so this is reachable scope
   rather than a limitation — it would need a new canonical kind and a
   rebaseline.
-- VLANs render disconnected in the L2/L3 view — worth confirming whether
-  interface VLAN membership reaches that view at all.
-- Power chain reports **0 W allocated against 11.8 kW** despite power ports
-  carrying `allocated_draw`; unresolved, needs one more look at how the view
-  sums draw.
+- Power chain reports **0 W allocated against 11.8 kW**. Traced: the feed
+  connects to the PDU's own `Input` power port, and that port carries
+  `maximum_draw: null` / `allocated_draw: null`, so any consumer reading the
+  feed's connected endpoint sees nothing. Device-side ports are complete
+  (1,680 outlets, cabled, traced, `allocated_draw` set), and the feed's 2,944 W
+  capacity computes correctly from amperage/voltage/max-utilization — only the
+  PDU input is unmodelled. A real PDU input has a rated draw; setting it is
+  correct modelling, not decoration. Related: each 12-outlet PDU has only 3
+  outlets cabled, which is the density finding again.
+- VLANs render disconnected in the L2/L3 view at NOC-datahall scope. Membership
+  does exist (69 of 200 sampled interfaces carry an untagged VLAN, 5 carry
+  tagged VLANs) but those interfaces are customer-site access switches, while
+  the NOC data hall's devices interconnect over routed links. The view is
+  probably telling the truth; confirm before treating it as a defect.
 
 **Product defects found, not ours** (route via the SE vault's
 `capture-product-feedback`): Visual Explorer's Settings **Save silently
