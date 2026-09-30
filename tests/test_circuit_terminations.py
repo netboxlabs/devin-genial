@@ -4,6 +4,10 @@ A raw bulk insert leaves Circuit.termination_a/_z null and the termination's
 scope cache null, so `?site_id=` filters return nothing and WAN maps draw no
 arcs. The loader asks TurboBulk for its bounded save-hook fixups on that one
 kind and proves the outcome at readback; these tests pin both halves.
+
+TurboBulk 0.4.0 cannot combine those hooks with changelog creation, so the
+request is made only for changelog-free jobs; the reviewable cases below pin
+that guard, because re-enabling it errors the whole termination job.
 """
 
 import unittest
@@ -15,6 +19,7 @@ from estates.turbobulk import (LoadError, POST_HOOKS, SAVE_HOOK_KINDS,
 
 
 BASE = delivery_contract("reviewable")["request_settings"]
+SEED = delivery_contract("main-seed")["request_settings"]
 
 
 def _termination(key, circuit_key, side, termination_key=None):
@@ -27,16 +32,22 @@ def _termination(key, circuit_key, side, termination_key=None):
 
 class SaveHookRequestSettings(unittest.TestCase):
     def test_circuit_terminations_request_save_hooks(self):
-        settings = _batch_request_settings(BASE, "circuit_termination")
+        settings = _batch_request_settings(SEED, "circuit_termination")
         self.assertIs(settings["apply_save_hooks"], True)
 
     def test_every_other_kind_leaves_save_hooks_off(self):
         for kind in ("device", "interface", "cable", "site", None):
             with self.subTest(kind=kind):
-                self.assertIs(_batch_request_settings(BASE, kind)["apply_save_hooks"], False)
+                self.assertIs(_batch_request_settings(SEED, kind)["apply_save_hooks"], False)
+
+    def test_changelog_creating_jobs_never_request_save_hooks(self):
+        """Requesting both errors the job after its rows land; see the docstring."""
+        self.assertIs(BASE["create_changelogs"], True)
+        self.assertIs(_batch_request_settings(BASE, "circuit_termination")["apply_save_hooks"],
+                      False)
 
     def test_save_hooks_never_re_enable_global_post_hooks(self):
-        settings = _batch_request_settings(BASE, "circuit_termination")
+        settings = _batch_request_settings(SEED, "circuit_termination")
         self.assertEqual(settings["post_hooks"], {name: False for name in POST_HOOKS})
 
     def test_the_schedule_binds_save_hooks_to_the_termination_purpose(self):
@@ -45,9 +56,11 @@ class SaveHookRequestSettings(unittest.TestCase):
                           "refs": {}, "meta": {}},
             "ct:a": _termination("ct:a", "circuit:1", "A"),
         }
-        schedule = _job_request_schedule([["circuit:1"], ["ct:a"]], objects, 100, BASE)
+        schedule = _job_request_schedule([["circuit:1"], ["ct:a"]], objects, 100, SEED)
         self.assertIs(schedule["phase-2:circuit_termination"]["apply_save_hooks"], True)
         self.assertIs(schedule["phase-1:circuit"]["apply_save_hooks"], False)
+        reviewable = _job_request_schedule([["circuit:1"], ["ct:a"]], objects, 100, BASE)
+        self.assertIs(reviewable["phase-2:circuit_termination"]["apply_save_hooks"], False)
 
 
 class JobResultContract(unittest.TestCase):
@@ -61,18 +74,18 @@ class JobResultContract(unittest.TestCase):
         return {"status": "completed", "job_id": "j1", "data": base}
 
     def test_requested_save_hooks_must_be_reported_for_every_row(self):
-        settings = _batch_request_settings(BASE, "circuit_termination")
-        _job_result(self._job(save_hooks_applied=2), 2, settings, "insert")
+        settings = _batch_request_settings(SEED, "circuit_termination")
+        _job_result(self._job(changelogs_created=0, save_hooks_applied=2), 2, settings, "insert")
 
     def test_a_silently_ignored_flag_fails(self):
-        settings = _batch_request_settings(BASE, "circuit_termination")
+        settings = _batch_request_settings(SEED, "circuit_termination")
         with self.assertRaisesRegex(LoadError, "applied save hooks to None rows instead of 2"):
-            _job_result(self._job(), 2, settings, "insert")
+            _job_result(self._job(changelogs_created=0), 2, settings, "insert")
 
     def test_a_partial_save_hook_pass_fails(self):
-        settings = _batch_request_settings(BASE, "circuit_termination")
+        settings = _batch_request_settings(SEED, "circuit_termination")
         with self.assertRaisesRegex(LoadError, "applied save hooks to 1 rows instead of 2"):
-            _job_result(self._job(save_hooks_applied=1), 2, settings, "insert")
+            _job_result(self._job(changelogs_created=0, save_hooks_applied=1), 2, settings, "insert")
 
     def test_unrequested_save_hooks_fail(self):
         settings = _batch_request_settings(BASE, "device")

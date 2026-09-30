@@ -219,9 +219,22 @@ def _batch_request_settings(base, kind=None):
 
     Kinds in SAVE_HOOK_KINDS additionally request TurboBulk's bounded
     save-hook fixups, which run against that job's own affected rows only.
+
+    ponytail: save hooks are requested only for changelog-free jobs. TurboBulk
+    0.4.0 cannot combine them with create_changelogs: after the hooks run it
+    refreshes the captured postchange temp table by dropping and renaming
+    (engine/postmerge.py refresh_postchange_table), and the rename collides with
+    the name it just dropped, so the job errors with 'relation
+    "postchange__turbobulk_staging_<model>_<id>" already exists' after inserting
+    its rows and applying its hooks but before writing any changelog. Reproduced
+    identically on two NetBox Cloud tenants and the pinned local 4.7.1 stack.
+    Ceiling: reviewable loads therefore leave Circuit.termination_a/_z unset, so
+    circuits read as unterminated there (see the SAVE_HOOK_KINDS note above).
+    Upgrade path: drop this condition once TurboBulk refreshes that table
+    without a colliding rename.
     """
     settings = {**base, "post_hooks": {name: False for name in POST_HOOKS}}
-    if kind in SAVE_HOOK_KINDS:
+    if kind in SAVE_HOOK_KINDS and not settings["create_changelogs"]:
         settings["apply_save_hooks"] = True
     return settings
 
@@ -2604,14 +2617,25 @@ def _verify_component_caches(client, objects, ids):
     }
 
 
-def _verify_circuit_terminations(client, objects, ids):
+def _verify_circuit_terminations(client, objects, ids, expect_caches=True):
     """Prove NetBox's circuit termination caches, which only save() maintains.
 
     Two independent reads, because they fail independently: the circuit's
     termination_a/_z pointers (what the NetBox circuit table and WAN maps
     render) and the termination's own scope cache (what ?site_id= filters
     select on). A bulk insert without the save-hook fixups leaves both null.
+
+    expect_caches is False for changelog-creating (reviewable) loads, which
+    cannot request those fixups — see _batch_request_settings. Both caches are
+    then known-null by construction, so this records the skip and its cause
+    instead of asserting state the load never asked NetBox to build.
     """
+    if not expect_caches:
+        return {"circuits_expected": 0, "site_filter_queries": 0, "failures": [],
+                "skipped": "save hooks are not requested for changelog-creating loads, "
+                           "so Circuit.termination_a/_z and the termination scope cache "
+                           "are null by construction",
+                "wall_seconds": 0.0}
     expected_pointers = {}
     expected_by_site = defaultdict(set)
     for obj in objects.values():
@@ -2725,7 +2749,8 @@ def _verify_receipt_guard(path):
                         "choose another --receipt path")
 
 
-def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
+def verify_target(plan_path, *, url, token, branch=None, receipt_path=None,
+                  delivery_policy="reviewable"):
     """Read-only strict verification of a target against a frozen plan.
 
     Runs the same inventory readback, attribute/reference comparison, cable
@@ -2768,7 +2793,10 @@ def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
                for key, value in verification["ids"].items()}
         result["computed_paths"] = _verify_paths(client, plan, objects, ids)
         result["component_caches"] = _verify_component_caches(client, objects, ids)
-        result["circuit_terminations"] = _verify_circuit_terminations(client, objects, ids)
+        result["circuit_terminations"] = _verify_circuit_terminations(
+            client, objects, ids,
+            expect_caches=delivery_contract(delivery_policy)
+            ["request_settings"]["create_changelogs"] is False)
         success = (not result["computed_paths"]["failures"]
                    and not result["component_caches"]["failures"]
                    and not result["circuit_terminations"]["failures"])
@@ -2976,7 +3004,9 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                 raise LoadError(
                     f"component-cache readback failed for {len(component_caches['failures'])} placements"
                 )
-            circuit_terminations = _verify_circuit_terminations(client, objects, current_ids)
+            circuit_terminations = _verify_circuit_terminations(
+                client, objects, current_ids,
+                expect_caches=delivery["request_settings"]["create_changelogs"] is False)
             if circuit_terminations["failures"]:
                 raise LoadError(
                     "circuit-termination readback failed for "
@@ -3152,7 +3182,9 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
             raise LoadError(
                 f"component-cache readback failed for {len(receipt['component_caches']['failures'])} placements"
             )
-        receipt["circuit_terminations"] = _verify_circuit_terminations(client, objects, ids)
+        receipt["circuit_terminations"] = _verify_circuit_terminations(
+            client, objects, ids,
+            expect_caches=delivery["request_settings"]["create_changelogs"] is False)
         if receipt["circuit_terminations"]["failures"]:
             raise LoadError(
                 "circuit-termination readback failed for "

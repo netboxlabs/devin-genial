@@ -380,8 +380,8 @@ containers earn their place in a demo even though they are defensible.
 retired `devin-generator` probes; they are noise in front of a customer.
 
 **Blocking platform incompatibility found while reseeding (2026-09-30):**
-TurboBulk stopped working entirely on the visualization tenant. Every job now
-fails with
+TurboBulk main-scoped loading stopped working on the visualization tenant. Every
+job that creates its staging table in schema `public` fails with
 
 ```
 cannot add relation "_turbobulk_staging_circuits_circuittype_..." to publication
@@ -431,6 +431,34 @@ the trigger only acts on schema `public`, so branch-schema creates are untouched
 the table logged then `SET UNLOGGED` is closed off, failing with 55000 precisely
 because the trigger already published it.
 
+**Blast radius, now measured rather than inferred (2026-09-30):** a full
+`just load ARTIFACT TARGET BRANCH` against a ready branch on the affected tenant
+ran 39 jobs with **no publication error anywhere**, including the exact
+`phase-1:circuit_type` job that fails instantly against main. Branch-schema
+staging confirms the `public`-only reading of the trigger. So the outage is
+**`main-seed` only**: the documented reviewable path, the branch gallery, exports
+and maintenance jobs are unaffected. An earlier claim in this file that TurboBulk
+"stopped working entirely" was wrong and is corrected above.
+
+**A second, unrelated defect was hiding inside that run, and it was ours.** The
+one job that did fail on the branch failed differently: after inserting its 6
+rows and applying its 6 save hooks it errored with `relation
+"postchange__turbobulk_staging_circuits_circuittermination_<id>" already exists`
+and wrote 0 changelogs. That reproduces identically on the healthy sibling tenant
+and on the pinned local 4.7.1 stack, so it is not a Cloud or CDC symptom:
+TurboBulk 0.4.0 cannot combine `apply_save_hooks` with `create_changelogs`,
+because the post-hook refresh of the captured postchange table drops and renames
+into a name that still exists (`engine/postmerge.py refresh_postchange_table`).
+The v0.12.0 circuit-termination fix requested both, which broke the primary
+reviewable load path on every target. Fixed by requesting save hooks only for
+changelog-free jobs (`_batch_request_settings`), pinned by test, and verified by
+a clean local branch load (5247/5247 create ChangeDiffs, 348/348 cables, 0
+mismatches). Consequence to state plainly at demo time: **reviewable loads leave
+`Circuit.termination_a/_z` unset**, so circuits read as unterminated there and
+`?site_id=` returns nothing; `main-seed` and `disposable-baseline` loads are
+unaffected and do terminate correctly. The readback records the skip and its
+cause rather than asserting caches the load never asked NetBox to build.
+
 **Fix, smallest correct form:** have the trigger skip non-permanent relations
 (`relpersistence <> 'p'`), which is semantically right because an unlogged table
 can never be replicated - verified to work while leaving normal tables published.
@@ -438,8 +466,14 @@ Broadening the exception handler also works, but it should be `WHEN OTHERS`
 rather than a 22023 special case: a `FOR ALL TABLES` publication raises 55000
 instead and would abort *every* `CREATE TABLE`, not just unlogged ones. adding `_turbobulk_staging_%` to
 the exclude list works but needs a release (DATA-74, Backlog, would make that
-list dynamic). Operator-side, disabling CDC on the instance should restore
-loading, and testing that is itself strong confirmation.
+list dynamic). Operator-side, disabling CDC on the instance is a complete
+removal rather than a partial one: the cleanup path drops the publication, the
+`cdc_set_replica_identity_on_create` event trigger and the
+`public.set_replica_identity_full()` function together (`cdc/database.go:578-592`),
+so nothing is left to fire. That is the only lever available today that does not
+require a release from another team, and testing it is itself strong
+confirmation of the diagnosis. It costs Analytics on that instance, which is
+gated on CDC; Visual Explorer does not use CDC and is unaffected.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and

@@ -777,7 +777,8 @@ def main(argv=None):
                                           args.delivery_policy)
                 receipt = receipt.with_name("verify-" + receipt.name)
             result = verify_target(args.artifact, url=args.target, token=token,
-                                   branch=args.branch or None, receipt_path=receipt)
+                                   branch=args.branch or None, receipt_path=receipt,
+                                   delivery_policy=args.delivery_policy)
             summary = {"success": result["success"], "result": result["result"],
                        "mismatches": result["verification"].get("mismatch_count"),
                        "receipt": str(receipt)}

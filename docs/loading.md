@@ -265,6 +265,22 @@ the outcome two independent ways: each circuit's pointers resolve to the expecte
 termination IDs, and a real `?site_id=` query returns the circuits that terminate
 there. No extra mutation is involved, so create-ChangeDiff counts are unchanged.
 
+That request is made **only for changelog-free jobs**, which means
+`main-seed` and `disposable-baseline` loads. TurboBulk 0.4.0 cannot do both at
+once: with `create_changelogs` on, the refresh of the captured postchange table
+after the hooks run drops and renames into a name that still exists, and the job
+errors with `relation "postchange__turbobulk_staging_<model>_<id>" already
+exists` after its rows and hooks have landed but before any changelog is
+written. Reproduced identically on two NetBox Cloud tenants and the pinned local
+4.7.1 stack; `docs/transports.md` records the same collision from the original
+TurboBulk evaluation. The consequence is worth stating before a demo:
+**reviewable loads leave circuits unterminated** — empty Side A/Side Z columns,
+`?site_id=` returns nothing, WAN maps draw no arcs — and the readback records
+that skip and its cause instead of asserting caches the load never requested.
+Use `main-seed` or `disposable-baseline` when terminated circuits matter
+visually. The condition lifts once TurboBulk refreshes that table without a
+colliding rename.
+
 ## Verify without loading
 
 `just verify-target ARTIFACT TARGET [BRANCH]` runs the loader's final strict

@@ -144,7 +144,10 @@ so no PATCH can reach them. That one job requests TurboBulk's bounded
 `apply_save_hooks`; preflight requires the cache columns on both circuit models,
 the job contract requires `save_hooks_applied` for every submitted row, and
 readback proves the resolved pointers and a live `?site_id=` filter. Without it
-circuits read as unterminated and WAN maps draw no arcs.
+circuits read as unterminated and WAN maps draw no arcs. Request those hooks only
+for changelog-free jobs: TurboBulk 0.4.0 errors the job on a colliding postchange
+rename when `apply_save_hooks` and `create_changelogs` are combined, so reviewable
+loads accept unterminated circuits and record the skipped check with its cause.
 Those commands retain review and revert history; merging a TurboBulk branch to
 main is currently blocked upstream. `just load-disposable ARTIFACT
 TARGET BRANCH` is the explicit scale-only path: it requires a fresh empty branch
