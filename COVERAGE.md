@@ -447,10 +447,20 @@ one job that did fail on the branch failed differently: after inserting its 6
 rows and applying its 6 save hooks it errored with `relation
 "postchange__turbobulk_staging_circuits_circuittermination_<id>" already exists`
 and wrote 0 changelogs. That reproduces identically on the healthy sibling tenant
-and on the pinned local 4.7.1 stack, so it is not a Cloud or CDC symptom:
-TurboBulk 0.4.0 cannot combine `apply_save_hooks` with `create_changelogs`,
-because the post-hook refresh of the captured postchange table drops and renames
-into a name that still exists (`engine/postmerge.py refresh_postchange_table`).
+and on the pinned local 4.7.1 stack, so it is not a Cloud or CDC symptom.
+TurboBulk 0.4.0 through 0.4.2 cannot combine `apply_save_hooks` with
+`create_changelogs` on an insert whose model table name is 24+ characters:
+`refresh_postchange_table` (`engine/postmerge.py`) issues `CREATE TEMP TABLE
+"<postchange>_refresh"` before its own drop and rename, PostgreSQL truncates
+identifiers at 63 bytes, and the postchange name is `39 + len(db_table)` bytes,
+so the `_refresh` name truncates onto the postchange name itself and that
+`CREATE` fails. The drop and rename never run. 28 of NetBox 4.7's ~147 models
+cross the threshold; upsert never builds a postchange table and is unaffected.
+**The whole transaction rolls back, so no rows survive** - verified live with a
+`virtualization.clustertype` insert that reported `rows_inserted: 1` and left
+zero rows. The receipt's row and save-hook counters are in-memory values written
+after the rollback, and an earlier claim in this file that the rows "landed" was
+wrong.
 The v0.12.0 circuit-termination fix requested both, which broke the primary
 reviewable load path on every target. Fixed by requesting save hooks only for
 changelog-free jobs (`_batch_request_settings`), pinned by test, and verified by

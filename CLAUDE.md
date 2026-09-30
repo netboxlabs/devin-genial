@@ -145,9 +145,12 @@ so no PATCH can reach them. That one job requests TurboBulk's bounded
 the job contract requires `save_hooks_applied` for every submitted row, and
 readback proves the resolved pointers and a live `?site_id=` filter. Without it
 circuits read as unterminated and WAN maps draw no arcs. Request those hooks only
-for changelog-free jobs: TurboBulk 0.4.0 errors the job on a colliding postchange
-rename when `apply_save_hooks` and `create_changelogs` are combined, so reviewable
-loads accept unterminated circuits and record the skipped check with its cause.
+for changelog-free jobs: on an insert whose model table name is 24+ characters,
+TurboBulk 0.4.0-0.4.2 combined with `create_changelogs` builds a `_refresh`
+identifier that truncates at 63 bytes onto the postchange table's own name, so
+the job errors and rolls back entirely (no rows survive; the receipt's row
+counters are written after the rollback). Reviewable loads therefore accept
+unterminated circuits and record the skipped check with its cause.
 Those commands retain review and revert history; merging a TurboBulk branch to
 main is currently blocked upstream. `just load-disposable ARTIFACT
 TARGET BRANCH` is the explicit scale-only path: it requires a fresh empty branch

@@ -266,14 +266,26 @@ termination IDs, and a real `?site_id=` query returns the circuits that terminat
 there. No extra mutation is involved, so create-ChangeDiff counts are unchanged.
 
 That request is made **only for changelog-free jobs**, which means
-`main-seed` and `disposable-baseline` loads. TurboBulk 0.4.0 cannot do both at
-once: with `create_changelogs` on, the refresh of the captured postchange table
-after the hooks run drops and renames into a name that still exists, and the job
-errors with `relation "postchange__turbobulk_staging_<model>_<id>" already
-exists` after its rows and hooks have landed but before any changelog is
-written. Reproduced identically on two NetBox Cloud tenants and the pinned local
-4.7.1 stack; `docs/transports.md` records the same collision from the original
-TurboBulk evaluation. The consequence is worth stating before a demo:
+`main-seed` and `disposable-baseline` loads. TurboBulk 0.4.0 through 0.4.2
+cannot do both at once on a long-named model. With `create_changelogs` on, the
+post-hook refresh issues `CREATE TEMP TABLE "<postchange>_refresh"` before its
+own drop and rename. PostgreSQL truncates identifiers at 63 bytes and the
+postchange name is `39 + len(db_table)` bytes, so once the model's table name
+reaches 24 characters the `_refresh` name truncates to the postchange name
+itself and that `CREATE` fails with `relation
+"postchange__turbobulk_staging_<model>_<id>" already exists`. The drop and the
+rename never run. 28 of NetBox 4.7's ~147 models cross the threshold,
+`circuits.circuittermination` among them; upsert never builds a postchange
+table and is unaffected.
+
+The job's whole transaction rolls back, so **no rows survive** — the receipt's
+`rows_inserted` and `save_hooks_applied` are in-memory counters written after
+the rollback, not proof of committed rows. Verified live: a
+`virtualization.clustertype` insert reported `rows_inserted: 1` and left zero
+rows on the target. Reproduced identically on two NetBox Cloud tenants and the
+pinned local 4.7.1 stack; `docs/transports.md` records the same collision from
+the original TurboBulk evaluation. The consequence is worth stating before a
+demo:
 **reviewable loads leave circuits unterminated** — empty Side A/Side Z columns,
 `?site_id=` returns nothing, WAN maps draw no arcs — and the readback records
 that skip and its cause instead of asserting caches the load never requested.

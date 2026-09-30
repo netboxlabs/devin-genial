@@ -221,17 +221,28 @@ def _batch_request_settings(base, kind=None):
     save-hook fixups, which run against that job's own affected rows only.
 
     ponytail: save hooks are requested only for changelog-free jobs. TurboBulk
-    0.4.0 cannot combine them with create_changelogs: after the hooks run it
-    refreshes the captured postchange temp table by dropping and renaming
-    (engine/postmerge.py refresh_postchange_table), and the rename collides with
-    the name it just dropped, so the job errors with 'relation
-    "postchange__turbobulk_staging_<model>_<id>" already exists' after inserting
-    its rows and applying its hooks but before writing any changelog. Reproduced
-    identically on two NetBox Cloud tenants and the pinned local 4.7.1 stack.
+    0.4.0 through 0.4.2 cannot combine them with create_changelogs on an insert
+    whose model table name is long. After the hooks run, refresh_postchange_table
+    (engine/postmerge.py) issues CREATE TEMP TABLE "<postchange>_refresh" before
+    its own drop/rename. PostgreSQL truncates identifiers at 63 bytes, and the
+    postchange name is 39 + len(db_table) bytes, so once db_table reaches 24
+    characters the "_refresh" name truncates to the postchange name itself and
+    that CREATE fails with 'relation "postchange__turbobulk_staging_<model>_<id>"
+    already exists'. The drop and the rename never run. 28 of NetBox 4.7's ~147
+    models cross that threshold, circuit_termination among them; upsert is
+    unaffected because it never builds a postchange table.
+
+    The job errors and its whole transaction rolls back, so no rows survive -
+    the receipt's rows_inserted/save_hooks_applied are in-memory counters saved
+    after the rollback, not evidence of committed rows (verified live: a
+    virtualization.clustertype insert reported rows_inserted 1 and left 0 rows).
+    Reproduced identically on two NetBox Cloud tenants and the pinned local
+    4.7.1 stack.
+
     Ceiling: reviewable loads therefore leave Circuit.termination_a/_z unset, so
     circuits read as unterminated there (see the SAVE_HOOK_KINDS note above).
-    Upgrade path: drop this condition once TurboBulk refreshes that table
-    without a colliding rename.
+    Upgrade path: drop this condition once TurboBulk derives that refresh name
+    within the identifier limit.
     """
     settings = {**base, "post_hooks": {name: False for name in POST_HOOKS}}
     if kind in SAVE_HOOK_KINDS and not settings["create_changelogs"]:
