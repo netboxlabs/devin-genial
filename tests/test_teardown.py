@@ -253,3 +253,18 @@ class TeardownRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResumeAfterPartialTeardown(unittest.TestCase):
+    """A partially torn-down target no longer matches its own artifact, so the
+    anti-wrong-target ratio gate must not apply to a receipt-bound resume."""
+
+    def test_bound_receipt_bypasses_the_match_ratio_gate(self):
+        import inspect
+        from estates import teardown
+        src = inspect.getsource(teardown.teardown)
+        gate = src.index("ratio < match_threshold")
+        load = src.index('receipt_path.exists()')
+        self.assertLess(load, gate,
+                        "the receipt must be loaded before the ratio gate or resume is impossible")
+        self.assertIn("and not resuming", src[gate:gate + 120])

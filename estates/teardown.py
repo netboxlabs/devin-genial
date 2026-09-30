@@ -221,9 +221,26 @@ def teardown(artifact, *, url, token, receipt_path, branch="", confirm=False,
     if explain:
         return {"success": True, "result": "explained", **summary}
 
-    # A target that does not substantially hold this artifact is the wrong
-    # target; refuse before any write rather than deleting a partial match.
-    if ratio < match_threshold:
+    # A bound receipt from a previous run on this exact target and artifact is
+    # stronger evidence of identity than any live count, and by design a
+    # partially torn-down target no longer matches its own artifact. Load it
+    # before the ratio gate so a resume is possible at all; without one, a
+    # target that does not substantially hold this artifact is the wrong
+    # target and is refused before any write.
+    receipt_path = Path(receipt_path)
+    receipt = {"receipt_version": RECEIPT_VERSION, **summary,
+               "started_at": _now(), "batches": [], "retired_rows": [], "success": False}
+    resuming = False
+    if receipt_path.exists():
+        previous = json.loads(receipt_path.read_text())
+        for key in ("canonical_sha256", "target", "operation"):
+            if previous.get(key) != receipt[key]:
+                raise LoadError(f"receipt {receipt_path} has different {key}; choose a new receipt")
+        receipt["batches"] = previous.get("batches", [])
+        receipt["retired_rows"] = previous.get("retired_rows", [])
+        resuming = bool(receipt["batches"] or receipt["retired_rows"])
+
+    if ratio < match_threshold and not resuming:
         raise LoadError(
             f"target holds only {matched} of {claimable} objects from this artifact "
             f"({ratio:.1%}); refusing to tear down a target that does not look like it. "
@@ -235,16 +252,6 @@ def teardown(artifact, *, url, token, receipt_path, branch="", confirm=False,
             f"refusing to delete {summary['delete_total']} rows without --confirm; "
             "run the explain recipe first to review what would be removed")
 
-    receipt_path = Path(receipt_path)
-    receipt = {"receipt_version": RECEIPT_VERSION, **summary,
-               "started_at": _now(), "batches": [], "retired_rows": [], "success": False}
-    if receipt_path.exists():
-        previous = json.loads(receipt_path.read_text())
-        for key in ("canonical_sha256", "target", "operation"):
-            if previous.get(key) != receipt[key]:
-                raise LoadError(f"receipt {receipt_path} has different {key}; choose a new receipt")
-        receipt["batches"] = previous.get("batches", [])
-        receipt["retired_rows"] = previous.get("retired_rows", [])
     done = {entry["purpose"] for entry in receipt["batches"] if entry.get("deleted")}
     _write_receipt(receipt_path, receipt)
 
