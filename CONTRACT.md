@@ -209,7 +209,13 @@ Inlet `allocated_draw` and `maximum_draw` are integer watts. `planned_watts`
 contracts distinguish synthetic planning allowances from hardware facts. Normal
 inlet allocations sum to the device allowance; each supply reserves the whole
 allowance for failover. Feed budgets use single-phase voltage × amperage × maximum
-utilization. PDU inlet draw fields remain absent so NetBox aggregates its outlets.
+utilization. A PDU's own input port carries the same two fields, totalled from
+the member inlets cabled to that PDU's outlets: `allocated_draw` sums their
+normal per-port splits and `maximum_draw` sums their full device allowances.
+NetBox does not derive them, and an absent input draw makes every upstream feed
+compute zero utilization. The totals are computed after PoE and optics
+enrichment, so they include those allowances; growth may raise them and must
+never lower them.
 Services use `refs.ipaddresses` and must bind an address owned by their parent VM.
 
 `branch_architecture` is `compact-routed-edge` for small branches and

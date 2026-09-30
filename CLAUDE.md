@@ -43,6 +43,14 @@ every second unit, and device types carry `airflow` where a pinned source
 declares it. Rack coordinates, rack heights, device positions, inter-rack cable
 lengths and every display name move, so 0.11 plans reject growth by version and
 must be regenerated.
+v0.13 is a new baseline carrying two further defects that same rendering found.
+Power feeds were the one family 0.12 missed: they kept the namespaced site stem
+and truncated to one indistinguishable label per power chain, so they now emit
+an authored `Network 01 A`-style name scoped by their panel. And each PDU's own
+input port now carries the draw of the inlets cabled to its outlets — NetBox
+does not roll that up, so an empty input made every feed report 0 W and left the
+utilisation view dark. Both change every estate's canonical graph, so 0.12 plans
+reject growth by version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under
@@ -501,6 +509,12 @@ for the separately recorded pinned-target live qualification.
   preserve hospital source/artifacts and historical live evidence.
 - Shared DC power checks derive hardware and supply allowances from actual
   device-type references; removing descriptive hardware metadata cannot skip them.
+  A PDU's own input port carries the totalled draw of the inlets cabled to its
+  outlets, computed after PoE and optics enrichment so it includes those
+  allowances. Independent checks compare those declared totals at the rack
+  boundary, not per PDU, so the power-diversity defect's single-cord move stays
+  a redistribution rather than a new finding; reports must not count a PDU input
+  again in its rack or PSE totals. Growth may raise a PDU input, never lower it.
 - Shared PoE checks follow actual PD copper paths, compatible supply modules and
   feed ownership. Keep port headroom separate from surviving-supply power budgets.
   Growth may increase PSE inlet draws; it must retain old port/cable identities.
@@ -597,7 +611,9 @@ for the separately recorded pinned-target live qualification.
   coexist across namespaces on one main and `just retire` matches them by exact
   `"<namespace> …"` prefix; and the root ContactGroup, whose canonical slug is
   derived from its name and omitted on the wire for the auto-slug matcher.
-  Power panels are named from their room and side, not the namespaced site stem.
+  Power panels are named from their room and side, not the namespaced site stem;
+  power feeds (since 0.13.0) are named from their cabinet and side, which is
+  unique inside the room-and-side-scoped panel NetBox keys them on.
   `tests/test_naming_policy.py` pins both halves of the split.
 - Site naming: authored display names, facility codes and metro-jittered
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);

@@ -38,9 +38,10 @@ recipe key (authored by default; `legacy` restores namespace-ordinal names),
 and `[site_names]` overrides any site with the customer's real names — see the
 [recipe reference](recipes.md#common-keys). Both keys are rebaseline-frozen.
 
-Every other object family carries an authored display name too (since 0.12.0):
-regions read `Illinois`, device roles `WAN Edge`, providers `Aurora Peak
-Networks`, power panels `MDF Supply A`. The namespace lives in the identity —
+Every other object family carries an authored display name too (since 0.12.0,
+extended to power feeds in 0.13.0): regions read `Illinois`, device roles `WAN
+Edge`, providers `Aurora Peak Networks`, power panels `MDF Supply A`, power
+feeds `Network 01 A` under that panel. The namespace lives in the identity —
 slugs, object keys, device names, circuit IDs, asset tags and DNS — which is
 what still separates two estates loaded onto one target. Two families keep the
 prefix on purpose: the main-scoped records `just retire` matches by exact

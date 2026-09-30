@@ -567,8 +567,12 @@ class Site:
                 pdu = self.device("pdu", label, "pdu", racked=False)
                 self.w.obj(pdu)["refs"].update(rack=rack, location=location)
                 self.w.obj(pdu)["meta"]["failure_domain"] = f"{self.id}-{room}supply-{side}"
+                # NetBox keys a feed on (panel, name) and a panel is already
+                # per site, room and side, so the cabinet label and side are
+                # enough. Same reason as the panel above: the namespaced site
+                # stem truncated to indistinguishable node labels.
                 feed = self.w.add("power_feed", f"feed/{rack}/{side}",
-                                 {"name": f"{self.name}-{rack.split('/')[-1]}-{side}", "status": "active",
+                                 {"name": f"{titleize(rack.split('/')[-1].removeprefix(room))} {side.upper()}", "status": "active",
                                   "type": "primary" if side == "a" else "redundant", "supply": "ac", "phase": "single-phase",
                                   "voltage": 230, "amperage": 16, "max_utilization": 80},
                                  {"power_panel": f"panel/{self.id}/{room}{side}", "rack": rack})

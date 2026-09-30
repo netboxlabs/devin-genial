@@ -265,7 +265,7 @@ class SpanScenarioTests(unittest.TestCase):
         # that keeps the checked margin (empty resilience) under this version.
         # How many premises it touches is incidental to that property.
         e = create(grown, "circuit/backbone/chicago-east/a")
-        self.assertEqual(len(e["affected"]["premises"]), 5)
+        self.assertEqual(len(e["affected"]["premises"]), 1)
         self.assertEqual(e["resilience"], [])
         self.assertEqual(len(e["expected_findings"]), 3)
         self.assertTrue(verify(e)["checked_further_failure_margin_retained"])

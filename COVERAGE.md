@@ -345,7 +345,8 @@ by what it costs a demo.
   plugin is installed and the estate models ASNs, so this is reachable scope
   rather than a limitation — it would need a new canonical kind and a
   rebaseline.
-- Power chain reports **0 W allocated against 11.8 kW**. Traced: the feed
+- Power chain reports **0 W allocated against 11.8 kW** (fixed in 0.13.0; see
+  the 2026-09-30 review below). Traced: the feed
   connects to the PDU's own `Input` power port, and that port carries
   `maximum_draw: null` / `allocated_draw: null`, so any consumer reading the
   feed's connected endpoint sees nothing. Device-side ports are complete
@@ -383,6 +384,14 @@ retired `devin-generator` probes; they are noise in front of a customer.
 
 Ranked by what each costs a demo. Evidence is the view's own status bar plus a
 contradicting or confirming API count, per the `visual-review` skill.
+
+Items 1 and 2 are **fixed in 0.13.0** (one new baseline, both change the
+canonical graph): PDU input ports now carry the totalled draw of the inlets
+cabled to their outlets, computed after PoE/optics enrichment; power feeds now
+emit an authored `Network 01 A`-style name scoped by their panel. Pinned by
+`tests/test_depth.py::test_pdu_input_must_carry_the_load_cabled_to_its_outlets`
+and `tests/test_naming_policy.py::test_power_feed_names_are_readable_and_unique_within_their_panel`.
+Items 3 and 4 remain open.
 
 **1. PDU input power ports carry no draw, so the power chain reads 0 W.**
 The power-chain view renders the A/B tree correctly (`2 panels | 4 feeds |

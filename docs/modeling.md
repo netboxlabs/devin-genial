@@ -174,7 +174,12 @@ non-racked devices rather than in the elevation.
 
 Rack roles and device-role colors make elevations easier to interpret. Racked
 infrastructure carries explicit synthetic power allowances, split across its
-installed supplies, with full allowance on either feed for failover. These are
+installed supplies, with full allowance on either feed for failover. Each PDU's
+own input port carries the total of the inlets cabled to its outlets — the
+normal splits in `allocated_draw`, the full device allowances in `maximum_draw` —
+so a power chain reports real utilisation at the feed and panel above it; NetBox
+does not compute that upward, and an empty input makes the whole chain read 0 W.
+These are
 planning inputs; connected PoE reservations additionally use the catalog supply
 budgets and an authored upstream AC allowance. They are not measured consumption. Service
 VMs have roles and a fictional Linux platform; services bind their own VM's IP.

@@ -147,10 +147,18 @@ class ProviderTests(unittest.TestCase):
             occupied={e for o in before['objects'] if o['kind']=='cable' for e in o['refs'].values()}
             _, old_optics = analyze_optics(before)
             _, new_optics = analyze_optics(after)
+            # A PDU input aggregates the inlets cabled to its outlets, so appending
+            # a device to an existing rack legitimately raises it; it may only grow.
+            pdu_inputs = {o["refs"]["power_port"] for o in old.values() if o["kind"] == "power_outlet"}
             for key,obj in old.items():
                 owner = obj["refs"].get("device")
                 delta = new_optics.get(owner, 0) - old_optics.get(owner, 0)
-                if obj["kind"] == "power_port" and delta > 0:
+                if key in pdu_inputs:
+                    actual, expected = deepcopy(new[key]), deepcopy(obj)
+                    for field in ("allocated_draw", "maximum_draw"):
+                        self.assertGreaterEqual(actual["attrs"].pop(field), expected["attrs"].pop(field), key)
+                    self.assertEqual(actual, expected, key)
+                elif obj["kind"] == "power_port" and delta > 0:
                     actual, expected = deepcopy(new[key]), deepcopy(obj)
                     self.assertEqual(actual["attrs"]["maximum_draw"] - expected["attrs"]["maximum_draw"], delta)
                     for field in ("allocated_draw", "maximum_draw"):

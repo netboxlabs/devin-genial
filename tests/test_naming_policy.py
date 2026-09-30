@@ -17,7 +17,7 @@ AUTHORED_KINDS = (
     "provider_network", "device_role", "rack_role", "rack_group", "platform",
     "circuit_type", "virtual_circuit_type", "cluster_type", "cluster_group",
     "rir", "role", "asn_range", "tunnel_group", "vlan_group", "tag",
-    "contact_role", "power_panel", "inventory_item_role", "cable_bundle",
+    "contact_role", "power_panel", "power_feed", "inventory_item_role", "cable_bundle",
     "virtual_machine_type", "circuit_group", "wireless_lan_group",
 )
 
@@ -79,6 +79,21 @@ class GeneratedEstateNames(unittest.TestCase):
                 f"{obj['kind']} {name!r} must stay namespaced: retirement matches it by exact prefix",
             )
         self.assertTrue(seen, "expected at least one main-scoped record")
+
+    def test_power_feed_names_are_readable_and_unique_within_their_panel(self):
+        # NetBox keys a feed on (power_panel, name); the namespaced stem made all
+        # four feeds of a power chain truncate to one indistinguishable label.
+        feeds, seen = 0, set()
+        for obj in self.plan["objects"]:
+            if obj["kind"] != "power_feed":
+                continue
+            feeds += 1
+            name, panel = obj["attrs"]["name"], obj["refs"]["power_panel"]
+            self.assertNotIn(self.namespace, name.lower())
+            self.assertRegex(name, r"^[A-Za-z][A-Za-z0-9 ]* [AB]$")
+            self.assertNotIn((panel, name), seen, f"{name!r} repeats under {panel}")
+            seen.add((panel, name))
+        self.assertTrue(feeds, "expected power feeds in the estate")
 
     def test_identities_still_carry_the_namespace(self):
         seen = 0

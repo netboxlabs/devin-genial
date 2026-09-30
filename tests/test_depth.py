@@ -69,6 +69,23 @@ class DepthTests(unittest.TestCase):
         self.mutate(lambda o: o["device/br-s0001/access-01/power/PS-1"]["attrs"].update(maximum_draw=60), "power-failover")
         self.mutate(lambda o: o["feed/rack/br-s0001/network-01/a"]["attrs"].update(amperage=1), "power-feed-capacity")
 
+    def test_pdu_input_must_carry_the_load_cabled_to_its_outlets(self):
+        # Reverting the aggregation leaves the input empty, which is what made
+        # the rendered power chain report 0 W across every upstream feed.
+        inlet = "device/br-s0001/pdu-network-01-a/power/Input"
+        draws = {obj["key"]: obj["attrs"] for obj in self.baseline["objects"]}[inlet]
+        self.assertGreater(draws["allocated_draw"], 0)
+        self.assertGreaterEqual(draws["maximum_draw"], draws["allocated_draw"])
+
+        def strip(objects):
+            for field in ("allocated_draw", "maximum_draw"):
+                objects[inlet]["attrs"].pop(field)
+        self.mutate(strip, "pdu-input-draw")
+        self.mutate(lambda o: o[inlet]["attrs"].update(allocated_draw=0), "pdu-input-draw")
+        self.mutate(strip, "pdu-input-aggregation")
+        self.mutate(lambda o: o[inlet]["attrs"].update(allocated_draw=1), "pdu-input-aggregation")
+        self.mutate(lambda o: o[inlet]["attrs"].update(maximum_draw=10**6), "pdu-input-aggregation")
+
     def test_feed_utilization_cannot_inflate_its_electrical_budget(self):
         for value in (0, 101, 200):
             with self.subTest(value=value):

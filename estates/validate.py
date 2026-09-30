@@ -763,6 +763,36 @@ def validate(plan):
                 report("power-budget-model", feed, "The planning budget currently supports single-phase AC feeds only.")
             elif worst_case > budget:
                 report("power-feed-capacity", feed, f"Single-feed failover allocation {worst_case:g} W exceeds {budget:g} W planning budget.")
+    # A PDU's own input port must carry the load cabled to its outlets: an empty
+    # input leaves every upstream feed computing zero utilisation, so the whole
+    # power chain reads 0 W. The totals are compared at the rack boundary rather
+    # than per PDU, because moving one cord between a rack's own PDUs
+    # redistributes the load without changing what the rack draws.
+    rack_draw = defaultdict(lambda: [0, 0, 0, 0])
+    inlet_loads = {}
+    for outlet in by_kind["power_outlet"]:
+        inlet = refs(outlet).get("power_port")
+        if kind(inlet) != "power_port":
+            continue
+        loads = inlet_loads.setdefault(inlet, [])
+        load = terminal_peers.get(outlet)
+        if kind(load) == "power_port":
+            loads.append(load)
+    for inlet, loads in inlet_loads.items():
+        normal, failover = (sum(attrs(load).get(field) or 0 for load in loads)
+                            for field in ("allocated_draw", "maximum_draw"))
+        declared = [attrs(inlet).get(field) for field in ("allocated_draw", "maximum_draw")]
+        if normal and (any(type(value) is not int for value in declared) or
+                       not 0 < declared[0] <= declared[1]):
+            report("pdu-input-draw", inlet, "A PDU input serving cabled outlets needs positive integer normal and failover draws, normal no greater than failover.")
+        totals = rack_draw[refs(refs(inlet).get("device")).get("rack")]
+        totals[0] += declared[0] if type(declared[0]) is int else 0
+        totals[1] += declared[1] if type(declared[1]) is int else 0
+        totals[2] += normal
+        totals[3] += failover
+    for rack, (declared_normal, declared_failover, normal, failover) in rack_draw.items():
+        if kind(rack) == "rack" and (declared_normal, declared_failover) != (normal, failover):
+            report("pdu-input-aggregation", rack, f"PDU inputs declare {declared_normal:g}/{declared_failover:g} W against {normal:g}/{failover:g} W cabled to their outlets.")
     contracts = plan.get("contracts", [])
     if not isinstance(contracts, list):
         report("contract-format", "plan", "contracts must be a list.")

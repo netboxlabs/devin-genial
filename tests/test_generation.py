@@ -75,6 +75,10 @@ class GenerationTests(unittest.TestCase):
         self.assertTrue(self.objects.keys() <= objects.keys(), "Growth removed existing objects")
         _, before_optics = analyze_optics(self.baseline)
         _, after_optics = analyze_optics(grown)
+        # A PDU input aggregates the inlets cabled to its outlets, so appending a
+        # device to an existing rack legitimately raises it. It may only grow.
+        pdu_inputs = {obj["refs"]["power_port"] for obj in self.objects.values()
+                      if obj["kind"] == "power_outlet"}
         used_ports = set()
         for key, original in self.objects.items():
             if original["kind"] == "cable":
@@ -91,7 +95,10 @@ class GenerationTests(unittest.TestCase):
                 old, new = deepcopy(self.objects[key]), deepcopy(objects[key])
                 device = old["refs"].get("device")
                 extra = after_optics.get(device, 0) - before_optics.get(device, 0)
-                if old["kind"] == "power_port" and extra > 0:
+                if key in pdu_inputs:
+                    for field in ("maximum_draw", "allocated_draw"):
+                        self.assertGreaterEqual(new["attrs"].pop(field), old["attrs"].pop(field))
+                elif old["kind"] == "power_port" and extra > 0:
                     self.assertEqual(new["attrs"]["maximum_draw"] - old["attrs"]["maximum_draw"], extra)
                     for field in ("maximum_draw", "allocated_draw"):
                         self.assertGreaterEqual(new["attrs"].pop(field), old["attrs"].pop(field))

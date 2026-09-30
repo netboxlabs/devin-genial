@@ -3,6 +3,9 @@
 PD load follows the actual copper path. It is counted once at the serving PSE,
 not as a second wall-power feed on the AP. Independent validation checks actual
 installed supplies and paths; these allocations do not establish measured draw.
+
+This module also owns the final roll-up onto each PDU's own input port, because
+that sum is only correct once every member inlet carries its final allowance.
 """
 
 from collections import defaultdict
@@ -17,6 +20,41 @@ def planning_budget(hardware):
     policy = hardware.get("poe_pse", {})
     supplies = len(hardware.get("power_ports", [])) - policy.get("planning_supply_losses", 0)
     return policy.get("budget_by_active_supplies_mw", {}).get(str(supplies), 0)
+
+
+def aggregate_pdu_inputs(world):
+    """Roll each PDU's downstream inlet allocations onto its own input port.
+
+    A PDU input left empty makes every upstream feed compute zero utilisation,
+    so the whole power chain reads 0 W. Mirrors the member semantics exactly:
+    ``allocated_draw`` totals the normal per-port splits actually cabled to this
+    PDU, ``maximum_draw`` totals their full device allowances, so the input
+    still reserves single-feed failover for the devices it serves.
+
+    Must run last: ``enrich`` above rewrites member inlet draws with their PoE
+    and optics allowances, and an earlier sum would undercount both.
+    """
+    objects = world.objects
+    peers = {}
+    for obj in objects.values():
+        if obj["kind"] == "cable" and obj["attrs"].get("type") == "power":
+            a, b = obj["refs"]["a"], obj["refs"]["b"]
+            peers[a], peers[b] = b, a
+    totals = defaultdict(lambda: [0, 0])
+    for outlet in objects.values():
+        if outlet["kind"] != "power_outlet":
+            continue
+        inlet = outlet["refs"].get("power_port")
+        load = objects.get(peers.get(outlet["key"]), {})
+        if objects.get(inlet, {}).get("kind") != "power_port" or load.get("kind") != "power_port":
+            continue  # Spare outlets carry no load; a broken link is an independent finding.
+        totals[inlet][0] += load["attrs"].get("allocated_draw") or 0
+        totals[inlet][1] += load["attrs"].get("maximum_draw") or 0
+    for inlet, (normal, failover) in totals.items():
+        if not normal:
+            continue  # Native PowerPort draws are positive integers or unset.
+        objects[inlet]["attrs"].update(allocated_draw=normal, maximum_draw=failover,
+            description="Aggregated downstream inlet allocations; maximum reserves the served devices' single-feed failover")
 
 
 def enrich(world):
@@ -96,3 +134,4 @@ def enrich(world):
                 "plus connected PD reservations with a 1.25 upstream AC allowance",
                 "plus separately rounded connected PD and installed optical module/end reservations, each with a 1.25 upstream AC allowance")
                 for text in contract["assumptions"]]
+    aggregate_pdu_inputs(world)

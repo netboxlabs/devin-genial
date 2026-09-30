@@ -398,8 +398,6 @@ def markdown(plan):
             interfaces_by_device[refs.get("device")].append(obj)
         elif kind == "power_port":
             power_ports_by_device[refs.get("device")] += 1
-            rack = objects.get(refs.get("device"), {}).get("refs", {}).get("rack")
-            rack_watts[rack] += obj["attrs"].get("allocated_draw", 0)
         elif kind == "cable":
             a, b = refs["a"], refs["b"]
             cable_peer[a], cable_peer[b] = b, a
@@ -408,6 +406,14 @@ def markdown(plan):
             rear = refs.get("rear_port")
             if objects.get(rear, {}).get("attrs", {}).get("positions") == 1:
                 passive_peer[key], passive_peer[rear] = rear, key
+
+    # A PDU input aggregates the inlets cabled to its outlets, so counting both
+    # it and those inlets would report the rack's allocation twice.
+    pdus = {outlet["refs"].get("device") for outlet in kinds["power_outlet"]}
+    for obj in kinds["power_port"]:
+        if obj["refs"].get("device") in pdus:
+            continue
+        rack_watts[objects.get(obj["refs"].get("device"), {}).get("refs", {}).get("rack")] += obj["attrs"].get("allocated_draw", 0)
 
     def name(key):
         obj = objects.get(key, {})
@@ -1112,7 +1118,8 @@ def markdown(plan):
                       "Free rack units subtract installed positioned device heights from rack height; free outlets have no cable. "
                       "These are physical inventory counts, not guarantees of usable power, cooling or policy reserve. "
                       "Synthetic infrastructure allocations only: normal draw sums installed inlet allocations. "
-                      "Each dual-supply inlet reserves the whole device allowance for failover. PDU inputs aggregate downstream loads; "
+                      "Each dual-supply inlet reserves the whole device allowance for failover. A PDU input carries the total of the "
+                      "inlets cabled to its outlets, so the rack column counts each member inlet once and never its PDU input as well; "
                       "connected PD reservations include a 1.25 upstream AC planning allowance. Endpoint wall power and "
                       "measured/vendor-certified electrical performance are outside this budget.", ""])
         _table(lines, ["Site", "Equipment room", "Rack", "Positioned U", "Free U", "Free PDU outlets", "Infrastructure allocation W"],

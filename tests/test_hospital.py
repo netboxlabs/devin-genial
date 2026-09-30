@@ -83,10 +83,18 @@ class HospitalTests(unittest.TestCase):
                     _, optics = analyze_optics(plan)
                     _, pd = analyze_poe(plan, hardware_catalog())
                     extras.append({key: optics.get(key, 0) + pd.get(key, 0) for key in optics.keys() | pd.keys()})
+                # A PDU input aggregates the inlets cabled to its outlets, so
+                # appending a device to a rack raises it; it may only grow.
+                pdu_inputs = {o["refs"]["power_port"] for o in old.values() if o["kind"] == "power_outlet"}
                 for key,obj in old.items():
                     owner = obj["refs"].get("device")
                     delta = extras[1].get(owner, 0) - extras[0].get(owner, 0)
-                    if obj["kind"] == "power_port" and delta > 0:
+                    if key in pdu_inputs:
+                        actual, expected = deepcopy(new[key]), deepcopy(obj)
+                        for field in ("allocated_draw", "maximum_draw"):
+                            self.assertGreaterEqual(actual["attrs"].pop(field), expected["attrs"].pop(field), key)
+                        self.assertEqual(actual, expected, key)
+                    elif obj["kind"] == "power_port" and delta > 0:
                         actual, expected = deepcopy(new[key]), deepcopy(obj)
                         self.assertEqual(actual["attrs"]["maximum_draw"] - expected["attrs"]["maximum_draw"], delta)
                         for field in ("allocated_draw", "maximum_draw"):
