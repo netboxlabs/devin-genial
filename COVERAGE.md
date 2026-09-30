@@ -379,6 +379,66 @@ containers earn their place in a demo even though they are defensible.
 **Demo hygiene:** the org's Assurance queue holds 51 stale OPEN deviations from
 retired `devin-generator` probes; they are noise in front of a customer.
 
+### Visual review, 2026-09-30 (provider estate, `crsk8600` main, CDC enabled)
+
+Ranked by what each costs a demo. Evidence is the view's own status bar plus a
+contradicting or confirming API count, per the `visual-review` skill.
+
+**1. PDU input power ports carry no draw, so the power chain reads 0 W.**
+The power-chain view renders the A/B tree correctly (`2 panels | 4 feeds |
+4 PDUs`) and then reports `Power: 0 W / 11.8 kW | Util: 0.0%`. Device power
+ports are fine - `maximum_draw: 120, allocated_draw: 60` on real devices. The
+break is the PDU's own `Input` port: it is *connected* to its feed
+(`connected_endpoints` resolves) but has `maximum_draw: None` and
+`allocated_draw: None`, so nothing propagates up and every feed computes zero.
+Utilisation is the entire point of that view. Fix is to populate the PDU input
+port's draw from the outlets it serves. Class: a null field that leaves a
+feature dark.
+
+**2. Power feed names still carry the namespace.** Feeds are authored
+`lakes-fiber-dc-01-compute-01-a`; in the power-chain graph all four truncate to
+`lakes-fiber-pop-chica…` and are indistinguishable. This is precisely the
+defect 0.12.0 fixed for other families - power *panels* are correctly `Supply A`
+/ `Supply B` - and `power_feed` is not in `NAMESPACED_KINDS`, so it should have
+been authored namespace-free too. The family was missed. Changing it alters
+display names across every estate, so it needs an `estates/__version__` bump
+and a new baseline.
+
+**3. Racks read as a lab.** `24U Rack | 21% utilized | 5 devices | 19U
+available` at a PoP: three racked devices at U1-U3 with twenty-one empty units
+above, plus two 0U PDUs. The 0U handling is correct (they appear under
+"Non-racked", exactly as NetBox models them). The density is not. Either size
+PoP cabinets to their actual lane or consolidate - from correct modelling,
+never padding.
+
+**4. Circuit IDs render as long slugs.** The circuits list shows `cid` as its
+primary column, and ours read
+`lakes-fiber-customer-ce-harbor-logistics-chicago-west-001`, wrapping to two
+lines. Circuits have no separate display name, so the identity-keeps-the-
+namespace rule lands badly here; a carrier reference looks like
+`ATLS-10G-CHI-001`. Rebaseline-frozen (the provider uses `cid` in Diode
+matching identities), so this is a decision to surface, not to take.
+
+What is demonstrably right, worth keeping: authored site names with facility
+codes, regions, tenants and descriptions all populated; metro-accurate
+coordinates; site popups carrying real street addresses; **Side A and Side Z
+populated on every circuit** (tonight's save-hook fix, visible in the UI);
+device types reading as real hardware (`MX204`, `Catalyst 9200L-24P-4X`);
+interface names in real vendor form (`xe-0/1/6`, `TenGigabitEthernet1/1/1`).
+
+**Product-side observations (not ours, not filed).** The WAN geo map never fits
+the viewport to the data: it opens at full globe and stays there whether scoped
+by URL or by clicking a marker, so a regional estate is one indistinct dot with
+overlapping labels until a human zooms. And the cable-topology view renders
+interface-type ports only, so PDUs appear as empty boxes with no ports while the
+legend still advertises a red "Power" cable type; the estate in fact has 108
+power cables and 108 connected power ports. That second one nearly became a
+false bug report against our own generator - see the skill's false-absence rule.
+
+**Not a defect, an action item:** this estate has no floorplan records, so the
+floorplan view is empty until `just geometry` + `just seed-geometry` run
+against it.
+
 **Blocking platform incompatibility found while reseeding (2026-09-30):**
 TurboBulk main-scoped loading stopped working on the visualization tenant. Every
 job that creates its staging table in schema `public` fails with
