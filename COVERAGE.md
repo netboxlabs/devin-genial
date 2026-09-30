@@ -509,8 +509,16 @@ has one open ticket. Operationally relevant: NBC-6875 records that manual
 publication, so hand-patching a tenant is not a durable mitigation - only
 disabling CDC is. Platform PR #6670 is open now and rewrites both affected
 files without addressing either gap, which makes it the cheapest landing spot
-for the one-line fix. Nothing has been filed or sent: the "no other teams" gate
-is closed pending an explicit decision.
+for the one-line fix.
+
+**Filed 2026-09-30, with explicit approval:** NBC-7787 (Eng - Cloud Delivery,
+High, in Triage under the NBC-7290 CDC lifecycle epic), carrying the root cause,
+the self-contained reproduction, the same-instance A/B and the proposed
+`relpersistence` guard, and related to NBC-7786 / NBC-6574 / DATA-74. A comment
+was also left on platform PR #6670, which rewrites that function while it is
+open. The draft, the reproduction script and both Postgres runs are preserved
+under `build/cdc-bug/`. The "no other teams" gate returns to closed: this
+approval covered these two actions only.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
