@@ -389,20 +389,31 @@ DETAIL:  This operation is not supported for unlogged tables.
 CONTEXT:  ALTER PUBLICATION dbz_pub_nb_46fca0360cbb ADD TABLE ...
 ```
 
-A Debezium CDC publication now captures that instance's tables, and TurboBulk's
-staging tables are `UNLOGGED` — Postgres refuses to publish those. It is
-reproducible and deterministic, it fails on the very first job, and
-`engine/staging.py` hard-codes `CREATE UNLOGGED TABLE` with no plugin setting
-to change it, so there is no self-service workaround. The same artifact loads
-normally on a sibling tenant in the same org, so this is per-instance, not
-org-wide; the publication is named for the instance that has Analytics and
-Visual Explorer enabled, and the tenant loaded fine five days earlier — a
-strong inference that enabling Analytics provisions the publication, though we
-have not confirmed that from the platform side. Consequences: **Analytics and
-TurboBulk appear mutually exclusive on one instance as currently configured.**
-Candidate fixes are all platform- or plugin-side: exclude `_turbobulk_staging_*`
-from the publication, create staging tables in a schema the publication does not
-cover, or fall back to logged staging tables when a publication exists.
+Confirmed from the internal record (Linear **DATA-74**, Data Platform, project
+"NetBox Analytics - Early Preview", Backlog): enabling NetBox Analytics
+provisions per-instance Debezium CDC, and part of `PrepareDatabase` is a
+Postgres **event trigger**, `set_replica_identity_full()`
+(`core-lambda/libs/cdc/database.go:370-441`), that adds newly created public
+tables to the publication `dbz_pub_<id>`. TurboBulk creates
+`CREATE UNLOGGED TABLE public._turbobulk_staging_<model>_<hash>`, the trigger
+fires, Postgres refuses to publish an unlogged table, and the whole TurboBulk
+transaction dies on its first job. The publication is an explicit `FOR TABLE`
+list (never `FOR ALL TABLES`) and its exclude list
+(`DefaultCDCTableExcludeList`, 15 patterns at
+`libs/configuration/configuration.go:460`) is compile-time configuration baked
+into the trigger body at prepare time - DATA-74 exists precisely to make it
+adjustable per connector and is not built, so there is no per-tenant toggle
+today. `engine/staging.py` hard-codes `CREATE UNLOGGED TABLE` with no plugin
+setting either, so neither side can be configured around it. Verified
+per-instance, not org-wide: the same artifact loads normally on a sibling
+tenant without Analytics. **Practical consequence: NetBox Analytics and
+TurboBulk cannot both be enabled on one instance today**, which matters because
+both are premium features an SE would expect to demo together. No existing
+report of this conflict was found. The semantically correct fix is for the
+event trigger to skip unlogged relations (`relpersistence = 'u'`), since an
+unlogged table can never be replicated anyway; adding `_turbobulk_staging_%`
+to the exclude list would also work but needs a release. Disabling CDC for the
+instance (`DELETE /cdc/`) is the operator-side unblock.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
