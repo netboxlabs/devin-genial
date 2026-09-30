@@ -411,8 +411,10 @@ in the caller's transaction rolls back with it.
 
 TurboBulk creates `public._turbobulk_staging_<model>_<hash>` as
 `CREATE UNLOGGED TABLE` (`netbox-turbobulk/engine/staging.py`, hard-coded), and
-`_turbobulk_staging_%` is not among the fifteen patterns in
-`DefaultCDCTableExcludeList` (`libs/configuration/configuration.go:522`). So on
+`_turbobulk_staging_%` is not among the fourteen patterns in
+`DefaultCDCTableExcludeList` (`libs/configuration/configuration.go:522`) -
+confirmed by running all fourteen through the real `debeziumPatternToSQL`
+transform against an actual staging-table name, zero matches. So on
 any instance with CDC provisioned, TurboBulk's first staging-table creation
 aborts and the job dies. Observed exactly that, reproducibly, first job every
 time; the same artifact loads normally on a sibling tenant.
@@ -474,6 +476,26 @@ so nothing is left to fire. That is the only lever available today that does not
 require a release from another team, and testing it is itself strong
 confirmation of the diagnosis. It costs Analytics on that instance, which is
 gated on CDC; Visual Explorer does not use CDC and is unaffected.
+
+**Prior art: none (checked 2026-09-30).** Three independent read-only sweeps of
+Linear, Pylon, Slack and GitHub found no report of this interaction anywhere,
+and confirmed both defects are live on `main` in the platform monorepo and in
+TurboBulk as of the most recent commits. The trigger function still catches only
+`duplicate_object` and still has no `relpersistence` guard; the exclude list
+still has no staging-table pattern; TurboBulk still creates unschema-qualified
+`CREATE UNLOGGED TABLE` staging tables in three places. The mechanism is
+documented by its author (NBF-251 introduced the trigger; NBF-512 made the
+per-table `ALTER PUBLICATION` path load-bearing), and NBC-6574 states that any
+plugin's tables are captured by default - but it anticipates downstream schema
+incompatibility, never a transaction abort inside the plugin emitting the DDL.
+NBC-7786 is the same trigger breaking `pg_restore`, so this defect class already
+has one open ticket. Operationally relevant: NBC-6875 records that manual
+`ALTER PUBLICATION` edits are auto-reverted when the platform reconciles the
+publication, so hand-patching a tenant is not a durable mitigation - only
+disabling CDC is. Platform PR #6670 is open now and rewrites both affected
+files without addressing either gap, which makes it the cheapest landing spot
+for the one-line fix. Nothing has been filed or sent: the "no other teams" gate
+is closed pending an explicit decision.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
