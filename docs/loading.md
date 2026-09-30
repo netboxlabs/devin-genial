@@ -123,10 +123,48 @@ worker-death resume arbitrates from the model's live row count on main
 (baseline = recorded allowlisted rows plus verified rows; anything but the two
 exact counts is a hard stop), which rests on main having no other writer during
 the load — an assumption the loader cannot enforce, so keep humans out of the
-tenant while a seed runs. Treat the result as **essentially permanent**:
-un-seeding main means per-object deletion or a platform reset (see
-[seeding](seeding.md)), so never use this on a tenant whose branches or history
-matter.
+tenant while a seed runs. A seeded main can be taken back with
+[teardown](#tearing-a-seeded-estate-back-off-main), but that is a destructive
+operation rather than a branch delete, so still never seed a tenant whose
+branches or history matter.
+
+### Tearing a seeded estate back off main
+
+`just seed-main` has an inverse. Without one, iterating on a visualization demo
+means asking the platform to wipe the tenant every time the estate improves:
+
+```sh
+just teardown-main-explain build/my-estate https://netbox.example   # zero writes
+ALLOW_MAIN_TEARDOWN=1 just teardown-main build/my-estate https://netbox.example
+```
+
+**This permanently deletes real rows.** It is for a dedicated demo or
+visualization tenant, never for one whose data matters, and there is no undo.
+
+What makes it safe to point at a shared tenant is that it is **artifact-scoped,
+never a wipe**. The same strict readback that proves a load landed resolves
+each plan object to its target row, and only those IDs are ever deleted; every
+row the plan does not claim is counted, reported as
+`foreign_rows_left_alone`, and left alone. A target whose plan-matched
+inventory does not substantially look like the artifact is refused before any
+write, so the command cannot be pointed at the wrong tenant by accident. Three
+gates must all pass: `ALLOW_MAIN_TEARDOWN=1` (distinct from
+`ALLOW_MAIN_WRITES`), an explicit `--confirm` after reviewing the summary, and
+no branch — a branch is retired with `just branch-delete` or `just retire`.
+
+Deletion walks the loader's dependency phases **in reverse**, because NetBox
+protects referenced rows rather than cascading: deleting a site that still has
+racks returns 409 naming every dependent object. Cable terminations go with
+their cable rather than separately, and the Branching-exempt main-scoped rows
+(the automation records, custom-field definitions and owner pair) are retired
+last through the same exact-name matching `just retire` uses. Each bounded
+batch writes its intent to a receipt before the delete, and because NetBox's
+bulk endpoint rejects a batch naming an already-absent row, every batch
+re-resolves what is actually present first — which is also what makes an
+interrupted run resume safely. A successful bulk delete returns 204 with an
+empty body, so the outcome is proven by re-reading the target rather than by
+the response. The run ends by re-reading every emitted kind and failing loudly
+with the endpoint and ID of anything that survived.
 
 ### Floorplan geometry for Visual Explorer
 

@@ -50,7 +50,11 @@ the estate must have been written through NetBox so trigger-maintained state
    `ALLOW_MAIN_WRITES=1 just seed-main` against main (the explicit main-seed
    policy: no branch, changelogs off, strict readback kept — see the
    [loading guide](loading.md#seeding-a-dedicated-tenants-main), since a
-   TurboBulk branch cannot currently be merged) and keep its receipt.
+   TurboBulk branch cannot currently be merged) and keep its receipt. To
+   replace a seeded estate with a corrected one rather than rebuilding the
+   scratch instance, `ALLOW_MAIN_TEARDOWN=1 just teardown-main ARTIFACT TARGET`
+   removes exactly that artifact's rows first (see
+   [tearing a seeded estate back off main](loading.md#tearing-a-seeded-estate-back-off-main)).
 2. Dump: `pg_dump -Fc --no-owner --no-privileges` of the netbox database,
    **excluding per-instance tables** (this list is authored for this pipeline,
    not taken from upstream documentation; validate it on a scratch instance):

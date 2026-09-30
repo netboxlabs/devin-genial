@@ -63,6 +63,16 @@ seed-main artifact target turbobulk_job_rows='2000' upload_format='auto':
 seed-main-explain artifact target:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.load {{quote(artifact)}} {{quote(target)}} --delivery-policy main-seed --explain
 
+# Preview a main teardown with zero writes: what this artifact would delete
+teardown-main-explain artifact target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.teardown {{quote(artifact)}} {{quote(target)}} --explain
+
+# PERMANENTLY delete this artifact's estate from a dedicated tenant's main.
+# Requires ALLOW_MAIN_TEARDOWN=1; rows the artifact does not claim are left
+# alone. Run teardown-main-explain first.
+teardown-main artifact target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.teardown {{quote(artifact)}} {{quote(target)}} --confirm
+
 # Derive deterministic floorplan geometry (physical-geometry plugin records)
 # from a frozen plan — a sidecar artifact bound to the plan's SHA, like drift
 geometry plan out:

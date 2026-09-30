@@ -136,8 +136,19 @@ policy for dedicated visualization/analytics tenants (`seed-main-explain` is its
 zero-write preflight): no branch, TurboBulk changelogs off (REST records and
 completion PATCHes still write ordinary changelog entries), REST writes allowed,
 strict readback kept, ChangeDiff gates exempt by policy (they are a Branching
-branch concept), empty-main occupancy required, and the result is essentially
-permanent — never on a tenant whose branches or history matter. A main-seed
+branch concept), empty-main occupancy required — never on a tenant whose
+branches or history matter. Its inverse is
+`ALLOW_MAIN_TEARDOWN=1 just teardown-main ARTIFACT TARGET`
+(`teardown-main-explain` previews with zero writes): artifact-scoped, so only
+rows the plan's own strict-readback identities resolve are deleted and every
+foreign row is reported and left alone; refuses a target that does not look
+like the artifact, requires `--confirm`, and refuses a branch. It deletes in
+reverse dependency order because NetBox PROTECTs referenced rows, retires the
+main-scoped extras/owners last through `retire_namespace_rows`, re-resolves
+each bounded batch before deleting (the bulk endpoint rejects a batch naming an
+absent row, which is also what makes a resume safe), proves each delete by
+re-reading rather than by the 204's empty body, and fails loudly naming any
+survivor. It is destructive and has no undo. A main-seed
 worker-death resume arbitrates from the model's live row count on main
 (allowlisted `target_ids` plus verified rows; only the two exact counts decide),
 which assumes no other writer touches main mid-load — keep humans out during a
