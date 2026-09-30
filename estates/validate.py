@@ -250,6 +250,12 @@ def validate(plan):
             scope = (rel.get("virtual_machine"),)
         elif typ == "rack":
             scope = (site(key), rel.get("location"))
+        elif typ == "power_panel":
+            # NetBox constrains PowerPanel on (site, name); authored panel
+            # names repeat across sites by design.
+            scope = (site(key),)
+        elif typ == "power_feed":
+            scope = (rel.get("power_panel"),)
         elif typ == "cooling_source":
             scope = (rel.get("site"),)
         elif typ == "cooling_feed":

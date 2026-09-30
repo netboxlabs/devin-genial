@@ -209,7 +209,10 @@ class GenerationTests(unittest.TestCase):
     def test_namespace_separates_target_identities_and_dns(self):
         other = generate(self.baseline["recipe"] | {"namespace": "maple"})
         self.assertEqual(validate(other), [])
-        for kind, field in (("tenant", "name"), ("tenant", "slug"), ("site", "slug"), ("vrf", "name"),
+        # Display names are authored and deliberately namespace-free (see
+        # estates/naming.py): they no longer separate estates.  The matching
+        # identities below still must.
+        for kind, field in (("tenant", "slug"), ("site", "slug"), ("vrf", "name"),
                             ("circuit", "cid"), ("ip_address", "dns_name")):
             with self.subTest(kind=kind, field=field):
                 original_names = {obj["attrs"][field] for obj in self.baseline["objects"] if obj["kind"] == kind}
@@ -222,8 +225,9 @@ class GenerationTests(unittest.TestCase):
         for plan in (self.baseline, other):
             objects = {o["key"]: o for o in plan["objects"]}
             identities.append({(o["kind"], o["attrs"]["name"],
-                               objects[o["refs"].get("site", o["refs"].get("cluster"))]["attrs"]["name"],
-                               objects[o["refs"]["tenant"]]["attrs"]["name"])
+                               objects[o["refs"].get("site", o["refs"].get("cluster"))]["attrs"].get("slug")
+                               or objects[o["refs"].get("site", o["refs"].get("cluster"))]["attrs"]["name"],
+                               objects[o["refs"]["tenant"]]["attrs"]["slug"])
                               for o in plan["objects"] if o["kind"] in {"device", "virtual_machine"}})
         self.assertTrue(identities[0].isdisjoint(identities[1]))
         rds = [obj["attrs"]["rd"] for plan in (self.baseline, other) for obj in plan["objects"]

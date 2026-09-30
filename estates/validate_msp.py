@@ -187,7 +187,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     # --- tenancy: one account per customer, grouped, and nothing shared --------
     group = "tenant-group/customers"
-    if (kind_of(group) != "tenant_group" or attrs(group).get("name") != f"{namespace} customers"):
+    if (kind_of(group) != "tenant_group" or attrs(group).get("name") != "Customers"):
         report("msp-tenant-group", group, "Managed accounts need one tenant group named for the provider's customers.")
     customer_tenants = {f"tenant/{item['key']}" for item in customers}
     actual_tenants = {key for key, obj in objects.items() if obj["kind"] == "tenant"}

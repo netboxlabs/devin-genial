@@ -230,11 +230,11 @@ def foundation(w, *, site_kinds=None):
     lakes = f"{root}/great-lakes"
     for key, name, slug, parent in ((root, "United States", "us", None),
                                     (lakes, "Great Lakes", "great-lakes", root)):
-        w.add("region", key, {"name": f"{ns} {name}", "slug": f"{ns}-{slug}"},
+        w.add("region", key, {"name": name, "slug": f"{ns}-{slug}"},
               {"parent": parent} if parent else {})
     for _, code, state, _, _, _ in METROS:
         w.add("region", f"{root}/{code.lower()}",
-              {"name": f"{ns} {state}", "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
+              {"name": state, "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
     for kind, name in GROUPS.items():
         if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
                                            "store", "distribution", "academic", "residence", "library",
@@ -243,7 +243,7 @@ def foundation(w, *, site_kinds=None):
         if site_kinds is not None and kind not in site_kinds:
             continue
         w.add("site_group", f"site-group/{ns}/{kind}",
-              {"name": f"{ns} {name}", "slug": f"{ns}-{kind}"})
+              {"name": name, "slug": f"{ns}-{kind}"})
 
 
 def _location(site, suffix, name, space_type, floor, position, parent=None, capacity=None):

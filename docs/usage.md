@@ -38,6 +38,18 @@ recipe key (authored by default; `legacy` restores namespace-ordinal names),
 and `[site_names]` overrides any site with the customer's real names — see the
 [recipe reference](recipes.md#common-keys). Both keys are rebaseline-frozen.
 
+Every other object family carries an authored display name too (since 0.12.0):
+regions read `Illinois`, device roles `WAN Edge`, providers `Aurora Peak
+Networks`, power panels `MDF Supply A`. The namespace lives in the identity —
+slugs, object keys, device names, circuit IDs, asset tags and DNS — which is
+what still separates two estates loaded onto one target. Two families keep the
+prefix on purpose: the main-scoped records `just retire` matches by exact
+`"<namespace> …"` name (owners and the automation pack), and the root contact
+group, whose canonical slug is derived from its name. The policy lives in
+`estates/naming.py`; a readable name matters because the visualization layer
+truncates graph labels, and a prefixed name renders distinct objects
+identically.
+
 `[hardware]` picks the vendor line for the access, leaf and AP role families
 (`access = "juniper"`, `leaf = "juniper"`, `ap = "aruba"`) when the audience is
 a Juniper or Aruba shop; omitted families keep the shipped defaults. It is

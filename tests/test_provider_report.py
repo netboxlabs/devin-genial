@@ -38,13 +38,13 @@ class ProviderReportTests(unittest.TestCase):
         self.assertNotIn("Provider interiors are abstracted.", text)
         self.assertNotIn("WAN capacity by provider and site", text)
         section = text.split("## Provider service walkthrough", 1)[1].split("## Sites and demand", 1)[0]
-        self.assertIn("| lakes-fiber-private-cargo | lakes-fiber cargo | 3 |", section)
+        self.assertIn("| lakes-fiber-private-cargo | Cargo | 3 |", section)
         self.assertIn("| Chicago West Exchange | 2 | 2 | 2 | 12 |", section)
         changed = deepcopy(self.plan)
         changed["contracts"] = []
         changed["objects"] = [o for o in changed["objects"] if o["key"] != "virtual-circuit-termination/ce-cargo-detroit-south-002"]
         section = markdown(changed).split("## Provider service walkthrough", 1)[1].split("## Sites and demand", 1)[0]
-        self.assertIn("| lakes-fiber-private-cargo | lakes-fiber cargo | 2 |", section)
+        self.assertIn("| lakes-fiber-private-cargo | Cargo | 2 |", section)
 
     def test_both_physical_handoffs_must_be_connected(self):
         text = markdown(self.plan)

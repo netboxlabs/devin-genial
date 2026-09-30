@@ -31,13 +31,18 @@ v0.11 is likewise a new baseline: every estate gained the six-record automation
 pack, so 0.10 plans reject growth by version and must be regenerated. Any change
 that alters every estate's canonical graph must bump `estates/__version__` so
 those guards fire with their own messages, not a validator's.
-v0.12 is a new baseline for spatial realism: the equipment-room cabinet grid was
-compacted into a room rather than a corridor, cabinets became 24U four-post
-enclosures with a room-scoped `facility_id`, lane members mount contiguously
-from the bottom rail instead of every second unit, and device types carry
-`airflow` where a pinned source declares it. Rack coordinates, rack heights,
-device positions and inter-rack cable lengths all move, so 0.11 plans reject
-growth by version and must be regenerated.
+v0.12 is a new baseline carrying two visual-realism changes found by rendering a
+seeded estate. Display names across every object family are now authored and
+namespace-free (slugs and matching identities keep the namespace; the
+main-scoped families in `NAMESPACED_KINDS` keep it in the name too) — graph
+views truncate labels, so the prefix made distinct nodes indistinguishable. And
+the equipment-room cabinet grid was compacted into a room rather than a
+corridor: cabinets became 24U four-post enclosures with a room-scoped
+`facility_id`, lane members mount contiguously from the bottom rail instead of
+every second unit, and device types carry `airflow` where a pinned source
+declares it. Rack coordinates, rack heights, device positions, inter-rack cable
+lengths and every display name move, so 0.11 plans reject growth by version and
+must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under
@@ -563,6 +568,20 @@ for the separately recorded pinned-target live qualification.
 - Rack asset tags retain accepted short labels; longer labels use a readable
   prefix and stable digest of the full site/room identity to fit native 50-character
   limits. Validate global tag uniqueness before export; site names are unchanged.
+- Display naming (since 0.12.0, `estates/naming.py` is the single policy home):
+  every object family emits an authored, namespace-free `name`; identities —
+  slugs, object keys, device names, circuit `cid`s, asset tags, DNS — keep the
+  stable `<namespace>-…` form and remain the only cross-estate separator. The
+  visualization layer truncates graph node labels, so a prefixed display name
+  rendered several distinct objects identically; readable names are functional,
+  not decoration. Two documented exceptions keep the prefix: `NAMESPACED_KINDS`
+  (owner/owner_group and the automation export_template/webhook/event_rule plus
+  custom_field/choice_set/custom_link records), because those main-scoped rows
+  coexist across namespaces on one main and `just retire` matches them by exact
+  `"<namespace> …"` prefix; and the root ContactGroup, whose canonical slug is
+  derived from its name and omitted on the wire for the auto-slug matcher.
+  Power panels are named from their room and side, not the namespaced site stem.
+  `tests/test_naming_policy.py` pins both halves of the split.
 - Site naming: authored display names, facility codes and metro-jittered
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`

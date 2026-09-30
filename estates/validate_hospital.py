@@ -378,10 +378,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         group_name = {"hospital": "Hospitals", "clinic": "Outpatient clinics", "dc": "Data centers"}[category]
         if (not state or state_name != expected_state or attrs(site).get("time_zone") != zone or refs(site).get("region") != region or
                 kind(region) != "region" or refs(region).get("parent") != f"region/{ns}/us/great-lakes" or
-                attrs(region).get("name") != f"{ns} {expected_state}" or
+                attrs(region).get("name") != expected_state or
                 meta(site).get("geography") != dict(country="US", state=state, city=city, synthetic=True)):
             report("hospital-geography", site, "Actual address, state region and time zone must describe the same authored health-system metro; metadata cannot override their relationships.")
-        if refs(site).get("group") != group or kind(group) != "site_group" or attrs(group).get("name") != f"{ns} {group_name}":
+        if refs(site).get("group") != group or kind(group) != "site_group" or attrs(group).get("name") != group_name:
             report("hospital-site-group", site, "The facility must belong to its canonical hospital, outpatient-clinic or service-DC group.")
         if matched:
             if address in addresses:

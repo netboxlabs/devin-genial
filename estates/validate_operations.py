@@ -344,7 +344,10 @@ def _context(plan, objects, kinds):
         label = "" if tenant == "tenant" else f" {tenant.removeprefix('tenant/')}"
         contact_name = f"{ns}{label} {workload} service desk"
         mailbox = f"{label.strip()}." if label else ""
-        contact = expect_contact(f"contact/service/{tenant}/{workload}", contact_name, "service", f"{workload} within {attrs(tenant).get('name', '')}", f"{mailbox}{workload}.service")
+        # The tenant's authored display name is clipped in prose so the
+        # description stays inside the native 200-character bound.
+        tenant_label = str(attrs(tenant).get("name", ""))[:40].rstrip()
+        contact = expect_contact(f"contact/service/{tenant}/{workload}", contact_name, "service", f"{workload} within {tenant_label}", f"{mailbox}{workload}.service")
         expect_assignment(key, contact, "service")
         scope = (refs.get("cluster"), workload)
         if scope not in anchors or int(parts[3]) < int(anchors[scope]["key"].rsplit("/", 1)[1]):
@@ -427,10 +430,17 @@ def _context(plan, objects, kinds):
                          module.get("attrs", {}).get("serial"), bay.get("attrs", {}).get("name"), facilities))
 
     for role, (title, group) in roles.items():
+        # The role carries an authored display name with a namespaced slug; the
+        # group keeps the namespace in its name because its canonical slug is
+        # derived from it and omitted on the wire for the auto-slug matcher.
         for kind, label in (("contact_role", title), ("contact_group", group)):
             key = f"{kind.replace('_', '-')}/{role}"
-            name = f"{ns} {label}"
-            if (objects.get(key, {}).get("kind") != kind or attrs(key) != {"name": name, "slug": name.lower().replace(" ", "-")}
+            if kind == "contact_group":
+                name = f"{ns} {label}"
+                expected = {"name": name, "slug": name.lower().replace(" ", "-")}
+            else:
+                expected = {"name": label, "slug": f"{ns}-{label.lower().replace(' ', '-')}"}
+            if (objects.get(key, {}).get("kind") != kind or attrs(key) != expected
                     or objects.get(key, {}).get("refs")):
                 fail("operations-contact", key, "Contact role/group must retain its unique functional scope and root matching identity.")
     responsibility_forms = {

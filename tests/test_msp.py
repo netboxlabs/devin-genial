@@ -164,7 +164,8 @@ class MspCompositionTests(unittest.TestCase):
         self.assertEqual(tenants, {"tenant", "tenant/summit-legal", "tenant/harbor-dental"})
         group = objects["tenant-group/customers"]
         self.assertEqual(group["kind"], "tenant_group")
-        self.assertEqual(group["attrs"]["name"], "arbor customers")
+        self.assertEqual(group["attrs"]["name"], "Customers")
+        self.assertEqual(group["attrs"]["slug"], "arbor-customers")
         for key in ("tenant/summit-legal", "tenant/harbor-dental"):
             self.assertEqual(objects[key]["refs"]["group"], "tenant-group/customers")
         for key in ("site/off-summit-legal-01", "device/off-summit-legal-01/access-01",
