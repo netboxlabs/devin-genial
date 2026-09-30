@@ -389,33 +389,41 @@ DETAIL:  This operation is not supported for unlogged tables.
 CONTEXT:  ALTER PUBLICATION dbz_pub_nb_46fca0360cbb ADD TABLE ...
 ```
 
-**Observed, with receipts:** the failure is reproducible on the first job of
-every attempt, the same artifact loads normally on a sibling tenant minutes
-apart, and that tenant loaded fine five days earlier. TurboBulk's
-`engine/staging.py` hard-codes `CREATE UNLOGGED TABLE` with no plugin setting,
-so nothing can be configured around it on our side. The publication named in
-the error, `dbz_pub_nb_<id>`, carries this instance's identifier, so Debezium
-CDC is provisioned against it.
+**Root cause, confirmed by reading the platform source** (clone of
+`netboxlabs/platform-monorepo`, `services/controlplane/core-lambda`):
 
-**Inferred, not verified - do not repeat these as fact:** Linear **DATA-74**
-(Data Platform, "NetBox Analytics - Early Preview", Backlog) documents CDC
-provisioning for Analytics, including a publication `dbz_pub_<id>` with a
-compile-time exclude list (`DefaultCDCTableExcludeList`,
-`libs/configuration/configuration.go:460`) and an event trigger
-`set_replica_identity_full()` (`libs/cdc/database.go:370-441`) whose exclude
-array is frozen at prepare time. That is consistent with what we hit, but we
-have **not** read the trigger body to confirm it is what issues the
-`ALTER PUBLICATION ... ADD TABLE`, and we have **not** established what enabled
-CDC on this instance or when. Whether Analytics and TurboBulk conflict in
-general is therefore an open question, not a finding: it rests on one instance,
-and we never checked whether the healthy sibling also has CDC provisioned.
+CDC provisioning installs a Postgres event trigger,
+`cdc_set_replica_identity_on_create`, on `ddl_command_end` for `CREATE TABLE`
+(`libs/cdc/database.go:436-441`). Its function `public.set_replica_identity_full()`
+(`database.go:378-425`) walks every newly created `public` table, skips names
+matching a baked-in exclude list, sets `REPLICA IDENTITY FULL`, and then adds
+the table to every `dbz_pub_%` publication (`database.go:417`). **Its only
+exception handler is `duplicate_object`** (`database.go:419`). Postgres raises a
+different error for an unlogged relation, so that error is unhandled, propagates
+out of the trigger, and aborts the transaction that created the table.
 
-**What would settle it:** read the trigger function body; confirm from the
-platform whether CDC is enabled on each tenant and what enabled it. If the
-trigger is the cause, skipping unlogged relations (`relpersistence = 'u'`) is
-the semantically correct fix, since an unlogged table can never be replicated.
-Disabling CDC for the instance is the likely operator-side unblock, and testing
-that would itself be strong evidence.
+TurboBulk creates `public._turbobulk_staging_<model>_<hash>` as
+`CREATE UNLOGGED TABLE` (`netbox-turbobulk/engine/staging.py`, hard-coded), and
+`_turbobulk_staging_%` is not among the fifteen patterns in
+`DefaultCDCTableExcludeList` (`libs/configuration/configuration.go:522`). So on
+any instance with CDC provisioned, TurboBulk's first staging-table creation
+aborts and the job dies. Observed exactly that, reproducibly, first job every
+time; the same artifact loads normally on a sibling tenant.
+
+**Correcting an earlier inference in this file:** enabling Analytics does not
+provision CDC. `libs/analytics/enable.go:184-194` shows Analytics is *gated on*
+CDC already existing and in the right mode (it refuses with `StatusBlockedOnCDC`
+otherwise). So "Analytics breaks TurboBulk" is wrong. **CDC breaks TurboBulk**;
+Analytics merely requires CDC. What enabled CDC on this instance, and when, is
+still unknown from our side and answerable only from the platform.
+
+**Fix, smallest correct form:** have the trigger skip unlogged relations
+(`relpersistence = 'u'`), which is semantically right because an unlogged table
+can never be replicated. Broadening the exception handler beyond
+`duplicate_object` would also stop the abort; adding `_turbobulk_staging_%` to
+the exclude list works but needs a release (DATA-74, Backlog, would make that
+list dynamic). Operator-side, disabling CDC on the instance should restore
+loading, and testing that is itself strong confirmation.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
