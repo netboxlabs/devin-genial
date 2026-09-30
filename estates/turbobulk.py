@@ -89,6 +89,29 @@ SEARCH_FINALIZER_EXCLUDED_KINDS = {
     "l2vpn_termination", "tunnel_termination",
 }
 
+# Kinds whose rows NetBox only finishes inside Model.save(), which the raw bulk
+# path skips. Device components compile their own caches into the insert
+# (_component_cache_ids); these kinds instead need TurboBulk's bounded
+# save-hook fixups, which run only against the submitting job's affected rows.
+#
+# circuit_termination: CircuitTermination.save() caches the termination's scope
+# (_site/_region/_site_group/_location/_provider_network) and back-fills
+# Circuit.termination_a/_z. Circuit.termination_a/_z are editable=False and
+# read_only in the REST serializer, so no PATCH can set them, and a no-op
+# termination PATCH would not either (NetBox guards that write behind
+# is_new/circuit_changed/term_side_changed). Without the fixup every circuit
+# reads as unterminated: ?site_id= filters return nothing, the NetBox circuit
+# table shows an empty Side A/Side Z, and WAN maps draw no arcs.
+SAVE_HOOK_KINDS = {"circuit_termination"}
+# Columns the server-side fixup writes; required on the target before writes so
+# an older plugin or schema fails loudly instead of silently skipping them.
+SAVE_HOOK_REQUIRED_COLUMNS = {
+    "circuits.circuittermination": {
+        "_region_id", "_site_group_id", "_site_id", "_location_id", "_provider_network_id",
+    },
+    "circuits.circuit": {"termination_a_id", "termination_z_id"},
+}
+
 DELIVERY_POLICIES = ("reviewable", "disposable-baseline", "main-seed")
 POST_HOOKS = {
     "fix_denormalized": True,
@@ -191,9 +214,16 @@ def _parquet_payload(rows):
     return sink.getvalue()
 
 
-def _batch_request_settings(base):
-    """Keep every data-bearing request bounded to its rows, not global hooks."""
-    return {**base, "post_hooks": {name: False for name in POST_HOOKS}}
+def _batch_request_settings(base, kind=None):
+    """Keep every data-bearing request bounded to its rows, not global hooks.
+
+    Kinds in SAVE_HOOK_KINDS additionally request TurboBulk's bounded
+    save-hook fixups, which run against that job's own affected rows only.
+    """
+    settings = {**base, "post_hooks": {name: False for name in POST_HOOKS}}
+    if kind in SAVE_HOOK_KINDS:
+        settings["apply_save_hooks"] = True
+    return settings
 
 
 def _finalizer_request_settings(base, hook):
@@ -1418,6 +1448,18 @@ def _job_result(job, expected, request_settings, mode):
             elif result.get("skipped") is not True:
                 issues.append(f"disabled post-hook {name} was not explicitly skipped")
 
+    # A requested save-hook pass must report itself: the fixups are the only
+    # thing that finishes these rows, and a server that silently ignored the
+    # flag would otherwise pass every other check.
+    save_hooks = data.get("save_hooks_applied")
+    if request_settings.get("apply_save_hooks") is True:
+        if save_hooks != expected:
+            issues.append(
+                f"applied save hooks to {save_hooks!r} rows instead of {expected}")
+    elif save_hooks:
+        issues.append(
+            f"applied save hooks to {save_hooks!r} rows although they were not requested")
+
     changelogs = data.get("changelogs_created")
     if mode == "insert" and request_settings["create_changelogs"] is True:
         if changelogs != expected:
@@ -1779,7 +1821,7 @@ def _job_request_schedule(phases, objects, max_job_rows, base_settings):
             count = (len(candidates) + max_job_rows - 1) // max_job_rows
             for number in range(1, count + 1):
                 schedule[_batch_purpose(purpose, number, count)] = _batch_request_settings(
-                    base_settings)
+                    base_settings, kind)
             if kind == "cable":
                 termination_purpose = purpose + ":terminations"
                 termination_count = (2 * len(candidates) + max_job_rows - 1) // max_job_rows
@@ -1806,7 +1848,7 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
     batches = _batches(candidates, max_job_rows)
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
-        settings = _batch_request_settings(base_settings)
+        settings = _batch_request_settings(base_settings, kind)
         prior = next((job for job in receipt["jobs"]
                       if job["purpose"] == batch_purpose and not job.get("superseded")), None)
         if prior:
@@ -2022,6 +2064,18 @@ def _schema_preflight(client, objects):
         required_terminations = {"cable_id", "cable_end", "termination_type_id", "termination_id"}
         if absent := required_terminations - schemas["dcim.cabletermination"]:
             missing_columns["dcim.cabletermination"] = absent
+    # The save-hook fixups write these columns server-side; prove the target
+    # exposes them before any write rather than discovering it at readback.
+    # circuit_termination's fixup writes the termination's own cache columns and
+    # the parent circuit's termination_a/_z, so both models are required.
+    if any(obj["kind"] in SAVE_HOOK_KINDS for obj in objects.values()):
+        for model, columns in sorted(SAVE_HOOK_REQUIRED_COLUMNS.items()):
+            fields = schemas.get(model)
+            if fields is None:
+                _, schema = client.request(f"/api/plugins/turbobulk/models/{model}/", branch=False)
+                fields = schemas[model] = {field["name"] for field in schema["fields"]}
+            if absent := columns - fields:
+                missing_columns.setdefault(model, set()).update(absent)
     if missing_columns:
         detail = "; ".join(f"{model}: {', '.join(sorted(columns))}"
                            for model, columns in sorted(missing_columns.items()))
@@ -2550,6 +2604,62 @@ def _verify_component_caches(client, objects, ids):
     }
 
 
+def _verify_circuit_terminations(client, objects, ids):
+    """Prove NetBox's circuit termination caches, which only save() maintains.
+
+    Two independent reads, because they fail independently: the circuit's
+    termination_a/_z pointers (what the NetBox circuit table and WAN maps
+    render) and the termination's own scope cache (what ?site_id= filters
+    select on). A bulk insert without the save-hook fixups leaves both null.
+    """
+    expected_pointers = {}
+    expected_by_site = defaultdict(set)
+    for obj in objects.values():
+        if obj["kind"] != "circuit_termination":
+            continue
+        circuit_id = ids[obj["refs"]["circuit"]]
+        side = obj["attrs"]["term_side"].lower()
+        expected_pointers.setdefault(circuit_id, {})[side] = ids[obj["key"]]
+        target = objects.get(obj["refs"].get("termination"))
+        if target is not None and target["kind"] == "site":
+            expected_by_site[ids[target["key"]]].add(circuit_id)
+
+    failures = []
+    started = time.monotonic()
+    if not expected_pointers:
+        return {"circuits_expected": 0, "site_filter_queries": 0, "failures": [],
+                "wall_seconds": round(time.monotonic() - started, 6)}
+
+    observed = {row["id"]: row for row in client.all(SPECS["circuit"][1])}
+    for circuit_id, sides in sorted(expected_pointers.items()):
+        row = observed.get(circuit_id)
+        if row is None:
+            failures.append({"circuit_id": circuit_id, "error": "circuit absent at readback"})
+            continue
+        for side, termination_id in sorted(sides.items()):
+            actual = _nested_id(row.get(f"termination_{side}"))
+            if actual != termination_id:
+                failures.append({"circuit_id": circuit_id, "side": side.upper(),
+                                 "expected_termination_id": termination_id,
+                                 "observed_termination_id": actual})
+
+    # The scope cache is what NetBox filters on; prove it through the filter
+    # itself rather than trusting the column.
+    for site_id, circuit_ids in sorted(expected_by_site.items()):
+        rows = client.all(SPECS["circuit"][1] + "?" + urllib.parse.urlencode(
+            [("site_id", str(site_id)), ("brief", "1")]))
+        observed_ids = {row["id"] for row in rows}
+        if missing := circuit_ids - observed_ids:
+            failures.append({"site_id": site_id, "missing_circuit_ids": sorted(missing)[:20],
+                             "observed": len(observed_ids), "expected_at_least": len(circuit_ids)})
+    return {
+        "circuits_expected": len(expected_pointers),
+        "site_filter_queries": len(expected_by_site),
+        "failures": failures[:20],
+        "wall_seconds": round(time.monotonic() - started, 6),
+    }
+
+
 def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
     current = {kind: {row["id"]: row for row in client.all(SPECS[kind][1])}
                for kind in sorted({obj["kind"] for obj in plan["objects"]
@@ -2658,8 +2768,10 @@ def verify_target(plan_path, *, url, token, branch=None, receipt_path=None):
                for key, value in verification["ids"].items()}
         result["computed_paths"] = _verify_paths(client, plan, objects, ids)
         result["component_caches"] = _verify_component_caches(client, objects, ids)
+        result["circuit_terminations"] = _verify_circuit_terminations(client, objects, ids)
         success = (not result["computed_paths"]["failures"]
-                   and not result["component_caches"]["failures"])
+                   and not result["component_caches"]["failures"]
+                   and not result["circuit_terminations"]["failures"])
     result.update(success=success, wall_seconds=round(time.monotonic() - started, 6))
     if receipt_path is not None:
         _write_receipt(Path(receipt_path), result)
@@ -2864,12 +2976,19 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                 raise LoadError(
                     f"component-cache readback failed for {len(component_caches['failures'])} placements"
                 )
+            circuit_terminations = _verify_circuit_terminations(client, objects, current_ids)
+            if circuit_terminations["failures"]:
+                raise LoadError(
+                    "circuit-termination readback failed for "
+                    f"{len(circuit_terminations['failures'])} circuits or site filters"
+                )
             review_history = (_verify_review_history(client, branch_row, objects, history_preflight)
                               if delivery_policy == "reviewable" else None)
             observation = {"observed_at": _now(), "wall_seconds": round(time.monotonic() - overall, 6),
                            "readback_seconds": preflight_readback_seconds,
                            "verification": existing, "computed_paths": paths,
                            "component_caches": component_caches,
+                           "circuit_terminations": circuit_terminations,
                            "review_history": review_history}
         except BaseException as exc:
             if receipt is not None:
@@ -2886,6 +3005,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
             receipt["verification"] = existing
             receipt["computed_paths"] = paths
             receipt["component_caches"] = component_caches
+            receipt["circuit_terminations"] = circuit_terminations
             receipt["review_history"] = review_history
             receipt["resolved_ids"] = current_ids
             receipt["success"] = True
@@ -2904,6 +3024,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                        "preflight": {"strict_existing_readback": _bounded_readback(existing),
                                      "readback_seconds": preflight_readback_seconds},
                        "computed_paths": paths, "component_caches": component_caches,
+                       "circuit_terminations": circuit_terminations,
                        "jobs": [], "rest_batches": [],
                        "rest_creates": [],
                        "review_history_preflight": history_preflight,
@@ -3030,6 +3151,12 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
         if receipt["component_caches"]["failures"]:
             raise LoadError(
                 f"component-cache readback failed for {len(receipt['component_caches']['failures'])} placements"
+            )
+        receipt["circuit_terminations"] = _verify_circuit_terminations(client, objects, ids)
+        if receipt["circuit_terminations"]["failures"]:
+            raise LoadError(
+                "circuit-termination readback failed for "
+                f"{len(receipt['circuit_terminations']['failures'])} circuits or site filters"
             )
         receipt["review_history"] = (_verify_review_history(
             client, branch_row, objects, history_preflight)
