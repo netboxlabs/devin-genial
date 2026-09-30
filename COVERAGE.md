@@ -389,31 +389,33 @@ DETAIL:  This operation is not supported for unlogged tables.
 CONTEXT:  ALTER PUBLICATION dbz_pub_nb_46fca0360cbb ADD TABLE ...
 ```
 
-Confirmed from the internal record (Linear **DATA-74**, Data Platform, project
-"NetBox Analytics - Early Preview", Backlog): enabling NetBox Analytics
-provisions per-instance Debezium CDC, and part of `PrepareDatabase` is a
-Postgres **event trigger**, `set_replica_identity_full()`
-(`core-lambda/libs/cdc/database.go:370-441`), that adds newly created public
-tables to the publication `dbz_pub_<id>`. TurboBulk creates
-`CREATE UNLOGGED TABLE public._turbobulk_staging_<model>_<hash>`, the trigger
-fires, Postgres refuses to publish an unlogged table, and the whole TurboBulk
-transaction dies on its first job. The publication is an explicit `FOR TABLE`
-list (never `FOR ALL TABLES`) and its exclude list
-(`DefaultCDCTableExcludeList`, 15 patterns at
-`libs/configuration/configuration.go:460`) is compile-time configuration baked
-into the trigger body at prepare time - DATA-74 exists precisely to make it
-adjustable per connector and is not built, so there is no per-tenant toggle
-today. `engine/staging.py` hard-codes `CREATE UNLOGGED TABLE` with no plugin
-setting either, so neither side can be configured around it. Verified
-per-instance, not org-wide: the same artifact loads normally on a sibling
-tenant without Analytics. **Practical consequence: NetBox Analytics and
-TurboBulk cannot both be enabled on one instance today**, which matters because
-both are premium features an SE would expect to demo together. No existing
-report of this conflict was found. The semantically correct fix is for the
-event trigger to skip unlogged relations (`relpersistence = 'u'`), since an
-unlogged table can never be replicated anyway; adding `_turbobulk_staging_%`
-to the exclude list would also work but needs a release. Disabling CDC for the
-instance (`DELETE /cdc/`) is the operator-side unblock.
+**Observed, with receipts:** the failure is reproducible on the first job of
+every attempt, the same artifact loads normally on a sibling tenant minutes
+apart, and that tenant loaded fine five days earlier. TurboBulk's
+`engine/staging.py` hard-codes `CREATE UNLOGGED TABLE` with no plugin setting,
+so nothing can be configured around it on our side. The publication named in
+the error, `dbz_pub_nb_<id>`, carries this instance's identifier, so Debezium
+CDC is provisioned against it.
+
+**Inferred, not verified - do not repeat these as fact:** Linear **DATA-74**
+(Data Platform, "NetBox Analytics - Early Preview", Backlog) documents CDC
+provisioning for Analytics, including a publication `dbz_pub_<id>` with a
+compile-time exclude list (`DefaultCDCTableExcludeList`,
+`libs/configuration/configuration.go:460`) and an event trigger
+`set_replica_identity_full()` (`libs/cdc/database.go:370-441`) whose exclude
+array is frozen at prepare time. That is consistent with what we hit, but we
+have **not** read the trigger body to confirm it is what issues the
+`ALTER PUBLICATION ... ADD TABLE`, and we have **not** established what enabled
+CDC on this instance or when. Whether Analytics and TurboBulk conflict in
+general is therefore an open question, not a finding: it rests on one instance,
+and we never checked whether the healthy sibling also has CDC provisioned.
+
+**What would settle it:** read the trigger function body; confirm from the
+platform whether CDC is enabled on each tenant and what enabled it. If the
+trigger is the cause, skipping unlogged relations (`relpersistence = 'u'`) is
+the semantically correct fix, since an unlogged table can never be replicated.
+Disabling CDC for the instance is the likely operator-side unblock, and testing
+that would itself be strong evidence.
 
 Standing gates per phase: full offline suite, live load/verify/repeat on the
 pinned 4.7.1 stack, docs in the same pass, adversarial review before push, and
