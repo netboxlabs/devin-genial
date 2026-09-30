@@ -355,10 +355,14 @@ changed — the store starts at `selectedNetboxId: ""` while the native `<select
 displays option[0], so the token saves and the instance does not, with no
 error; the documented "switch instances" workaround (ENGHLP-1677) is the
 symptom of exactly this. Its API token is also stored in plaintext
-`localStorage` in two places. Separately, the IPAM treemap labels every tile
-with the root aggregate and colours everything as Container although statuses
-are varied (216 active / 83 container), and a floorplan scoped to a parent
-location renders an empty canvas with no hint that the leaf carries the plan.
+`localStorage` in two places. Separately: the IPAM views give no VRF context,
+so our eighteen per-VRF `10.0.0.0/8` containers — correct modelling, one per
+routing table, each with a distinguishing description — render as eighteen
+identical "10.0.0.0/8" entries in the prefix picker and as uniformly-coloured
+tiles in the treemap despite varied statuses (216 active / 83 container); and a
+floorplan scoped to a parent location renders an empty canvas with no hint that
+the leaf carries the plan. Worth asking on our side whether eighteen /8
+containers earn their place in a demo even though they are defensible.
 
 **Demo hygiene:** the org's Assurance queue holds 51 stale OPEN deviations from
 retired `devin-generator` probes; they are noise in front of a customer.
