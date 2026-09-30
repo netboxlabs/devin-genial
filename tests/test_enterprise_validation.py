@@ -206,6 +206,22 @@ class EnterpriseValidationTests(unittest.TestCase):
                 self.plan["contracts"] = []
                 self.assertFinding(expected)
 
+    def test_cabinets_may_not_stand_inside_one_another(self):
+        """Distinct coordinates can still describe overlapping footprints."""
+        racks = sorted(o["key"] for o in self.plan["objects"]
+                       if o["kind"] == "rack" and o["meta"].get("position_m"))
+        point = self.objects[racks[0]]["meta"]["position_m"]
+        self.objects[racks[1]]["meta"]["position_m"] = [point[0] + 0.3, point[1], 0]
+        self.assertFinding("dc-rack-geometry")
+
+    def test_equipment_room_layout_may_not_become_a_corridor(self):
+        """Cabinets sprawling down one axis no longer describe a room."""
+        rack = sorted(o["key"] for o in self.plan["objects"]
+                      if o["kind"] == "rack" and o["meta"].get("position_m"))[-1]
+        point = self.objects[rack]["meta"]["position_m"]
+        self.objects[rack]["meta"]["position_m"] = [point[0], point[1] + 60, 0]
+        self.assertFinding("dc-rack-geometry")
+
     def test_console_path_is_required_without_contracts(self):
         console = next(o["key"] for o in self.plan["objects"] if o["kind"] == "console_port" and
                        self.objects[o["refs"]["device"]]["refs"].get("role") == "role/spine")

@@ -310,6 +310,29 @@ def validate_resolved(plan, catalog, *, sites, workloads, peak, reserve, strict_
                 report("dc-rack-geometry", rack, "Two racks cannot occupy the same equipment-room coordinate.")
             occupied_points.add(identity)
             points[rack] = point
+        # A coordinate pair can be distinct and still describe two cabinets
+        # standing inside one another. Cabinets are 0.6 m wide and 1.07 m deep;
+        # footprints in one room must be disjoint, and the room they imply must
+        # stay in a proportion a real equipment room could have.
+        room_racks = defaultdict(list)
+        for rack, point in points.items():
+            room_racks[refs(rack).get("location")].append((rack, point))
+        for room, members in room_racks.items():
+            boxes = []
+            for rack, point in sorted(members, key=lambda entry: entry[0]):
+                box = (point[0], point[1], point[0] + 0.6, point[1] + 1.07)
+                for other_rack, other in boxes:
+                    if (box[0] < other[2] - 1e-9 and other[0] < box[2] - 1e-9
+                            and box[1] < other[3] - 1e-9 and other[1] < box[3] - 1e-9):
+                        report("dc-rack-geometry", rack,
+                               f"Cabinet footprint overlaps {other_rack} in the same equipment room.")
+                boxes.append((rack, box))
+            span_x = max(box[2] for _, box in boxes) - min(box[0] for _, box in boxes)
+            span_y = max(box[3] for _, box in boxes) - min(box[1] for _, box in boxes)
+            if max(span_x, span_y) > 6 * max(min(span_x, span_y), 0.6):
+                report("dc-rack-geometry", room,
+                       "Equipment-room cabinet layout is disproportionate; rows and zones must "
+                       "describe a room rather than a corridor.")
         for cable in kinds["cable"]:
             a, b = refs(cable).get("a"), refs(cable).get("b")
             racks = [refs(refs(port).get("device")).get("rack") for port in (a, b)]

@@ -283,8 +283,9 @@ def _infrastructure(site, devices, closets, roles, catalog, objects, children, p
         if refs(device).get("role") not in allowed:
             report("hospital-equipment-role", device, "Care-facility infrastructure needs an explicit network, management, console, patching or power role.")
         if (kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or
-                room not in closets.values() or attrs(rack).get("status") != "active" or attrs(rack).get("u_height") != 42):
-            report("hospital-equipment-placement", device, "Infrastructure must occupy an active 42U cabinet in its local floor equipment room.")
+                room not in closets.values() or attrs(rack).get("status") != "active"
+                or attrs(rack).get("u_height") != 24):
+            report("hospital-equipment-placement", device, "Infrastructure must occupy an active 24U cabinet in its local floor equipment room.")
         hardware = refs(device).get("device_type", "").removeprefix("hardware/")
         model = catalog.get(hardware, {})
         management = {p["name"] for p in model.get("interfaces", []) if p.get("mgmt_only")}

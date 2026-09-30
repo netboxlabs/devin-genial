@@ -86,7 +86,12 @@ class OperationsTests(unittest.TestCase):
         self.assertIn("operations-cable-bundle", self.codes())
 
     def test_rack_type_must_match_actual_rack_geometry(self):
-        self.objects["rack/dc-01/network-01"]["refs"]["rack_type"] = "rack-type/24u"
+        # The cabinet grows without its reference template following it.
+        self.objects["rack/dc-01/network-01"]["attrs"]["u_height"] = 42
+        self.assertIn("operations-rack-type", self.codes())
+
+    def test_rack_type_must_match_actual_form_factor(self):
+        self.objects["rack/dc-01/network-01"]["attrs"]["form_factor"] = "2-post-frame"
         self.assertIn("operations-rack-type", self.codes())
 
     def test_growth_retains_operations_identities_and_journal_text(self):

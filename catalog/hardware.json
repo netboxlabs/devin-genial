@@ -227,7 +227,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3–100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host × 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -882,7 +882,8 @@
         "planning_supply_losses": 1,
         "upstream_ac_allowance_multiplier": "1.25",
         "policy_source": "reference-poe-v1"
-      }
+      },
+      "airflow": "front-to-rear"
     },
     "inherited-access": {
       "manufacturer": "Juniper",
@@ -1121,7 +1122,8 @@
         "planning_supply_losses": 0,
         "upstream_ac_allowance_multiplier": "1.25",
         "policy_source": "reference-poe-v1"
-      }
+      },
+      "airflow": "front-to-rear"
     },
     "leaf": {
       "manufacturer": "Arista",
@@ -1455,7 +1457,8 @@
           "name": "Console",
           "type": "rj-45"
         }
-      ]
+      ],
+      "airflow": "front-to-rear"
     },
     "leaf-juniper": {
       "manufacturer": "Juniper",
@@ -1839,7 +1842,8 @@
           "name": "Console",
           "type": "rj-45"
         }
-      ]
+      ],
+      "airflow": "front-to-rear"
     },
     "core": {
       "manufacturer": "Arista",
@@ -2025,7 +2029,8 @@
           "name": "Console",
           "type": "rj-45"
         }
-      ]
+      ],
+      "airflow": "front-to-rear"
     },
     "edge": {
       "manufacturer": "Fortinet",
@@ -2203,7 +2208,8 @@
       "source_ids": [
         "reference-design-v1"
       ],
-      "description": "Reference design: 1U, two 10G data interfaces, one 1G management interface, and two C14 AC supplies."
+      "description": "Reference design: 1U, two 10G data interfaces, one 1G management interface, and two C14 AC supplies.",
+      "airflow": "front-to-rear"
     },
     "patch-panel": {
       "manufacturer": "Devin Reference Designs",
@@ -2217,7 +2223,8 @@
         "reference-design-v1"
       ],
       "description": "Reference design: passive 1U panel. Builder emits explicitly paired front/rear termination ports; there are no Ethernet interfaces or power inlets.",
-      "passive_ports": 24
+      "passive_ports": 24,
+      "airflow": "passive"
     },
     "pdu": {
       "manufacturer": "Devin Reference Designs",
@@ -2697,7 +2704,8 @@
           "speed": 115200
         }
       ],
-      "description": "Reference 1U dual-supply serial access server with 48 RJ45 asynchronous ports; management Ethernet is separate."
+      "description": "Reference 1U dual-supply serial access server with 48 RJ45 asynchronous ports; management Ethernet is separate.",
+      "airflow": "front-to-rear"
     },
     "liquid-chassis": {
       "manufacturer": "Devin Reference Designs",
@@ -2727,7 +2735,8 @@
           "type": "iec-60320-c14"
         }
       ],
-      "description": "Reference 2U one-blade enclosure: internal power and coolant distribution, independent management controller; 400W planning allowance includes the child blade."
+      "description": "Reference 2U one-blade enclosure: internal power and coolant distribution, independent management controller; 400W planning allowance includes the child blade.",
+      "airflow": "front-to-rear"
     },
     "liquid-blade": {
       "manufacturer": "Devin Reference Designs",
@@ -2848,7 +2857,8 @@
         "mx204-ac-power",
         "juniper-inband-management"
       ],
-      "description": "Pinned MX204 chassis and interface inventory; two explicitly installed JPSU-650W-AC-AO modules. Generator selects three 100G ports plus eight 10G ports, disables the fourth 100G port, and uses lo0 for inband management. Fan population and certified transceiver choices are not modeled."
+      "description": "Pinned MX204 chassis and interface inventory; two explicitly installed JPSU-650W-AC-AO modules. Generator selects three 100G ports plus eight 10G ports, disables the fourth 100G port, and uses lo0 for inband management. Fan population and certified transceiver choices are not modeled.",
+      "airflow": "front-to-rear"
     }
   },
   "optics": {

@@ -144,6 +144,34 @@ cross-site placement, room overcapacity, floor disagreement, bypassed outlets,
 and cables outside the authored route limits. Stable site IDs determine geography;
 growing the estate or refreshing access hardware leaves placement intact.
 
+### Equipment-room cabinet layout
+
+Data-hall profiles author a cabinet grid in metres on each rack
+(`meta.position_m`), and the independent DC checks read it back from the
+finished graph. Cabinets are 0.6 m wide and bayed contiguously along a row of
+four; rows repeat every 2.4 m, which is the cabinet depth plus a working aisle;
+the network and compute zones stand side by side across one 1.5 m main aisle;
+the whole grid starts 1 m inside the room. Zone origins come from the reviewed
+row length rather than from how many cabinets are installed, so appending a
+cabinet to either zone never moves an existing one — the same append-only
+guarantee the [floorplan geometry sidecar](loading.md#floorplan-geometry-for-visual-explorer)
+depends on when it renders these coordinates.
+
+The checks reject more than duplicate coordinates: two cabinets whose 0.6 m ×
+1.07 m footprints intersect are a placement error even at distinct points, and
+a room whose cabinets sprawl down one axis is reported as a corridor rather
+than a room. Cabinet distance also sets modeled inter-rack cable length, so
+compacting the grid shortens those runs.
+
+Every cabinet is an enclosed four-post 24U cabinet carrying a room-scoped
+`facility_id`. A rack lane admits ten devices, each mounted in a single rack
+unit from the bottom rail upward, so a lane can never need more than eleven
+units: a 24U enclosure is the honest size for it, where a 42U cabinet would be
+three-quarters empty by construction. Zero-height equipment (PDUs, access
+points, wall outlets) is assigned to its cabinet without a mounting position,
+which is how NetBox itself models 0U devices — they appear under the rack's
+non-racked devices rather than in the elevation.
+
 Rack roles and device-role colors make elevations easier to interpret. Racked
 infrastructure carries explicit synthetic power allowances, split across its
 installed supplies, with full allowance on either feed for failover. These are

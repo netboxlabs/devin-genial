@@ -31,6 +31,13 @@ v0.11 is likewise a new baseline: every estate gained the six-record automation
 pack, so 0.10 plans reject growth by version and must be regenerated. Any change
 that alters every estate's canonical graph must bump `estates/__version__` so
 those guards fire with their own messages, not a validator's.
+v0.12 is a new baseline for spatial realism: the equipment-room cabinet grid was
+compacted into a room rather than a corridor, cabinets became 24U four-post
+enclosures with a room-scoped `facility_id`, lane members mount contiguously
+from the bottom rail instead of every second unit, and device types carry
+`airflow` where a pinned source declares it. Rack coordinates, rack heights,
+device positions and inter-rack cable lengths all move, so 0.11 plans reject
+growth by version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under
@@ -432,6 +439,18 @@ for the separately recorded pinned-target live qualification.
 - Facility kind controls rack geometry; school campuses must not inherit DC
   cabinet grids. District sites share one authored metro. Explicit role offsets
   distinguish staff, students and AP management without changing bank addresses.
+- Equipment rooms are rooms, not corridors. The authored cabinet grid bays
+  0.6 m cabinets four to a row, repeats rows every 2.4 m, and separates the
+  network and compute zones by one 1.5 m aisle from fixed per-zone origins, so
+  appending a cabinet never moves an existing one. Independent DC checks reject
+  intersecting 0.6 × 1.07 m footprints and disproportionate room layouts, not
+  just duplicate coordinates; coordinates are rounded so the plan, the checks
+  and the geometry sidecar's centimetre conversion all agree. Cabinets are
+  enclosed four-post 24U with a room-scoped `facility_id`, sized to the ten-device
+  lane that mounts contiguously from the bottom rail; 0U equipment is racked
+  without a position, exactly as NetBox models it. Device types carry `airflow`
+  only where the pinned source declares it (Cisco C9200L-24P-4X and FortiGate
+  100F declare none); our own reference designs state it as authored fiction.
 - Hospital wards occupy permanent reserved floors; beds and desks are installed
   capacity, not patient throughput or staffing counts. Keep medical, imaging and
   clinical roles/segments distinct, with site-scoped biomedical contacts. Seven

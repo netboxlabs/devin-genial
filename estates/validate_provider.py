@@ -471,7 +471,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     for pop in ordered:
         sid, site = f"pop-{pop}", f"site/pop-{pop}"
-        rack_points = {f"rack/{sid}/network-01": [4, 4, 0], f"rack/{sid}/network-02": [5.2, 4, 0]}
+        # The two cabinets are bayed together on the first row of the network
+        # zone: one cabinet width apart, both one metre inside the room.
+        rack_points = {f"rack/{sid}/network-01": [1.0, 1.0, 0], f"rack/{sid}/network-02": [1.6, 1.0, 0]}
         if set(child("site", site, "rack")) != set(rack_points) or any(
                 objects.get(rack, {}).get("meta", {}).get("position_m") != point for rack, point in rack_points.items()):
             report("provider-rack-geometry", site, "The two PoP network cabinets must retain their distinct fixed positions in the local equipment room.")
