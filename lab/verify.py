@@ -389,12 +389,15 @@ def verify_plan(plan, inventory, previous_receipt=None, strict_inventory=False, 
                        "rear_port_position": mapping[0]["rear_port_position"]}
         for field, expected in obj["attrs"].items():
             expected = _expected_attribute(obj, field, expected)
-            if (obj["kind"] == "service" and field in {"ports", "protocol"}
-                    and "port_mappings" in row):
-                # NetBox 4.7 stores the legacy SDK pair as combined port mappings.
-                expected_mappings = sorted(f"{obj['attrs']['protocol']}/{p}" for p in obj["attrs"]["ports"])
-                if sorted(row["port_mappings"]) != expected_mappings:
-                    issue(key, "port_mappings", "attribute_mismatch", expected_mappings, row["port_mappings"])
+            if obj["kind"] == "service" and field == "port_mappings":
+                # NetBox 4.7 returns port_mappings; an older target only the
+                # single-protocol protocol/ports pair.
+                observed = row.get("port_mappings")
+                if observed is None and row.get("protocol") is not None:
+                    protocol = row["protocol"].get("value") if isinstance(row["protocol"], dict) else row["protocol"]
+                    observed = [f"{protocol}/{p}" for p in row.get("ports") or []]
+                if sorted(observed or []) != sorted(expected):
+                    issue(key, "port_mappings", "attribute_mismatch", sorted(expected), observed)
                 coverage["attributes_checked"] += 1
                 continue
             if field not in row:

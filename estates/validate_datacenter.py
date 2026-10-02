@@ -70,6 +70,19 @@ def validate(plan, catalog, *, poe_watts=None, optics_watts=None):
                              poe_watts=poe_watts, optics_watts=optics_watts)
 
 
+def _listener_services(listeners):
+    """Restated: name -> port_mappings; a ``<other>-<protocol>`` listener folds into <other>."""
+    result = {}
+    for listener in listeners:
+        mappings = [f"{listener['protocol']}/{port}" for port in listener["ports"]]
+        base = listener["name"].removesuffix(f"-{listener['protocol']}")
+        if base != listener["name"] and base in result:
+            result[base] += mappings
+        else:
+            result[listener["name"]] = mappings
+    return result
+
+
 def validate_resolved(plan, catalog, *, sites, workloads, peak, reserve, strict_sites=True,
                       network_offsets=NETWORK_OFFSETS, poe_watts=None, optics_watts=None):
     """Inspect shared DC graph against independently resolved profile obligations.
@@ -167,7 +180,7 @@ def validate_resolved(plan, catalog, *, sites, workloads, peak, reserve, strict_
                 if (attrs(prefix).get("prefix") != str(wanted) or attrs(prefix).get("status") != "active" or
                         refs(prefix).get("scope_site") != site or refs(prefix).get("vrf") != f"vrf/{network}" or
                         refs(prefix).get("vlan") != f"vlan/{sid}/{network}" or
-                        attrs(f"{prefix}/reservation").get("prefix") != str(container)):
+                        attrs(f"prefix/{sid}/reservation").get("prefix") != str(container) or "vrf" in refs(f"prefix/{sid}/reservation")):
                     report("dc-prefix-policy", prefix, "Role /20 must occupy its fixed offset in this DC's reserved /16, with local VLAN and VRF scope.")
         devices = [key for key in children[("site", site)] if kind(key) == "device"]
         roles = defaultdict(list)
@@ -224,8 +237,8 @@ def validate_resolved(plan, catalog, *, sites, workloads, peak, reserve, strict_
                 except ValueError:
                     report("dc-workload-prefix", vm, "Replica address must lie in its site's required workload prefix.")
                 services = [key for key in children[("virtual_machine", vm)] if kind(key) == "service"]
-                actual = Counter((attrs(s).get("name"), attrs(s).get("protocol"), tuple(attrs(s).get("ports", []))) for s in services)
-                wanted = Counter((l["name"], l["protocol"], tuple(l["ports"])) for l in demand["listeners"])
+                actual = Counter((attrs(s).get("name"), tuple(sorted(attrs(s).get("port_mappings") or ()))) for s in services)
+                wanted = Counter((name, tuple(sorted(mappings))) for name, mappings in _listener_services(demand["listeners"]).items())
                 listener_addresses = [address]
                 valid_bindings = True
                 if recipe.get("ipv6_pool"):

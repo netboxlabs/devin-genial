@@ -81,7 +81,11 @@ def ipam_roles(w):
         elif obj["kind"] == "vlan":
             chosen[obj["key"]] = segment_role(obj["key"].rsplit("/", 1)[-1])
         elif obj["kind"] == "ip_range":
-            chosen[obj["key"]] = "reserved" if obj["attrs"].get("status") == "reserved" else "dhcp"
+            chosen[obj["key"]] = ("reserved" if obj["attrs"].get("status") == "reserved" else
+                                  "dhcp" if obj["key"].endswith("/dhcp") else None)
+    for key in [k for k, role in chosen.items() if role is None]:
+        # A static-assignment range shares its segment's own role.
+        chosen[key] = chosen["prefix/" + key.removeprefix("ip-range/").rsplit("/", 1)[0]]
     used = set(chosen.values())
     for weight, (role, (name, description)) in enumerate(IPAM_ROLES.items(), 1):
         if role in used:
@@ -96,17 +100,20 @@ def ipam_roles(w):
 ENDPOINT_FLOOR = 10
 # Segments whose endpoints take addresses dynamically (IPAM role keys).
 DHCP_ROLES = frozenset({"users", "wireless", "guest", "voice"})
-# A DHCP scope takes the top quarter of a client segment, at most 128 hosts,
-# so a typical scope sits well clear of the static allocations growing from .10.
-DHCP_SCOPE_MAX = 128
+# A DHCP scope takes the upper half of a client segment; the lower half from
+# .10 is the static range Site.address fills upward. Guest segments have no
+# static clients, so their scope starts at .10.
+NO_STATIC_ROLES = frozenset({"guest"})
 
 
 def address_ranges(w):
-    """Infrastructure, DHCP and headroom ranges inside every VLAN-bound IPv4 LAN.
+    """Infrastructure, static, DHCP and headroom ranges inside every VLAN-bound IPv4 LAN.
 
-    Every boundary is a fixed function of the prefix size and the recipe's
-    reserve fraction, so growth never moves a range; a held range is emitted
-    only while no assigned address occupies it.
+    A client segment reads gateway, held infrastructure (to .9), static
+    assignments from .10, then the DHCP scope and its held headroom to the
+    top: no unexplained gap. Boundaries are quarter marks of the prefix and
+    the recipe's reserve fraction; a held range is emitted only while no
+    assigned address occupies it.
     """
     fraction = float(w.recipe["reserve_fraction"])
     taken = defaultdict(set)
@@ -137,11 +144,24 @@ def address_ranges(w):
 
         gateways = max((host for host in used if host < ENDPOINT_FLOOR), default=0)
         held("infrastructure", gateways + 1, ENDPOINT_FLOOR - 1, "Held for network infrastructure below the endpoint range")
-        if naming.segment_role(prefix["refs"]["vlan"].rsplit("/", 1)[-1]) in DHCP_ROLES:
-            scope = min(size // 4, DHCP_SCOPE_MAX)
-            headroom = max(2, math.ceil(scope * fraction))
+        role = naming.segment_role(prefix["refs"]["vlan"].rsplit("/", 1)[-1])
+        if role in DHCP_ROLES:
+            # The scope starts at the first quarter mark (from half) clear of
+            # every static assignment, so it never overlaps one.
+            # ponytail: growth that pushes static clients past that mark moves
+            # the boundary up a quarter; a dense-static segment past 3/4 has
+            # no DHCP scope at all.
             top = size - 2
-            held("dhcp", top - scope + 1, top - headroom, f"DHCP scope for {purpose}", status="active")
+            static_top = max((host for host in used if host >= ENDPOINT_FLOOR), default=0)
+            start = (ENDPOINT_FLOOR if role in NO_STATIC_ROLES else
+                     next((mark for mark in (size // 2, 3 * size // 4) if mark > static_top), top + 1))
+            if start > ENDPOINT_FLOOR:
+                held("static", ENDPOINT_FLOOR, min(start - 1, top), f"Static assignments for {purpose}, allocated upward",
+                     status="active")
+            if start > top:
+                continue
+            headroom = max(2, math.ceil((top - start + 1) * fraction))
+            held("dhcp", start, top - headroom, f"DHCP scope for {purpose}", status="active")
             held("headroom", top - headroom + 1, top,
                  f"Held back from the DHCP scope as {fraction:.0%} growth headroom")
 
@@ -218,7 +238,7 @@ def first_hop(w):
         for i, port in enumerate(sorted(ports)):
             w.add("fhrp_group_assignment", f"{key}/member/{i+1}", {"priority": 110-i*10}, {"group": key, "interface": port})
         w.add("ip_address", f"ip/{key}", {"address": f"{net[254]}/{net.prefixlen}", "status": "active", "role": "vip",
-              "description": f"Shared gateway for {vlan_obj['attrs']['name']}", "dns_name": f"{sid}-{network_role}-gateway.{ns}.example"},
+              "description": f"Shared gateway for {vlan_obj['attrs']['name']}"},
               {"assigned_object": key, "vrf": prefix["refs"]["vrf"], "tenant": w.obj(site)["refs"]["tenant"]})
 
 
@@ -278,7 +298,7 @@ def recovery_overlay(w):
         port = f"{device}/if/Recovery0"
         w.add("interface", port, {"name": "Recovery0", "type": "virtual", "enabled": True,
               "description": "Reserved routed endpoint for planned IPsec transport"}, {"device": device, "parent": outside, "vrf": "vrf/recovery"})
-        w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "reserved", "dns_name": f"{sid}-recovery.{ns}.example"}, {"assigned_object": port, "vrf": "vrf/recovery", "tenant": "tenant"})
+        w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "reserved"}, {"assigned_object": port, "vrf": "vrf/recovery", "tenant": "tenant"})
         w.add("tunnel_termination", f"tunnel/recovery/{sid}", {"role": "peer"},
               {"tunnel": "tunnel/recovery", "termination": port, "outside_ip": f"ip/{outside}"})
         label = _site_display(w, sid) or titleize(sid)
@@ -399,7 +419,7 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
         # ponytail: a single authored indoor diagnostic hop per site, not an RF planner.
         # It is routed and separate from wired forwarding, so no Ethernet loop is implied.
         prefix = w.obj(f"prefix/{sid}/wireless")
-        site_base = ipaddress.ip_network(w.obj(f"prefix/{sid}/wireless/reservation")["attrs"]["prefix"])
+        site_base = ipaddress.ip_network(w.obj(f"prefix/{sid}/reservation")["attrs"]["prefix"])
         net = ipaddress.ip_network((int(site_base.network_address)+11*256, 31))
         w.add("prefix", f"prefix/{sid}/radio-transit", {"prefix": str(net), "status": "active", "description": "Routed indoor diagnostic radio hop"},
               {"vrf": prefix["refs"]["vrf"], "scope_site": site["key"], "tenant": tenant})
@@ -410,7 +430,7 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
                                         rf_channel=DIAGNOSTIC_CHANNELS[band(device, "wlan1")],
                                         description="Routed diagnostic radio hop")
             w.obj(port)["refs"]["vrf"] = prefix["refs"]["vrf"]
-            w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "active", "dns_name": f"{w.obj(device)['attrs']['name']}-radio.{ns}.example"},
+            w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "active"},
                   {"assigned_object": port, "vrf": prefix["refs"]["vrf"], "tenant": tenant})
             ports.append(port)
         points = [w.obj(device)["meta"]["placement"]["position_m"] for device in devices[:2]]

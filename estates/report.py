@@ -12,6 +12,13 @@ from .intent import compatibility_guidance
 from .validate import _speed
 
 
+
+def _term_site(objects, term):
+    """A circuit termination's site (or provider network), through the room it names."""
+    target = term["refs"].get("termination")
+    room = objects.get(target, {})
+    return room.get("refs", {}).get("site") if room.get("kind") == "location" else target
+
 def type_coverage(plan):
     """Inventory against the pinned schema audit; generated never means live-verified."""
     audit = json.loads((Path(__file__).resolve().parent.parent / "catalog/type-coverage.json").read_text())
@@ -111,7 +118,7 @@ def _ipv6_walkthrough(plan, objects, kinds):
             examples = [address(next(key for key in refs["ipaddresses"] if families.get(key) == family))
                         for family in (4, 6)]
             rows.append((label(obj["key"]), label(refs.get("device") or refs.get("virtual_machine")),
-                         f"{attrs.get('protocol', '?')}/{','.join(map(str, attrs.get('ports', [])))}", *examples))
+                         ", ".join(attrs.get("port_mappings", [])) or "?", *examples))
         _table(lines, ["Service example", "Owner", "Listener", "IPv4 address", "IPv6 address"], rows)
     return lines
 
@@ -599,8 +606,7 @@ def markdown(plan):
             rack = host.get("refs", {}).get("rack")
             address = objects.get(vm["refs"].get("primary_ip4"), {})
             interface = address.get("refs", {}).get("assigned_object")
-            service_text = "; ".join(f"{s['attrs'].get('name', s['key'])}: {s['attrs'].get('protocol', '?')}/"
-                                     + ",".join(map(str, s["attrs"].get("ports", [])))
+            service_text = "; ".join(f"{s['attrs'].get('name', s['key'])}: " + (", ".join(s["attrs"].get("port_mappings", [])) or "?")
                                      for s in sorted(listeners[vm["key"]], key=lambda obj: obj["key"])) or "No service listeners"
             start = (f"{name(vm['key'])} → {name(interface)} / {address.get('attrs', {}).get('address', 'No primary IP')}; "
                      f"{service_text}; host {name(host_key)} → rack {name(rack)} / cluster {name(vm['refs'].get('cluster'))}")
@@ -687,7 +693,7 @@ def markdown(plan):
     purchases = []
     for circuit in kinds["circuit"]:
         ends = terms[circuit["key"]]
-        targets = [term["refs"].get("termination") for term in ends]
+        targets = [_term_site(objects, term) for term in ends]
         sites = sorted({t for t in targets if t in site_groups})
         networks = [t for t in targets if objects.get(t, {}).get("kind") == "provider_network"]
         provider = circuit["refs"].get("provider")
@@ -697,14 +703,14 @@ def markdown(plan):
             for end in ends:
                 port = objects.get(cable_peer.get(end["key"]), {})
                 owner = objects.get(port.get("refs", {}).get("device"), {})
-                if (port.get("kind") != "interface" or owner.get("refs", {}).get("site") != end["refs"].get("termination")
+                if (port.get("kind") != "interface" or owner.get("refs", {}).get("site") != _term_site(objects, end)
                         or port["attrs"].get("enabled") is not True or owner.get("attrs", {}).get("status") != "active"
                         or cable_at.get(end["key"], {}).get("attrs", {}).get("status") != "connected"):
                     two_site_path = False
                 remote_speeds.append(port.get("attrs", {}).get("speed") or _speed(port.get("attrs", {}).get("type", "")) or 0)
             diagram_edges[tuple(site_groups[site] for site in sites)] += 1
         for site in sites:
-            site_ends = [term for term in ends if term["refs"].get("termination") == site]
+            site_ends = [term for term in ends if _term_site(objects, term) == site]
             term = site_ends[0]
             cable = cable_at.get(term["key"], {})
             peer = objects.get(cable_peer.get(term["key"]), {})
@@ -759,7 +765,7 @@ def markdown(plan):
             if (len(ends) == 2 and {end["attrs"].get("term_side") for end in ends} == {"A", "Z"}
                     and len(sites) == 2 and None not in sites
                     and all(owner.get("refs", {}).get("role") == "role/provider-edge" for owner in owners)
-                    and all(owner["refs"]["site"] == end["refs"].get("termination") for owner, end in zip(owners, ends))):
+                    and all(owner["refs"]["site"] == _term_site(objects, end) for owner, end in zip(owners, ends))):
                 for site in sites:
                     transport_by_site[site][circuit["refs"].get("provider")] += 1
         pop_rows = []
@@ -850,8 +856,8 @@ def markdown(plan):
                 school_cohorts["classroom-ap"]+school_cohorts["office-ap"]+school_cohorts["lab-ap"]))
         _table(lines, ["School", "Classrooms", "Enrollment", "Teacher desks", "Admin desks", "Classroom student PCs",
                        "Lab PCs", "Planned wireless students", "APs"], rows)
-        radius = [service for service in kinds["service"] if service["attrs"].get("protocol") == "udp"
-                  and {1812,1813} <= set(service["attrs"].get("ports", []))]
+        radius = [service for service in kinds["service"]
+                  if {"udp/1812", "udp/1813"} <= set(service["attrs"].get("port_mappings", []))]
         if radius:
             lines.extend(["**Authentication walkthrough:** inspect the staff and student WLANs, their assigned AP radios, "
                 "native management VLAN and tagged client VLANs. The district identity service exposes modeled RADIUS listeners: "

@@ -354,6 +354,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             for end in (refs(key).get("a"), refs(key).get("b")):
                 owner = refs(end).get("device")
                 site = refs(owner).get("site") if owner else refs(end).get("termination")
+                if kind(site) == "location":
+                    site = refs(site).get("site")
                 if not isinstance(site, str):
                     site = refs(refs(end).get("power_panel")).get("site")
                 if isinstance(site, str):
@@ -481,6 +483,25 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             adjacency[b].append((key, a, key))
             capacity[key] = rate
 
+    cross_connects, panel_positions = Counter(), Counter()
+
+    def cross_connect(term, port, site, provider):
+        """Carrier handoffs into a PoP record the hotel cross-connect; fibre ones the PE cabinet enclosure position."""
+        carrier_pop = port is not None and provider != "provider/operator" and str(site).startswith("site/pop-")
+        xc, pp = attrs(term).get("xconnect_id"), attrs(term).get("pp_info")
+        device = refs(port).get("device") if port else None
+        panel = f"{device[:-4]}odf{device[-2:]}" if device and re.fullmatch(r"device/pop-[^/]+/pe-[ab]", device) else None
+        fibre = panel is not None and attrs(port).get("type") != "1000base-t"
+        match = re.fullmatch(re.escape(str(attrs(panel).get("name"))) + r", panel ([1-4]), port ([1-9]|1[0-2])", str(pp)) if fibre else None
+        if carrier_pop:
+            cross_connects[xc] += 1
+            if match:
+                panel_positions[(panel, match[1], match[2])] += 1
+        if ((xc is not None) != carrier_pop or (carrier_pop and not re.fullmatch(r"XC-[1-9]\d{6}", str(xc))) or
+                (pp is not None) != (carrier_pop and fibre) or (pp is not None and not match)):
+            report("provider-cross-connect", term, "A carrier's handoff into a PoP records its carrier-hotel cross-connect, "
+                   "and a fibre handoff its position on the PE cabinet's own fibre enclosure; no other termination carries either.")
+
     def circuit(key, port_a, port_z, site_a, site_z, provider, speed, commitment, tenant="tenant", account=None):
         terms = child("circuit", key, "circuit_termination")
         sides = {side: [term for term in terms if attrs(term).get("term_side") == side] for side in ("A", "Z")}
@@ -491,12 +512,18 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             good &= refs(key).get("provider_account") == account and refs(account).get("provider") == provider
         for side, port, site in (("A", port_a, site_a), ("Z", port_z, site_z)):
             term = sides[side][0] if len(sides[side]) == 1 else None
-            good &= refs(term).get("termination") == site and attrs(term).get("port_speed") == speed
+            good &= attrs(term).get("port_speed") == speed
             if port is not None:
-                good &= (kind(port) == "interface" and attrs(port).get("type") not in ("virtual", "lag", None) and
+                # A local handoff terminates in the room its equipment stands in.
+                room = refs(refs(port).get("device")).get("location")
+                good &= (refs(term).get("termination") == room and kind(room) == "location" and refs(room).get("site") == site and
+                         kind(port) == "interface" and attrs(port).get("type") not in ("virtual", "lag", None) and
                          attrs(port).get("speed") == speed and peers.get(term) == port and active_path(term))
+                cross_connect(term, port, site, provider)
             else:
-                good &= kind(site) == "provider_network" and refs(site).get("provider") == provider and not peers.get(term)
+                good &= (refs(term).get("termination") == site and kind(site) == "provider_network" and
+                         refs(site).get("provider") == provider and not peers.get(term))
+                cross_connect(term, None, site, provider)
         if not good:
             report("provider-circuit-path", key, "Circuit needs its active purchased commitment, correct provider/account/tenant, actual A/Z sites and both local physical handoffs; only transit may have an opaque remote end.")
         return bool(good)
@@ -714,8 +741,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 refs(prefix).get("vrf") != vrf or refs(prefix).get("tenant") != tenant or refs(prefix).get("scope_site") != site or refs(prefix).get("vlan") != vlan or
                 kind(vlan) != "vlan" or attrs(vlan).get("vid") != (20 if role == "clients" else 10) or attrs(vlan).get("status") != "active" or
                 refs(vlan).get("site") != site or refs(vlan).get("tenant") != tenant or
-                attrs(f"prefix/{sid}/reservation").get("prefix") != str(container) or refs(f"prefix/{sid}/reservation").get("vrf") != vrf):
-            report("provider-site-network", prefix, "Management /26 and customer /25 segments require their fixed site reservation, VLAN, VRF and tenant.")
+                attrs(f"prefix/{sid}/reservation").get("prefix") != str(container) or "vrf" in refs(f"prefix/{sid}/reservation") or
+                refs(f"prefix/{sid}/reservation").get("tenant") != tenant):
+            report("provider-site-network", prefix, "Management /26 and customer /25 segments require their fixed global site block, VLAN, VRF and tenant.")
         return network, vlan
 
     def svi(port, network, vlan, vrf, host, tenant, parent=None):
@@ -789,6 +817,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         routed(key, (cpe_wan, port), vrf, tenant)
         circuit(key, cpe_wan, port, f"site/{sid}", f"site/pop-{pop}", "provider/operator", 1000000, rate * 1000,
                 tenant, f"provider-account/customer/{customer['key']}")
+        ends = [site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")]
+        route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
+        if (attrs(key).get("distance"), attrs(key).get("distance_unit")) != ((route, "km") if route else (None, None)):
+            report("provider-access-geography", key, "An access circuit records the route length from its premises to its serving PoP.")
         clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
         lan = f"{cpe}/if/port1"
         if customer["lan_endpoints"]:
@@ -900,6 +932,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if actual != required:
             report("provider-port-use", router, "Only the exact reserved physical PE ports may be cabled; unused service/transport/transit positions remain free.")
 
+    for value, count in cross_connects.items():
+        if count > 1:
+            report("provider-cross-connect", "plan", f"Cross-connect {value} is recorded on {count} terminations.")
+    for (panel, bay, position), count in panel_positions.items():
+        if count > 1:
+            report("provider-cross-connect", panel, f"Panel {bay} port {position} carries {count} handoffs.")
+
     base = recipe["asn_base"]
     public_asns = ("asn/operator", "asn/transit-a", "asn/transit-b")
     expected_asns = {f"asn/customer/{key}": base + 256 + slot for key, slot in customer_slots.items()}
@@ -917,12 +956,15 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             (attrs("asn-range/arin").get("start"), attrs("asn-range/arin").get("end")) != (DOCUMENTATION_ASNS[0], DOCUMENTATION_ASNS[-1])):
         report("provider-routing-registry", "rir/arin", "The operator and upstream AS numbers need their public ARIN registry and documentation range.")
     for key, number in expected_asns.items():
-        if kind(key) != "asn" or attrs(key).get("asn") != number or refs(key).get("rir") != "rir/private":
-            report("provider-asn", key, "Each customer routing identity must retain its reserved private ASN and registry.")
+        if (kind(key) != "asn" or attrs(key).get("asn") != number or refs(key).get("rir") != "rir/private" or
+                refs(key).get("tenant") != f"tenant/cust-{key.rsplit('/', 1)[-1]}"):
+            report("provider-asn", key, "Each customer routing identity must retain its reserved private ASN, registry and customer tenant.")
     numbers = [attrs(key).get("asn") for key in public_asns]
     for key, number in zip(public_asns, numbers):
-        if kind(key) != "asn" or number not in DOCUMENTATION_ASNS or numbers.count(number) != 1 or refs(key).get("rir") != "rir/arin":
-            report("provider-asn", key, "The operator and each upstream hold a distinct documentation AS number under the public registry.")
+        if (kind(key) != "asn" or number not in DOCUMENTATION_ASNS or numbers.count(number) != 1 or refs(key).get("rir") != "rir/arin" or
+                refs(key).get("tenant") != ("tenant" if key == "asn/operator" else None)):
+            report("provider-asn", key, "The operator and each upstream hold a distinct documentation AS number under the public registry; "
+                   "only the operator's carries the operator tenant.")
     for prefix in PUBLIC_AGGREGATES:
         key = f"aggregate/public/{prefix}"
         if kind(key) != "aggregate" or attrs(key).get("prefix") != prefix or refs(key).get("rir") != "rir/arin":
@@ -994,10 +1036,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if attrs(port).get("description") != "Private L3 VPN attachment over the access circuit":
                 report("provider-scope-text", port, "The virtual interface describes inventory membership over its actual access circuit, not executed tunneling or routing.")
             if (kind(term) != "virtual_circuit_termination" or refs(term).get("virtual_circuit") != vc or refs(term).get("interface") != port or
-                    attrs(term).get("role") != "peer" or kind(port) != "interface" or attrs(port).get("type") != "virtual" or attrs(port).get("enabled") is not True or
+                    attrs(term).get("role") != ("hub" if sid == hub else "spoke") or kind(port) != "interface" or attrs(port).get("type") != "virtual" or attrs(port).get("enabled") is not True or
                     refs(port).get("device") != f"device/{sid}/edge-01" or refs(port).get("parent") != parent or refs(port).get("vrf") != vrf or
                     not active_path(parent) or len(child("interface", port, "virtual_circuit_termination")) != 1 or child("assigned_object", port, "ip_address")):
-                report("provider-virtual-membership", term, "Each requested CPE needs exactly one active virtual peer membership over its actual physical customer handoff and customer VRF.")
+                report("provider-virtual-membership", term, "Each requested CPE needs exactly one active virtual membership (hub at the customer's hub premises, spoke elsewhere) over its actual physical customer handoff and customer VRF.")
             if sid != hub:
                 flows[(attachments[sid], attachments[hub])] += customer["site_peak_mbps"] * 1000
     if by_kind["virtual_circuit"] != expected_vcs or by_kind["virtual_circuit_termination"] != expected_terms:

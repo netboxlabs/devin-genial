@@ -67,7 +67,7 @@ class ProviderTests(unittest.TestCase):
         for obj in objects.values():
             obj['meta'] = {}
         first, second = 'circuit/backbone/chicago-west-a/detroit-south-a', 'circuit/backbone/chicago-west-b/detroit-south-b'
-        site = objects[first + '/A']['refs']['termination']
+        site = objects[objects[first + '/A']['refs']['termination']]['refs']['site']
         site_name = objects[site]['attrs']['name']
         provider = objects[first]['refs']['provider']
         provider_name = objects[provider]['attrs']['name']
@@ -124,13 +124,14 @@ class ProviderTests(unittest.TestCase):
         for key in (*spans,"circuit/noc/a","circuit/noc/b"):
             ends=[objects[key+'/'+side]['refs']['termination'] for side in ('A','Z')]
             self.assertNotEqual(*ends)
-            self.assertTrue(all(objects[e]['kind']=='site' for e in ends))
+            # Local handoffs terminate in the room their equipment stands in.
+            self.assertTrue(all(objects[e]['kind']=='location' and objects[objects[e]['refs']['site']]['kind']=='site' for e in ends))
         for side in ('a','b'):
             self.assertEqual(objects[f'circuit/transit/{side}/Z']['refs']['termination'],f'provider-network/transit/{side}')
         for banned in ('wireless_lan','tunnel','ike_policy','l2vpn'):
             self.assertEqual(kinds[banned],0)
         self.assertEqual(Counter(o['attrs']['name'] for o in plan['objects'] if o['kind']=='service'),
-                         {'identity':2,'radius':2,'dns':2,'dns-udp':2,'monitoring':2,'provisioning':2})
+                         {'identity':2,'radius':2,'dns':2,'monitoring':2,'provisioning':2})
 
     def test_seeded_physical_graph_survives_each_router_or_link_removal(self):
         for seed in (0,1,17,42,500):
@@ -199,7 +200,7 @@ class ProviderTests(unittest.TestCase):
     def test_address_reservations_are_separated_and_external_owner_is_unknown(self):
         p=generate(example());objects={o['key']:o for o in p['objects']}
         prefix={o['key']:ipaddress.ip_network(o['attrs']['prefix']) for o in p['objects'] if o['kind']=='prefix'}
-        dc=prefix['prefix/dc-01/management/reservation']
+        dc=prefix['prefix/dc-01/reservation']
         sites=[net for key,net in prefix.items() if key.startswith('prefix/') and key.endswith('/reservation') and not key.startswith('prefix/dc-01/')]
         infrastructure=[net for key,net in prefix.items() if key.startswith(('prefix/link/','prefix/loopback/'))]
         self.assertEqual(dc.prefixlen,16)
@@ -298,7 +299,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(validate(plan),[])
         for obj in plan['objects']:
             if obj['kind']=='device':self.assertLessEqual(len(obj['attrs']['name']),64,obj['key'])
-            if obj['kind']=='ip_address':self.assertTrue(all(len(label)<=63 for label in obj['attrs']['dns_name'].split('.')),obj['key'])
+            if obj['kind']=='ip_address':self.assertTrue(all(len(label)<=63 for label in obj['attrs'].get('dns_name','').split('.')),obj['key'])
             if obj['kind']=='rack' and obj['attrs']['status']!='planned':self.assertLessEqual(len(obj['attrs']['asset_tag']),50,obj['key'])
             if obj['kind']=='vlan':self.assertLessEqual(len(obj['attrs']['name']),64,obj['key'])
             if obj['kind'] in {'provider','contact'}:

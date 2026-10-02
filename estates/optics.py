@@ -45,8 +45,8 @@ def owned_span_m(objects, endpoint):
     attrs = circuit["attrs"]
     if attrs.get("distance") and attrs.get("distance_unit") == "km":
         return round(attrs["distance"] * 1000)
-    ends = [objects.get(objects.get(f"{circuit['key']}/{side}", {}).get("refs", {}).get("termination"), {}).get("attrs", {})
-            for side in "AZ"]
+    targets = [objects.get(objects.get(f"{circuit['key']}/{side}", {}).get("refs", {}).get("termination"), {}) for side in "AZ"]
+    ends = [(objects.get(t["refs"]["site"], {}) if t.get("kind") == "location" else t).get("attrs", {}) for t in targets]
     points = [(e["latitude"], e["longitude"]) for e in ends if "latitude" in e and "longitude" in e]
     return round(km(*points) * ROUTE_FACTOR * 1000) if len(points) == 2 else 0
 

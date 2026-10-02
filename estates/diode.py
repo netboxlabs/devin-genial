@@ -136,7 +136,7 @@ LOADER_ONLY_REASON = (
 _GENERIC_REFS = {
     ("ip_address", "assigned_object"): {"interface", "vm_interface", "fhrp_group"},
     ("mac_address", "assigned_object"): {"interface", "vm_interface"},
-    ("circuit_termination", "termination"): {"site", "provider_network"},
+    ("circuit_termination", "termination"): {"site", "location", "provider_network"},
     ("fhrp_group_assignment", "interface"): {"interface", "vm_interface"},
     ("l2vpn_termination", "assigned_object"): {"interface", "vlan", "vm_interface"},
     ("tunnel_termination", "termination"): {"interface", "vm_interface"},

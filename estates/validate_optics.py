@@ -108,6 +108,11 @@ def analyze(plan, catalog=None):
     def kind(key):
         return obj(key).get("kind")
 
+    def term_site(term):
+        """A circuit termination's site, through the room it may name."""
+        target = refs(term).get("termination")
+        return refs(target).get("site") if kind(target) == "location" else target
+
     def identity(key, expected_kind):
         manufacturer = refs(key).get("manufacturer")
         name, model = attrs(manufacturer).get("name"), attrs(key).get("model")
@@ -147,7 +152,7 @@ def analyze(plan, catalog=None):
             return 0
         recorded = attrs(circuit).get("distance")
         recorded = recorded * 1000 if type(recorded) in (int, float) and attrs(circuit).get("distance_unit") == "km" else 0
-        points = [(attrs(refs(t).get("termination")).get("latitude"), attrs(refs(t).get("termination")).get("longitude"))
+        points = [(attrs(term_site(t)).get("latitude"), attrs(term_site(t)).get("longitude"))
                   for t in circuit_ends[circuit]]
         if len(points) == 2 and all(type(v) in (int, float) for p in points for v in p):
             (la1, lo1), (la2, lo2) = ((math.radians(x), math.radians(y)) for x, y in points)
@@ -310,7 +315,7 @@ def analyze(plan, catalog=None):
                 return peer, route, length, None
             if kind(peer) == "circuit_termination":
                 circuit = refs(peer).get("circuit")
-                if (refs(peer).get("termination") != site or kind(site) != "site" or
+                if (term_site(peer) != site or kind(site) != "site" or
                         kind(circuit) != "circuit" or attrs(circuit).get("status") != "active"):
                     return None, route, length, "requires an active circuit handoff terminating at the local site"
                 return peer, route, length, None

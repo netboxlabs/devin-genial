@@ -340,7 +340,8 @@ def _registry(w):
     provider_names = (("operator",r["name"]),*((label,row[0]) for label,row in CARRIERS.items()))
     held_by = dict(provider_names)
     for key,number in documentation_asns(ns).items():
-        w.add("asn",f"asn/{key}",dict(asn=number,description=f"{held_by[key]} routing identity"),{"rir":"rir/arin"})
+        w.add("asn",f"asn/{key}",dict(asn=number,description=f"{held_by[key]} routing identity"),
+              {"rir":"rir/arin",**({"tenant":"tenant"} if key == "operator" else {})})
     for label,name in provider_names:
         refs = {"asns":[f"asn/{label}"]} if label == "operator" or label.startswith("transit-") else {}
         display = name
@@ -389,7 +390,7 @@ def _registry(w):
         key = c["key"]; slot = w.reserve("provider-customers",key,256)
         customer = titleize(key)
         tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=customer,slug=f"{ns}-cust-{key}",description="Private L3 VPN customer"))
-        w.add("asn",f"asn/customer/{key}",dict(asn=r["asn_base"]+256+slot,description=f"{customer} customer routing identity"),{"rir":"rir/private"})
+        w.add("asn",f"asn/customer/{key}",dict(asn=r["asn_base"]+256+slot,description=f"{customer} customer routing identity"),{"rir":"rir/private","tenant":tenant})
         # The customer VPN's RD reuses its route target value, <operator ASN>:<n>,
         # numbered by the permanent onboarding slot and stable under growth.
         value = f"{operator_asn}:{1001+slot}"
@@ -423,7 +424,7 @@ def _site_network(site,role,prefixlen,offset,vid):
     reservation = f"prefix/{site.id}/reservation"
     if reservation not in w.objects:
         w.add("prefix",reservation,dict(prefix=str(container),status="container",description=f"{site.display} site block"),
-              dict(vrf=vrf,tenant=site.tenant,scope_site=site.key))
+              dict(tenant=site.tenant,scope_site=site.key))
     net = ipaddress.ip_network((int(container.network_address)+offset,prefixlen))
     # VLAN identity is (vid, group); the name only labels it inside its
     # site-scoped VLAN group, the way an operator names VLANs on a switch.
@@ -441,9 +442,9 @@ def _scoped(vrf,**refs):
 
 def _ip(w,port,net,host,vrf,tenant,primary=False):
     owner = w.obj(port)["refs"]["device"]
-    key = w.add("ip_address",f"ip/{port}",dict(address=f"{net[host]}/{net.prefixlen}",status="active",
-          description=f"{w.obj(owner)['attrs']['name']} {w.obj(port)['attrs']['name']}",
-          dns_name=f"{w.obj(owner)['attrs']['name']}.{w.recipe['namespace']}.example"),
+    # No description: the assigned interface already says what it is. DNS
+    # names are settled once by operations._addresses.
+    key = w.add("ip_address",f"ip/{port}",dict(address=f"{net[host]}/{net.prefixlen}",status="active"),
           _scoped(vrf,assigned_object=port,tenant=tenant))
     if vrf is not None:
         w.obj(port)["refs"]["vrf"] = vrf
@@ -486,7 +487,7 @@ def _link_description(w,key):
         sid,side = rest.rsplit("/",1)
         return f"{display('site/'+sid)} management uplink {side.upper()}"
     kind = rest.split("/",1)[0]
-    a,z = (w.obj(f"{key}/{side}")["refs"]["termination"] for side in "AZ")
+    a,z = (termination_site(w.objects,f"{key}/{side}") for side in "AZ")
     if kind == "backbone":
         return f"Backbone span {display(a)} to {display(z)}"
     if kind == "transit":
@@ -494,6 +495,12 @@ def _link_description(w,key):
     if kind == "noc":
         return f"NOC access link {rest.rsplit('/',1)[-1].upper()} to {display(z)}"
     return f"Access link {display(a)} to {display(z)}"
+
+
+def termination_site(objects,term):
+    """The site (or provider network) a circuit termination sits in, through its location."""
+    target = objects[term]["refs"]["termination"]
+    return objects[target]["refs"]["site"] if objects[target]["kind"] == "location" else target
 
 
 def _routed_pair(w,key,a,b,vrf=CORE_VRF,tenant="tenant"):
@@ -516,14 +523,36 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
         refs["provider_account"] = account
     w.add("circuit",key,attrs,refs,dict(procurement=dict(cohort=f"provider-{kind}",handoff_mbps=handoff)))
     for side,site,port in (("A",a_site,a_port),("Z",z_site,z_port)):
-        target = site.key if isinstance(site,Site) else site
-        term = w.add("circuit_termination",f"{key}/{side}",dict(term_side=side,port_speed=handoff*1000,
-                     description="Local routed handoff" if port else "Upstream carrier handoff"),dict(circuit=key,termination=target))
+        # A local handoff terminates in the room its equipment stands in (the
+        # PoP cage, the premises or NOC equipment room); a far end NetBox
+        # cannot see stays on the carrier's provider network.
+        target = w.obj(w.obj(port)["refs"]["device"])["refs"]["location"] if port else (site.key if isinstance(site,Site) else site)
+        attrs = dict(term_side=side,port_speed=handoff*1000,description="Local routed handoff" if port else "Upstream carrier handoff")
+        if port and provider != "provider/operator" and site.id.startswith("pop-"):
+            attrs.update(_cross_connect(w,f"{key}/{side}",port))
+        term = w.add("circuit_termination",f"{key}/{side}",attrs,dict(circuit=key,termination=target))
         if port:
             site.cable(port,term,"cat6" if w.obj(port)["attrs"]["type"] == "1000base-t" else "smf")
             w.obj(port)["attrs"]["speed"] = handoff*1000
             site.contract["required_connections"].append(dict(a=port,b=term))
     return key
+
+
+# A carrier handoff into a PoP crosses the carrier hotel's meet-me room: the
+# hotel's cross-connect order, and for fibre the position on the PE cabinet's
+# 1U enclosure (four adapter panels of twelve LC duplex ports).
+ODF_POSITIONS, ODF_PANEL_PORTS = 48, 12
+
+
+def _cross_connect(w,term,port):
+    slot = w.reserve("provider-cross-connects",term,1 << 20)
+    result = dict(xconnect_id=f"XC-{1000000+(_hash(w.recipe['namespace'],'xconnect')+7919*slot)%9000000:07d}")
+    device = w.obj(port)["refs"]["device"]
+    if w.obj(port)["attrs"]["type"] != "1000base-t" and re.fullmatch(r"device/pop-[^/]+/pe-[ab]",device):
+        panel = device[:-4]+"odf"+device[-2:]
+        n = w.reserve(f"provider-odf-positions/{panel}",term,ODF_POSITIONS)
+        result["pp_info"] = f"{w.obj(panel)['attrs']['name']}, panel {n//ODF_PANEL_PORTS+1}, port {n%ODF_PANEL_PORTS+1}"
+    return result
 
 
 def _console_management(site,switch):
@@ -935,12 +964,17 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     usable = 1-Decimal(str(w.recipe["reserve_fraction"]))
     rate = c["hub_commit_mbps"] if hub else next(tier for tier in w.recipe["wan_tiers_mbps"] if tier*usable>=c["site_peak_mbps"])
     port=site.interface(edge,"wan1"); circuit=f"circuit/customer/{sid}"
+    # The access tail's route length: premises to serving PoP times the route
+    # factor, recorded on the circuit so optics read it rather than re-derive it.
+    here,there = (w.obj(k)["attrs"] for k in (site.key,pop_site.key))
+    distance = (round(km((here["latitude"],here["longitude"]),(there["latitude"],there["longitude"]))*ROUTE_FACTOR,1)
+                if "latitude" in here and "latitude" in there else None)
     _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,pe_port,rate,tenant,handoff_mbps=1000,
-             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",installed=installed)
+             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",installed=installed,distance_km=distance)
     _routed_pair(w,circuit,port,pe_port,vrf,tenant)
     vi=w.add("interface",f"{edge}/if/PrivateL3",dict(name="PrivateL3",type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
              dict(device=edge,parent=port,vrf=vrf))
-    w.add("virtual_circuit_termination",f"virtual-circuit-termination/{sid}",dict(role="peer",description=f"{site.display} {'hub' if hub else 'spoke'}"),
+    w.add("virtual_circuit_termination",f"virtual-circuit-termination/{sid}",dict(role="hub" if hub else "spoke",description=f"{site.display} {'hub' if hub else 'spoke'}"),
           dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
     site.contract.update(required_device_roles={"role/customer-edge":1,**({"role/access":1} if managed_lan else {})},endpoint_count=c["lan_endpoints"],
                          demand=dict(lan_endpoints=c["lan_endpoints"],peak_mbps=c["site_peak_mbps"],hub=hub,commit_mbps=rate),access_hardware=w.hardware_alias("access"))

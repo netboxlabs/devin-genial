@@ -439,8 +439,11 @@ class Site:
         if vrf not in self.w.objects:
             self.w.add("vrf", vrf, {"name": f"{self.display} {titleize(role)}", "enforce_unique": True,
                        "description": "Retained Birch site routing context"}, {"tenant": self.tenant})
-        self.w.add("prefix", f"prefix/{self.id}/{role}/reservation", {"prefix": str(container), "status": "container",
-              "description": f"{self.display} site block"}, {"vrf": vrf, "tenant": self.tenant, "scope_site": self.key})
+        # One global site block parents this site's segments in every VRF;
+        # repeating it per routing context only multiplied identical rows.
+        if f"prefix/{self.id}/reservation" not in self.w.objects:
+            self.w.add("prefix", f"prefix/{self.id}/reservation", {"prefix": str(container), "status": "container",
+                  "description": f"{self.display} site block"}, {"tenant": self.tenant, "scope_site": self.key})
         # NetBox holds VLAN names unique per VLAN group (unique_group_name), and
         # every VLAN joins its site's group, so the short segment name suffices.
         vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": titleize(role), "vid": 10 * (index+1),

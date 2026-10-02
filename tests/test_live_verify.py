@@ -24,7 +24,7 @@ def fixture():
         obj("p", "vm_interface", {"name": "eth0", "enabled": True, "mode": "access"},
             {"virtual_machine": "vm", "untagged_vlan": "v"}),
         obj("ip", "ip_address", {"address": "10.0.0.2/24"}, {"assigned_object": "p"}),
-        obj("svc", "service", {"name": "DNS", "protocol": "udp", "ports": [53]},
+        obj("svc", "service", {"name": "DNS", "port_mappings": ["udp/53"]},
             {"virtual_machine": "vm"}),
     ]}
     inventory = {

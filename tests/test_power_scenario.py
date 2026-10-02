@@ -119,7 +119,7 @@ class PowerScenarioTests(unittest.TestCase):
                 self.assertEqual(set(envelope["affected"]["virtual_machines"]), vms)
                 self.assertEqual(set(envelope["affected"]["services"]), services)
                 self.assertTrue(services)
-                self.assertTrue(all(objects[key]["attrs"]["ports"] == [8443] for key in services))
+                self.assertTrue(all(objects[key]["attrs"]["port_mappings"] == ["tcp/8443"] for key in services))
                 verify(envelope)
 
     def test_shared_scenario_supports_passive_campus_profiles(self):

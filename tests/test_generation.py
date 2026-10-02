@@ -232,8 +232,8 @@ class GenerationTests(unittest.TestCase):
         for kind, field in (("tenant", "slug"), ("site", "slug"),
                             ("circuit", "cid"), ("ip_address", "dns_name")):
             with self.subTest(kind=kind, field=field):
-                original_names = {obj["attrs"][field] for obj in self.baseline["objects"] if obj["kind"] == kind}
-                other_names = {obj["attrs"][field] for obj in other["objects"] if obj["kind"] == kind}
+                original_names = {obj["attrs"][field] for obj in self.baseline["objects"] if obj["kind"] == kind and field in obj["attrs"]}
+                other_names = {obj["attrs"][field] for obj in other["objects"] if obj["kind"] == kind and field in obj["attrs"]}
                 self.assertTrue(original_names)
                 self.assertTrue(original_names.isdisjoint(other_names))
         # VRF names became authored labels in 0.15: two estates built from one

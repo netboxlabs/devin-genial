@@ -48,7 +48,7 @@ class SchoolTests(unittest.TestCase):
         self.assertEqual(counts, {"identity":6,"dns":2,"learning-portal":6,"files":4,"monitoring":2})
         radius = [o for o in plan["objects"] if o["kind"] == "service" and o["attrs"]["name"] == "radius"]
         self.assertEqual(len(radius), 6)
-        self.assertTrue(all(o["attrs"]["protocol"] == "udp" and o["attrs"]["ports"] == [1812,1813] for o in radius))
+        self.assertTrue(all(o["attrs"]["port_mappings"] == ["udp/1812", "udp/1813"] for o in radius))
 
     def test_growth_across_switch_floor_and_service_boundaries_preserves_allocations(self):
         for patching in ("direct","panels"):

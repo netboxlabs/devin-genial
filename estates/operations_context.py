@@ -21,6 +21,12 @@ AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee
 SERIAL_SHIFT_WEEKS = 8
 
 
+
+def _site_of(world, term):
+    """The site or provider network a circuit termination stands in, through its room."""
+    target = term["refs"]["termination"]
+    return world.obj(target)["refs"]["site"] if target.startswith("location/") else target
+
 def timeline(world, kinds, dated):
     """One timeline: service days, device installs and serial date codes.
 
@@ -39,6 +45,8 @@ def timeline(world, kinds, dated):
     service_day, port_day = {}, {}
     for term in kinds["circuit_termination"]:
         site = term["refs"]["termination"]
+        if site.startswith("location/"):  # a handoff in a room serves that room's site
+            site = world.obj(site)["refs"]["site"]
         if site.startswith("site/"):
             service_day[site] = min(circuit_day[term["key"]], service_day.get(site, circuit_day[term["key"]]))
     for cable in kinds["cable"]:
@@ -256,13 +264,13 @@ def enrich(world):
                  f"Circuit identifiers, contracted capacity and handoff coordination for {name}; customer-side troubleshooting stays with the tenant technical desk."))
         assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
         term = terms[key]
-        site_name = world.obj(term["refs"]["termination"])["attrs"]["name"]
+        site_name = world.obj(_site_of(world, term))["attrs"]["name"]
         if "commit_rate" in attrs:  # owned fiber has no purchased commitment to request
             journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "Order placed",
                 f"Ordered {rate_kbps(attrs['commit_rate'])} from {name}; quote {attrs['cid']} on every call to the carrier.")
         if world.recipe["profile"] == "provider-backbone":
             far = far_terms[key]
-            far_target = world.obj(far["refs"]["termination"])
+            far_target = world.obj(_site_of(world, far))
             far_name = far_target["attrs"]["name"]
             if far_target["kind"] == "provider_network":
                 body = (f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ network boundary: {far_name}\n"

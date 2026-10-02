@@ -148,7 +148,7 @@ class ProviderValidationTests(unittest.TestCase):
     def test_customer_virtual_membership_and_physical_parent_are_required(self):
         term = f"virtual-circuit-termination/{self.customer}"
         port = f"device/{self.customer}/edge-01/if/PrivateL3"
-        for key, field, value in ((term, "role", "hub"), (port, "parent", f"device/{self.customer}/edge-01/if/wan2"),
+        for key, field, value in ((term, "role", "peer"), (port, "parent", f"device/{self.customer}/edge-01/if/wan2"),
                                   (port, "vrf", "vrf/provider"), (port, "type", "1000base-t")):
             with self.subTest(key=key, field=field):
                 self.setUp()
@@ -159,6 +159,78 @@ class ProviderValidationTests(unittest.TestCase):
         self.plan["objects"].remove(self.objects[term])
         self.strip()
         self.assertIn("provider-service-inventory", self.codes())
+
+    def test_spoke_membership_cannot_claim_the_hub_role(self):
+        spoke = "virtual-circuit-termination/ce-harbor-logistics-detroit-south-001"
+        self.assertEqual(self.objects[spoke]["attrs"]["role"], "spoke")
+        self.assertEqual(self.objects[f"virtual-circuit-termination/{self.customer}"]["attrs"]["role"], "hub")
+        self.objects[spoke]["attrs"]["role"] = "hub"
+        self.strip()
+        self.assertIn("provider-virtual-membership", self.codes())
+
+    def test_access_circuit_records_its_route_length(self):
+        circuit = self.objects[f"circuit/customer/{self.customer}"]
+        self.assertEqual(circuit["attrs"]["distance_unit"], "km")
+        self.assertGreater(circuit["attrs"]["distance"], 0)
+        for change in ({"distance": circuit["attrs"]["distance"] + 5}, {"distance": None}):
+            with self.subTest(change=change):
+                self.setUp()
+                attrs = self.objects[f"circuit/customer/{self.customer}"]["attrs"]
+                attrs.update(change)
+                if attrs["distance"] is None:
+                    del attrs["distance"], attrs["distance_unit"]
+                self.strip()
+                self.assertIn("provider-access-geography", self.codes())
+
+    def test_customer_asn_belongs_to_its_customer_and_upstream_asns_to_nobody(self):
+        self.assertEqual(self.objects["asn/customer/harbor-logistics"]["refs"]["tenant"], "tenant/cust-harbor-logistics")
+        for key, change in (("asn/customer/harbor-logistics", "tenant"), ("asn/transit-a", "tenant")):
+            with self.subTest(key=key):
+                self.setUp()
+                self.objects[key]["refs"]["tenant"] = change
+                self.strip()
+                self.assertIn("provider-asn", self.codes())
+
+    def test_local_handoffs_terminate_in_their_equipment_room(self):
+        term = self.term(f"circuit/customer/{self.customer}", "A")
+        self.assertEqual(term["refs"]["termination"], f"location/{self.customer}")
+        for target in (f"site/{self.customer}", "location/pop-chicago-west"):
+            with self.subTest(target=target):
+                self.setUp()
+                self.term(f"circuit/customer/{self.customer}", "A")["refs"]["termination"] = target
+                self.strip()
+                self.assertIn("provider-circuit-path", self.codes())
+
+    def test_carrier_handoffs_into_a_pop_record_cross_connect_and_enclosure_position(self):
+        span = next(k for k, o in self.objects.items() if o["kind"] == "circuit" and k.startswith("circuit/backbone/")
+                    and o["refs"]["provider"] != "provider/operator")
+        term = self.term(span, "A")
+        self.assertRegex(term["attrs"]["xconnect_id"], r"^XC-\d{7}$")
+        self.assertRegex(term["attrs"]["pp_info"], r"^chicago-west-odf-[ab], panel [1-4], port \d+$")
+        customer = self.term(f"circuit/customer/{self.customer}", "Z")
+        self.assertNotIn("xconnect_id", customer["attrs"])
+        other = self.term(f"circuit/transit/a", "A")
+        cases = ((term, "xconnect_id", None), (term, "pp_info", "odf-9, panel 1, port 1"),
+                 (customer, "xconnect_id", "XC-1234567"), (other, "xconnect_id", term["attrs"]["xconnect_id"]))
+        for index, (target, field, value) in enumerate(cases):
+            with self.subTest(case=index):
+                self.setUp()
+                obj = self.objects[target["key"]]
+                if value is None:
+                    del obj["attrs"][field]
+                else:
+                    obj["attrs"][field] = value
+                self.strip()
+                self.assertIn("provider-cross-connect", self.codes())
+
+    def test_one_global_site_block_parents_every_segment(self):
+        block = self.objects["prefix/pop-chicago-west/reservation"]
+        self.assertNotIn("vrf", block["refs"])
+        self.assertFalse([k for k in self.objects if k.startswith("prefix/dc-01/") and k.endswith("/reservation")
+                          and k != "prefix/dc-01/reservation"])
+        block["refs"]["vrf"] = "vrf/provider"
+        self.strip()
+        self.assertIn("provider-site-network", self.codes())
 
     def test_customer_tenant_account_route_target_and_asn_cannot_be_swapped(self):
         cases = (("virtual-circuit/customer/harbor-logistics", "tenant", "tenant", "provider-customer-service"),
@@ -358,7 +430,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("dc-replica-diversity", self.codes())
         self.setUp()
         service = next(o for o in self.plan["objects"] if o["kind"] == "service" and o["refs"].get("virtual_machine") == "vm/dc-01/dns/001")
-        service["attrs"]["ports"] = [443]
+        service["attrs"]["port_mappings"] = ["tcp/443"]
         self.strip()
         self.assertIn("dc-workload-listener", self.codes())
 
@@ -416,7 +488,7 @@ class ProviderRealismTests(unittest.TestCase):
         metro = {f"site/pop-{p['key']}": p["metro"] for p in self.plan["recipe"]["pops"]}
         pairs = Counter()
         for key, span in self.spans().items():
-            a, z = (metro[self.objects[f"{key}/{side}"]["refs"]["termination"]] for side in "AZ")
+            a, z = (metro[self.objects[self.objects[f"{key}/{side}"]["refs"]["termination"]]["refs"]["site"]] for side in "AZ")
             if a == z:
                 self.assertEqual(span["refs"]["provider"], "provider/operator", key)
                 self.assertNotIn("commit_rate", span["attrs"])

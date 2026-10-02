@@ -63,7 +63,10 @@ def _graph(plan):
         obj, iface = objects[term], objects[key]
         device = iface["refs"]["device"]
         site = objects[device]["refs"]["site"]
-        _require(obj["refs"]["termination"] == site and objects[cables[term]]["attrs"].get("status") == "connected",
+        target = obj["refs"]["termination"]
+        if objects.get(target, {}).get("kind") == "location":
+            target = objects[target]["refs"]["site"]
+        _require(target == site and objects[cables[term]]["attrs"].get("status") == "connected",
                  "circuit handoff must be connected at its actual device site")
         return dict(termination=term, side=obj["attrs"]["term_side"], site=site, device=device,
                     interface=key, cable=cables[term], interface_type=iface["attrs"]["type"],

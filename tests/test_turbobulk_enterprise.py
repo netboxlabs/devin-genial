@@ -133,7 +133,7 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
     def test_service_compiles_to_target_selected_schema(self):
         vm = {"key": "vm:1", "kind": "virtual_machine", "attrs": {}, "refs": {}}
         service = {"key": "service:1", "kind": "service",
-                   "attrs": {"name": "dns", "protocol": "udp", "ports": [53, 5353]},
+                   "attrs": {"name": "dns", "port_mappings": ["udp/53", "udp/5353"]},
                    "refs": {"virtual_machine": vm["key"]}}
         context = ({vm["key"]: vm, service["key"]: service},
                    {vm["key"]: 8}, {"virtual_machine": 12})
@@ -150,9 +150,13 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
                                            self.objects)["service_shape"], "protocol_ports")
         self.assertEqual(_schema_preflight(SchemaClient(self.objects, service_shape="port_mappings"),
                                            self.objects)["service_shape"], "port_mappings")
-        service["attrs"]["ports"] = [53, True]
-        with self.assertRaisesRegex(LoadError, "unique integers"):
-            _rendered_columns(service)
+        service["attrs"]["port_mappings"] = ["udp/53", "udp/x"]
+        with self.assertRaisesRegex(LoadError, "port strings"):
+            _rendered_columns(service, "port_mappings")
+        # A multi-protocol service has no pre-4.7 protocol plus ports form.
+        service["attrs"]["port_mappings"] = ["tcp/53", "udp/53"]
+        with self.assertRaisesRegex(LoadError, "multi-protocol"):
+            _rendered_columns(service, "protocol_ports")
 
     def test_missing_module_bay_type_model_fails_before_any_turbobulk_write(self):
         client = SchemaClient(self.objects, rest=False)

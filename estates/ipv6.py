@@ -206,9 +206,10 @@ created on a spare interface or an unmodeled far end of a circuit.
             slot = world.reserve(f"ipv6-segments/{site}", key, 1 << 16)
             network = (IPv6Network((site_networks[site] + (slot << 64) + 1, 128)) if policy == "ce-loopback"
                        else IPv6Network((site_networks[site] + (slot << 64), 64)))
-            container = f"ipv6/reservation/{site}/{refs['vrf']}"
+            # One global /48 site block parents the site's segments in every VRF.
+            container = f"ipv6/reservation/{site}"
             container_network = IPv6Network((site_networks[site], 48))
-            container_refs = {name: refs[name] for name in ("vrf", "tenant", "scope_site")}
+            container_refs = {"tenant": world.obj(site)["refs"]["tenant"], "scope_site": site}
             container_description = f"{world.obj(site)['attrs']['name']} IPv6 site block"
             # The IPv4 leaf already names its purpose and site; its gateway
             # reservation clause is IPv4-only, so only the first clause carries.

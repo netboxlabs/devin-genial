@@ -68,7 +68,7 @@ class EnterpriseValidationTests(unittest.TestCase):
 
     def test_listener_and_interface_obligations_are_not_self_declared(self):
         service = next(o for o in self.plan["objects"] if o["kind"] == "service" and o["refs"].get("virtual_machine") == self.vm()["key"])
-        service["attrs"]["ports"] = [443]
+        service["attrs"]["port_mappings"] = ["tcp/443"]
         self.assertFinding("dc-workload-listener")
         self.setUp()
         address = self.objects[self.vm()["refs"]["primary_ip4"]]

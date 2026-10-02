@@ -225,7 +225,7 @@ def add_discovery_lab(world):
     for number, net, a, a_port, b, b_port, mirrors in links:
         add("prefix", f"prefix/lab/link/{net}", {"prefix": str(net), "status": "active",
                                                   "description": "Network lab point-to-point link"},
-            {"tenant": "tenant", "role": "ip-role/backbone"}, {"mirrors": mirrors})
+            {"tenant": "tenant", "role": "ip-role/transit"}, {"mirrors": mirrors})
         ka, kb = f"{a['key']}/if/{a_port}", f"{b['key']}/if/{b_port}"
         add("cable", f"cable/{ka}--{kb}", {"status": "connected", "label": f"LAB-{number + 1:02d}",
                                            "description": "containerlab veth pair; no physical medium"},

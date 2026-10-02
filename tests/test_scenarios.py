@@ -61,7 +61,7 @@ class AcquisitionRefreshTests(unittest.TestCase):
                 for address in addresses:
                     actual = objects[address["key"]]
                     self.assertEqual(actual["attrs"]["address"], address["address"])
-                    self.assertEqual(actual["attrs"]["dns_name"], address["dns_name"])
+                    self.assertEqual(actual["attrs"].get("dns_name"), address["dns_name"])
         self.assertGreater(self.scenario["checks"]["foreign_objects_checked"], 0)
 
     def test_acquisition_updates_local_responsibilities_without_changing_shared_desks(self):
