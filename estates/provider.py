@@ -527,11 +527,11 @@ def _registry(w):
     w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs"),{"provider":"provider/operator"})
     _account(w,"provider-account/operator/noc","provider/operator","NOC access",f"{code}-INT-0001","NOC access circuits")
     _account(w,"provider-account/operator/fiber","provider/operator","Backbone fiber",f"{code}-INT-0002","Owned metro fiber between PoPs")
-    # Native classification: one circuit type per service. "access" and
-    # "out-of-band" remain only while the NOC and OOB builders still use them.
+    # Native classification: one circuit type per service (fibre.circuit_type
+    # reuses the registry's cellular-oob and noc-access rows).
     services = {c["service"] for c in r["customers"]}
     for name,display in (("backbone","Backbone"),("dark-fiber","Dark Fiber"),("transit","Transit"),
-                         ("access",titleize("access")),("out-of-band",titleize("out-of-band")),("cellular-oob","Cellular OOB"),
+                         ("cellular-oob","Cellular OOB"),("noc-access","NOC Access"),
                          *((f"{s}-access",f"{CIRCUIT_TYPE_NAMES[s]} Access") for s in SERVICES if s in services)):
         w.add("circuit_type",f"circuit-type/{name}",dict(name=display,slug=f"{ns}-{name}"))
     # Customer DIA: the documentation pools are containers under the
