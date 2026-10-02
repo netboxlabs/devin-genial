@@ -151,31 +151,10 @@ ORIGINAL = {"agg": ("the original aggregation switch; not inventoried", 1),
 NOT_IN_SERVICE = ("decommissioning", "planned", "staged", "inventory")
 
 
-def _stub_models(w):
-    """STUB(WP-A): stand-ins until catalog/hardware.json carries the lived-in aliases.
-
-    Remove at integration: every alias below is WP-A's pinned model.
-    """
-    if all(alias in w.catalog["models"] for alias in (PE_LEGACY, PE_SUCCESSOR, DDOS, TIMING)):
-        return
-    w.catalog = {**w.catalog, "models": dict(w.catalog["models"])}  # never mutate the shared catalog
-    models = w.catalog["models"]
-    def clone(alias, base, **changes):
-        if alias not in models:
-            models[alias] = {**models[base], **changes}
-    clone(PE_LEGACY, PE, model="MX80 (stub)", slug="stub-mx80", u_height=2)
-    clone(PE_SUCCESSOR, PE, model="MX304 (stub)", slug="stub-mx304", u_height=2, power_ports=[], console_ports=[],
-          configured_modules=[], interfaces=[dict(name=f"et-0/0/{n}", type="400gbase-x-qsfpdd") for n in range(16)])
-    clone(DDOS, POP_OOB, model="TMS HD 1000 (stub)", slug="stub-tms", u_height=2, console_server_ports=[])
-    clone(TIMING, POP_OOB, model="LANTIME M300 (stub)", slug="stub-m300", u_height=1, console_server_ports=[])
-
-
 def ensure_models(w):
     """Register the PoP plant's catalog device types (catalog/hardware.json carries every alias)."""
-    _stub_models(w)
     for alias in (*PLANT_ALIASES, PE):
-        if alias in w.catalog["models"]:  # STUB(WP-A): drop the guard with the stubs
-            device_type(w, alias)
+        device_type(w, alias)
 
 
 def _role(w, role):
@@ -224,8 +203,6 @@ def history(w, pop):
     """
     tl = timeline.of(w)
     core, launch = tl.tier[pop] == "core", tl.launch[pop]
-    # STUB(WP-A): ACX5048 builds as the ACX5448-M until its catalog entry and optics land.
-    agg_alias = lambda model: AGG_MODELS[model] if AGG_MODELS[model] in w.catalog["models"] else AGGREGATION
     rack = lambda side: "R01" if side == "a" or not core else "R02"
     items = []
 
@@ -249,7 +226,7 @@ def history(w, pop):
         if tl.agg_swap[pop]:
             add(side, f"original-agg-{side}", None, None, launch, removed=tl.agg_swap[pop], text=ORIGINAL["agg"][0])
         else:
-            add(side, f"agg-{side}", agg_alias(tl.agg[pop]), None, launch)
+            add(side, f"agg-{side}", AGG_MODELS[tl.agg[pop]], None, launch)
     if tl.oob_swap[pop]:
         add("a", "original-console", None, None, launch, removed=tl.oob_swap[pop], text=ORIGINAL["oob"][0])
     else:
@@ -258,13 +235,13 @@ def history(w, pop):
     # Later events, each a dated programme; same-day items keep this order.
     if tl.agg_swap[pop]:
         for side in sides:
-            add(side, f"agg-{side}", agg_alias(tl.agg[pop]), None, tl.agg_swap[pop])
+            add(side, f"agg-{side}", AGG_MODELS[tl.agg[pop]], None, tl.agg_swap[pop])
     if tl.oob_swap[pop]:
         add("a", "mgmt-01", POP_MANAGEMENT, None, tl.oob_swap[pop])
         add("a", "console-01", POP_OOB, None, tl.oob_swap[pop])
     if tl.spare[pop]:
         model, day = tl.spare[pop]
-        add("b", "agg-spare", agg_alias(model), None, day, status="inventory")
+        add("b", "agg-spare", AGG_MODELS[model], None, day, status="inventory")
     if tl.refresh[pop]:
         for side in sides:
             add(side, f"pe-{side}", PE, "router", tl.refresh[pop])
@@ -357,7 +334,7 @@ def build(site):
     w, pop = site.w, site.id.removeprefix("pop-")
     tl = timeline.of(w)
     ensure_models(w)
-    heights = {alias: w.catalog["models"][alias]["u_height"] for alias in ROLES if alias in w.catalog["models"]}
+    heights = {alias: w.catalog["models"][alias]["u_height"] for alias in ROLES}
     colo, colo_name = colo_tenant(w, site)
     core = tl.tier[pop] == "core"
     ledger = history(w, pop)
