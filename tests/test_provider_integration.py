@@ -44,20 +44,23 @@ class ProviderIntegrationTests(unittest.TestCase):
                   {"group": "owner-group/operations"})
         world.add("device_role", "role/access", {"name": "Access", "slug": "access"})
         # Export templates must target object types the estate populates.
-        world.add("device", "device/pop-a", {"name": "pop-a-edge-01"})
-        world.add("cable", "cable/pop-a", {"label": "POP-A-1", "type": "cat6"})
+        # One accountable team owns sites, circuits and devices (operations._owners).
+        world.add("device", "device/pop-a", {"name": "pop-a-edge-01"}, {"owner": "owner/operations"})
+        world.add("cable", "cable/pop-a", {"label": "POP-A-1", "type": "cat6", "color": "2196f3"})
         # Every estate tenant belongs to a tenant group (operations._shared).
         world.add("tenant_group", "tenant-group/operator", {"name": "Network operator"})
         world.add("tenant", "tenant", {"name": "Operator"}, {"group": "tenant-group/operator"})
         world.add("tenant", "tenant/cust-acme", {"name": "Acme"}, {"group": "tenant-group/operator"})
         for key, name in (("site/a", "Chicago PoP"), ("site/z", "Detroit PoP")):
-            world.add("site", key, {"name": name, "physical_address": name + " address", "time_zone": "America/Chicago"}, {"tenant": "tenant"},
+            world.add("site", key, {"name": name, "physical_address": name + " address", "time_zone": "America/Chicago"}, {"tenant": "tenant", "owner": "owner/operations"},
                       {"geography": {"city": name.split()[0]}})
         # A third-party carrier's support desk answers from its own domain.
         world.add("provider", "provider/transport", {"name": "Span carrier"}, {}, {"support_domain": "span-carrier.example"})
         world.add("provider_account", "account/span", {"account": "span-account"}, {"provider": "provider/transport"})
         world.add("provider_network", "carrier/transit", {"name": "Transit network"}, {"provider": "provider/transport"})
-        world.add("circuit", "circuit/span", {"cid": "SPAN-001", "commit_rate": 100000000, "install_date": "2026-01-01"}, {"provider": "provider/transport", "tenant": "tenant", "provider_account": "account/span"})
+        world.add("circuit", "circuit/span", {"cid": "SPAN-001", "commit_rate": 100000000, "install_date": "2026-01-01"},
+                  {"provider": "provider/transport", "tenant": "tenant", "provider_account": "account/span",
+                   "owner": "owner/operations"})
         for side, endpoint in (("A", "site/a"), ("Z", "site/z" if remote_kind == "site" else "carrier/transit")):
             world.add("circuit_termination", "termination/" + side, {"term_side": side, "port_speed": 100000000}, {"circuit": "circuit/span", "termination": endpoint})
         world.add("virtual_circuit", "virtual-circuit/acme", {"cid": "ACME-001"}, {"tenant": "tenant/cust-acme"})

@@ -19,6 +19,8 @@ _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
           "25gbase-x-sfp28": ("sfp28", 25000000),
           "100gbase-x-qsfp28": ("qsfp28", 100000000)}
+# Restated: how an optic cage form factor reads in its bay-type name.
+_CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP28"}
 # A smaller module in a larger backward-compatible cage, at that module's own
 # rate. Everything else must match the cage's own form factor exactly.
 _DOWNRATED = {("sfp", "sfpp", 1000000), ("sfpp", "sfp28", 10000000)}
@@ -215,7 +217,7 @@ def analyze(plan, catalog=None):
                     if cage is None or not isinstance(vendor, str):
                         report("optics-catalog", module_type, "Part compatibility must name real catalog optical cages and their manufacturer.")
                         continue
-                    expected_bays.add((vendor, f"{vendor} {cage[0].upper()} optic cage"))
+                    expected_bays.add((vendor, f"{vendor} {_CAGE_LABELS.get(cage[0], cage[0].upper())} optic cage"))
             supported = refs(module_type).get("module_bay_types")
             actual_bays = [bay_type_identity(t) for t in supported] if isinstance(supported, list) else []
             if set(actual_bays) != expected_bays or len(actual_bays) != len(expected_bays):
@@ -280,7 +282,7 @@ def analyze(plan, catalog=None):
             report("optics-compatibility", port, "Actual module vendor/model must be reviewed for this named host cage, physical form and effective interface speed.")
         bay, module_type = refs(module).get("module_bay"), refs(module).get("module_type")
         vendor = models[alias]["manufacturer"]
-        expected_type = vendor, f"{vendor} {form.upper()} optic cage"
+        expected_type = vendor, f"{vendor} {_CAGE_LABELS.get(form, form.upper())} optic cage"
         bay_types, supported = refs(bay).get("module_bay_types"), refs(module_type).get("module_bay_types")
         if (refs(module).get("device") != owner or refs(bay).get("device") != owner or
                 attrs(bay).get("name") != f"Optic {name}" or

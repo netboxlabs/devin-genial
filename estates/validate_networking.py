@@ -13,7 +13,83 @@ from .model import hardware_catalog
 from .naming import IPAM_ROLES, prefix_role, segment_role
 
 
+def is_svi(obj):
+    attrs, refs = obj.get("attrs"), obj.get("refs")
+    return (obj.get("kind") == "interface" and isinstance(attrs, dict) and attrs.get("type") == "virtual"
+            and not (isinstance(refs, dict) and refs.get("parent")))
+
+
+def svi_findings(plan):
+    """A routed VLAN interface carries no 802.1Q mode or access VLAN.
+
+    NetBox's Interface.clean() rejects an untagged VLAN without a mode and
+    save() clears it, so ``mode: access`` on an SVI is a switchport claim.
+    """
+    objects = plan.get("objects") if isinstance(plan, dict) else None
+    return [{"code": "interface-svi-mode", "object": obj["key"],
+             "message": "A routed VLAN interface carries no 802.1Q mode or untagged VLAN; its VLAN is the one "
+                        "its own address's prefix is bound to."}
+            for obj in (objects if isinstance(objects, list) else [])
+            if isinstance(obj, dict) and isinstance(obj.get("attrs"), dict) and isinstance(obj.get("refs"), dict)
+            and is_svi(obj) and (obj["attrs"].get("mode") or obj["refs"].get("untagged_vlan"))]
+
+
+def routed_vlan_view(plan):
+    """The plan as the checks read it: each SVI joined to the VLAN it routes.
+
+    An SVI names no VLAN field in NetBox, so the checks re-derive it from the
+    graph: the VLAN bound to the most specific prefix, in the address's own
+    VRF, that holds one of the SVI's addresses — or, when the address sits in
+    the wrong VRF, the VLAN of the device's own site whose prefix holds it, so
+    the routing-context mismatch is reported against the right segment. The
+    result is a copy carrying that VLAN as ``untagged_vlan`` on those
+    interfaces only; the plan itself is never mutated, and an SVI with no such
+    address gains nothing.
+    """
+    objects = plan.get("objects") if isinstance(plan, dict) else None
+    if not isinstance(objects, list):
+        return plan
+
+    def part(obj, name):
+        value = obj.get(name) if isinstance(obj, dict) else None
+        return value if isinstance(value, dict) else {}
+
+    index = {o.get("key"): o for o in objects if isinstance(o, dict)}
+    bound = []
+    for obj in index.values():
+        refs = part(obj, "refs")
+        if obj.get("kind") == "prefix" and isinstance(refs.get("vlan"), str):
+            try:
+                bound.append((ipaddress.ip_network(part(obj, "attrs").get("prefix")), refs["vlan"],
+                              refs.get("vrf"), part(index.get(refs["vlan"]), "refs").get("site")))
+            except (TypeError, ValueError):
+                continue
+    routed = {}
+    for obj in index.values():
+        refs = part(obj, "refs")
+        port = index.get(refs.get("assigned_object")) if obj.get("kind") == "ip_address" else None
+        if (not isinstance(port, dict) or not is_svi(port) or part(port, "refs").get("untagged_vlan")
+                or port.get("key") in routed):
+            continue
+        try:
+            host = ipaddress.ip_interface(part(obj, "attrs").get("address")).ip
+        except (TypeError, ValueError):
+            continue
+        site = part(index.get(part(port, "refs").get("device")), "refs").get("site")
+        holding = [(net.prefixlen, vlan, vrf, vlan_site) for net, vlan, vrf, vlan_site in bound
+                   if net.version == host.version and host in net]
+        matches = ([(length, vlan) for length, vlan, vrf, _ in holding if vrf == refs.get("vrf")]
+                   or [(length, vlan) for length, vlan, _, vlan_site in holding if site and vlan_site == site])
+        if matches:
+            routed[port["key"]] = max(matches)[1]
+    if not routed:
+        return plan
+    return {**plan, "objects": [{**o, "refs": {**o["refs"], "untagged_vlan": routed[o["key"]]}}
+                                if isinstance(o, dict) and o.get("key") in routed else o for o in objects]}
+
+
 def validate(plan, catalog=None):
+    plan = routed_vlan_view(plan)
     recipe = plan.get("recipe", {})
     bank = recipe.get("profile") == "regional-bank"
     school = recipe.get("profile") == "school-district"

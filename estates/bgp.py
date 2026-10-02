@@ -69,7 +69,8 @@ GROUPS = (
 )
 PE_ROLE = "role/provider-edge"
 CE_ROLE = "role/customer-edge"
-LOOPBACK = "lo0"
+# Junos addresses the loopback on logical unit 0 (operations._loopback_units).
+LOOPBACK = "lo0.0"
 
 
 # A customer peering's inventory status follows its access circuit's

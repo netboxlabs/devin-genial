@@ -163,8 +163,10 @@ columns.
 Rendering is exact for every emitted field, with one qualification: the loader
 also supplies three model defaults the raw bulk path would otherwise manufacture
 as invalid empty strings — `location.status`, `power_outlet.status`, and
-`rack.starting_unit`. REST and Diode apply these server-side, and strict readback
-compares only emitted fields, so it does not verify them.
+`rack.starting_unit` — and the columns `save()` would derive (a rack's
+`form_factor`/`width` from its rack type, a device type's `_abs_weight`). REST
+and Diode apply these server-side, and strict readback compares only emitted
+fields, so it does not verify them.
 
 The frozen `build/bank-v2` artifact is preserved local qualification evidence;
 it is not shipped in a fresh clone. `TARGET` is the non-secret NetBox root origin;

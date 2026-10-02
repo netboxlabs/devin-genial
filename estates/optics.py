@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 
+from . import naming
 from .model import DesignError, vendor_serial
 
 
@@ -129,8 +130,8 @@ def enrich(world):
                 manufacturer, factor = bay_types[bay_type]
                 slug = re.sub(r"[^a-z0-9]+", "-", manufacturer.lower()).strip("-")
                 world.add("module_bay_type", bay_type,
-                          {"name": f"{manufacturer} {factor.upper()} optic cage",
-                           "slug": f"{slug}-{factor}-optic", "color": "00838f"},
+                          {"name": f"{manufacturer} {naming.OPTIC_CAGE_LABELS.get(factor, factor.upper())} optic cage",
+                           "slug": f"{slug}-{factor}-optic", "color": naming.PALETTE.get(bay_type, "")},
                           {"manufacturer": f"manufacturer/{manufacturer}"})
         module_type = f"module-type/{part['manufacturer']}/{part['model']}"
         if module_type not in objects:

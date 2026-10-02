@@ -223,7 +223,7 @@ def validate(plan):
     for key, (net, rel, status) in expected_prefixes.items():
         if (kind(key) != "prefix" or attrs(key).get("prefix") != str(net) or
                 attrs(key).get("status") != status or
-                {f: v for f, v in refs(key).items() if f != "role"} != {f: v for f, v in rel.items() if f != "role"}):
+                {f: v for f, v in refs(key).items() if f not in ("role", "owner")} != {f: v for f, v in rel.items() if f not in ("role", "owner")}):
             report("ipv6-prefix", key, "Missing or incorrect reserved IPv6 prefix, status, VLAN, site, VRF or tenant.")
 
     for key, value in addresses.items():
@@ -260,11 +260,12 @@ def validate(plan):
         if purpose == "ce-loopback" and (attrs(owner).get("name") != "Management" or attrs(owner).get("type") != "virtual" or
                 refs(owner).get("parent") or refs(refs(owner).get("device")).get("role") != "role/customer-edge"):
             report("ipv6-policy", owner, "Provider CE /128 policy requires the CE's own management loopback.")
-        if purpose == "loopback" and (attrs(owner).get("name") != "lo0" or attrs(owner).get("type") != "virtual" or
+        if purpose == "loopback" and (attrs(owner).get("name") != "lo0.0" or attrs(owner).get("type") != "virtual" or
+                attrs(refs(owner).get("parent")).get("name") != "lo0" or
                 refs(refs(owner).get("device")).get("role") != "role/provider-edge" or
                 refs(refs(owner).get("device")).get("primary_ip4") != key or
                 f"prefix/loopback/{refs(owner).get('device')}" not in loop_prefixes):
-            report("ipv6-policy", owner, "Provider /128 policy requires the PE's actual virtual lo0 interface.")
+            report("ipv6-policy", owner, "Provider /128 policy requires unit 0 (lo0.0) of the PE's actual virtual lo0 interface.")
         new_key = f"ipv6/{key}"
         expected.add(new_key)
         companions[key] = new_key

@@ -130,8 +130,8 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
                   {"name": spec["platform"]["name"], "slug": f"{ns}-{spec['platform']['slug']}"},
                   {"manufacturer": f"manufacturer/{manufacturer}"})
         w.add("device_type", f"hardware/{alias}",
-              {k: spec[k] for k in ("model", "slug", "u_height", "is_full_depth", "subdevice_role",
-                                   "cooling_method", "airflow") if k in spec},
+              {k: spec[k] for k in ("model", "slug", "part_number", "u_height", "is_full_depth", "subdevice_role",
+                                   "cooling_method", "airflow", "weight", "weight_unit") if k in spec},
               {"manufacturer": f"manufacturer/{manufacturer}"})
     # Optic makers need a manufacturer row even when no chassis shares it
     # (generic third-party server optics in an otherwise vendor-only estate).
@@ -332,10 +332,11 @@ class Site:
             asset_tag = f"{self.w.recipe['namespace'].upper()}-{self.w.reserve('asset-tags', key, 100000) + 1:05}"
             # Enclosed four-post 24U cabinet (APC AR3104) everywhere a room
             # holds rack lanes; a single-CE premises takes the small-room kit.
-            height, form, description = (SMALL_RACK if self.small_kit else
-                                         (RACK_U_HEIGHT, "4-post-cabinet", f"{group.title()} equipment cabinet"))
+            # Form factor and width live on the rack type (operations._racks).
+            height, _, description = (SMALL_RACK if self.small_kit else
+                                      (RACK_U_HEIGHT, "4-post-cabinet", f"{group.title()} equipment cabinet"))
             self.w.add("rack", key, {"name": f"{'N' if group == 'network' else 'C'}{ordinal+1:02}", "u_height": height,
-                  "width": 19, "status": "active", "asset_tag": asset_tag, "form_factor": form,
+                  "status": "active", "asset_tag": asset_tag,
                   "facility_id": f"{tag}-{row+1:02}-{group[0].upper()}{column+1:02}",
                   "description": description},
                   {"site": self.key, "location": location, "tenant": self.tenant,

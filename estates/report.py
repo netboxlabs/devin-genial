@@ -103,7 +103,7 @@ def _ipv6_walkthrough(plan, objects, kinds):
         if entries:
             # Prefer the actual PE loopback when present; otherwise a stable primary.
             obj = min(entries, key=lambda item: (
-                objects.get(addresses[item["refs"]["primary_ip6"]]["refs"].get("assigned_object"), {}).get("attrs", {}).get("name") != "lo0",
+                objects.get(addresses[item["refs"]["primary_ip6"]]["refs"].get("assigned_object"), {}).get("attrs", {}).get("name") not in {"lo0", "lo0.0"},
                 item["key"]))
             ip6 = addresses[obj["refs"]["primary_ip6"]]
             rows.append((kind, label(obj["key"]), label(ip6["refs"].get("assigned_object")),
@@ -749,7 +749,7 @@ def markdown(plan):
             "PE fxp0 and the PoP management switch sit in the Carrier Management VRF, which reaches every CE through a hub-and-spoke management extranet; each PoP console server also has an independent broadband out-of-band circuit. NOC services have two physical PoP attachments. "
             "External transit remote interfaces and their owners are unknown.", "",
             "BGP inventory documents the same graph a second way: open a PE's BGP Sessions tab to see its route-reflector "
-            "peerings over lo0, its transit peering at the carrier handoff, and one customer peering per access circuit. "
+            "peerings over lo0.0, its transit peering at the carrier handoff, and one customer peering per access circuit. "
             "A transit peering names the real /31 as its remote prefix rather than inventing the carrier's address.", "",
             "Traffic checks cover declared customer spoke-to-hub flows, with a stable shortest-hop path and each single inter-PoP span loss. "
             "They exclude NOC, transit and background demand; peer membership does not imply an all-to-all traffic matrix. "

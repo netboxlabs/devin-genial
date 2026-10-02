@@ -133,8 +133,8 @@ def add_discovery_lab(world):
     add("location", room, {"name": "Network Lab", "slug": f"{ns}-{stem}-network-lab", "status": "active",
                            "description": "Isolated software-staging lab; containerised network OS, no production links"},
         {"site": site, "tenant": "tenant"}, {"floor": 1, "space_type": "lab"})
-    add("rack", rack, {"name": "L01", "facility_id": "NL-01-L01", "status": "active", "u_height": 24, "width": 19,
-                       "form_factor": "4-post-cabinet", "asset_tag": f"{ns.upper()}-{world.reserve('asset-tags', rack, 100000) + 1:05}",
+    add("rack", rack, {"name": "L01", "facility_id": "NL-01-L01", "status": "active", "u_height": 24,
+                       "asset_tag": f"{ns.upper()}-{world.reserve('asset-tags', rack, 100000) + 1:05}",
                        "description": "Lab server cabinet hosting the containerlab VM"},
         {"site": site, "location": room, "role": "rack-role/network", "tenant": "tenant"})
     add("prefix", "prefix/lab/pool", {"prefix": str(LAB_POOL), "status": "container",

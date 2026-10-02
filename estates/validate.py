@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 
 from .validate_operations import validate as validate_operations
+from .validate_networking import routed_vlan_view, svi_findings, is_svi
 from .validate_networking import validate as validate_networking
 from .validate_ipv6 import validate as validate_ipv6
 from .validate_poe import analyze as analyze_poe
@@ -101,6 +102,8 @@ def validate(plan):
         # slice; every other check then sees the estate without it.
         from .validate_provider import discovery_lab
         lab, plan = discovery_lab(plan, {"models": _catalog()})
+    lab = lab + svi_findings(plan)
+    plan = routed_vlan_view(plan)
     # Records carry operational text only; limitations live in the docs and report.
     objects = original.get("objects") if isinstance(original, dict) else None
     for obj in objects if isinstance(objects, list) else []:
@@ -478,7 +481,9 @@ def _validate(plan):
             report("cable-media", cable, "Power cables must join a power port to an outlet or feed.")
         cable_type = attrs(cable).get("type", "")
         cable_medium = "copper" if cable_type.startswith("cat") else "fiber" if cable_type.startswith(("smf", "mmf", "dac", "aoc")) else None
-        if cable_medium and any(m and m != cable_medium for m in (ma, mb)):
+        # An RJ45 serial console runs over ordinary twisted-pair patch cord.
+        rj45_console = ma == mb == "console" and attrs(a).get("type") == attrs(b).get("type") == "rj-45"
+        if cable_medium and any(m and m != cable_medium for m in (ma, mb)) and not (cable_medium == "copper" and rj45_console):
             report("cable-media", cable, f"Cable type {cable_type} is incompatible with its terminations.")
         sa = attrs(a).get("speed") or attrs(a).get("port_speed") or _speed(attrs(a).get("type", ""))
         sb = attrs(b).get("speed") or attrs(b).get("port_speed") or _speed(attrs(b).get("type", ""))
@@ -690,7 +695,9 @@ def _validate(plan):
             report("interface-relation", interface, "Only virtual interfaces can declare a parent in this blueprint.")
         vlans = list(rel.get("tagged_vlans", []))
         if rel.get("untagged_vlan"):
-            if not attrs(interface).get("mode"):
+            # An SVI's VLAN is derived (routed_vlan_view), never a mode field;
+            # a raw SVI that names one fails interface-svi-mode instead.
+            if not attrs(interface).get("mode") and not is_svi(objects[interface]):
                 report("vlan-mode", interface, "An untagged VLAN needs explicit interface mode; NetBox clears it when mode is blank.")
             vlans.append(rel["untagged_vlan"])
         if rel.get("tagged_vlans") and attrs(interface).get("mode") not in {"tagged", "tagged-all"}:

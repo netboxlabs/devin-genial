@@ -131,13 +131,15 @@ RETIREMENT_ENDPOINTS = (
 # the "<namespace> " prefix. A dedicated tenant has no prefix to match, so every
 # endpoint matches these bare labels exactly. Custom-field names are an
 # identifier that keeps the underscored namespace in both modes.
-CUSTOM_FIELD_NAMES = ("{ns}_operations_tier",)
+# The second entry of each pair is the pre-0.16 name, kept so an estate loaded
+# before the service-class field replaced the operations tier still retires.
+CUSTOM_FIELD_NAMES = ("{ns}_service_class", "{ns}_operations_tier")
 RETIREMENT_LABELS = {
     "/api/extras/event-rules/": ("Device change notification",),
     "/api/extras/webhooks/": ("NetOps automation endpoint",),
     "/api/extras/export-templates/": ("Device inventory (CSV)", "Cable report (CSV)"),
     "/api/extras/custom-links/": ("Site equipment",),
-    "/api/extras/custom-field-choice-sets/": ("Operations tiers",),
+    "/api/extras/custom-field-choice-sets/": ("Service classes", "Operations tiers"),
     "/api/users/owners/": ("Network operations", "Infrastructure operations"),
     "/api/users/owner-groups/": ("Infrastructure teams",),
 }

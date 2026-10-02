@@ -59,7 +59,11 @@ class ShowcaseText(unittest.TestCase):
             self.assertNotIn("configured BGP sessions", vc["attrs"]["comments"])
         for vm in self.of(self.provider, "virtual_machine"):
             self.assertNotIn("not verified", vm["attrs"]["description"])
-            self.assertEqual(vm["attrs"]["comments"], "Independent host and rack lanes.")
+            # Operational placement wording, not the builder's lane jargon.
+            host = self.objects[vm["refs"]["device"]]["attrs"]["name"]
+            self.assertEqual(vm["attrs"]["comments"],
+                             f"Runs on {host}; its other replicas run on separate hosts in separate cabinets.")
+            self.assertRegex(vm["attrs"]["description"], r"^[A-Z][A-Za-z ]+ service(, shard \d+)? \((primary|secondary)\)$")
 
     def test_customer_vrfs_carry_their_route_target_as_rd(self):
         for vrf in self.of(self.provider, "vrf"):

@@ -247,6 +247,14 @@ def _equal_attribute(obj, field, expected, actual):
         # Installed 4.7 vpn/api/serializers_/crypto.py:26,93 uses integer
         # DHGroupChoices; netbox/api/fields.py:54 emits exactly value + label.
         return _choice_shape(actual, int) and type(expected) is int and expected == actual["value"]
+    if field == "created":
+        # A journal's event timestamp; the serializer may render UTC as "Z" or
+        # "+00:00" and add microseconds, so compare instants, not strings.
+        try:
+            return (datetime.fromisoformat(str(expected).replace("Z", "+00:00"))
+                    == datetime.fromisoformat(str(actual).replace("Z", "+00:00")))
+        except ValueError:
+            return False
     if field == "custom_fields":
         if not isinstance(actual, dict):
             return False

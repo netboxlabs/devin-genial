@@ -244,8 +244,14 @@ Declared deviations and selections:
   (`generic-design-v1`), not a vendor product.
 
 `airflow` is carried only where a source states it: `front-to-rear` on the
-Arista, Juniper and Supermicro chassis and `passive` on the AP9572, AP9563, FCE1U and CM8148,
-copied unchanged. The pinned Cisco C9200L, C9120, Fortinet 100F, CM8116,
+Arista, Juniper and Supermicro chassis and `passive` on the AP9572, AP9563, FCE1U,
+CM8148 and Aruba AP-505, copied unchanged. `part_number`, `weight` and
+`weight_unit` follow the same rule (0.16): each is copied from the model's
+SHA-pinned devicetype-library file and is absent where the file is silent
+(EX3300, FG-100F weight, Panduit DP24688TGY weight, Opengear, wall box). The
+Cisco AP's file is the -E part, so the installed -B variant takes its weight
+but no part number; the SR Linux lab router keeps its part number but no weight
+(the source weight is a fully populated hardware chassis, not the container). The pinned Cisco C9200L, C9120, Fortinet 100F, CM8116,
 Panduit and wall-box sources declare none, so none is invented. The generic
 liquid-cooled enclosure states `front-to-rear` as an authored assumption.
 

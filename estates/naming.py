@@ -177,7 +177,9 @@ def role_label(role):
 # One distinct colour per device role (NetBox renders it as the role badge and
 # the rack-elevation fill), so no two roles read alike in a list or a rack.
 # ``tests/test_estate_hygiene.py`` pins uniqueness; an estate emits only the
-# roles something references (estates/operations.py ``finalize``).
+# roles something references (estates/operations.py ``finalize``).  The role
+# colours are one slice of ``PALETTE`` below, which keeps every coloured
+# taxonomy family in an estate distinct from every other.
 ROLE_COLORS = {
     "wan-edge": "e65100", "distribution": "6a1b9a", "access": "1565c0",
     "spine": "4a148c", "leaf": "7b1fa2", "server": "2e7d32", "management": "546e7a",
@@ -199,27 +201,73 @@ ROLE_COLORS = {
 # tags it applies. ``object_types`` is the native-model scope a tag is meant
 # for; independent checks refuse a tag on any other kind. Order is display order.
 TAGS = {
-    "hub-site": ("Hub site", "1565c0", ("site",),
+    "hub-site": ("Hub site", "0288d1", ("site",),
                  "Hosts shared services or private-WAN hubs that other sites depend on"),
-    "dual-homed": ("Dual-homed", "2e7d32", ("site",),
+    "dual-homed": ("Dual-homed", "388e3c", ("site",),
                    "Active WAN access from two different carriers"),
-    "acquired": ("Acquired", "8d6e63", ("site", "device"),
+    "acquired": ("Acquired", "a1887f", ("site", "device"),
                  "Carried over from an acquired network with its retained design"),
-    "route-reflector": ("Route reflector", "5e35b1", ("device",),
+    "route-reflector": ("Route reflector", "7e57c2", ("device",),
                         "iBGP route reflector for the backbone"),
-    "transit-edge": ("Transit edge", "ff6f00", ("device",),
+    "transit-edge": ("Transit edge", "f57c00", ("device",),
                      "Terminates an upstream transit handoff"),
-    "managed-ce": ("Managed CE", "0097a7", ("device",),
+    "managed-ce": ("Managed CE", "26a69a", ("device",),
                    "Customer-premises edge operated by the service provider"),
-    "pci-scope": ("PCI scope", "c62828", ("device", "vlan", "prefix"),
+    "pci-scope": ("PCI scope", "e53935", ("device", "vlan", "prefix"),
                   "Payment-card segment, or equipment that carries or attaches to one"),
-    "clinical": ("Clinical", "d81b60", ("device", "vlan", "prefix"),
+    "clinical": ("Clinical", "ec407a", ("device", "vlan", "prefix"),
                  "Clinical or medical-device segment, or equipment that carries or attaches to one"),
-    "ot-zone": ("OT zone", "bf360c", ("device", "vlan", "prefix"),
+    "ot-zone": ("OT zone", "d84315", ("device", "vlan", "prefix"),
                 "Operational-technology segment, or equipment that carries or attaches to one"),
-    "multi-site": ("Multi-site service", "3949ab", ("virtual_machine",),
+    "multi-site": ("Multi-site service", "5c6bc0", ("virtual_machine",),
                    "Workload with replicas in more than one site"),
 }
+
+
+# Every coloured taxonomy record an estate can emit, keyed by its plan key.
+# NetBox shows these colours side by side (role badges, tag pills, rack-role
+# elevation fills, module-bay-type swatches), and two families sharing one hex
+# read as the same thing — the reviewer found access switches, network racks and
+# the hub-site tag all in one blue.  ``operations.finalize`` applies this map to
+# every coloured record and then gives any record not listed here (a
+# manufacturer's module-bay class a future catalog adds) the first unused
+# ``SPARE_COLORS`` entry in key order, so an estate never repeats a colour
+# across families.  ``tests/test_estate_hygiene.py`` pins global uniqueness.
+# Bay classes: PSU bays sit in reds, optic cages in teals, one per maker.
+PALETTE = {
+    **{f"role/{role}": colour for role, colour in ROLE_COLORS.items()},
+    **{f"tag/{slug}": spec[1] for slug, spec in TAGS.items()},
+    "rack-role/network": "0d47a1", "rack-role/compute": "1b5e20",
+    "virtual-circuit-type/private-l3": "c0ca33",
+    "inventory-role/cooling": "26c6da",
+    "module-bay-type/Arista/ac-psu": "b71c1c", "module-bay-type/Cisco/ac-psu": "d32f2f",
+    "module-bay-type/Juniper/ac-psu": "ef5350", "module-bay-type/Supermicro/ac-psu": "e57373",
+    "optics-bay-type/Arista/qsfp28": "006064", "optics-bay-type/Arista/sfpp": "00796b",
+    "optics-bay-type/Cisco/sfpp": "009688", "optics-bay-type/Cisco/sfp": "4db6ac",
+    "optics-bay-type/Fortinet/sfpp": "80cbc4", "optics-bay-type/Juniper/qsfp28": "00897b",
+    "optics-bay-type/Juniper/sfpp": "b2dfdb", "optics-bay-type/Juniper/sfp28": "004d40",
+    "optics-bay-type/Supermicro/sfpp": "18ffff",
+}
+SPARE_COLORS = ("9c27b0", "673ab7", "3f51b5", "03a9f4", "8bc34a", "cddc39", "ffc107",
+                "ff5722", "607d8b", "9e9e9e", "e91e63", "4caf50")
+# Kinds whose ``color`` is a taxonomy colour the palette governs.  Cables carry
+# a colour too, but that is the physical jacket (CABLE_COLORS), shared by design.
+COLOURED_KINDS = ("device_role", "rack_role", "tag", "inventory_item_role",
+                  "module_bay_type", "virtual_circuit_type", "circuit_type")
+
+# Cable jacket colour by medium, the convention a technician reads at the
+# patch field: single-mode yellow, OM3/OM4 multimode and active optical aqua,
+# copper data blue, serial console cyan, and power cords black on the A feed
+# and red on the B feed.
+CABLE_COLORS = {"smf": "ffeb3b", "mmf": "00bcd4", "aoc": "00bcd4", "cat6": "2196f3",
+                "console": "00e5ff", "power-a": "212121", "power-b": "d50000"}
+
+# Module-bay classes: a bay type names the form factor a maker's chassis takes,
+# not one supply model, so a chassis family's bays read as one class.  Which
+# supply actually fits a given chassis still follows that device type's own
+# catalog entry (equipment.validate), never this label.
+BAY_CLASSES = {"ac-psu": "AC PSU bay"}
+OPTIC_CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP28"}
 
 
 # What each addressed segment carries, in the words an engineer puts on a VLAN.

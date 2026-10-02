@@ -7,6 +7,7 @@ import unittest
 from estates.generate import generate
 from estates.model import canonical
 from estates.validate import validate
+from estates.validate_networking import routed_vlan_view
 
 
 RECIPES = {
@@ -15,6 +16,12 @@ RECIPES = {
     "school-district": {"profile": "school-district", "schools": [{"key": "oak", "classrooms": 2}]},
     "hospital-clinics": {"profile": "hospital-clinics", "hospitals": [{"key": "central", "wards": [{"key": "north", "beds": 4}]}], "clinics": []},
 }
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 def index(plan):
@@ -76,10 +83,10 @@ class AddressSpeedTests(unittest.TestCase):
 
     def test_generated_vlan_gateways_need_the_segment_mask_without_contracts(self):
         for profile, baseline in self.baselines.items():
-            objects = index(baseline)
+            objects, routed = index(baseline), routed_vlans(baseline)
             gateway = next(obj for obj in baseline["objects"] if obj["kind"] == "ip_address" and
                 (port := objects.get(obj["refs"].get("assigned_object"), {})).get("kind") == "interface" and
-                port["attrs"].get("type") == "virtual" and port["refs"].get("untagged_vlan"))
+                port["attrs"].get("type") == "virtual" and routed.get(port["key"]))
             for mask in (8, 32):
                 with self.subTest(profile=profile, mask=mask):
                     plan = deepcopy(baseline)
@@ -169,7 +176,7 @@ class BankAvailabilityTests(unittest.TestCase):
                 self.assertEqual(validate(baseline), [])
                 plan = deepcopy(baseline)
                 plan["objects"].append({"kind": "cable", "key": "future-spare-patch",
-                    "attrs": {"type": "cat6", "status": "planned"}, "refs": {
+                    "attrs": {"type": "cat6", "color": "2196f3", "status": "planned"}, "refs": {
                         "a": "device/br-s0001/edge-a/if/port1", "b": "device/br-s0001/edge-b/if/port1"}})
                 self.assertEqual(validate(plan), [])
 

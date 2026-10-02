@@ -76,7 +76,7 @@ class ProviderBgpShapeTests(unittest.TestCase):
             # Both ends peer from the in-band loopback, never a link address.
             for field in ("local_address", "remote_address"):
                 port = self.objects[obj["refs"][field]]["refs"]["assigned_object"]
-                self.assertEqual(self.objects[port]["attrs"]["name"], "lo0", key)
+                self.assertEqual(self.objects[port]["attrs"]["name"], "lo0.0", key)  # Junos unit 0
             self.assertEqual(obj["refs"]["local_as"], obj["refs"]["remote_as"])
             seen.add((local, remote))
             if local not in reflectors:

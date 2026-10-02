@@ -130,9 +130,23 @@ List-view hygiene (0.16, `operations.finalize`, run first by `World.finish` afte
 every builder): tags, taxonomy pruning, unused-port state, planned cabinets, DNS,
 MTU and loopback roles are derived from the finished graph and re-derived by
 `validate_operations._shared`. A tag must be discriminating (never on every
-candidate of its kinds) and land only on `naming.TAGS` kinds. Prune only roles
-and passive cabling types: device types, platforms and makers are a fixed library
-because growth and scenario snapshots must never delete one. Statuses other than
+candidate of its kinds) and land only on `naming.TAGS` kinds. Prune only roles,
+regions and passive cabling types: device types, platforms and makers are a fixed
+library because growth and scenario snapshots must never delete one.
+The 0.16 data-model review pass (`tests/test_data_model_review.py`): one
+`naming.PALETTE` keeps every coloured taxonomy record in an estate distinct, and
+cables carry jacket colours by medium; the site `Service class` field is the
+committed-bandwidth band, never a tag echo; racks reference their rack type and
+carry no per-rack `form_factor`/`width` (the loader re-creates `Rack.save()`'s
+copy, `turbobulk._save_copies`) and no rack groups; every unused physical port
+is disabled on every role (in-service ports with no modeled cable are
+`mark_connected`); SVIs carry no mode — checks derive their VLAN from the
+address's prefix (`validate_networking.routed_vlan_view`); Junos loopbacks sit on
+`lo0.0`; regions run country → state → metro; one owner on every infrastructure
+record; module-bay types are per-maker classes while supply fit still follows the
+device type's catalog entry; device types carry only pinned-source part numbers,
+weights and airflow; journal `created` is the event date (TurboBulk inserts it;
+Diode cannot, `diode.LOADER_ONLY_FIELDS`). Statuses other than
 `active` come only from ledgers (IP-range geometry, unused ports, the next grid
 cabinet) or from an explicit recipe lifecycle (the provider's customer and
 premises `status` keys), never invented events; required paths stay `active`,
@@ -335,7 +349,9 @@ and an installed TurboBulk model registry need not expose a plugin's models
 `netbox_bgp`). A target without the plugin refuses the load at the REST schema
 preflight, before any write. No live receipt covers these three models yet.
 The loader supplies three model defaults the raw bulk path would otherwise
-manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`);
+manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`),
+plus the columns NetBox's own `save()` derives (a rack's `form_factor`/`width`
+from its rack type, a device type's `_abs_weight`; `turbobulk._save_copies`);
 strict readback compares only emitted fields and does not verify them.
 Write each bounded REST completion payload to the receipt before PATCH. Recover a
 lost response only from exact target readback; never resend an unresolved mutation.

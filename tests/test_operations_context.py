@@ -65,7 +65,8 @@ class OperationsContextTests(unittest.TestCase):
                 expected = (f"Circuit: {data['cid']}\nA termination: {local['attrs']['name']}\nZ termination: {remote['attrs']['name']}\n"
                     f"A handoff: {rate_kbps(a['attrs']['port_speed'])}\nZ handoff: {rate_kbps(z['attrs']['port_speed'])}\n"
                     f"Recorded service date: {data['install_date']}\nUse both termination records to coordinate the local handoffs.")
-            self.assertEqual(note["attrs"], {"kind": "info", "comments": header + expected})
+            self.assertEqual(note["attrs"], {"kind": "info", "comments": header + expected,
+                                             "created": f"{data['install_date']}T15:00:00Z"})
             self.assertEqual(note["refs"], {"assigned_object": key})
             observed.add(remote["kind"])
         self.assertEqual(observed, {"site", "provider_network"})

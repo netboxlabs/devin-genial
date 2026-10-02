@@ -8,6 +8,7 @@ which are cyclic or absent from the installed TurboBulk schema.
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import gzip
 import hashlib
 import http.client
@@ -552,12 +553,12 @@ SUPPORTED_REFS = {
     "contact_assignment": {"contact", "object", "role"},
     "contact_group": set(),
     "contact_role": set(),
-    "device": {"cluster", "device_type", "location", "platform", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant", "virtual_chassis"},
+    "device": {"cluster", "device_type", "location", "owner", "platform", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant", "virtual_chassis"},
     "device_role": set(),
     "device_type": {"manufacturer"},
     "interface": {"bridge", "device", "module", "parent", "primary_mac_address", "tagged_vlans",
                   "untagged_vlan", "vlan_translation_policy", "vrf", "wireless_lans"},
-    "ip_address": {"assigned_object", "tenant", "vrf"},
+    "ip_address": {"assigned_object", "owner", "tenant", "vrf"},
     "journal_entry": {"assigned_object"},
     "location": {"parent", "site", "tenant"},
     "mac_address": {"assigned_object"},
@@ -578,11 +579,11 @@ SUPPORTED_REFS = {
     "virtual_circuit": {"provider_account", "provider_network", "tenant", "type"},
     "virtual_circuit_termination": {"interface", "virtual_circuit"},
     "virtual_circuit_type": set(),
-    "prefix": {"role", "scope_site", "tags", "tenant", "vlan", "vrf"},
+    "prefix": {"owner", "role", "scope_site", "tags", "tenant", "vlan", "vrf"},
     "provider": {"asns"},
     "provider_account": {"owner", "provider"},
     "provider_network": {"provider"},
-    "rack": {"group", "location", "rack_type", "role", "site", "tenant"},
+    "rack": {"group", "location", "owner", "rack_type", "role", "site", "tenant"},
     "rack_role": set(),
     "region": {"parent"},
     "rir": set(),
@@ -593,7 +594,7 @@ SUPPORTED_REFS = {
     "tenant": {"group"},
     "virtual_disk": {"owner", "virtual_machine"},
     "virtual_machine": {"cluster", "device", "platform", "primary_ip4", "primary_ip6", "role", "tags", "tenant", "virtual_machine_type"},
-    "vlan": {"group", "role", "site", "tags", "tenant"},
+    "vlan": {"group", "owner", "role", "site", "tags", "tenant"},
     "vlan_group": {"scope_site", "tenant"},
     "vm_interface": {"primary_mac_address", "untagged_vlan", "virtual_machine", "vrf"},
     "vrf": {"export_targets", "import_targets", "tenant"},
@@ -1296,8 +1297,32 @@ def _legacy_service_fields(obj):
     return pairs[0][0], [int(port) for _, port in pairs]
 
 
+def _save_copies(obj, objects):
+    """Columns NetBox's own ``save()`` derives, which TurboBulk's raw insert skips.
+
+    ``Rack.save()`` copies its rack type's physical fields onto the rack
+    (dcim/models/racks.py ``copy_racktype_attrs``; the plan carries them on
+    the type alone because 4.7 deprecates the per-rack copies), and a missing
+    NOT NULL integer would otherwise insert as 0. ``WeightMixin`` stores the
+    weight in grams for rack totals (utilities/conversion.py ``to_grams``).
+    """
+    attrs = obj["attrs"]
+    if obj["kind"] == "rack" and obj["refs"].get("rack_type") in objects:
+        source = objects[obj["refs"]["rack_type"]]["attrs"]
+        return {field: source[field] for field in RACK_TYPE_COPIES if field in source and field not in attrs}
+    if obj["kind"] == "device_type" and "weight" in attrs and attrs.get("weight_unit") in GRAMS_PER_UNIT:
+        return {"_abs_weight": int(Decimal(str(attrs["weight"])) * GRAMS_PER_UNIT[attrs["weight_unit"]])}
+    return {}
+
+
+# The Rack.RACKTYPE_FIELDS the plan's rack types carry.
+RACK_TYPE_COPIES = ("form_factor", "width")
+GRAMS_PER_UNIT = {"kg": Decimal(1000), "g": Decimal(1), "lb": Decimal("453.592"), "oz": Decimal("28.3495")}
+
+
 def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     row = dict(obj["attrs"])
+    row.update(_save_copies(obj, objects))
     for name, value in RENDER_DEFAULTS.get(obj["kind"], {}).items():
         row.setdefault(name, value)
     for (kind, source), target in ATTRIBUTE_RENAMES.items():
@@ -1351,6 +1376,10 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
 def _rendered_columns(obj, service_shape="protocol_ports"):
     """Return database columns without needing resolved target IDs."""
     columns = (set(obj["attrs"]) | set(RENDER_DEFAULTS.get(obj["kind"], ()))) - DEFERRED
+    if obj["kind"] == "rack" and "rack_type" in obj["refs"]:
+        columns.update(RACK_TYPE_COPIES)
+    if obj["kind"] == "device_type" and "weight" in obj["attrs"]:
+        columns.add("_abs_weight")
     if obj["kind"] == "cable" and "bundle" in obj["refs"]:
         columns.add("bundle_id")
     if obj["kind"] == "service":

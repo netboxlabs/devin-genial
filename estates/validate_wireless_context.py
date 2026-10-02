@@ -5,8 +5,11 @@ from collections import defaultdict
 from functools import cache
 from ipaddress import ip_interface, ip_network
 
+from .validate_networking import routed_vlan_view
+
 
 def validate(plan):
+    plan = routed_vlan_view(plan)
     # Base validation reports malformed records. Optional attrs/refs remain empty
     # mappings, while valid WLAN records retain their independent obligations.
     objects = {obj["key"]: obj for obj in plan.get("objects", [])

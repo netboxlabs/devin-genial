@@ -231,17 +231,26 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
         for i in range(instances):
             metadata = {"service": name, "criticality": workload["criticality"]}
             # The description is what the VM list shows, so it says what the VM
-            # is; the profile's placement note (and any limitation it carries)
-            # rides in comments on the record itself.
-            description = f"{titleize(name)} service, replica {i+1}"
+            # is in operational words — "DNS service (primary)", with a shard
+            # number only when the workload has more than one replica set; the
+            # comments say where it runs. The profile's replica_description is
+            # demand input (validated with the workload), not record prose.
+            host_index = replicas * (i // replicas // per_host) + i % replicas
+            host_name = w.obj(pool[host_index])["attrs"]["name"]
+            service = f"{titleize(name)} service"
             if domain != "none":
                 metadata.update(replica_group=i // replicas + 1, replica_lane=i % replicas,
                                 replicas=replicas, failure_domain=domain)
-                description = (f"{titleize(name)} service, group {i // replicas + 1}, "
-                               f"replica {i % replicas + 1} of {replicas}")
-            note = workload["replica_description"]
-            comments = f"{note[:1].upper()}{note[1:]}."
-            host_index = replicas * (i // replicas // per_host) + i % replicas
+                # Growth appends shards, so the first shard's wording never
+                # depends on how many follow it.
+                lane = ("primary", "secondary", "tertiary", "quaternary")[i % replicas]
+                shard = f", shard {i // replicas + 1}" if i >= replicas else ""
+                description = f"{service}{shard} ({lane})"
+                apart = "separate hosts in separate cabinets" if domain == "rack" else "separate hosts"
+                comments = f"Runs on {host_name}; its other replicas run on {apart}."
+            else:
+                description = f"{service}, instance {i + 1}" if i else service
+                comments = f"Runs on {host_name}."
             vm = w.add("virtual_machine", f"vm/{site.id}/{name}/{i+1:03}",
                        {"name": site.display_name(f"{name}-{i+1:03}"), "status": "active", "vcpus": cpus, "memory": memory,
                         "disk": disk, "description": description, "comments": comments},

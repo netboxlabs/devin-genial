@@ -43,9 +43,11 @@ CHANGE_TYPES = ("create", "update")
 # emitted records and in nested matching identities alike; every one of them long
 # predates 4.6. It stays tight on purpose - a kind that appears here for the first
 # time fails the check by name and gets a version review rather than a silent pass.
+# ``owner`` (users.Owner) arrived in NetBox 4.5 with object ownership (#20304,
+# docs/release-notes/version-4.5.md); records name their accountable owner.
 NETBOX_46_KINDS = frozenset({
     "device", "device_role", "device_type", "interface", "ip_address", "location",
-    "manufacturer", "platform", "rack", "site", "tag", "tenant", "tenant_group", "vlan",
+    "manufacturer", "owner", "platform", "rack", "site", "tag", "tenant", "tenant_group", "vlan",
     "vlan_group", "vrf",
     # Reviewed for the provider PoP path: MACAddress became a model in NetBox
     # 4.2 and Module/ModuleBay/ModuleType predate it; all exist on 4.6. The
