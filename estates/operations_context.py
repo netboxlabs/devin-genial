@@ -8,8 +8,13 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .automation import enrich as automation_records
-from .model import DesignError
+from .model import DesignError, digest
 from .wireless_context import enrich as wireless_context
+
+# Real metro area codes with the 555-0100..0199 block the North American
+# Numbering Plan reserves for fictional use, so a directory reads like one
+# without ever dialling a real subscriber.
+AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
 
 
 def enrich(world):
@@ -38,8 +43,19 @@ def enrich(world):
         name = f"{ns} {groups[key]}"
         add("contact_group", f"contact-group/{key}", {"name": name, "slug": name.lower().replace(" ", "-")})
 
-    def contact(key, name, role, mailbox, description):
-        return add("contact", key, {"name": name, "title": roles[role],
+    city = {obj["key"]: obj["meta"]["geography"]["city"] for obj in kinds["site"]}
+    # Desks that answer for more than one site (tenant NOC, carrier, service
+    # teams) sit in the estate's home metro: its first permanently allocated
+    # site, which growth, acquisition and seed-free input order never move.
+    first = min(city, key=lambda site: (world.allocations.get(site.removeprefix("site/"), 1 << 62), site))
+
+    def contact(key, name, role, mailbox, description, metro=None):
+        area = AREA_CODES[metro or city[first]]
+        # ponytail: a stable hash of the contact key picks one of only one
+        # hundred fictional lines, so large directories share some numbers the
+        # way hunt groups do; a per-area ledger would make them unique.
+        line = int(digest(["contact-phone", key]), 16) % 100
+        return add("contact", key, {"name": name, "title": roles[role], "phone": f"+1 {area}-555-{100 + line:04}",
                    "email": f"{mailbox}@{ns}.example", "description": description},
                    {"groups": [f"contact-group/{role}"]})
 
@@ -77,7 +93,8 @@ def enrich(world):
             name = world.obj(site)["attrs"]["name"]
             biomedical_desks[site] = contact(f"contact/biomedical/{site}", f"{name} biomedical desk", "biomedical",
                 f"{site.removeprefix('site/')}.biomedical",
-                f"Medical endpoint inventory and maintenance coordination at {name}; network incidents go to the site technical desk.")
+                f"Medical endpoint inventory and maintenance coordination at {name}; network incidents go to the site technical desk.",
+                city[site])
         assign(obj["key"], biomedical_desks[site], "biomedical")
 
     def dated(target, event, anchor, minimum, spread):
@@ -93,7 +110,7 @@ def enrich(world):
     for site in kinds["site"]:
         key, attrs = site["key"], site["attrs"]
         desk = contact(f"contact/{key}", f"{attrs['name']} facilities desk", "facilities", f"{key.removeprefix('site/')}.facilities",
-            f"Equipment-room access, cabinet visits and planned power-work coordination at {attrs['name']}.")
+            f"Equipment-room access, cabinet visits and planned power-work coordination at {attrs['name']}.", city[key])
         assign(key, desk, "facilities", "/facilities")
         journal(key, "site-record", dated(key, "site-record", as_of, 150, 31), "Site record",
             f"Site: {attrs['name']}\nAddress: {attrs['physical_address'].replace(chr(10), ', ')}\nTime zone: {attrs['time_zone']}\nUse this record when arranging a site visit.")

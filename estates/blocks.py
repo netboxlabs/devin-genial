@@ -55,11 +55,15 @@ def trunk(site, interfaces, networks):
 def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
                device_roles=None, hardware_aliases=None, site_kinds=None, include_carriers=True):
     ns = w.recipe["namespace"]
-    w.add("tenant", "tenant", {"name": w.recipe["name"], "slug": ns, "description": w.recipe['name']})
+    w.add("tenant", "tenant", {"name": w.recipe["name"], "slug": ns, "description": "Network owner and operator"})
     if inherited:
         w.add("tenant", "tenant/inherited", {"name": "Birch Bank", "slug": f"{ns}-birch",
               "description": "Acquisition candidate with retained naming, addressing and carrier contracts"})
-    w.add("tag", "tag/estate", {"name": "Generated", "slug": f"{ns}-generated", "color": "607d8b"})
+    # Every site, device and VM carries it, so it reads as an operations scope
+    # ("in the managed estate"), not a provenance marker. Nothing selects rows
+    # by it: retirement and teardown match plan identities, never this tag.
+    w.add("tag", "tag/estate", {"name": "Managed", "slug": f"{ns}-managed", "color": "607d8b",
+          "description": "Inventory maintained by the network operations team"})
     places.foundation(w, site_kinds=site_kinds)
     colors = {"wan-edge": "e65100", "distribution": "6a1b9a", "access": "1565c0",
               "spine": "4a148c", "leaf": "7b1fa2", "server": "2e7d32", "management": "546e7a",
@@ -103,13 +107,14 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
         # Emitting an equal global root would duplicate the same VRF/prefix.
         if w.pool.prefixlen < w.site_prefixlen:
             w.add("prefix", f"root/{name}", {"prefix": w.recipe["address_pool"], "status": "container",
-                  "description": f"{titleize(name)}: hierarchical site reservations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
+                  "description": f"{titleize(name)} site allocations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
     for side, provider in (("a", "Northstar Transit"), ("b", "Meridian Carrier")) if include_carriers else ():
         w.add("provider", f"provider/{side}", {"name": provider, "slug": f"{ns}-carrier-{side}",
               "comments": f"Minimum private access commitment {50 if side == 'a' else 100} Mbps. "
                           "Separate modeled provider domains do not establish diverse ducts."})
         w.add("provider_network", f"carrier/{side}", {"name": f"Private WAN {side.upper()}",
-              "description": "Opaque managed L3 WAN; provider interior intentionally abstracted"}, {"provider": f"provider/{side}"})
+              "description": "Carrier-managed private L3 WAN",
+              "comments": "The provider interior is not modeled."}, {"provider": f"provider/{side}"})
     if include_carriers:
         w.add("circuit_type", "circuit-type/wan", {"name": "Private WAN access", "slug": f"{ns}-private-wan"})
     w.add("cluster_type", "cluster-type", {"name": "Virtualization", "slug": f"{ns}-virtualization"})
@@ -219,7 +224,7 @@ class Site:
                      serial=f"SYN-{self.w.choose(key, 'serial', range(10**10)):010d}",
                      # Reference the emitted display name (authored or legacy);
                      # device identities themselves stay keyed on stable ids.
-                     description=f"{role} at {self.w.obj(self.key)['attrs']['name']}")
+                     description=f"{naming.role_label(role)} at {self.w.obj(self.key)['attrs']['name']}")
         refs = dict(site=self.key, device_type=f"hardware/{alias}", role=f"role/{role}", tenant=self.tenant, tags=["tag/estate"])
         metadata = dict(hardware=alias, purpose=role, **(meta or {}))
         if racked and spec["u_height"]:
@@ -343,7 +348,7 @@ class Site:
             if all(racks) and racks[0] != racks[1]:
                 points = [self.w.obj(rack)["meta"]["position_m"] for rack in racks]
                 self.w.obj(key)["attrs"].update(length=math.ceil(sum(abs(x-y) for x,y in zip(*points)) + 3),
-                    description="Inter-rack route: cabinet-grid distance plus three metres of service slack")
+                    description="Inter-rack run with 3 m service slack")
         for source, peer in ((a, b), (b, a)):
             obj = self.w.obj(source)
             if obj["kind"] == "interface":
@@ -384,14 +389,14 @@ class Site:
             self.w.add("vrf", vrf, {"name": f"{self.display} {titleize(role)}", "enforce_unique": True,
                        "description": "Retained Birch site routing context; isolation and renumbering are explicit design choices"}, {"tenant": self.tenant})
         self.w.add("prefix", f"prefix/{self.id}/{role}/reservation", {"prefix": str(container), "status": "container",
-              "description": f"Stable site reservation for {role}; child allocation fixed by network role"}, {"vrf": vrf, "tenant": self.tenant, "scope_site": self.key})
+              "description": f"{self.display} site block"}, {"vrf": vrf, "tenant": self.tenant, "scope_site": self.key})
         vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": f"{self.display} {titleize(role)}", "vid": 10 * (index+1),
-              "status": "active", "description": f"{role} segment"}, {"site": self.key, "tenant": self.tenant})
+              "status": "active", "description": naming.segment_purpose(role)}, {"site": self.key, "tenant": self.tenant})
         # `wan` carries no gateway SVI and the conduit holds four, not two:
         # the reservation sentence belongs only to ordinary client segments.
         gateways = "" if role in ("wan", "conduit") else "; .1 and .2 reserved for gateway SVIs"
         self.w.add("prefix", f"prefix/{self.id}/{role}", {"prefix": str(net), "status": "active",
-              "description": f"{self.display} {role}{gateways}"},
+              "description": f"{naming.segment_purpose(role)} at {self.display}{gateways}"},
               {"vrf": vrf, "vlan": vlan, "scope_site": self.key, "tenant": self.tenant})
         self.nets[role] = vlan, net
         return vlan, net
@@ -464,7 +469,7 @@ class Site:
         circuit = self.w.add("circuit", key,
                             {"cid": f"{self.name}-{side.upper()}-{number:03}", "status": "active",
                              "commit_rate": rate * 1000, "install_date": installed,
-                             "description": f"{rate} Mb/s private WAN commitment on 1 Gb/s handoff; carrier {side.upper()}",
+                             "description": f"{naming.bandwidth(rate)} private WAN on a 1G handoff; carrier {side.upper()}",
                              "comments": f"Procurement record: {cohort}. {reason}."},
                             {"provider": f"provider/{side}", "type": "circuit-type/wan", "tenant": self.tenant},
                             {"procurement": {"cohort": cohort, "minimum_commit_mbps": 1000 if dc else floor,
@@ -472,7 +477,7 @@ class Site:
                                              "selection_reason": reason}})
         for term, target in (("A", self.key), ("Z", f"carrier/{side}")):
             self.w.add("circuit_termination", f"{circuit}/{term}", {"term_side": term, "port_speed": 1000000,
-                  "description": "Copper customer handoff" if term == "A" else "Abstract provider network attachment"},
+                  "description": "Copper customer handoff" if term == "A" else "Carrier network side"},
                   {"circuit": circuit, "termination": target})
         port = self.interface(edge, "wan1")
         self.cable(port, f"{circuit}/A")
@@ -600,7 +605,7 @@ class Site:
                     side = "a" if j % 2 == 0 else "b"
                     inlet = f"{device}/power/{port['name']}"
                     self.w.obj(inlet)["attrs"].update(allocated_draw=allowance // len(ports), maximum_draw=allowance,
-                         description="Planning allocation; maximum reserves single-feed failover")
+                         description="Draw split across the A and B feeds; maximum covers single-feed failover")
                     self.cable(outlets[side][i], inlet, "power")
                 if ports:
                     self.w.obj(device)["meta"]["planned_watts"] = allowance

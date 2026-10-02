@@ -225,6 +225,25 @@ which previously duplicated long labels. Serial numbers remain descriptive data;
 they are not Diode matching identities. Acquisition still requires explicit target
 reconciliation, particularly when an unracked device's tenant changes.
 
+Provider hostnames are readable stems rather than site-id digests: a PoP's
+routers are named from its key (`chicago-cermak-pe-a`), and a customer premises
+from its customer key, metro and permanent allocation slot
+(`lakeshore-health-cle0269-gw01`, the same slot its facility code carries), so
+they stay unique and growth-stable. PoP keys shaped like those stems or like the
+NOC's `dc01` are refused. Provider customer and PoP VLANs are named for their
+segment (`Clients`, `Management`) inside their site-scoped VLAN group; other
+profiles' shared VLANs keep `<site> <Role>` names.
+
+Descriptions use the words an engineer would put on the record, from shared
+helpers in `estates/naming.py`: device roles read as `Provider edge router` or
+`Rack PDU` (`ROLE_LABELS`), segments as `Office workstations` or `Point-of-sale
+lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `100 Gbps backbone
+committed on a 100G handoff` (`bandwidth`/`port_speed`), and routed /31s name
+both ends. Material limitations stay on the record but move to `comments`, out
+of the list view: VM placement notes, external-transit ownership, provider
+accounts and the private-L3 control plane. The estate-wide tag is `Managed`
+(slug `<namespace>-managed`); nothing selects rows by it.
+
 Panel cable labels use `P` for cabinet patch cord, `H` for horizontal run, `R`
 for room cord, and `D` for an abstracted direct channel. Other cable numbers use
 persisted per-site reservations. Room and purpose descriptions retain the detail.
@@ -469,7 +488,11 @@ desks follow tenant ownership; site facilities desks handle local access and
 power-work coordination; carrier desks follow each circuit's provider; service
 desks follow the VM's workload and tenant. Distinct responsibilities have separate
 primary assignments. The directory uses descriptive `.example` mailboxes and
-does not create user accounts, coverage hours or SLAs. The estate's one webhook
+fictional phone lines: the real area code of the metro the desk serves (site
+desks) or of the estate's first allocated site (tenant, carrier and service
+desks), with a line in the 555-0100..0199 block reserved for fiction, picked by
+a stable hash of the contact key. It does not create user accounts, coverage
+hours or SLAs. The estate's one webhook
 and event rule are automation *inventory* (below), not configured notification:
 the endpoint is unreachable by construction and the rule is disabled.
 Network infrastructure, APs and hosts expose their actual tenant's technical desk
