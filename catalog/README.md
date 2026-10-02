@@ -718,8 +718,10 @@ lists 1/10GBASE-SR/LR/ER/ZR on the SFP+ ports and notes "Non-activated SFP+
 ports are limited to operate at 1 Gbps": the 10G tier assumes the licence. Management is
 the same builder-created virtual `Management` interface as on the Ciena. Its optics
 are RAD parts from the [RAD transceiver data sheet](https://www.rad.com/wp-content/uploads/2025/03/SFP-XFP-SFPPlus-Transceivers.pdf);
-RAD publishes no module power, so 1.5 W is authored. Planning allowance
-**90 W**, the library `maximum_draw`, inside the data sheet's 70–120 W range.
+RAD publishes no module power, so 1.5 W is authored. The evidence supports a
+**90 W** planning allowance, the library `maximum_draw`, inside the data
+sheet's 70–120 W maximum range; any figure below 70 W understates every
+variant.
 
 **Juniper SRX300 (`ce-small`).** L14 takes the first pinned of SRX300 /
 FortiGate 60F; both are pinned and the SRX300 comes first. Pinned
