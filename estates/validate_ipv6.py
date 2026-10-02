@@ -159,6 +159,7 @@ def validate(plan):
         index = slot("ipv6-routed-contexts", vrf or "global")
         return None if index is None else infra + ((0 if index == 0 else index + 1) << 64)
 
+    customer_lans = set()
     for key, net4 in networks.items():
         if kind(key) != "prefix" or net4.version != 4 or attrs(key).get("status") == "container":
             continue
@@ -167,6 +168,10 @@ def validate(plan):
         tenant = rel.get("tenant")
         if provider and vrf in PROVIDER_IPV4_ONLY_VRFS:
             continue
+        if (provider and site in sites and not rel.get("vlan") and str(vrf).startswith("vrf/customer/") and
+                key == f"prefix/{site.removeprefix('site/')}/lan"):
+            customer_lans.add((vrf, net4))
+            continue  # customer-assigned LAN space: the carrier assigns it no IPv6
         if (kind(vrf) != "vrf" and not (provider and vrf is None)) or kind(tenant) != "tenant":
             report("ipv6-prefix-scope", key, "Dual-stack prefixes require real VRF and tenant ownership.")
         net6, purpose = None, None
@@ -237,6 +242,8 @@ def validate(plan):
             continue  # Existing FHRP is explicitly IPv4-only, including its VIP.
         if provider and rel.get("vrf") in PROVIDER_IPV4_ONLY_VRFS:
             continue  # The out-of-band ISP hands off IPv4 only.
+        if (rel.get("vrf"), value.network) in customer_lans:
+            continue  # An address in customer-assigned LAN space stays IPv4-only.
         if kind(owner) not in {"interface", "vm_interface"}:
             report("ipv6-policy", key, "Address has no reviewed interface-owner policy for an IPv6 companion.")
             continue

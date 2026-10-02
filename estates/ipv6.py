@@ -20,6 +20,13 @@ _INFRA_CAPACITY = 1_000_000
 PROVIDER_LINK_SCOPES = ("provider-link-prefixes", "provider-pair-links", "provider-span-links", "provider-transit-links")
 # Provider routing contexts IPv6 never reaches: the out-of-band ISP hands off IPv4 only.
 PROVIDER_IPV4_ONLY_VRFS = frozenset({"vrf/oob"})
+
+
+def customer_lan(key, refs):
+    """A provider CE-only premises' customer-assigned LAN prefix (IPv4 only)."""
+    site = refs.get("scope_site") or ""
+    return (key == f"prefix/{site.removeprefix('site/')}/lan" and not refs.get("vlan")
+            and str(refs.get("vrf")).startswith("vrf/customer/"))
 # Routed /127s take one /64 per routing context: the first context keeps the
 # infrastructure block's first /64, loopbacks hold the second, later contexts
 # follow. The provider's global table (no VRF) is ledgered as "global".
@@ -94,7 +101,7 @@ created on a spare interface or an unmodeled far end of a circuit.
 
     # Every assigned address has the exact leaf mask emitted by its builder.
     # Index that relationship once rather than searching every prefix per IP.
-    prefix_index, segments = {}, {}
+    prefix_index, segments, customer_lans = {}, {}, set()
     for obj in sorted(by_kind["prefix"], key=lambda item: item["key"]):
         if obj["attrs"].get("status") == "container":
             continue
@@ -104,6 +111,11 @@ created on a spare interface or an unmodeled far end of a circuit.
         key, refs = obj["key"], obj["refs"]
         site, vlan = refs.get("scope_site"), refs.get("vlan")
         if provider and refs.get("vrf") in PROVIDER_IPV4_ONLY_VRFS:
+            continue
+        if provider and customer_lan(key, refs):
+            # A CE-only customer numbers its own LAN; the carrier records the
+            # IPv4 route it carries and assigns it no IPv6.
+            customer_lans.add((refs["vrf"], network))
             continue
         # The provider's backbone core is the global table: no VRF, but owned.
         if not (refs.get("vrf") or provider) or not refs.get("tenant"):
@@ -137,6 +149,8 @@ created on a spare interface or an unmodeled far end of a circuit.
         if owner and owner["kind"] == "fhrp_group":
             continue
         if provider and obj["refs"].get("vrf") in PROVIDER_IPV4_ONLY_VRFS:
+            continue
+        if (obj["refs"].get("vrf"), _network(obj, "address").network) in customer_lans:
             continue
         if not owner or owner["kind"] not in {"interface", "vm_interface"}:
             raise DesignError(f"IPv6 enrichment: {obj['key']} has unsupported assigned owner {assigned}; review its address policy")

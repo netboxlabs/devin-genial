@@ -940,6 +940,27 @@ def ce_loopback(block):
     return ipaddress.ip_network((int(block.network_address)+1,32))
 
 
+# A customer brings its own private LAN plan; the carrier records only the
+# routed LAN prefix of each premises, in the customer's VRF. Plans repeat
+# across customers on purpose (several enterprises number from 172.20/16), and
+# each VRF enforces uniqueness only inside itself. A plan inside the carrier's
+# own address_pool is skipped, so customer space never sits in its aggregate.
+CUSTOMER_LAN_PLANS = ("172.20.0.0/16","192.168.0.0/16","172.24.0.0/16","10.10.0.0/16")
+
+
+def customer_lan(w,customer,sid):
+    """The routed /24 of one CE-only premises, from its customer's own plan.
+
+    The plan follows the customer's permanent onboarding slot; the /24 follows
+    an append-only per-customer ledger, so growth never renumbers a premises.
+    """
+    pool = ipaddress.ip_network(w.recipe["address_pool"])
+    plans = [ipaddress.ip_network(p) for p in CUSTOMER_LAN_PLANS if not ipaddress.ip_network(p).overlaps(pool)]
+    plan = plans[w.reservations["provider-customers"][customer["key"]]%len(plans)]
+    slot = w.reserve(f"provider-customer-lans/{customer['key']}",sid,255)
+    return ipaddress.ip_network((int(plan.network_address)+256*(slot+1),24))
+
+
 def _service_port(w,pop_sites,pop,target):
     slot = w.reserve(f"provider-service-ports/{pop}",target,12)
     site,routers = pop_sites[pop]
@@ -961,8 +982,14 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     managed_lan = c["lan_endpoints"] > 0
-    _site_network(site,"clients",25,128,20)
-    edge = site.device("edge","edge-01","customer-edge")
+    if managed_lan:
+        _site_network(site,"clients",25,128,20)
+    # A CE-only premises: the CE stands in the customer's own equipment room
+    # and rack, on customer power. The carrier inventories the CE, not the
+    # cabinet, PDU or panel it does not own.
+    edge = site.device("edge","edge-01","customer-edge",racked=managed_lan)
+    if not managed_lan:
+        w.obj(edge)["refs"]["location"] = site.equipment_location
     a = site.interface(edge,"port1")
     switch = None
     if managed_lan:
@@ -979,13 +1006,18 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
             site.address(vi,role,host=1,primary=role=="management",device=edge)
         vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=2,primary=True,device=switch)
     else:
-        # CE only: port1 hands the customer LAN to customer-owned equipment
-        # (not inventoried) and the CE is managed on its own loopback.
-        vlan,_ = site.network("clients")
-        w.obj(a)["attrs"]["mode"] = "access"; w.obj(a)["refs"]["untagged_vlan"] = vlan
+        # CE only: port1 is a routed handoff into the customer's own LAN,
+        # numbered from the customer's own address plan (customer_lan); the
+        # CE is managed on a carrier loopback, the only carrier space here
+        # besides the PE-CE /31.
+        lan = customer_lan(w,c,sid)
         w.obj(a)["attrs"]["description"] = "Customer LAN handoff to customer-owned equipment"
-        vi = site.virtual_interface(edge,"Clients","clients"); w.obj(vi)["refs"]["parent"] = a
-        site.address(vi,"clients",host=1,device=edge)
+        w.add("prefix",f"prefix/{sid}/lan",dict(prefix=str(lan),status="active",description=f"{titleize(key)} LAN at {site.display}",
+              comments="Customer-assigned address space routed over the private L3 service."),
+              dict(vrf=vrf,tenant=tenant,scope_site=site.key))
+        _ip(w,a,lan,1,vrf,tenant)
+        for port in (f"{edge}/power/{p['name']}" for p in w.hardware("edge")["power_ports"]):
+            w.obj(port)["attrs"].update(mark_connected=True,description="Customer-provided power in the customer's rack")
         net = ce_loopback(w.site_network(sid))
         w.add("prefix",f"prefix/{sid}/management",dict(prefix=str(net),status="active",description=f"CE management loopback at {site.display}"),
               dict(vrf=vrf,tenant=tenant,scope_site=site.key))
@@ -1028,9 +1060,10 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
         if managed_lan else "The CE hands the customer LAN to customer-owned equipment that is not inventoried; the carrier manages only the CE."])
     if managed_lan:
         _console_management(site,switch)
+        site.power()
     else:
         equipment.enrich_site(site,demonstrations=False)
-    site.power()
+        site.contract["assumptions"].append("The CE stands in the customer's own rack on customer power; that rack and its power are not inventoried.")
     return dict(site=site.key,customer=key,router=w.obj(pe_port)["refs"]["device"],hub=hub,peak_mbps=c["site_peak_mbps"],
                 stage=lifecycle(c,pop))
 

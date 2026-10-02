@@ -62,6 +62,10 @@ CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b", "oob")
 CORE, MANAGEMENT, OOB = None, "vrf/provider", "vrf/oob"
 HUB_RT, SPOKE_RT = 9000, 9001
 FXP0_HOSTS = (4, 5)
+# Customers' own LAN plans, restated: several customers deliberately number
+# from the same space, each inside its own VRF; a plan overlapping the
+# carrier's address_pool is skipped.
+CUSTOMER_LAN_PLANS = tuple(ip_network(p) for p in ("172.20.0.0/16", "192.168.0.0/16", "172.24.0.0/16", "10.10.0.0/16"))
 BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
 BGP_FIELDS = {"bgp_routing_policy": {"name", "weight", "description"},
               "bgp_peer_group": {"name", "description"},
@@ -479,6 +483,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         private = {f"management/pop-{pop}/{s}" for pop in pops for s in ("a", "b")}
         private |= {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")}
         link_slots = _ledger(reservations, "provider-link-prefixes", private, 16384)
+        lan_slots = {c["key"]: _ledger(reservations, f"provider-customer-lans/{c['key']}",
+                                       [sid for sid, (item, _, _) in premises.items() if item["key"] == c["key"]], 255)
+                     for c in customers if not c["lan_endpoints"]}
+        if any(scope.startswith("provider-customer-lans/") and scope.removeprefix("provider-customer-lans/") not in lan_slots
+               for scope in reservations):
+            raise ValueError("Only CE-only customers number premises LANs from their own plan.")
         public = {"pair": ("provider-pair-links", {f"pair/pop-{pop}" for pop in pops}),
                   "backbone": ("provider-span-links", set(spans)),
                   "transit": ("provider-transit-links", {f"circuit/transit/{s}" for s in ("a", "b")})}
@@ -645,9 +655,21 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 if role in {"provider-edge", "customer-edge"} and attrs(key).get("description") != f"{role_label(role)} at {attrs(site).get('name')}":
                     report("provider-scope-text", key, "Router description must retain its actual local role; modeled paths do not establish availability or running forwarding.")
                 rack = refs(key).get("rack")
-                if kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or attrs(rack).get("status") != life("rack"):
+                if customer and not customer["lan_endpoints"]:
+                    # A CE-only CE stands in the customer's own rack on
+                    # customer power: neither is the carrier's inventory.
+                    supplies = child("device", key, "power_port")
+                    if (rack is not None or attrs(key).get("position") is not None or not supplies or
+                            any(attrs(p).get("mark_connected") is not True or peers.get(p) for p in supplies)):
+                        report("provider-rack-placement", key, "A CE-only CE stands unracked in the customer's equipment room, "
+                               "its supplies marked connected to customer power the carrier does not inventory.")
+                elif kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or attrs(rack).get("status") != life("rack"):
                     report("provider-rack-placement", key, "Network and serial equipment must occupy an active rack in their local equipment room.")
         actual = {device for device in devices if refs(device).get("role") not in {"role/pdu", "role/patch-panel", "role/wall-outlet"}}
+        if customer and not customer["lan_endpoints"] and (
+                set(devices) != set(expected) or child("site", site, "rack") or child("site", site, "power_panel")):
+            report("provider-device-inventory", site, "A CE-only premises inventories its CE alone: no carrier rack, PDU or "
+                   "power panel stands in the customer's equipment room.")
         if actual != set(expected):
             report("provider-device-inventory", site, "Active non-passive site inventory must exactly match the bounded PoP or customer composition.")
         for device in expected:
@@ -871,9 +893,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
         if (attrs(key).get("distance"), attrs(key).get("distance_unit")) != ((route, "km") if route else (None, None)):
             report("provider-access-geography", key, "An access circuit records the route length from its premises to its serving PoP.")
-        clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
         lan = f"{cpe}/if/port1"
         if customer["lan_endpoints"]:
+            clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
             management, management_vlan = local_network(sid, "management", vrf, tenant)
             upstream = f"{switch}/if/{access_ports[-1]}"
             if (not physical(lan, upstream) or any(vlans(p) != {management_vlan, clients_vlan} or attrs(p).get("mode") != "tagged" for p in (lan, upstream)) or
@@ -883,21 +905,39 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     not primary(switch, f"{switch}/if/Vlan10")):
                 report("provider-customer-gateway", cpe, "Customer LAN requires the real CPE/switch trunk, separate addressed local management/client gateways and the switch management SVI.")
         else:
-            # CE only: port1 hands the customer LAN to customer-owned gear and
-            # the CE is managed on its own /32 loopback in the customer VRF.
+            # CE only: port1 is a routed handoff into the customer's own LAN,
+            # numbered from the customer's own plan, and the CE is managed on
+            # its own carrier /32 loopback in the customer VRF. The carrier
+            # inventories no customer segment, VLAN, range or site block.
             loop = f"{cpe}/if/Management"
             block = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
             management = ip_network((int(block.network_address) + 1, 32))
             prefix = f"prefix/{sid}/management"
-            if (peers.get(lan) or vlans(lan) != {clients_vlan} or attrs(lan).get("mode") != "access" or
-                    not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
-                    kind(loop) != "interface" or attrs(loop).get("type") != "virtual" or refs(loop).get("parent") or vlans(loop) or
+            lan_prefix = f"prefix/{sid}/lan"
+            slot = lan_slots.get(customer["key"], {}).get(sid)
+            plans = [plan for plan in CUSTOMER_LAN_PLANS if not plan.overlaps(pool)]
+            routed_lan = (ip_network((int(plans[customer_slots[customer["key"]] % len(plans)].network_address) + 256 * (slot + 1), 24))
+                          if type(slot) is int and plans else None)
+            if (routed_lan is None or attrs(lan_prefix).get("prefix") != str(routed_lan) or refs(lan_prefix).get("vrf") != vrf or
+                    refs(lan_prefix).get("tenant") != tenant or refs(lan_prefix).get("scope_site") != f"site/{sid}" or
+                    refs(lan_prefix).get("vlan") or attrs(lan_prefix).get("status") != life("prefix") or
+                    attrs(lan_prefix).get("description") != f"{titleize(customer['key'])} LAN at {attrs(f'site/{sid}').get('name')}" or
+                    any(routed_lan.overlaps(ip_network(a)) for a in (*PUBLIC_AGGREGATES, str(pool))) or
+                    peers.get(lan) or vlans(lan) or attrs(lan).get("mode") or not address(lan, routed_lan, vrf, 1, tenant)):
+                report("provider-customer-lan", cpe, "A CE-only premises routes its customer's own LAN /24, from the customer's "
+                       "plan outside every carrier pool, on port1 in the customer VRF; no switchport or VLAN carries it.")
+            if (any(kind(k) for k in (f"vlan/{sid}/clients", f"prefix/{sid}/clients", f"prefix/{sid}/reservation",
+                                      f"{cpe}/if/Clients", f"vlan/{sid}/management")) or
+                    any(refs(r).get("vrf") == vrf and ip_network(attrs(lan_prefix).get("prefix") or "0.0.0.0/32").overlaps(
+                        ip_network(attrs(r).get("start_address", "0.0.0.0/32"), strict=False)) for r in by_kind["ip_range"])):
+                report("provider-customer-lan", cpe, "A carrier records no segment, VLAN, address range or site block for a "
+                       "customer LAN it does not run.")
+            if (kind(loop) != "interface" or attrs(loop).get("type") != "virtual" or refs(loop).get("parent") or vlans(loop) or
                     not address(loop, management, vrf, 0, tenant) or not primary(cpe, loop) or
                     attrs(prefix).get("prefix") != str(management) or refs(prefix).get("vrf") != vrf or
-                    refs(prefix).get("vlan") or refs(prefix).get("scope_site") != f"site/{sid}" or
-                    kind(f"vlan/{sid}/management") or prefixes_by_vrf_network.get((vrf, str(ip_network((int(block.network_address), 26))))) ):
-                report("provider-customer-gateway", cpe, "A CE-only premises hands its customer LAN off untagged on port1 and is managed "
-                       "on its own /32 loopback; no management VLAN or switched segment exists without a managed LAN.")
+                    refs(prefix).get("vlan") or refs(prefix).get("scope_site") != f"site/{sid}"):
+                report("provider-customer-gateway", cpe, "A CE-only premises is managed on its own carrier /32 loopback in the "
+                       "customer VRF; no management VLAN or switched segment exists without a managed LAN.")
         if objects.get(f"device/{sid}/console-01"):
             report("provider-device-inventory", sid, "A single-CE premises carries no console server.")
         for dedicated in (f"{cpe}/if/mgmt", f"{switch}/if/{access_mgmt}"):
@@ -905,6 +945,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 report("provider-management-mode", dedicated, "Customer management uses the routed local LAN; dedicated management ports remain unused.")
         for n in range(1, customer["lan_endpoints"] + 1):
             device = f"device/{sid}/pc-{n:03}"
+            clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
             port, access = f"{device}/if/eth0", f"{switch}/if/{access_ports[n-1]}"
             if (not physical(port, access) or any(vlans(p) != {clients_vlan} for p in (port, access)) or
                     not address(port, clients, vrf, tenant=tenant) or not primary(device, port)):
@@ -1309,7 +1350,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-bgp-scope-text", key, "BGP records carry inventory fields only; "
                    + ", ".join(sorted(extra)) + " would read as configured or established session state.")
 
-    serving = [d for d in infrastructure if d not in routers and
+    # A CE-only CE runs on customer power the carrier does not inventory.
+    serving = [d for d in infrastructure if d not in routers and refs(d).get("rack") and
                   stages.get(str(refs(d).get("site")).removeprefix("site/"), "active") == "active"]
     findings.extend(validate_power(objects, catalog, serving, children, peers, cable_of,
                                    poe_watts=poe_watts, optics_watts=optics_watts,

@@ -1,6 +1,8 @@
 """Provider customer-edge realism: the showcase carrier's own records read like a carrier's."""
 
+from collections import defaultdict
 from copy import deepcopy
+import ipaddress
 from pathlib import Path
 import tomllib
 import unittest
@@ -70,6 +72,69 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
                         and self.o[t["refs"]["circuit"]]["refs"]["type"] != "circuit-type/out-of-band"
                         and self.o[t["refs"]["circuit"]]["refs"]["provider"] != "provider/operator"}
             self.assertGreaterEqual(len(carriers), 2, site)
+
+    # --- Customers bring their own LAN space; the carrier owns only the CE --
+
+    def ce_only(self):
+        return sorted(s["key"].removeprefix("site/") for s in self.of("site") if s["key"].startswith("site/ce-"))
+
+    def test_customer_lans_are_customer_space_reused_across_vrfs(self):
+        lans = [self.o[f"prefix/{sid}/lan"] for sid in self.ce_only()]
+        self.assertEqual(len(lans), len(self.ce_only()))
+        for prefix in lans:
+            net = ipaddress.ip_network(prefix["attrs"]["prefix"])
+            self.assertFalse(net.overlaps(ipaddress.ip_network(self.plan["recipe"]["address_pool"])))
+            self.assertTrue(prefix["refs"]["vrf"].startswith("vrf/customer/"))
+            self.assertEqual(prefix["refs"]["role"], "ip-role/customer")
+            self.assertNotIn("vlan", prefix["refs"])
+        # Several customers number from the same space, each inside its own VRF.
+        by_prefix = defaultdict(set)
+        for prefix in lans:
+            by_prefix[prefix["attrs"]["prefix"]].add(prefix["refs"]["vrf"])
+        self.assertTrue(any(len(vrfs) >= 3 for vrfs in by_prefix.values()))
+        self.assertTrue(all(self.o[v]["attrs"]["enforce_unique"] for vrfs in by_prefix.values() for v in vrfs))
+        # No carrier-pool segment, VLAN, DHCP/static range or desk wording for a LAN it does not run.
+        for sid in self.ce_only():
+            for key in (f"prefix/{sid}/clients", f"prefix/{sid}/reservation", f"vlan/{sid}/clients"):
+                self.assertNotIn(key, self.o)
+        self.assertFalse([r for r in self.of("ip_range") if "/ce-" in r["key"]])
+        self.assertFalse([p for p in self.of("prefix") if "orkstation" in p["attrs"].get("description", "")])
+
+    def test_ce_only_premises_hold_no_carrier_rack_or_power(self):
+        for sid in self.ce_only():
+            site = f"site/{sid}"
+            edge = self.o[f"device/{sid}/edge-01"]
+            self.assertNotIn("rack", edge["refs"])
+            self.assertEqual(edge["refs"]["location"], f"location/{sid}")
+            for kind in ("rack", "power_panel"):
+                self.assertFalse([x for x in self.of(kind) if x["refs"].get("site") == site])
+            self.assertFalse([d for d in self.of("device") if d["refs"]["site"] == site and d["key"] != edge["key"]])
+            supplies = [p for p in self.of("power_port") if p["refs"]["device"] == edge["key"]]
+            self.assertTrue(supplies and all(p["attrs"]["mark_connected"] for p in supplies))
+
+    def test_customer_lan_counterexamples_are_refused(self):
+        sid = self.ce_only()[0]
+
+        def carrier_pool():
+            self.o[f"prefix/{sid}/lan"]["attrs"]["prefix"] = "10.1.0.0/24"
+
+        def vlan_back():
+            self.o[f"device/{sid}/edge-01/if/port1"]["attrs"]["mode"] = "access"
+
+        def racked():
+            rack = next(r for r in self.of("rack"))
+            self.o[f"device/{sid}/edge-01"]["refs"]["rack"] = rack["key"]
+
+        def cabled_power():
+            port = next(p for p in self.of("power_port") if p["refs"]["device"] == f"device/{sid}/edge-01")
+            port["attrs"].pop("mark_connected")
+
+        for mutate, code in ((carrier_pool, "provider-customer-lan"), (vlan_back, "provider-customer-lan"),
+                             (racked, "provider-rack-placement"), (cabled_power, "provider-rack-placement")):
+            with self.subTest(mutate.__name__):
+                self.setUp()
+                mutate()
+                self.assertIn(code, self.codes())
 
     def test_untruthful_dual_homed_tag_is_refused(self):
         site = next(s for s in self.of("site") if s["key"].startswith("site/pop-")
