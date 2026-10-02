@@ -481,6 +481,8 @@ CONTENT_TYPES = {
     "fhrp_group": ("ipam", "fhrpgroup"),
     "vlan": ("ipam", "vlan"),
     "cooling_intake": ("dcim", "coolingintake"),
+    # Provider plant history journals a rack's removed devices (v0.18).
+    "rack": ("dcim", "rack"),
 }
 
 # TurboBulk 0.4.0 manufactures an integer NOT NULL default for any column whose
