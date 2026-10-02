@@ -18,6 +18,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Installed optics policy](#installed-optics-policy)
 - [Contact and journal context](#contact-and-journal-context)
   - [Automation records](#automation-records)
+- [Provider backbone geography and numbering](#provider-backbone-geography-and-numbering)
 - [Provider BGP inventory](#provider-bgp-inventory)
 - [Provider network lab](#provider-network-lab)
 - [Extending it](#extending-it)
@@ -319,9 +320,9 @@ reconciliation, particularly when an unracked device's tenant changes.
 
 Provider hostnames are readable stems rather than site-id digests: a PoP's
 routers are named from its key (`chicago-cermak-pe-a`), and a customer premises
-from its customer key, metro and permanent allocation slot
-(`lakeshore-health-cle0269-gw01`; the per-metro facility code numbers separately), so
-they stay unique and growth-stable. PoP keys shaped like those stems or like the
+from its customer key and the site's own facility code
+(`lakeshore-health-cle03-gw01` at facility `CLE03`), so the hostname matches
+the site record and stays unique and growth-stable. PoP keys shaped like those stems or like the
 NOC's `dc01` are refused. Every VLAN in every profile is named for its segment
 (`Clients`, `Management`, `POS`) inside its site-scoped VLAN group: NetBox holds
 VLAN names unique per group (`unique_group_name`, pinned 4.7.2
@@ -345,8 +346,8 @@ one scope.
 Descriptions use the words an engineer would put on the record, from shared
 helpers in `estates/naming.py`: device roles read as `Provider edge router` or
 `Rack PDU` (`ROLE_LABELS`), segments as `Office workstations` or `Point-of-sale
-lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `100 Gbps backbone
-committed on a 100G handoff` (`bandwidth`/`port_speed`), and routed /31s name
+lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `1 Gbps access
+committed on a 1G handoff` (`bandwidth`/`port_speed`), and routed /31s name
 both ends. **No record carries a disclaimer.** Names, descriptions, comments,
 labels, module attributes and journals hold operational data only; the
 modeling limitations are documented once, below and in the generated
@@ -730,6 +731,72 @@ The pinned Diode SDK 1.14.0 has no ingest entity for any of these four kinds, so
 the wire package omits them and names the omission in its manifest; only
 `just load` delivers them (see [loading](loading.md#artifacts-and-diode)).
 
+## Provider backbone geography and numbering
+
+The provider backbone (`estates/provider.py`) is built from the map, not from
+recipe order. `validate_provider.py` re-derives every rule below independently.
+
+**Topology.** Inside a metro, the operator's own dark fiber rings the PoPs in
+nearest-neighbour order (two PoPs get one span). Between metros, the chain is
+the nearest-neighbour spanning tree of the metro centres — for the four authored
+metros, Milwaukee–Chicago–Detroit–Cleveland, so nothing crosses Lake Michigan
+and Cleveland never skips Detroit. Each chain adjacency gets two spans on
+PoP-diverse ends where the metros allow it, one from each transport carrier.
+Every PE keeps its local pair link plus at most two 100G transport ports. The
+validator derives the chain separately (metros by longitude), rejects an
+inter-metro span between non-neighbours, and requires two spans from two
+carriers on two different PEs at each end of every adjacency.
+
+**Growth.** The `provider-backbone-spans` ledger keys each span by both PE ends
+(`circuit/backbone/<pop>-<side>/<pop>-<side>`) and is append-only. A new PoP
+dual-homes to its nearest PoPs with a free transport port, in its own metro or a
+neighbouring one; existing spans never move. A new metro that would sit
+*between* two metros already joined by spans is refused: rebaseline. The
+`provider-pop-launch` ledger fixes a breadth-first launch order along the
+backbone, and `provider-span-upgrades` records a leased span raised to 100G, so
+growth may raise a commitment but never lowers one.
+
+**Capacity.** Owned fiber is lit at 100G and purchases nothing (`commit_rate` is
+omitted). Leased spans are Ethernet transport on a 100G handoff committed at
+10 Gbps unless the declared spoke-to-hub flows, after any single span loss and
+the reserve, need the full port. Each span carries `distance` in km: the
+great-circle distance between its PoPs times a 1.3 route factor.
+
+**Carriers.** Ridgeline Lightwave and Ironwood Fiber sell the inter-metro
+transport; Corvane Global IP and Halyard Internet sell transit. None shares a
+first word with another carrier or a customer, and each support desk answers
+from the carrier's own `.example` domain. Third-party circuit IDs follow each
+carrier's order shape (`RLW-EPL-104882`, `IWT/EPL/214682`, `CVN-IPT-2524750`,
+`HAL-DIA-813166`), seeded by the namespace; the operator's own services use its
+initials (`ILF-DF-0001`, `ILF-PL3-00315`, `ILF-NOC-0001`, `ILF-VPN-0001`).
+Carrier accounts carry ten-digit numbers; customer accounts read `ILF-C00001`.
+
+**Numbering.** The operator and both upstreams hold distinct RFC 5398
+documentation ASNs (64496–64511) under an RIR named `ARIN`, chosen by namespace.
+Customer VPN ASNs stay in the private 32-bit `asn_base` block. PE loopbacks
+(192.0.2.0/25), transit handoffs (192.0.2.128/26), PoP pair links
+(198.51.100.0/25) and inter-PoP spans (203.0.113.0/24) are carrier-owned RFC 5737
+space under three ARIN aggregates, alongside the 2001:db8::/32 IPv6 pool.
+Management, NOC and customer access links stay in the private address pool.
+Recipe order is onboarding order: customer slots, ASNs, route distinguishers
+(`<operator ASN>:<1001+slot>`) and accounts follow it.
+
+**Timeline.** PoPs launch in backbone order from the first PoP; a span enters
+service shortly before the later of its two PoPs launches, so every PoP's first
+span precedes its customers. Customers onboard months apart in slot order, each
+starting with its hub circuit; other premises follow their PoP's readiness.
+PoP, premises and NOC sites carry `meta.in_service`, the date shared enrichment
+should use for site-level history.
+
+**Premises.** A customer premises is named after the authored neighbourhood or
+suburb it sits in (`Lakeshore Health Ohio City`), 2–25 km from its serving PoP,
+chosen by a hash of its site id in allocation-slot order so growth never moves
+or renames one.
+
+**Known gap.** Intra-metro dark fiber is lit by the PE's JNP-QSFP-100G-LR4
+(10 km reach) while some metro routes are longer; a source-backed 40 km optic
+and distance-aware optic selection are the follow-up.
+
 ## Provider BGP inventory
 
 The provider backbone — and only the provider backbone — also carries BGP
@@ -753,14 +820,15 @@ What the estate emits:
 | --- | --- | --- |
 | Routing policy | 4 | `Transit Import/Export`, `Customer Import/Export`, each weighted and described as reference intent. **No rules**: a named policy is inventory, a rule set would read as configuration. |
 | Peer group | 3 | `iBGP Core`, `Transit Upstream`, `Customer Private L3`. Each carries the operator's own ASN as `local_as`; the transit and customer groups bind the matching import/export policies. |
-| Session | 1 + 2(2N−2) + T + C | One record per modeled adjacency, for N PoPs, T transit handoffs and C customer premises. |
+| Session | (1 + 2(2N−2) + T + C) × F | One record per modeled adjacency, for N PoPs, T transit handoffs, C customer premises and F address families (2 with `ipv6_pool`). |
 
 Sessions come in three families, and every field is attributed from the
 finished graph rather than authored per site:
 
 - **iBGP** runs over the PEs' in-band `lo0` loopbacks, as a **route-reflector
-  pair** rather than a full mesh. The two PEs at the first PoP in the permanent
-  `provider-pop-order` ledger are the reflectors; every other PE peers with
+  pair** rather than a full mesh. The reflectors are PE A at the first PoP in
+  the permanent `provider-pop-order` ledger and PE A at the first later PoP in
+  a different metro, so no single metro holds both; every other PE peers with
   both, and the reflectors peer with each other. That is linear in PoP count,
   so the 64-PoP recipe ceiling stays bounded — a full mesh would be 8,128
   sessions there — and it is how a regional backbone of this size is actually
@@ -773,6 +841,10 @@ finished graph rather than authored per site:
 - **eBGP customer** is attributed from each private-L3 access circuit: the
   serving PE and its `/31` address as local, the CE's address as remote, the
   customer's own ASN from its site, and the customer tenant.
+- **Dual-stack.** With `ipv6_pool`, every session above gains an IPv6 twin
+  (`…/ipv6` key, `… IPv6` name) on the same endpoints' IPv6 companions: `/128`
+  loopbacks for iBGP, the `/127` link addresses for customers and the `/127`
+  prefix as transit's remote prefix.
 
 Growth is stable. Appending a PoP or a customer appends sessions and never
 moves an existing one: the reflector pair is chosen by a permanent ordinal, and

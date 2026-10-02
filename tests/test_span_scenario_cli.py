@@ -65,8 +65,11 @@ class SpanScenarioCliTests(unittest.TestCase):
             recipe = tomllib.loads(RECIPE.read_text())
             recipe["demo"] = "baseline"
             plan = root / "plan.json"
-            plan.write_bytes(canonical(generate(recipe)))
-            selected = "circuit/backbone/seed-01"
+            baseline = generate(recipe)
+            plan.write_bytes(canonical(baseline))
+            # An explicit --span naming the carrier-A Chicago-Detroit span.
+            selected = next(o["key"] for o in baseline["objects"] if o["kind"] == "circuit"
+                            and o["key"].startswith("circuit/backbone/chicago-west-a/"))
             built = self.run_cli("scenario", plan, "--kind", "provider-span-maintenance",
                                  "--span", selected, "--out", root / "span")
             self.assertEqual(built["subject"], selected)

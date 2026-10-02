@@ -39,7 +39,10 @@ class ShowcaseText(unittest.TestCase):
         edges = [o for o in self.of(self.provider, "device") if o["refs"]["role"] == "role/customer-edge"]
         for edge in edges:
             customer = edge["refs"]["tenant"].removeprefix("tenant/cust-")
-            self.assertRegex(edge["attrs"]["name"], rf"^{customer}-(chi|det|cle|mil)\d{{4,}}-gw01$")
+            # The hostname carries the site's own facility code (CHI01 -> chi01).
+            facility = self.objects[edge["refs"]["site"]]["attrs"]["facility"].lower()
+            self.assertRegex(facility, r"^(chi|det|cle|mil)\d{2,}$")
+            self.assertEqual(edge["attrs"]["name"], f"{customer}-{facility}-gw01")
         self.assertEqual(len({e["attrs"]["name"] for e in edges}), len(edges))
         self.assertTrue(any(n.endswith("-pe-a") and not n.startswith("pop") for n in names))
 
@@ -70,7 +73,7 @@ class ShowcaseText(unittest.TestCase):
 
     def test_rates_roles_and_segments_use_operator_wording(self):
         circuits = {o["attrs"]["description"] for o in self.of(self.provider, "circuit")}
-        self.assertIn("100 Gbps backbone committed on a 100G handoff", circuits)
+        self.assertTrue([d for d in circuits if re.fullmatch(r"10 Gbps Ethernet transport, .+ to .+, on a 100G handoff", d)])
         self.assertFalse([d for d in circuits if "000 Mbps" in d])
         self.assertTrue(all(o["attrs"]["description"].endswith("private WAN on a 1G handoff; carrier " + o["key"].split("/")[2].upper())
                             for o in self.of(self.bank, "circuit")))
@@ -113,7 +116,6 @@ class ShowcaseText(unittest.TestCase):
         self.assertEqual(role("prefix/loopback/device/pop-chicago-west/pe-a"), "Loopbacks")
         self.assertEqual(role("prefix/link/pair/pop-chicago-west"), "Transit")
         self.assertEqual(role("prefix/pop-chicago-west/reservation"), "Backbone")
-        self.assertEqual(role("root/customer/harbor-logistics"), "Customer")
         self.assertEqual(role("prefix/ce-harbor-logistics-chicago-west-001/clients"), "Users")
         self.assertEqual(role("vlan/pop-chicago-west/management"), "Management")
         # Wrong role, missing role, and a prefix that disagrees with its VLAN.
@@ -143,16 +145,16 @@ class ShowcaseText(unittest.TestCase):
                         + self.of(plan, "virtual_machine_type")):
                 self.assertNotRegex(obj["attrs"].get("description", ""), r"; no |not applied|unspecified|Inert|Wiring only")
         notes = [e["attrs"]["comments"] for e in self.of(self.provider, "journal_entry")]
-        self.assertTrue(any("Committed capacity: 100 Gbps\n" in n for n in notes))
+        self.assertTrue(any("Committed capacity: 10 Gbps\n" in n for n in notes))
         self.assertEqual({c["attrs"]["comments"].split(" order: ")[0] for c in self.of(self.bank, "circuit")},
                          {"Standard branch", "Data center aggregation", "Retained Birch contract"})
         hook = self.of(self.bank, "webhook")[0]
         self.assertTrue(hook["attrs"]["payload_url"].split("/")[2].endswith(".invalid"))
         self.assertIs(self.of(self.bank, "event_rule")[0]["attrs"]["enabled"], False)
         # Rewording a stated rate is a journal-facts failure, not a free edit.
-        entry = next(e for e in self.of(self.provider, "journal_entry") if "Committed capacity: 100 Gbps" in e["attrs"]["comments"])
+        entry = next(e for e in self.of(self.provider, "journal_entry") if "Committed capacity: 10 Gbps" in e["attrs"]["comments"])
         broken = {**self.provider, "objects": [
-            dict(o, attrs={**o["attrs"], "comments": o["attrs"]["comments"].replace("100 Gbps", "100000000 kbps")})
+            dict(o, attrs={**o["attrs"], "comments": o["attrs"]["comments"].replace("10 Gbps", "10000000 kbps")})
             if o["key"] == entry["key"] else o for o in self.provider["objects"]]}
         self.assertIn(("operations-journal-facts", entry["key"]),
                       {(f["code"], f["object"]) for f in validate(broken)})

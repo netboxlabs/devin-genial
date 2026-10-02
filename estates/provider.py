@@ -11,7 +11,9 @@ from copy import deepcopy
 from datetime import date, timedelta
 from decimal import Decimal
 from hashlib import sha256
+from itertools import combinations
 import ipaddress
+import math
 import re
 
 from . import bgp, datacenter, discovery_lab, equipment, ipv6, networking, operations, places, poe, optics
@@ -31,6 +33,31 @@ CAPACITY_SCOPE = ("Directed customer spoke-to-hub offered load under normal oper
                   "Return, arbitrary peer-to-peer, NOC and external-transit traffic are excluded; this is not total backbone capacity. "
                   "NOC peak tests only local purchased handoff headroom. Router and local-pair failures have a connectivity witness only, "
                   "not a traffic-capacity or single-homed customer-availability guarantee.")
+# Third-party carriers: fictional names that collide with no customer, each with
+# its own support domain and the circuit-ID shape it prints on an order.
+CARRIERS = {"transport-a": ("Ridgeline Lightwave", "ridgeline-lightwave.example", "RLW-EPL-{:06d}", 6),
+            "transport-b": ("Ironwood Fiber", "ironwood-fiber.example", "IWT/EPL/{:06d}", 6),
+            "transit-a": ("Corvane Global IP", "corvane.example", "CVN-IPT-{:07d}", 7),
+            "transit-b": ("Halyard Internet", "halyard-internet.example", "HAL-DIA-{:06d}", 6)}
+# RFC 5398 documentation AS numbers for the operator and its two upstreams,
+# held under an RIR displayed as ARIN. Customer VPN ASNs stay in the private
+# 32-bit asn_base block, which keeps them namespace-separated on one target.
+DOCUMENTATION_ASNS = (64496, 64511)
+# Carrier-owned address space comes from RFC 5737 documentation IPv4; internal,
+# management and customer VPN space stays in the private address_pool.
+PUBLIC_POOLS = {"loopbacks": "192.0.2.0/25", "transit": "192.0.2.128/26",
+                "pair": "198.51.100.0/25", "backbone": "203.0.113.0/24"}
+PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+PUBLIC_LINK_SCOPES = {"pair": "provider-pair-links", "backbone": "provider-span-links", "transit": "provider-transit-links"}
+# Leased inter-metro transport is Ethernet private line on a 100G handoff,
+# committed at 10G unless the declared flows need the full port.
+TRANSPORT_TIERS_MBPS = (10000, 100000)
+# Authored span route length: great-circle distance times a fibre route factor.
+ROUTE_FACTOR = 1.3
+# One timeline: PoPs launch in backbone order, spans come up before a PoP
+# serves customers, and customers onboard in their permanent slot order.
+LAUNCH_EPOCH_DAYS, LAUNCH_STEP_DAYS, LAUNCH_CAP_DAYS = 2555, 45, 1825
+PREMISES_KM = (2, 25)
 
 
 def _key(value,label):
@@ -45,25 +72,62 @@ def _integer(value,label,low,high):
     return value
 
 
+def operator_code(name):
+    """Short operator prefix for its own service IDs: Inland Lakes Fiber -> ILF."""
+    words = re.findall(r"[A-Za-z]+", name)
+    code = "".join(word[0] for word in words).upper()[:4]
+    return code if len(code) >= 2 else (words[0][:3].upper() if words else "OPR")
+
+
+def _hash(*parts):
+    return int(sha256("/".join(map(str, parts)).encode()).hexdigest(), 16)
+
+
+def documentation_asns(namespace):
+    """Operator and upstream ASNs: three distinct RFC 5398 numbers per namespace."""
+    low, high = DOCUMENTATION_ASNS
+    h = _hash(namespace, "documentation-asns")
+    return {label: low + (h + offset) % (high - low + 1)
+            for label, offset in (("operator", 0), ("transit-a", 5), ("transit-b", 11))}
+
+
+def carrier_number(namespace, label, ordinal):
+    """A carrier order number: namespace-seeded, unique per carrier by ordinal."""
+    digits = CARRIERS[label][3]
+    low = 10 ** (digits - 1)
+    return low + (_hash(namespace, label, "cid") + 37 * ordinal) % (9 * low)
+
+
+def km(a, b):
+    """Great-circle kilometres between two (lat, lon) points."""
+    (la1, lo1), (la2, lo2) = ((math.radians(x), math.radians(y)) for x, y in (a, b))
+    h = math.sin((la2-la1)/2)**2 + math.cos(la1)*math.cos(la2)*math.sin((lo2-lo1)/2)**2
+    return 2 * 6371.0088 * math.asin(math.sqrt(h))
+
+
 def premises(recipe):
     return [(f"ce-{c['key']}-{entry['pop']}-{n:03}",c,entry["pop"],n)
             for c in recipe["customers"] for entry in c["sites"] for n in range(1,entry["count"]+1)]
 
 
 def premises_code(w,sid,customer):
-    """Hostname stem for one customer premises: lakeshore-health-cle0269.
+    """Hostname stem for one customer premises: lakeshore-health-cle03.
 
-    Customer key plus the metro and the site's permanent address-allocation
-    slot (the same slot its facility code carries), so it is unique across the
-    estate, frozen under growth and readable without a lookup table. Device
-    names stay short identities scoped by site and tenant in Diode matching.
+    Customer key plus the site's own facility code (metro and permanent
+    per-metro number), so the hostname matches the facility on the site record,
+    is unique across the estate and frozen under growth. Without an authored
+    facility code it falls back to the metro and address-allocation slot.
+    Device names stay short identities scoped by site and tenant in Diode matching.
     """
+    facility = w.obj(f"site/{sid}")["attrs"].get("facility","")
+    if re.fullmatch(r"(?:CHI|DET|CLE|MIL)\d{2,}",facility):
+        return f"{customer}-{facility.lower()}"
     return f"{customer}-{w.provider_metros[sid][:3]}{w.allocations[sid]:04}"
 
 
-# Premises stems end in <metro3><slot digits>; the NOC is dc01. A PoP key of
+# Premises stems end in <metro3><digits>; the NOC is dc01. A PoP key of
 # either shape could reuse another site's hostnames and DNS names.
-_RESERVED_POP_KEY = re.compile(r"dc-?\d+|.*-(?:chi|det|cle|mil)\d{4,}")
+_RESERVED_POP_KEY = re.compile(r"dc-?\d+|.*-(?:chi|det|cle|mil)\d{2,}")
 
 
 def resolve(raw):
@@ -157,7 +221,9 @@ def resolve(raw):
         result.append(c)
     if any(count > 12 for count in attachment_count.values()):
         raise DesignError("Combined customer/NOC demand exceeds twelve direct attachments at a PoP; add a PoP or a reviewed aggregation layer")
-    r["customers"] = sorted(result,key=lambda c:c["key"])
+    # Recipe order is onboarding order: it numbers customer slots, ASNs, RDs
+    # and billing accounts, and dates each customer's first circuit.
+    r["customers"] = result
     blocks = (4294967294-4200000000+1)//1024
     default_asn = 4200000000+(int.from_bytes(sha256(f"{r['namespace']}/provider-asn-block".encode()).digest()[:8],"big")%blocks)*1024
     r["asn_base"] = _integer(raw.get("asn_base",default_asn),"asn_base",4200000000,4294967294-1023)
@@ -216,18 +282,26 @@ def generate(recipe,previous=None):
 
 def _registry(w):
     ns,r = w.recipe["namespace"],w.recipe
+    code = operator_code(r["name"])
     w.add("rir","rir/private",dict(name="Private allocations",slug=f"{ns}-private",is_private=True))
-    w.add("asn_range","asn-range/private",dict(name="Provider routing domains",slug=f"{ns}-routing",
-          start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASNs for the backbone, upstreams and customer VPNs"),{"rir":"rir/private"})
+    w.add("rir","rir/arin",dict(name="ARIN",slug=f"{ns}-arin",is_private=False))
+    w.add("asn_range","asn-range/private",dict(name="Customer routing domains",slug=f"{ns}-routing",
+          start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASNs for customer VPN sites"),{"rir":"rir/private"})
+    w.add("asn_range","asn-range/arin",dict(name="Public routing domains",slug=f"{ns}-public-routing",
+          start=DOCUMENTATION_ASNS[0],end=DOCUMENTATION_ASNS[1],description="Operator and upstream AS numbers"),{"rir":"rir/arin"})
+    for prefix in PUBLIC_AGGREGATES:
+        w.add("aggregate",f"aggregate/public/{prefix}",dict(prefix=prefix,description=f"{r['name']} backbone allocation"),
+              {"rir":"rir/arin","tenant":"tenant"})
+    for purpose,description in (("loopbacks","Backbone router loopbacks"),("transit","Upstream transit handoffs"),
+                                ("pair","PoP router pair links"),("backbone","Inter-PoP span links")):
+        w.add("prefix",f"prefix/public/{purpose}",dict(prefix=PUBLIC_POOLS[purpose],status="container",description=description),
+              {"vrf":"vrf/provider","tenant":"tenant"})
     # NetBox's ASN model has no name: the visualization layer labels an AS node
-    # from its description, so it must name the party that holds the AS. The
-    # transit nodes previously read "transit-a", contradicting the provider
-    # name shown on every other record.
-    provider_names = (("operator",r["name"]),("transport-a","Northstar Transport"),("transport-b","Meridian Transport"),
-                      ("transit-a","Atlas Upstream"),("transit-b","Orion Upstream"))
+    # from its description, so it must name the party that holds the AS.
+    provider_names = (("operator",r["name"]),*((label,row[0]) for label,row in CARRIERS.items()))
     held_by = dict(provider_names)
-    for key,offset in (("operator",0),("transit-a",1),("transit-b",2)):
-        w.add("asn",f"asn/{key}",dict(asn=r["asn_base"]+offset,description=f"{held_by[key]} routing identity"),{"rir":"rir/private"})
+    for key,number in documentation_asns(ns).items():
+        w.add("asn",f"asn/{key}",dict(asn=number,description=f"{held_by[key]} routing identity"),{"rir":"rir/arin"})
     for label,name in provider_names:
         refs = {"asns":[f"asn/{'operator' if label == 'operator' else label}"]} if not label.startswith("transport-") else {}
         display = name
@@ -239,33 +313,37 @@ def _registry(w):
         if label == "operator":
             attrs["comments"] = (f"Operator of the {r['name']} private L3 VPN service and its backbone, "
                                  "customer access and NOC circuits.")
-        w.add("provider",f"provider/{label}",attrs,refs)
+        # Support desks answer from the provider's own mail domain.
+        w.add("provider",f"provider/{label}",attrs,refs,{"support_domain":CARRIERS[label][1]} if label in CARRIERS else {})
         if label.startswith("transit-"):
-            w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=titleize(label),
+            w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=f"{name} network",
                   description=f"{name} IP transit network"),{"provider":f"provider/{label}"})
         if label != "operator":
-            _account(w,f"provider-account/provider/{label}",f"provider/{label}",label)
+            _account(w,f"provider-account/provider/{label}",f"provider/{label}",
+                     f"{name} transport" if label.startswith("transport-") else f"{name} transit",
+                     str(10**9 + _hash(ns,label,"account") % (9*10**9)),
+                     "Ethernet transport between metros" if label.startswith("transport-") else "IP transit at the core PoPs")
     w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs"),{"provider":"provider/operator"})
-    _account(w,"provider-account/operator/noc","provider/operator","noc")
-    for name in ("backbone","access","transit"):
+    _account(w,"provider-account/operator/noc","provider/operator","NOC access",f"{code}-INT-0001","NOC access circuits")
+    _account(w,"provider-account/operator/fiber","provider/operator","Backbone fiber",f"{code}-INT-0002","Owned metro fiber between PoPs")
+    for name in ("backbone","dark-fiber","access","transit"):
         w.add("circuit_type",f"circuit-type/{name}",dict(name=titleize(name),slug=f"{ns}-{name}"))
     w.add("virtual_circuit_type","virtual-circuit-type/private-l3",dict(name="Private L3",slug=f"{ns}-private-l3",color="e65100"))
+    operator_asn = documentation_asns(ns)["operator"]
     for c in r["customers"]:
         key = c["key"]; slot = w.reserve("provider-customers",key,256)
         customer = titleize(key)
         tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=customer,slug=f"{ns}-cust-{key}",description="Private L3 VPN customer"))
         w.add("asn",f"asn/customer/{key}",dict(asn=r["asn_base"]+256+slot,description=f"{customer} customer routing identity"),{"rir":"rir/private"})
-        # The customer VPN's RD reuses its route target value, <operator ASN>:<n>.
-        # Both come from the namespace-derived private ASN block and the
-        # permanent customer slot, so they are unique per estate and stable
-        # under growth; NetBox holds VRF.rd globally unique like RT names.
-        value = f"{r['asn_base']}:{slot+1}"
+        # The customer VPN's RD reuses its route target value, <operator ASN>:<n>,
+        # numbered by the permanent onboarding slot and stable under growth.
+        value = f"{operator_asn}:{1001+slot}"
         target = w.add("route_target",f"route-target/customer/{key}",dict(name=value,description=f"{customer} private L3 VPN import/export"),{"tenant":tenant})
         vrf = w.add("vrf",f"vrf/customer/{key}",dict(name=f"{customer} Private L3",rd=value,enforce_unique=True),
                     dict(tenant=tenant,import_targets=[target],export_targets=[target]))
-        w.add("prefix",f"root/customer/{key}",dict(prefix=r["address_pool"],status="container",description=f"{customer} VPN address space"),dict(vrf=vrf,tenant=tenant))
-        account = _account(w,f"provider-account/customer/{key}","provider/operator",f"customer-{key}")
-        w.add("virtual_circuit",f"virtual-circuit/customer/{key}",dict(cid=f"{ns}-private-{key}",status="active",
+        account = _account(w,f"provider-account/customer/{key}","provider/operator",customer,f"{code}-C{slot+1:05d}",
+                           f"Private L3 VPN billing for {customer}")
+        w.add("virtual_circuit",f"virtual-circuit/customer/{key}",dict(cid=f"{code}-VPN-{slot+1:04d}",status="active",
               description=virtual_circuit_description(c),comments=VIRTUAL_CIRCUIT_NOTE),
               dict(provider_network="provider-network/operator",type="virtual-circuit-type/private-l3",tenant=tenant,provider_account=account))
 
@@ -279,12 +357,10 @@ def virtual_circuit_description(customer):
     return f"{titleize(customer['key'])} private L3 VPN, hub at {titleize(customer['hub_pop'])}"
 
 
-def _account(w,key,provider,label):
-    # The account number keeps the namespace (it is the matching identity); the
-    # name is the label NetBox renders, and is unique per provider.
-    return w.add("provider_account",key,dict(name=titleize(label),account=f"{w.recipe['namespace']}-{label}",
-          description=(f"Private L3 VPN billing for {titleize(label.removeprefix('customer-'))}" if label.startswith("customer-")
-                       else {"noc":"NOC access circuits"}.get(label,f"{titleize(label.split('-')[0])} circuits from this carrier"))),dict(provider=provider))
+def _account(w,key,provider,name,number,description):
+    # The account number is the matching identity; the name is the label NetBox
+    # renders. Both are unique per provider.
+    return w.add("provider_account",key,dict(name=name,account=number,description=description),dict(provider=provider))
 
 
 def _site_network(site,role,prefixlen,offset,vid):
@@ -315,10 +391,17 @@ def _ip(w,port,net,host,vrf,tenant,primary=False):
 
 
 def _link_prefix(w,key,vrf,tenant):
-    # Globally unique slots also prevent overlapping physical reservations across VRFs.
-    slot = w.reserve("provider-link-prefixes",key,16384)
-    base = int(w.pool.broadcast_address)-65535
-    net = ipaddress.ip_network((base+2*slot,31))
+    family = "pair" if key.startswith("pair/") else key.split("/")[1] if key.startswith("circuit/") else None
+    if family in PUBLIC_LINK_SCOPES:
+        # Backbone, PoP-pair and transit /31s are carrier-owned public space.
+        pool = ipaddress.ip_network(PUBLIC_POOLS[family])
+        slot = w.reserve(PUBLIC_LINK_SCOPES[family],key,pool.num_addresses//2)
+        net = ipaddress.ip_network((int(pool.network_address)+2*slot,31))
+    else:
+        # Globally unique slots also prevent overlapping physical reservations across VRFs.
+        slot = w.reserve("provider-link-prefixes",key,16384)
+        base = int(w.pool.broadcast_address)-65535
+        net = ipaddress.ip_network((base+2*slot,31))
     # ponytail: clipped at the native 200; only 100-character site_names overrides reach it.
     attrs = dict(prefix=str(net),status="active",description=_link_description(w,key)[:200])
     if key.startswith("circuit/transit/"):
@@ -352,17 +435,20 @@ def _routed_pair(w,key,a,b,vrf="vrf/provider",tenant="tenant"):
     _ip(w,a,net,0,vrf,tenant); _ip(w,b,net,1,vrf,tenant)
 
 
-def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,tenant="tenant",handoff_mbps=None):
+def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,tenant="tenant",handoff_mbps=None,*,
+             cid,installed,description=None,distance_km=None):
+    """One circuit; rate_mbps None is owned fibre with no purchased commitment."""
     handoff = handoff_mbps or rate_mbps
-    try:
-        installed = (date.fromisoformat(w.recipe["as_of"])-timedelta(days=w.choose(key,"provider-install-age",range(365,1096)))).isoformat()
-    except OverflowError as exc:
-        raise DesignError("as_of is too early for the authored provider procurement history") from exc
-    cid = f"{w.recipe['namespace']}-{key.removeprefix('circuit/').replace('/','-')}"
-    w.add("circuit",key,dict(cid=cid,status="active",commit_rate=rate_mbps*1000,install_date=installed,
-          description=f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff"),
-          dict(provider=provider,provider_account=account,type=f"circuit-type/{kind}",tenant=tenant),
-          dict(procurement=dict(cohort=f"provider-{kind}",handoff_mbps=handoff)))
+    attrs = dict(cid=cid,status="active",install_date=installed.isoformat(),
+                 description=description or f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff")
+    if rate_mbps is not None:
+        attrs["commit_rate"] = rate_mbps*1000
+    if distance_km:
+        attrs.update(distance=distance_km,distance_unit="km")
+    refs = dict(provider=provider,type=f"circuit-type/{kind}",tenant=tenant)
+    if account:
+        refs["provider_account"] = account
+    w.add("circuit",key,attrs,refs,dict(procurement=dict(cohort=f"provider-{kind}",handoff_mbps=handoff)))
     for side,site,port in (("A",a_site,a_port),("Z",z_site,z_port)):
         target = site.key if isinstance(site,Site) else site
         term = w.add("circuit_termination",f"{key}/{side}",dict(term_side=side,port_speed=handoff*1000,
@@ -410,8 +496,9 @@ def _pop(w,item):
             w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["speed"] = 1000000 if n<6 else 10000000
         loop = w.add("interface",f"{device}/if/lo0",dict(name="lo0",type="virtual",enabled=True,
                      description="In-band management loopback"),dict(device=device,vrf="vrf/provider"))
-        slot = w.reserve("provider-loopbacks",device,32768)
-        net = ipaddress.ip_network((int(w.pool.broadcast_address)-32767+slot,32))
+        pool = ipaddress.ip_network(PUBLIC_POOLS["loopbacks"])
+        slot = w.reserve("provider-loopbacks",device,pool.num_addresses)
+        net = ipaddress.ip_network((int(pool.network_address)+slot,32))
         w.add("prefix",f"prefix/loopback/{device}",dict(prefix=str(net),status="active",description=f"{w.obj(device)['attrs']['name']} inband management loopback"),dict(vrf="vrf/provider",tenant="tenant"))
         _ip(w,loop,net,0,"vrf/provider","tenant",True)
     a,b = [site.interface(d,"et-0/0/0") for d in routers]
@@ -435,44 +522,248 @@ def _pop(w,item):
     return site,routers
 
 
-def _topology(w,pop_sites):
-    order = sorted(w.recipe["pops"],key=lambda p:w.reservations["provider-pop-order"][p["key"]])
-    graph = []
+def _points(w):
+    """PoP map positions: authored coordinates, else the metro centre (legacy naming)."""
+    centres = {row[0].lower():(row[4],row[5]) for row in places.METROS}
+    result = {}
+    for p in w.recipe["pops"]:
+        attrs = w.obj(f"site/pop-{p['key']}")["attrs"]
+        result[p["key"]] = (attrs["latitude"],attrs["longitude"]) if "latitude" in attrs else centres[p["metro"]]
+    return result
+
+
+def metro_chain(metros):
+    """Inter-metro adjacencies: the nearest-neighbour spanning tree of metro centres.
+
+    For the four authored metros this is the lakeshore chain
+    Milwaukee-Chicago-Detroit-Cleveland; no span crosses a lake.
+    """
+    centres = {row[0].lower():(row[4],row[5]) for row in places.METROS}
+    group = {m:m for m in metros}
+    def find(m):
+        while group[m] != m: m = group[m]
+        return m
+    chain = []
+    for _,a,b in sorted((km(centres[a],centres[b]),a,b) for a,b in combinations(sorted(metros),2)):
+        if find(a) != find(b):
+            group[find(a)] = find(b); chain.append((a,b))
+    return chain
+
+
+def span_key(a,b):
+    """circuit/backbone/<pop>-<side>/<pop>-<side>: both ends are in the identity."""
+    return f"circuit/backbone/{a[0]}-{a[1]}/{b[0]}-{b[1]}"
+
+
+def parse_span(key):
+    parts = key.split("/") if isinstance(key,str) else []
+    ends = [tuple(part.rsplit("-",1)) for part in parts[2:]]
+    if len(parts) != 4 or parts[:2] != ["circuit","backbone"] or any(len(e) != 2 or e[1] not in ("a","b") for e in ends):
+        raise DesignError(f"{key!r} is not a backbone span identity")
+    return ends
+
+
+def span_carriers(spans,metro):
+    """Same-metro spans are owned dark fiber; inter-metro spans alternate two carriers."""
+    seen,result = Counter(),{}
+    for key,a,b in spans:
+        if metro[a[0]] == metro[b[0]]:
+            result[key] = "operator"
+        else:
+            pair = frozenset((metro[a[0]],metro[b[0]]))
+            result[key] = f"transport-{'ab'[seen[pair]%2]}"; seen[pair] += 1
+    return result
+
+
+def _plan_spans(w,points):
+    """Ledger the backbone: geographic on a fresh build, append-only under growth.
+
+    Fresh: a nearest-neighbour ring (or pair) inside each metro, then two spans
+    per metro-chain adjacency on PoP-diverse ends. Growth: existing spans never
+    move; each new PoP dual-homes to its nearest PoPs with a free transport
+    port, in its own metro or an adjacent one.
+    """
+    order = w.reservations["provider-pop-order"]
+    pops = sorted(w.recipe["pops"],key=lambda p:order[p["key"]])
+    metro = {p["key"]:p["metro"] for p in pops}
+    ledger = dict(w.reservations.get("provider-backbone-spans",{}))
+    used = Counter()
+    for key in ledger:
+        for pop,side in parse_span(key):
+            if pop not in metro:
+                raise DesignError(f"{key}: span end {pop} is not a current PoP")
+            used[(pop,side)] += 1
+    free = lambda pop: used[(pop,"a")]+used[(pop,"b")] < 4
+    def link(a,b):
+        ends = []
+        for pop in (a,b):
+            side = min((s for s in "ab" if used[(pop,s)] < 2),key=lambda s:(used[(pop,s)],s),default=None)
+            if side is None:
+                raise DesignError(f"PoP {pop}: both PEs' two transport ports are in use; add a PoP or a reviewed transport layer")
+            used[(pop,side)] += 1; ends.append((pop,side))
+        w.reserve("provider-backbone-spans",span_key(*ends),256)
+    chain = metro_chain({p["metro"] for p in pops})
+    adjacent = {frozenset(edge) for edge in chain}
+    if not ledger:
+        members = defaultdict(list)
+        for p in pops: members[p["metro"]].append(p["key"])
+        for group in members.values():
+            if len(group) == 2:
+                link(*group)
+            elif len(group) > 2:
+                tour,rest = [group[0]],group[1:]
+                while rest:
+                    tour.append(min(rest,key=lambda q:(km(points[tour[-1]],points[q]),order[q]))); rest.remove(tour[-1])
+                for i,pop in enumerate(tour): link(pop,tour[(i+1)%len(tour)])
+        for x,y in chain:
+            pairs = sorted((km(points[a],points[b]),order[a],order[b],a,b) for a in members[x] for b in members[y])
+            first = next(p for p in pairs if free(p[3]) and free(p[4])); link(first[3],first[4])
+            second = min((p for p in pairs if free(p[3]) and free(p[4])),key=lambda p:((p[3]==first[3])+(p[4]==first[4]),p[:3]))
+            link(second[3],second[4])
+    else:
+        for key in ledger:
+            a,b = (metro[pop] for pop,_ in parse_span(key))
+            if a != b and frozenset((a,b)) not in adjacent:
+                raise DesignError(f"{key}: a new metro between {a} and {b} reroutes existing spans; rebaseline the backbone")
+        covered = {pop for key in ledger for pop,_ in parse_span(key)}
+        for p in pops:
+            if p["key"] in covered: continue
+            joined = []
+            for _ in "ab":
+                ranked = sorted((q for q in covered if free(q) and (metro[q] == p["metro"] or frozenset((metro[q],p["metro"])) in adjacent)),
+                                key=lambda q:(metro[q] != p["metro"],km(points[p["key"]],points[q]),order[q]))
+                if not ranked:
+                    raise DesignError(f"PoP {p['key']}: no PoP in its own or an adjacent metro has a free transport port; add a PoP or rebaseline")
+                pick = next((q for q in ranked if q not in joined),ranked[0])
+                link(p["key"],pick); joined.append(pick)
+            covered.add(p["key"])
+    spans = sorted(w.reservations["provider-backbone-spans"].items(),key=lambda item:item[1])
+    return [(key,*parse_span(key)) for key,_ in spans]
+
+
+def _launch(w,spans):
+    """PoP launch dates: breadth-first along the backbone from the first PoP.
+
+    The launch ledger is permanent, so growth appends launches and never
+    re-dates an existing PoP.
+    """
+    order = w.reservations["provider-pop-order"]
+    if not w.reservations.get("provider-pop-launch"):
+        adjacency = defaultdict(set)
+        for _,(a,_),(b,_) in spans: adjacency[a].add(b); adjacency[b].add(a)
+        start = min(order,key=order.get); queue = deque([start]); w.reserve("provider-pop-launch",start,64)
+        while queue:
+            for peer in sorted(adjacency[queue.popleft()],key=order.get):
+                if peer not in w.reservations["provider-pop-launch"]:
+                    w.reserve("provider-pop-launch",peer,64); queue.append(peer)
+    for pop in sorted(order,key=order.get): w.reserve("provider-pop-launch",pop,64)
+    try:
+        epoch = date.fromisoformat(w.recipe["as_of"])-timedelta(days=LAUNCH_EPOCH_DAYS)
+        return {pop:epoch+timedelta(days=min(LAUNCH_STEP_DAYS*slot,LAUNCH_CAP_DAYS)+w.choose(pop,"pop-launch",range(15)))
+                for pop,slot in w.reservations["provider-pop-launch"].items()}
+    except OverflowError as exc:
+        raise DesignError("as_of is too early for the authored provider build-out history") from exc
+
+
+def _transport_text(rate_mbps,ends):
+    return f"{bandwidth(rate_mbps)} Ethernet transport, {ends}, on a 100G handoff"
+
+
+def _topology(w,pop_sites,points,spans,launch):
+    ns,code = w.recipe["namespace"],operator_code(w.recipe["name"])
+    metro = {p["key"]:p["metro"] for p in w.recipe["pops"]}
+    launched = w.reservations["provider-pop-launch"]
+    carriers = span_carriers(spans,metro)
+    graph,leased = [],{}
     for site,routers in pop_sites.values(): graph.append((f"pair/{site.id}",routers[0],routers[1],100000))
-    def span(key,a,b,ordinal):
-        sites = [pop_sites[w.obj(d)["refs"]["site"].removeprefix("site/pop-")][0] for d in (a,b)]
-        ports = [sites[i].interface(d,f"et-0/0/{1+w.reserve(f'provider-transport-ports/{d}',key,2)}") for i,d in enumerate((a,b))]
-        side = "ab"[ordinal%2]
-        _circuit(w,key,f"provider/transport-{side}",f"provider-account/provider/transport-{side}","backbone",sites[0],ports[0],sites[1],ports[1],100000)
-        _routed_pair(w,key,*ports); graph.append((key,a,b,100000))
-    for i in range(3):
-        a = pop_sites[order[i]["key"]][1][1]; b = pop_sites[order[(i+1)%3]["key"]][1][0]
-        span(f"circuit/backbone/seed-{i+1:02}",a,b,i)
-    for index,pop in enumerate(order[3:],3):
-        key = pop["key"]; parents=[]
-        for lane,side in enumerate(("a","b")):
-            scope = f"provider-parents/{key}/{side}"
-            existing = w.reservations.get(scope,{})
-            if existing:
-                if len(existing)!=1 or next(iter(existing.values())) != 0:
-                    raise DesignError(f"{scope}: malformed permanent transport parent")
-                parent = next(iter(existing))
-            else:
-                candidates = [d for p in order[:index] for d in pop_sites[p["key"]][1]
-                    if len(w.reservations.get(f"provider-transport-ports/{d}",{})) < 2 and
-                    all(w.obj(d)["refs"]["site"] != w.obj(other)["refs"]["site"] for other in parents)]
-                if not candidates: raise DesignError(f"PoP {key}: no two distinct old PoPs have free transport positions")
-                parent = min(candidates,key=lambda d:(
-                    places.METROS.index(next(row for row in places.METROS if row[0].lower()==w.provider_metros[w.obj(d)['refs']['site'].removeprefix('site/')])) !=
-                    places.METROS.index(next(row for row in places.METROS if row[0].lower()==pop['metro'])),
-                    w.choose(f"{key}/{side}/{d}","transport-parent",range(2**32)),d))
-                w.reserve(scope,parent,1)
-            prior_devices = {d for p in order[:index] for d in pop_sites[p["key"]][1]}
-            if parent not in prior_devices or any(w.obj(parent)["refs"]["site"] == w.obj(d)["refs"]["site"] for d in parents):
-                raise DesignError(f"{scope}: parent must be a distinct earlier PoP")
-            parents.append(parent)
-            span(f"circuit/backbone/{key}/{side}",pop_sites[key][1][lane],parent,3+2*(index-3)+lane)
-    return graph
+    for ordinal,(key,a,b) in enumerate(spans):
+        devices = [f"device/pop-{pop}/pe-{side}" for pop,side in (a,b)]
+        sites = [pop_sites[pop][0] for pop,_ in (a,b)]
+        ports = [sites[i].interface(d,f"et-0/0/{1+w.reserve(f'provider-transport-ports/{d}',key,2)}") for i,d in enumerate(devices)]
+        later = max(a[0],b[0],key=launched.get)
+        installed = launch[later]-timedelta(days=w.choose(key,"span-install",range(10,26)))
+        distance = round(km(points[a[0]],points[b[0]])*ROUTE_FACTOR,1)
+        ends = f"{sites[0].display} to {sites[1].display}"
+        carrier = carriers[key]
+        if carrier == "operator":
+            _circuit(w,key,"provider/operator","provider-account/operator/fiber","dark-fiber",sites[0],ports[0],sites[1],ports[1],None,handoff_mbps=100000,
+                     cid=f"{code}-DF-{ordinal+1:04d}",installed=installed,description=f"Owned dark fiber, {ends}, lit at 100G",distance_km=distance)
+            rate = 100000
+        else:
+            rate = TRANSPORT_TIERS_MBPS[key in w.reservations.get("provider-span-upgrades",{})]
+            _circuit(w,key,f"provider/{carrier}",f"provider-account/provider/{carrier}","backbone",sites[0],ports[0],sites[1],ports[1],rate,
+                     handoff_mbps=100000,cid=CARRIERS[carrier][2].format(carrier_number(ns,carrier,ordinal)),installed=installed,
+                     description=_transport_text(rate,ends),distance_km=distance)
+            leased[key] = ends
+        _routed_pair(w,key,*ports); graph.append((key,*devices,rate))
+    return graph,leased
+
+
+def _size_transport(w,graph,leased,attachments):
+    """Commit each leased span at 10G unless declared flows need the 100G port.
+
+    A span once upgraded stays upgraded (provider-span-upgrades ledger), so
+    growth can raise a commitment but never lowers one.
+    """
+    probe = [(edge,a,b,TRANSPORT_TIERS_MBPS[-1] if edge in leased else rate) for edge,a,b,rate in graph]
+    worst = _capacity(probe,attachments,w.recipe["reserve_fraction"])["worst_load_mbps"]
+    usable = 1-Decimal(str(w.recipe["reserve_fraction"]))
+    for key in leased:
+        if Decimal(worst.get(key,0)) > TRANSPORT_TIERS_MBPS[0]*usable:
+            w.reserve("provider-span-upgrades",key,256)
+    upgrades = w.reservations.get("provider-span-upgrades",{})
+    for key,ends in leased.items():
+        rate = TRANSPORT_TIERS_MBPS[key in upgrades]
+        w.obj(key)["attrs"].update(commit_rate=rate*1000,description=_transport_text(rate,ends))
+    return [(edge,a,b,TRANSPORT_TIERS_MBPS[edge in upgrades] if edge in leased else rate) for edge,a,b,rate in graph]
+
+
+def _onboarding(w,ready):
+    """Customer onboarding dates in permanent slot order; the hub circuit comes first."""
+    as_of = date.fromisoformat(w.recipe["as_of"])
+    slots = w.reservations["provider-customers"]
+    dates,previous = {},None
+    for c in sorted(w.recipe["customers"],key=lambda c:slots[c["key"]]):
+        day = ready[c["hub_pop"]]+timedelta(days=30)
+        # ponytail: the first two dozen customers arrive months apart, later ones
+        # days apart, and every date clamps a week before as_of, so a very long
+        # list onboards its tail on one day; scale the gap by count if that matters.
+        if previous is not None:
+            gap = range(60,241) if slots[c["key"]] < 24 else range(3,15)
+            day = max(day,previous+timedelta(days=w.choose(c["key"],"onboarding-gap",gap)))
+        dates[c["key"]] = previous = min(day,as_of-timedelta(days=7))
+    return dates
+
+
+def _premises_places(w,entries,points):
+    """Spread premises across the metro, 2-25 km from their serving PoP.
+
+    Each premises takes an authored places anchor chosen by a hash of its site
+    id; a customer reuses an anchor only once every eligible one is taken, in
+    allocation-slot order, so growth never moves or renames an existing site.
+    Returns sid -> (display name, latitude, longitude, anchor).
+    """
+    overrides,result = w.recipe.get("site_names",{}),{}
+    if w.recipe.get("naming","authored") != "authored":
+        return result
+    for c in w.recipe["customers"]:
+        mine = sorted((w.allocations[sid],sid,pop) for sid,customer,pop,_ in entries if customer["key"] == c["key"])
+        taken = Counter()
+        for _,sid,pop in mine:
+            if sid in overrides:
+                continue
+            city = next(row[0] for row in places.METROS if row[0].lower() == w.provider_metros[sid])
+            jitter = sha256(f"geo/{sid}".encode()).digest()
+            point = lambda a:(round(a[2]+(jitter[0]/255-0.5)*2*places.JITTER_LAT,6),
+                              round(a[3]+(jitter[1]/255-0.5)*2*places.JITTER_LON,6))
+            eligible = [a for a in places.ANCHORS[city] if len(a) == 4 and PREMISES_KM[0] <= km(points[pop],point(a)) <= PREMISES_KM[1]]
+            if not eligible:
+                raise DesignError(f"{sid}: no authored {city} anchor lies {PREMISES_KM[0]}-{PREMISES_KM[1]} km from its PoP")
+            anchor = min(eligible,key=lambda a:(taken[a[0][0]],_hash("premises",sid,a[0][0])))
+            taken[anchor[0][0]] += 1
+            label = anchor[0][0] + (f" {taken[anchor[0][0]]}" if taken[anchor[0][0]] > 1 else "")
+            result[sid] = (f"{titleize(c['key'])} {label}",*point(anchor),anchor)
+    return result
 
 
 def _service_port(w,pop_sites,pop,target):
@@ -481,9 +772,17 @@ def _service_port(w,pop_sites,pop,target):
     return site,site.interface(routers[slot%2],f"xe-0/1/{slot//2}")
 
 
-def _customer(w,sid,c,pop,number,pop_sites):
+def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     key=c["key"]; tenant=f"tenant/cust-{key}"; vrf=f"vrf/customer/{key}"
     site = Site(w,sid,"customer","Private-L3 customer premises and wired office",tenant=tenant,routing_domain=vrf)
+    if sid in placed:
+        # Named and plotted where the premises is, not after its serving PoP.
+        name,latitude,longitude,anchor = placed[sid]
+        node = w.obj(site.key)
+        lines = node["attrs"]["physical_address"].split("\n")
+        lines[:2] = [places.street_address(sid,anchor,latitude,longitude),f"{anchor[1]}, {lines[1].rsplit(', ',1)[-1]}"]
+        node["attrs"].update(name=name,latitude=latitude,longitude=longitude,physical_address="\n".join(lines))
+    w.obj(site.key)["meta"]["in_service"] = installed.isoformat()
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     _site_network(site,"management",26,0,10); _site_network(site,"clients",25,128,20)
@@ -514,7 +813,8 @@ def _customer(w,sid,c,pop,number,pop_sites):
     usable = 1-Decimal(str(w.recipe["reserve_fraction"]))
     rate = c["hub_commit_mbps"] if hub else next(tier for tier in w.recipe["wan_tiers_mbps"] if tier*usable>=c["site_peak_mbps"])
     port=site.interface(edge,"wan1"); circuit=f"circuit/customer/{sid}"
-    _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,pe_port,rate,tenant,handoff_mbps=1000)
+    _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,pe_port,rate,tenant,handoff_mbps=1000,
+             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",installed=installed)
     _routed_pair(w,circuit,port,pe_port,vrf,tenant)
     vi=w.add("interface",f"{edge}/if/PrivateL3",dict(name="PrivateL3",type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
              dict(device=edge,parent=port,vrf=vrf))
@@ -588,12 +888,24 @@ def _generate(recipe,previous=None):
         hardware_aliases={"provider-edge","core","leaf","edge","server","access","pdu","console-server","endpoint","patch-panel","wall-outlet"})
     _registry(w)
     pop_sites={p["key"]:_pop(w,p) for p in recipe["pops"]}
-    graph=_topology(w,pop_sites)
+    points=_points(w)
+    spans=_plan_spans(w,points)
+    launch=_launch(w,spans)
+    graph,leased=_topology(w,pop_sites,points,spans,launch)
+    # A PoP serves customers from its launch, once its first span is in service.
+    first_span={}
+    for key,a,b in spans:
+        day=date.fromisoformat(w.obj(key)["attrs"]["install_date"])
+        for pop in (a[0],b[0]): first_span[pop]=min(day,first_span.get(pop,day))
+    ready={pop:max(day,first_span[pop]) for pop,day in launch.items()}
+    for pop,day in ready.items(): w.obj(f"site/pop-{pop}")["meta"]["in_service"]=day.isoformat()
     ordered=sorted(recipe["pops"],key=lambda p:order[p["key"]])
+    ns,code=recipe["namespace"],operator_code(recipe["name"])
     for index,side in enumerate(("a","b")):
-        site,routers=pop_sites[ordered[index]["key"]]; port=site.interface(routers[index],"xe-0/1/7")
-        circuit=f"circuit/transit/{side}"
-        _circuit(w,circuit,f"provider/transit-{side}",f"provider-account/provider/transit-{side}","transit",site,port,f"provider-network/transit/{side}",None,10000)
+        pop=ordered[index]["key"]; site,routers=pop_sites[pop]; port=site.interface(routers[index],"xe-0/1/7")
+        circuit=f"circuit/transit/{side}"; label=f"transit-{side}"
+        _circuit(w,circuit,f"provider/{label}",f"provider-account/provider/{label}","transit",site,port,f"provider-network/transit/{side}",None,10000,
+                 cid=CARRIERS[label][2].format(carrier_number(ns,label,0)),installed=launch[pop]-timedelta(days=w.choose(circuit,"transit-install",range(5,21))))
         net=_link_prefix(w,circuit,"vrf/provider","tenant"); _ip(w,port,net,0,"vrf/provider","tenant")
     for side in ("a","b"):
         _service_port(w,pop_sites,recipe[f"noc_pop_{side}"],f"noc/{side}")
@@ -603,13 +915,24 @@ def _generate(recipe,previous=None):
         if ordinal != 1: raise DesignError("Provider NOC has exactly one purchased dual handoff; rebaseline a reviewed larger edge")
         pop,peer=_service_port(w,pop_sites,recipe[f"noc_pop_{side}"],f"noc/{side}")
         port=site.interface(edge,"wan1"); circuit=f"circuit/noc/{side}"
-        _circuit(w,circuit,"provider/operator","provider-account/operator/noc","access",site,port,pop,peer,1000)
+        installed=ready[recipe[f"noc_pop_{side}"]]+timedelta(days=w.choose(circuit,"noc-install",range(5,31)))
+        _circuit(w,circuit,"provider/operator","provider-account/operator/noc","access",site,port,pop,peer,1000,
+                 cid=f"{code}-NOC-{'ab'.index(side)+1:04d}",installed=installed)
         _routed_pair(w,circuit,port,peer)
     datacenter.build(dc,workloads=workloads(recipe),wan_peak_mbps=recipe["noc_peak_mbps"],wan_attachment=noc,include_equipment=False,
         assumptions=[CAPACITY_SCOPE,"NOC service groups are authored: identity/provisioning per128 customer premises, DNS/monitoring per16 PoPs, minimum one group each; every group has two rack-separated replicas. These are synthetic inventory budgets, not measured throughput."])
-    attachments=[_customer(w,sid,c,pop,n,pop_sites) for sid,c,pop,n in entries]
+    w.obj(dc.key)["meta"]["in_service"]=min(w.obj(f"circuit/noc/{s}")["attrs"]["install_date"] for s in "ab")
+    onboarded=_onboarding(w,ready)
+    as_of=date.fromisoformat(recipe["as_of"])
+    def installed(sid,c,pop,n):
+        if pop==c["hub_pop"] and n==1: return onboarded[c["key"]]
+        day=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=w.choose(sid,"premises-install",range(7,366)))
+        return min(day,as_of-timedelta(days=1))
+    placed=_premises_places(w,entries,points)
+    attachments=[_customer(w,sid,c,pop,n,pop_sites,placed,installed(sid,c,pop,n)) for sid,c,pop,n in entries]
+    graph=_size_transport(w,graph,leased,attachments)
     dc.contract["provider"]=dict(pop_count=len(pop_sites),customer_count=len(recipe["customers"]),customer_premises=len(entries),
-        transport_spans=len(recipe["pops"])*2-3,capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
+        transport_spans=len(spans),capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
         management_mode="in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
     equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w); operations.supporting_records(w)
     bgp.enrich(w)

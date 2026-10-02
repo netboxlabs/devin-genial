@@ -15,6 +15,9 @@ _DOCUMENTATION = (IPv6Network("2001:db8::/32"), IPv6Network("3fff::/20"))
 # These finite ceilings exceed the link/loopback count possible within the
 # supported two-million-object budget, and exclude reserved high anycast IIDs.
 _INFRA_CAPACITY = 1_000_000
+# Provider /31 ledgers: private access/management links, then the public
+# PoP-pair, inter-PoP span and transit links.
+PROVIDER_LINK_SCOPES = ("provider-link-prefixes", "provider-pair-links", "provider-span-links", "provider-transit-links")
 
 
 def resolve_pool(value):
@@ -60,7 +63,8 @@ created on a spare interface or an unmodeled far end of a circuit.
     sites = {obj["key"]: obj for obj in by_kind["site"]}
     provider = world.recipe["profile"] == "provider-backbone"
     bank = world.recipe["profile"] == "regional-bank"
-    routed_prefixes = {f"prefix/link/{key}" for key in world.reservations.get("provider-link-prefixes", {})} if provider else set()
+    routed_prefixes = {f"prefix/link/{key}" for scope in PROVIDER_LINK_SCOPES
+                       for key in world.reservations.get(scope, {})} if provider else set()
     loop_prefixes = {f"prefix/loopback/{key}" for key in world.reservations.get("provider-loopbacks", {})} if provider else set()
     radio_ports = {obj["refs"][side] for obj in by_kind["wireless_link"]
                    for side in ("interface_a", "interface_b")}
@@ -149,11 +153,14 @@ created on a spare interface or an unmodeled far end of a circuit.
         site_networks[site] = int(pool.network_address) + (slot << 80)
     infrastructure = int(pool.network_address) + (site_capacity << 80)
     namespace = world.recipe["namespace"]
-    world.add("rir", "ipv6/rir", {
-        "name": "IPv6 allocations", "slug": f"{namespace}-ipv6-docs",
-        "is_private": False, "description": "Global IPv6 address allocations"})
+    # The provider already holds its public space under its ARIN registry.
+    registry = "rir/arin" if provider else "ipv6/rir"
+    if not provider:
+        world.add("rir", "ipv6/rir", {
+            "name": "IPv6 allocations", "slug": f"{namespace}-ipv6-docs",
+            "is_private": False, "description": "Global IPv6 address allocations"})
     world.add("aggregate", "ipv6/aggregate", {
-        "prefix": str(pool), "description": "IPv6 address allocation"}, {"rir": "ipv6/rir"})
+        "prefix": str(pool), "description": "IPv6 address allocation"}, {"rir": registry})
 
     containers, networks = {}, {}
     for key, (obj, _, policy) in segments.items():

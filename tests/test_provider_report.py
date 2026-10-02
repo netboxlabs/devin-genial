@@ -42,13 +42,13 @@ class ProviderReportTests(unittest.TestCase):
         self.assertNotIn("Provider interiors are abstracted.", text)
         self.assertNotIn("WAN capacity by provider and site", text)
         section = text.split("## Provider service walkthrough", 1)[1].split("## Sites and demand", 1)[0]
-        self.assertIn("| lakes-fiber-private-cargo | Cargo | 3 |", section)
+        self.assertIn("| GLF-VPN-0001 | Cargo | 3 |", section)
         self.assertIn("| Chicago West Exchange | 2 | 2 | 2 | 12 |", section)
         changed = deepcopy(self.plan)
         changed["contracts"] = []
         changed["objects"] = [o for o in changed["objects"] if o["key"] != "virtual-circuit-termination/ce-cargo-detroit-south-002"]
         section = markdown(changed).split("## Provider service walkthrough", 1)[1].split("## Sites and demand", 1)[0]
-        self.assertIn("| lakes-fiber-private-cargo | Cargo | 2 |", section)
+        self.assertIn("| GLF-VPN-0001 | Cargo | 2 |", section)
 
     def test_both_physical_handoffs_must_be_connected(self):
         text = markdown(self.plan)
@@ -66,7 +66,7 @@ class ProviderReportTests(unittest.TestCase):
 
     def test_large_circuit_inventory_caps_actual_attachment_rows(self):
         recipe = deepcopy(self.plan["recipe"])
-        recipe["pops"] += [{"key": f"z{n:02}", "metro": "milwaukee"} for n in range(17)]
+        recipe["pops"] += [{"key": f"z{n:02}", "metro": "milwaukee"} for n in range(30)]
         text = markdown(generate(recipe))
         procurement = text.split("## Circuit procurement", 1)[1].split("## Active IP plan", 1)[0]
         rows = [line for line in procurement.splitlines() if line.startswith("| ")]
