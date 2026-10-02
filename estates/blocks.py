@@ -111,9 +111,8 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
         # serial demand, so both Opengear sizes belong to any estate that has one.
         selected.add("console-server-48")
     if selected is not None and "provider-edge" in selected:
-        # Provider customer premises take the small-room 120 V PDU; PoP cages
-        # carry a fibre enclosure per PE cabinet.
-        selected |= {"pdu-120", "fibre-panel"}
+        # Provider customer premises take the small-room 120 V PDU.
+        selected.add("pdu-120")
     manufacturers = set()
     for alias, spec in w.catalog["models"].items():
         if selected is not None and alias not in selected:

@@ -525,21 +525,21 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     cross_connects, panel_positions = Counter(), Counter()
 
     def cross_connect(term, port, site, provider):
-        """Carrier handoffs into a PoP record the hotel cross-connect; fibre ones the PE cabinet enclosure position."""
+        """Carrier handoffs into a PoP record the hotel cross-connect; fibre ones the hotel's meet-me-room panel position."""
         carrier_pop = port is not None and provider != "provider/operator" and str(site).startswith("site/pop-")
         xc, pp = attrs(term).get("xconnect_id"), attrs(term).get("pp_info")
         device = refs(port).get("device") if port else None
-        panel = f"{device[:-4]}odf{device[-2:]}" if device and re.fullmatch(r"device/pop-[^/]+/pe-[ab]", device) else None
-        fibre = panel is not None and attrs(port).get("type") != "1000base-t"
-        match = re.fullmatch(re.escape(str(attrs(panel).get("name"))) + r", panel ([1-4]), port ([1-9]|1[0-2])", str(pp)) if fibre else None
+        fibre = (bool(device) and re.fullmatch(r"device/pop-[^/]+/pe-[ab]", device) is not None
+                 and attrs(port).get("type") != "1000base-t")
+        match = re.fullmatch(r"Meet-me room panel (MMR-\d{2}), port ([1-9]|[1-3]\d|4[0-8])", str(pp)) if fibre else None
         if carrier_pop:
             cross_connects[xc] += 1
             if match:
-                panel_positions[(panel, match[1], match[2])] += 1
+                panel_positions[(site, match[1], match[2])] += 1
         if ((xc is not None) != carrier_pop or (carrier_pop and not re.fullmatch(r"XC-[1-9]\d{6}", str(xc))) or
                 (pp is not None) != (carrier_pop and fibre) or (pp is not None and not match)):
             report("provider-cross-connect", term, "A carrier's handoff into a PoP records its carrier-hotel cross-connect, "
-                   "and a fibre handoff its position on the PE cabinet's own fibre enclosure; no other termination carries either.")
+                   "and a fibre handoff its position on the hotel's meet-me-room panel; no other termination carries either.")
 
     def circuit(key, port_a, port_z, site_a, site_z, provider, speed, commitment, tenant="tenant", account=None):
         terms = child("circuit", key, "circuit_termination")
@@ -988,7 +988,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-cross-connect", "plan", f"Cross-connect {value} is recorded on {count} terminations.")
     for (panel, bay, position), count in panel_positions.items():
         if count > 1:
-            report("provider-cross-connect", panel, f"Panel {bay} port {position} carries {count} handoffs.")
+            report("provider-cross-connect", panel, f"Meet-me room panel {bay} port {position} carries {count} handoffs.")
 
     base = recipe["asn_base"]
     public_asns = ("asn/operator", "asn/transit-a", "asn/transit-b")

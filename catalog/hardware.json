@@ -414,12 +414,6 @@
       "sha256": "7e46d35cada5721c38d95f47e090002c74ced287e03e56fd357f6f839a4584ff",
       "license": "CC0-1.0"
     },
-    "fibre-panel-chassis": {
-      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/FCE1U.yaml",
-      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
-      "sha256": "9516247769b5794e27e4cd5a27b255c8ecadcb95c46f59cdcc467601274514d4",
-      "license": "CC0-1.0"
-    },
     "juniper-ex-sfp-10ge-sr": {
       "url": "https://apps.juniper.net/hct/model/EX-SFP-10GE-SR",
       "checked": "2026-10-02",
@@ -2649,24 +2643,6 @@
         "patch-panel-chassis"
       ],
       "description": "Verified Panduit DP24688TGY: 24 front 8P8C jacks mapped one-to-one to 110 punchdown rear terminations; passive.",
-      "serial_format": "{yy}@######@"
-    },
-    "fibre-panel": {
-      "manufacturer": "Panduit",
-      "model": "Opticom Rack Mount Fiber Enclosure, 1 RU, 4 Ports",
-      "slug": "panduit-fce1u",
-      "part_number": "FCE1U",
-      "weight": 17.5,
-      "weight_unit": "lb",
-      "u_height": 1,
-      "is_full_depth": false,
-      "interfaces": [],
-      "power_ports": [],
-      "source_ids": [
-        "fibre-panel-chassis"
-      ],
-      "description": "Verified Panduit FCE1U: 1 RU rack-mount fiber enclosure with four adapter-panel bays; passive, unpowered.",
-      "airflow": "passive",
       "serial_format": "{yy}@######@"
     },
     "pdu": {

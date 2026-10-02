@@ -582,9 +582,11 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
 
 
 # A carrier handoff into a PoP crosses the carrier hotel's meet-me room: the
-# hotel's cross-connect order, and for fibre the position on the PE cabinet's
-# 1U enclosure (four adapter panels of twelve LC duplex ports).
-ODF_POSITIONS, ODF_PANEL_PORTS = 48, 12
+# hotel's cross-connect order, and for fibre the hotel's own meet-me-room
+# patch position (its panel, not ours; NetBox records it as pp_info). The
+# operator models no fibre enclosure of its own: one with no ports or cables
+# would be a prop, and front/rear port mappings need the local plugin bridge.
+MMR_POSITIONS, MMR_PANEL_PORTS = 48 * 99, 48
 
 
 def _cross_connect(w,term,port):
@@ -592,9 +594,11 @@ def _cross_connect(w,term,port):
     result = dict(xconnect_id=f"XC-{1000000+(_hash(w.recipe['namespace'],'xconnect')+7919*slot)%9000000:07d}")
     device = w.obj(port)["refs"]["device"]
     if w.obj(port)["attrs"]["type"] != "1000base-t" and re.fullmatch(r"device/pop-[^/]+/pe-[ab]",device):
-        panel = device[:-4]+"odf"+device[-2:]
-        n = w.reserve(f"provider-odf-positions/{panel}",term,ODF_POSITIONS)
-        result["pp_info"] = f"{w.obj(panel)['attrs']['name']}, panel {n//ODF_PANEL_PORTS+1}, port {n%ODF_PANEL_PORTS+1}"
+        pop = w.obj(device)["refs"]["site"]
+        # The hotel's panel numbering is its own: start each PoP at a stable
+        # position inside it, then take consecutive ports by ledger order.
+        n = _hash(w.recipe["namespace"],pop,"mmr")%(MMR_POSITIONS//2) + w.reserve(f"provider-mmr-positions/{pop}",term,MMR_POSITIONS//2)
+        result["pp_info"] = f"Meet-me room panel MMR-{n//MMR_PANEL_PORTS+1:02d}, port {n%MMR_PANEL_PORTS+1}"
     return result
 
 
@@ -626,8 +630,6 @@ def _pop(w,item):
     for number,side in enumerate(("a","b")):
         device = site.device("provider-edge",f"pe-{side}","provider-edge",rack_domain=number)
         routers.append(device)
-        # One 1U fibre enclosure per PE cabinet terminates its building fibre.
-        site.device("fibre-panel",f"odf-{side}","patch-panel",rack_domain=number)
         for n in range(4):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
         for n in range(8):

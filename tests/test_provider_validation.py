@@ -293,16 +293,17 @@ class ProviderValidationTests(unittest.TestCase):
                 self.strip()
                 self.assertIn("provider-circuit-path", self.codes())
 
-    def test_carrier_handoffs_into_a_pop_record_cross_connect_and_enclosure_position(self):
+    def test_carrier_handoffs_into_a_pop_record_cross_connect_and_meet_me_room_position(self):
         span = next(k for k, o in self.objects.items() if o["kind"] == "circuit" and k.startswith("circuit/backbone/")
                     and o["refs"]["provider"] != "provider/operator")
         term = self.term(span, "A")
         self.assertRegex(term["attrs"]["xconnect_id"], r"^XC-\d{7}$")
-        self.assertRegex(term["attrs"]["pp_info"], r"^chicago-west-odf-[ab], panel [1-4], port \d+$")
+        self.assertRegex(term["attrs"]["pp_info"], r"^Meet-me room panel MMR-\d{2}, port \d+$")
+        self.assertFalse([k for k, o in self.objects.items() if o["kind"] == "device" and k.rsplit("/", 1)[-1].startswith("odf-")])
         customer = self.term(f"circuit/customer/{self.customer}", "Z")
         self.assertNotIn("xconnect_id", customer["attrs"])
         other = self.term(f"circuit/transit/a", "A")
-        cases = ((term, "xconnect_id", None), (term, "pp_info", "odf-9, panel 1, port 1"),
+        cases = ((term, "xconnect_id", None), (term, "pp_info", "chicago-west-odf-a, panel 1, port 1"),
                  (customer, "xconnect_id", "XC-1234567"), (other, "xconnect_id", term["attrs"]["xconnect_id"]))
         for index, (target, field, value) in enumerate(cases):
             with self.subTest(case=index):
