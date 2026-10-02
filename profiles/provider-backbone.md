@@ -79,8 +79,9 @@ from its own recorded assignment outside the operator's aggregates, holding the
 even address. Only the operator's local IP is created. Separate carrier names do not
 establish duct diversity. Per-PoP carrier diversity is not guaranteed: two spans
 can use one carrier. The report counts actual inter-PoP span providers per PoP;
-carrier-wide failure is outside the resilience checks. External-transit journals
-name only the local physical handoff and the unknown remote network boundary.
+carrier-wide failure is outside the resilience checks. Circuit journals cite
+only the change a handover ran under and the carrier desk that confirmed it;
+an external transit's remote interface and owner stay unknown.
 Local cable lengths describe local patches, not
 invented long-distance optical paths or certified transceiver selections.
 The two PoP network racks occupy adjacent positions at (4,4,0) and (5.2,4,0)
@@ -131,7 +132,7 @@ two-post rack, one 120 V / 20 A circuit feeding one 1U 120 V PDU, and no console
 server — since one CE (and, with desks, one switch) has no redundant pair to feed twice.
 
 A PoP is a leased carrier-hotel suite holding the provider's cage (`Suite 317`
-→ `Cage G09`); its two 24U cabinets each carry a PE, a 1U fibre enclosure and,
+→ `Cage G09`); its two 24U cabinets each carry a PE and,
 in the first, the management switch and console server, on 208 V / 20 A A/B
 feeds. PoPs and the NOC carry fictional CLLI-style facility codes
 (`CHCGILCR`, `DTRTMINC`, `LKWDOH01`); customer premises carry per-metro codes.
@@ -229,8 +230,7 @@ that live receipt. Route tables are not executed IGP/BGP convergence; no other
 stack or rewired-snapshot rollback is qualified.
 
 Shared contacts and immutable journals attach support responsibilities and
-dated planning context to the actual estate. Procurement dates describe modeled
-records, never a completed installation or acceptance test. Physical A/Z
-endpoints and provider ownership drive the circuit narrative. See the generated
+dated history to the actual estate: change tickets and carrier contact events,
+never fields the record already shows and never an acceptance-test result. See the generated
 report and coverage artifact for the current output, and the separately saved
 live receipts for target qualification.

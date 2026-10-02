@@ -46,6 +46,7 @@ class HospitalValidationTests(unittest.TestCase):
         self.assertEqual(validate(generate(self.plan["recipe"] | {"patching": "panels"})), [])
         vms = {obj["key"].split("/")[2] for obj in self.plan["objects"] if obj["kind"] == "virtual_machine"}
         self.assertEqual(vms, {"identity", "dns", "clinical-records", "imaging-archive", "monitoring"})
+        view = {o["key"]: o for o in routed_vlan_view(self.plan)["objects"]}
         for key, role, network in (("monitor-medical-a-001", "medical-device", "medical"),
                                     ("nurse-medical-a-001", "workstation", "clinical"),
                                     ("imaging-01", "imaging-device", "imaging"),
@@ -53,7 +54,9 @@ class HospitalValidationTests(unittest.TestCase):
                                     ("admin-001", "workstation", "staff")):
             device = f"device/hospital-central/{key}"
             self.assertEqual(self.objects[device]["refs"]["role"], f"role/{role}")
-            self.assertEqual(self.objects[f"{device}/if/eth0"]["refs"]["untagged_vlan"], f"vlan/hospital-central/{network}")
+            # A host port carries no mode; its segment is its address's prefix VLAN.
+            self.assertNotIn("untagged_vlan", self.objects[f"{device}/if/eth0"]["refs"])
+            self.assertEqual(view[f"{device}/if/eth0"]["refs"]["untagged_vlan"], f"vlan/hospital-central/{network}")
 
     def test_removed_care_endpoints_cannot_hide_behind_missing_explanations(self):
         for label in ("monitor-medical-a-001", "nurse-medical-a-001", "imaging-01", "diagnostic-01"):

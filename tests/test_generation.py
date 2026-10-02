@@ -60,15 +60,8 @@ class GenerationTests(unittest.TestCase):
                         obj["attrs"]["comments"] = re.sub(r"\d{4}-\d{2}-\d{2}", "<authored-date>", obj["attrs"]["comments"])
                         # created is the same seeded event date, at 15:00 UTC.
                         self.assertRegex(obj["attrs"].pop("created"), r"^\d{4}-\d{2}-\d{2}T15:00:00Z$")
-                        if obj["key"].endswith("/equipment-record"):
-                            obj["attrs"]["comments"], count = re.subn(r" serial [0-9A-Z]{8,20} racked in ", " serial <device-serial> racked in ", obj["attrs"]["comments"])
-                            self.assertEqual(count, 1)
-                        if obj["key"].endswith("/optic-replacement-plan"):
-                            obj["attrs"]["comments"], count = re.subn(r" serial [0-9A-Z]{8,20}; ", " serial <optic-serial>; ", obj["attrs"]["comments"])
-                            self.assertEqual(count, 1)
-                        if obj["key"].endswith("/psu-replacement-plan"):
-                            obj["attrs"]["comments"], count = re.subn(r" \(installed serial [0-9A-Z]{8,20}\) ", " (installed serial <module-serial>) ", obj["attrs"]["comments"])
-                            self.assertEqual(count, 1)
+                        # A change ticket is a seeded choice, like a serial.
+                        obj["attrs"]["comments"] = re.sub(r"CHG\d{7}", "<change>", obj["attrs"]["comments"])
                     if "lifecycle_cohort" in obj["meta"]:
                         self.assertIn(obj["meta"].pop("lifecycle_cohort"),
                                       {"legacy-refresh", "established", "new-branch"})

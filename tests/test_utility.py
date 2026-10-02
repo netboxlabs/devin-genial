@@ -443,9 +443,11 @@ class UtilityZoneTests(unittest.TestCase):
     def setUpClass(cls):
         cls.plan = small()
         cls.objects = {o["key"]: o for o in cls.plan["objects"]}
+        # A host or management port's segment is its address's prefix VLAN.
+        cls.view = {o["key"]: o for o in routed_vlan_view(cls.plan)["objects"]}
 
     def carried(self, port):
-        refs = self.objects[port]["refs"]
+        refs = self.view[port]["refs"]
         carried = set(refs.get("tagged_vlans", []))
         if refs.get("untagged_vlan"):
             carried.add(refs["untagged_vlan"])

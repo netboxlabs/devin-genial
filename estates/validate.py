@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 
 from .validate_operations import validate as validate_operations
-from .validate_networking import routed_vlan_view, svi_findings, is_svi
+from .validate_networking import host_port_findings, routed_vlan_view, svi_findings, is_svi
 from .validate_networking import validate as validate_networking
 from .validate_ipv6 import validate as validate_ipv6
 from .validate_poe import analyze as analyze_poe
@@ -102,7 +102,7 @@ def validate(plan):
         # slice; every other check then sees the estate without it.
         from .validate_provider import discovery_lab
         lab, plan = discovery_lab(plan, {"models": _catalog()})
-    lab = lab + svi_findings(plan)
+    lab = lab + svi_findings(plan) + host_port_findings(plan)
     plan = routed_vlan_view(plan)
     # Records carry operational text only; limitations live in the docs and report.
     objects = original.get("objects") if isinstance(original, dict) else None
@@ -699,7 +699,8 @@ def _validate(plan):
         if rel.get("untagged_vlan"):
             # An SVI's VLAN is derived (routed_vlan_view), never a mode field;
             # a raw SVI that names one fails interface-svi-mode instead.
-            if not attrs(interface).get("mode") and not is_svi(objects[interface]):
+            if (not attrs(interface).get("mode") and not is_svi(objects[interface])
+                    and not meta(interface).get("vlan_from_address")):
                 report("vlan-mode", interface, "An untagged VLAN needs explicit interface mode; NetBox clears it when mode is blank.")
             vlans.append(rel["untagged_vlan"])
         if rel.get("tagged_vlans") and attrs(interface).get("mode") not in {"tagged", "tagged-all"}:

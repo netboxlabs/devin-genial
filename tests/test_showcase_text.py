@@ -173,16 +173,17 @@ class ShowcaseText(unittest.TestCase):
                         + self.of(plan, "virtual_machine_type")):
                 self.assertNotRegex(obj["attrs"].get("description", ""), r"; no |not applied|unspecified|Inert|Wiring only")
         notes = [e["attrs"]["comments"] for e in self.of(self.provider, "journal_entry")]
-        self.assertTrue(any("\nOrdered 10 Gbps from " in n for n in notes))
+        # A journal never restates its record: no rate, cid or termination.
+        self.assertFalse([n for n in notes if "bps" in n])
         self.assertEqual({c["attrs"]["comments"].split(" order: ")[0] for c in self.of(self.bank, "circuit")},
                          {"Standard branch", "Data center aggregation", "Retained Birch contract"})
         hook = self.of(self.bank, "webhook")[0]
         self.assertTrue(hook["attrs"]["payload_url"].split("/")[2].endswith(".invalid"))
         self.assertIs(self.of(self.bank, "event_rule")[0]["attrs"]["enabled"], False)
-        # Rewording a stated rate is a journal-facts failure, not a free edit.
-        entry = next(e for e in self.of(self.provider, "journal_entry") if "\nOrdered 10 Gbps from " in e["attrs"]["comments"])
+        # Restating a record's own field is a journal-facts failure, not a free edit.
+        entry = next(e for e in self.of(self.provider, "journal_entry") if "\nAccepted into service" in e["attrs"]["comments"])
         broken = {**self.provider, "objects": [
-            dict(o, attrs={**o["attrs"], "comments": o["attrs"]["comments"].replace("10 Gbps", "10000000 kbps")})
+            dict(o, attrs={**o["attrs"], "comments": o["attrs"]["comments"] + " Handoff: 10 Gbps."})
             if o["key"] == entry["key"] else o for o in self.provider["objects"]]}
         self.assertIn(("operations-journal-facts", entry["key"]),
                       {(f["code"], f["object"]) for f in validate(broken)})

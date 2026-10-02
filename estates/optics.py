@@ -52,6 +52,20 @@ def owned_span_m(objects, endpoint):
     return round(km(*points) * ROUTE_FACTOR * 1000) if len(points) == 2 else 0
 
 
+# Device types an estate keeps after their last device is replaced: the bank's
+# acquired-branch line survives an access refresh (types are never deleted by
+# a refresh). While an estate carries that lineage, the part definitions both
+# it and the access line a refresh installs can take are kept too, so the
+# refresh snapshot neither adds nor deletes a shared module type.
+RETAINED = frozenset({"inherited-access"})
+
+
+def retained_hosts(world):
+    """Host aliases whose part definitions stay whether or not a cage holds one."""
+    if not any(f"hardware/{alias}" in world.objects for alias in RETAINED):
+        return frozenset()
+    return RETAINED | {world.hardware_alias("access")}
+
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
           "25gbase-x-sfp28": ("sfp28", 25000000),
@@ -88,6 +102,33 @@ def enrich(world):
                     raise DesignError(f"Optics catalog has ambiguous selection for {lookup}")
                 selections.setdefault(lookup, []).append(part_id)
         part_bay_types[part_id] = sorted(supported)
+
+    def cage_lookup(key, medium):
+        """(alias, cage name, rate, medium) for an optical interface, else None."""
+        interface = objects.get(key, {})
+        cage = _CAGES.get(interface.get("attrs", {}).get("type")) if interface.get("kind") == "interface" else None
+        if cage is None:
+            return None
+        alias = objects[interface["refs"]["device"]]["refs"]["device_type"].removeprefix("hardware/")
+        return alias, interface["attrs"]["name"], interface["attrs"].get("speed", cage[1]), medium
+
+    # Reach follows the run, not the cage: a single-mode jumper between two
+    # cages in one room, short enough for multimode and with a reviewed
+    # short-reach part on both ends, is OM4 multimode carrying SR/SR4 optics.
+    # Building backbones, carrier handoffs and owned spans keep single-mode;
+    # so does a link whose cage has no reviewed multimode part (FortiGate).
+    # ponytail: direct jumpers only; an LC patch-panel channel stays single-mode
+    # until the passive lane model covers MPO.
+    mmf_reach = min(p["reach_m"] for p in parts.values() if p["medium"] == "mmf")
+    for cable in {id(c): c for c in attached.values()}.values():
+        a, b = cable["refs"]["a"], cable["refs"]["b"]
+        rooms = {objects.get(objects.get(end, {}).get("refs", {}).get("device"), {}).get("refs", {}).get("location")
+                 for end in (a, b)}
+        if (cable["attrs"].get("type") == "smf" and cable["attrs"].get("length_unit") == "m"
+                and cable["attrs"].get("length", mmf_reach + 1) <= mmf_reach
+                and len(rooms) == 1 and None not in rooms
+                and all(selections.get(cage_lookup(end, "mmf")) for end in (a, b))):
+            cable["attrs"]["type"] = "mmf"
     occupied = []
     for interface in objects.values():
         if interface["kind"] != "interface" or interface["key"] not in attached:
@@ -112,19 +153,18 @@ def enrich(world):
                               "; use a supported link design or extend the source-backed catalog")
         occupied.append((interface, device, cable, part_id, cage, span))
 
-    # Keep the available parts catalog across replacement of the final chassis
-    # using a part. Installed modules still follow only occupied cages; shared
-    # type definitions follow the profile's fixed hardware-type library.
+    # Bay-type fit follows the device types the finished estate keeps: those a
+    # device uses, plus RETAINED lineage types (operations._prune keeps the
+    # same set), so a cage form factor no kept type carries is not published.
+    held = {obj["refs"].get("device_type") for obj in objects.values() if obj["kind"] == "device"}
+    library = {alias for alias in models if f"hardware/{alias}" in objects
+               and (f"hardware/{alias}" in held or alias in RETAINED)}
+    installed_parts = {entry[3] for entry in occupied}
+    kept = retained_hosts(world) & library
     for part_id in sorted(key for key, part in parts.items()
-                          if any(f"hardware/{alias}" in objects for alias in part["compatible_interfaces"])):
+                          if key in installed_parts or set(part["compatible_interfaces"]) & kept):
         part = parts[part_id]
-        # Definitions follow the estate's fixed device-type library, never cage
-        # occupancy: the type set is frozen under growth, so shared ModuleType
-        # records stay stable, while a cage form factor no present device type
-        # carries (e.g. a Juniper SFP28 cage in an all-Cisco estate) is not
-        # published at all.
-        part_bays = sorted({bay_type for bay_type, alias in part_bay_types[part_id]
-                            if f"hardware/{alias}" in objects})
+        part_bays = sorted({bay_type for bay_type, alias in part_bay_types[part_id] if alias in library})
         for bay_type in part_bays:
             if bay_type not in objects:
                 manufacturer, factor = bay_types[bay_type]

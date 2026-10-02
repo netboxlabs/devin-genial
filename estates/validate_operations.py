@@ -6,7 +6,7 @@ import math
 import re
 
 from .model import digest, hardware_catalog, serial_date_code
-from .naming import dedicated, rate_kbps, titleize
+from .naming import dedicated, titleize
 
 
 # A CSV export template must be one header line plus exactly one queryset loop,
@@ -24,6 +24,8 @@ _EVENT_TYPES = {"object_created", "object_updated", "object_deleted",
 _MAX_ENDPOINT_HOSTS = 2
 # Restated: the builder's bounded week shift that keeps detachable serials unique.
 SERIAL_SHIFT_WEEKS = 8
+# Restated: one third-party circuit delivery in this many slipped (seeded per circuit).
+SLIP_ONE_IN = 5
 # Restated, not imported: real metro area codes; the 555-0100..0199 block is
 # reserved for fictional use, so no contact can carry a dialable number.
 AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
@@ -164,6 +166,9 @@ def _automation(objects, kinds, ns, fail, solo=False):
                 or any(objects.get(role, {}).get("kind") != "device_role" for role in roles)):
             fail("automation-context", scoped["key"],
                  "The role-scoped context must reference existing device roles.")
+        elif idle := sorted(set(roles) - {obj["refs"].get("role") for obj in listed("device")}):
+            fail("automation-context", scoped["key"],
+                 f"The role-scoped context targets roles no device holds: {', '.join(idle)}.")
         if not isinstance(scoped["attrs"].get("data"), dict) or not scoped["attrs"]["data"]:
             fail("automation-context", scoped["key"], "A config context must carry data.")
 
@@ -250,7 +255,6 @@ def _context(plan, objects, kinds):
     def provider_customer(tenant):
         # A provider's customer desk answers from the customer's own domain.
         return recipe.get("profile") == "provider-backbone" and str(tenant).startswith("tenant/cust-")
-    external_handoffs = set()
     infrastructure_roles = {f"role/{role}" for role in (
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
         "ap", "console-server", "stack", "laboratory", "provider-edge", "customer-edge")}
@@ -357,6 +361,13 @@ def _context(plan, objects, kinds):
     def later(when, floor):
         return max(when, floor) if isinstance(when, str) and isinstance(floor, str) else when
 
+    def change(key, work=""):
+        """The stable change ticket a subject's work cites (restated seeded choice)."""
+        try:
+            return f"CHG{1000000 + int(digest([recipe['seed'], key, 'journal-change' + work, plan['generator_version']]), 16) % 9000000:07d}"
+        except (KeyError, TypeError):
+            return None
+
     def expect_note(key, event, when, facts, kind="info"):
         notes[f"journal/{key}/{event}"] = (key, event, when, tuple(map(str, facts)), kind)
 
@@ -407,12 +418,9 @@ def _context(plan, objects, kinds):
         expect_note(key, "access-plan", scheduled(key, "access-plan", service_day[key], 40, 31) if key in service_day
                     else scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), (contact_name,))
     terms = defaultdict(list)
-    far_terms = defaultdict(list)
     for term in kinds["circuit_termination"]:
         if term["attrs"].get("term_side") == "A":
             terms[term["refs"].get("circuit")].append(term)
-        elif term["attrs"].get("term_side") == "Z":
-            far_terms[term["refs"].get("circuit")].append(term)
     for circuit in kinds["circuit"]:
         key, data, refs = circuit["key"], circuit["attrs"], circuit["refs"]
         provider = refs.get("provider", "")
@@ -443,7 +451,7 @@ def _context(plan, objects, kinds):
             if data.get("status") != "deprovisioning":
                 fail("operations-journal", key, "Only a circuit being withdrawn carries a disconnect date.")
             expect_note(key, "disconnect-order", scheduled(key, "disconnect-order", recipe.get("as_of"), 3, 25),
-                        (data.get("cid"), data.get("termination_date")), "warning")
+                        (change(key, "-disconnect"),), "warning")
         if data.get("status") in {"planned", "provisioning"}:
             if "install_date" in data:
                 fail("operations-journal", key, "A circuit not yet in service has no install date.")
@@ -451,30 +459,15 @@ def _context(plan, objects, kinds):
         if own and "commit_rate" in data:
             buyer = "the NOC" if refs.get("tenant") == "tenant" else attrs(refs.get("tenant")).get("name")
             expect_note(key, "service-order", scheduled(key, "service-order", data.get("install_date"), 30, 31),
-                        (_rate(data.get("commit_rate")), buyer, data.get("cid")))
-        elif "commit_rate" in data or recipe.get("profile") != "provider-backbone":  # owned fiber purchases nothing
-            expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
-                        (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
+                        (buyer, change(key)))
         local = terms[key]
         if len(local) != 1 or objects.get(site_of(local[0]["refs"].get("termination")), {}).get("kind") != "site":
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
-        term = local[0] if local else {"attrs": {}, "refs": {}}
-        if recipe.get("profile") == "provider-backbone":
-            remote = far_terms[key]
-            if len(remote) != 1 or objects.get(site_of(remote[0]["refs"].get("termination")), {}).get("kind") not in {"site", "provider_network"}:
-                fail("operations-journal", key, "Circuit history needs one actual Z-side site or provider-network termination.")
-            far = remote[0] if remote else {"attrs": {}, "refs": {}}
-            external = objects.get(far["refs"].get("termination"), {}).get("kind") == "provider_network"
-            if external:
-                external_handoffs.add(key)
-            facts = (data.get("cid"), attrs(site_of(term["refs"].get("termination"))).get("name"),
-                     attrs(site_of(far["refs"].get("termination"))).get("name"), _rate(term["attrs"].get("port_speed")))
-            expect_note(key, "handoff-plan", data.get("install_date"),
-                        facts + (() if external else (_rate(far["attrs"].get("port_speed")),)) + (data.get("install_date"),))
-        else:
-            expect_note(key, "handoff-plan", data.get("install_date"),
-                        (provider_name, attrs(site_of(term["refs"].get("termination"))).get("name"), _rate(term["attrs"].get("port_speed"))),
-                        "success")
+        expect_note(key, "handover", data.get("install_date"),
+                    (change(key),) + ((provider_name,) if provider != "provider/operator" else ()), "success")
+        if provider != "provider/operator" and int(digest([ns, key, "journal-slip"]), 16) % SLIP_ONE_IN == 0:
+            expect_note(key, "delivery-slip", scheduled(key, "delivery-slip", data.get("install_date"), 5, 16),
+                        (provider_name,), "warning")
     listeners = defaultdict(list)
     for service in kinds["service"]:
         listeners[service["refs"].get("virtual_machine")].append(service)
@@ -505,20 +498,7 @@ def _context(plan, objects, kinds):
                                                 service_day.get(objects.get(refs.get("device"), {}).get("refs", {}).get("site"), "")),
                     (attrs(refs.get("device")).get("name"),), "success")
 
-    equipment_anchors, supplies, interfaces = {}, defaultdict(list), defaultdict(dict)
-    catalog_cages = {}
-    for model in hardware_catalog()["models"].values():
-        catalog_cages[(model["manufacturer"], model["model"])] = next(
-            (p["name"] for p in model["interfaces"]
-             if p["type"] in {"1000base-x-sfp", "10gbase-x-sfpp", "25gbase-x-sfp28",
-                              "100gbase-x-qsfp28"}), None)
-    optical_ports = {c["refs"].get(side) for c in kinds["cable"] if c["attrs"].get("type") in {"smf", "aoc"}
-                     for side in ("a", "b")}
-    for port in kinds["interface"]:
-        interfaces[port["refs"].get("device")][port["attrs"].get("name")] = port
-    for port in kinds["power_port"]:
-        if port["refs"].get("module"):
-            supplies[port["refs"].get("device")].append(port)
+    equipment_anchors = {}
     for device in kinds["device"]:
         refs, data = device["refs"], device["attrs"]
         rack, position = refs.get("rack"), data.get("position")
@@ -532,46 +512,10 @@ def _context(plan, objects, kinds):
         if old is None or (position, device["key"]) < (old["attrs"]["position"], old["key"]):
             equipment_anchors[rack] = device
     for device in equipment_anchors.values():
-        key, data, refs = device["key"], device["attrs"], device["refs"]
-        rack, room, site = (attrs(refs.get(field)).get("name") for field in ("rack", "location", "site"))
-        access = objects.get(refs.get("primary_ip4"), {}).get("refs", {}).get("assigned_object")
-        if objects.get(access, {}).get("refs", {}).get("device") != key:
-            fail("operations-journal-facts", key, "Installation history must name the device's own primary inventory interface.")
-        site = refs.get("site")
-        installed = installed_on.get(key)
-        expect_note(key, "equipment-record", installed,
-                    (attrs(refs.get("device_type")).get("model"), data.get("serial"),
-                     room, rack, data.get("position"), attrs(access).get("name")), "success")
-        if supplies[key]:
-            port = min(supplies[key], key=lambda obj: obj["key"])
-            module = objects.get(port["refs"].get("module"), {})
-            module_refs = module.get("refs", {})
-            bay = objects.get(module_refs.get("module_bay"), {})
-            if module.get("kind") != "module" or module_refs.get("device") != key or bay.get("refs", {}).get("device") != key:
-                fail("operations-journal-facts", key, "Replacement planning must follow the installed supply through its own module and bay.")
-            expect_note(key, "psu-replacement-plan", later(scheduled(key, "psu-replacement-plan", recipe.get("as_of"), 1, 19), installed),
-                        (attrs(module_refs.get("module_type")).get("model"), bay.get("attrs", {}).get("name"),
-                         module.get("attrs", {}).get("serial")), "warning")
-        dtype = objects.get(refs.get("device_type"), {})
-        maker = attrs(dtype.get("refs", {}).get("manufacturer")).get("name")
-        cage = catalog_cages.get((maker, dtype.get("attrs", {}).get("model")))
-        port = interfaces[key].get(cage)
-        if port and port["key"] in optical_ports:
-            module = objects.get(port["refs"].get("module"), {})
-            module_refs = module.get("refs", {})
-            bay = objects.get(module_refs.get("module_bay"), {})
-            module_type = objects.get(module_refs.get("module_type"), {})
-            maker = attrs(module_type.get("refs", {}).get("manufacturer")).get("name")
-            if (module.get("kind") != "module" or module_refs.get("device") != key
-                    or bay.get("kind") != "module_bay" or bay.get("refs", {}).get("device") != key
-                    or module_type.get("kind") != "module_type"):
-                fail("operations-journal-facts", key, "Optical planning must follow the fixed cage through its own installed module, bay and type.")
-            assembly = any(part.get("manufacturer") == maker and part.get("model") == module_type.get("attrs", {}).get("model")
-                           and part.get("assembly") for part in hardware_catalog()["optics"]["parts"].values())
-            expect_note(key, "optic-replacement-plan", later(scheduled(key, "optic-replacement-plan", recipe.get("as_of"), 40, 20), installed),
-                        (port["attrs"].get("name"), bay.get("attrs", {}).get("name"),
-                         f"{maker} {module_type.get('attrs', {}).get('model')}", module.get("attrs", {}).get("serial"),
-                         "the whole cable assembly" if assembly else "the transceiver"))
+        key = device["key"]
+        # The visit is booked through the site's own facilities desk.
+        desk = contacts.get(f"contact/{device['refs'].get('site')}", (None,))[0]
+        expect_note(key, "equipment-record", installed_on.get(key), (change(key), desk), "success")
 
     for role, (title, group) in roles.items():
         # The role carries an authored display name with a namespaced slug; the
@@ -637,17 +581,13 @@ def _context(plan, objects, kinds):
     # One short, human operational line per event; the record itself already
     # shows its fields, so a note states only what happened or what to do.
     forms = {
-        "equipment-record": ("Installed", r"([^\n]+) serial ([^\n]+) racked in ([^\n]+), cabinet ([^\n]+) at U([0-9.]+); managed through ([^\n]+)\."),
-        "psu-replacement-plan": ("Keep a spare PSU", r"Confirm a like-for-like ([^\n]+) is on hand for ([^\n]+) \(installed serial ([^\n]+)\) before the next maintenance window\."),
-        "optic-replacement-plan": ("Optic replacement note", r"([^\n]+) \(([^\n]+)\) holds ([^\n]+) serial ([^\n]+); if it fails, swap in a like-for-like part and replace (the whole cable assembly|the transceiver)\."),
+        "equipment-record": ("Installed", r"Racked and cabled under change ([^\n;]+); the visit was booked through ([^\n]+)\."),
         "access-plan": ("Site access", r"Equipment-room visits are booked through ([^\n]+); give two working days' notice and flag any planned power work\."),
-        "service-order": ("Service order", r"Service order for ([^\n]+) from ([^\n]+); ([^\n]+) is the service ID on the order\."),
-        "disconnect-order": ("Disconnect order", r"Disconnect of ([^\n]+) scheduled for ([^\n]+); recover the handoff optics and cabling after that date\."),
-        "capacity-request": ("Order placed", r"Ordered ([^\n]+) from ([^\n]+); quote ([^\n]+) on every call to the carrier\."),
-        "handoff-plan": ("In service", r"([^\n]+) handed the circuit over at ([^\n]+) on a ([^\n]+) port\."),
+        "service-order": ("Service order", r"Ordered by ([^\n;]+); provisioning tracked under change ([^\n.]+)\."),
+        "disconnect-order": ("Disconnect order", r"Disconnect ordered under change ([^\n;]+); recover the handoff optics and cabling once the circuit is withdrawn\."),
+        "delivery-slip": ("Delivery slipped", r"([^\n;]+) missed the committed handover date; escalated to its support desk\."),
+        "handover": ("Handed over", r"Accepted into service under change ([^\n.]+)\.(?: ([^\n]+) support desk confirmed the handover and closed its ticket\.)?"),
         "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\.")}
-    if recipe.get("profile") == "provider-backbone":
-        forms["handoff-plan"] = ("Circuit handoff plan", r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ termination: ([^\n]+)\nA handoff: ([^\n]+)\nZ handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nUse both termination records to coordinate the local handoffs\.")
     for obj in kinds["journal_entry"]:
         key = obj["key"]
         if key not in notes:
@@ -655,17 +595,13 @@ def _context(plan, objects, kinds):
             continue
         target, event, when, facts, expected_kind = notes[key]
         title, body = forms[event]
-        if event == "handoff-plan" and target in external_handoffs:
-            body = (r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ network boundary: ([^\n]+)\n"
-                    r"A handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nRemote side: upstream carrier network\.\n"
-                    r"Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary\.")
         comments = obj["attrs"].get("comments", "")
         match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
         if (obj["refs"] != {"assigned_object": target} or obj["attrs"].get("kind") != expected_kind
                 or set(obj["attrs"]) != {"kind", "comments", "created"}):
             fail("operations-journal", key, "Journal must retain its actual subject, its event's kind (completed events success, "
                  "open spares warning, otherwise info) and no account binding.")
-        if not match or match.groups()[1:] != facts:
+        if not match or tuple(g for g in match.groups()[1:] if g is not None) != facts:
             fail("operations-journal-facts", key, "Journal claims must match the subject's actual address, contact, circuit, resource or listener facts.")
         try:
             recorded = date.fromisoformat(match.group(1)) if match else None
@@ -681,10 +617,6 @@ def _context(plan, objects, kinds):
     _automation(objects, kinds, ns, fail, dedicated(recipe))
     return findings
 
-
-def _rate(kbps):
-    """Journals state rates in operator units; a malformed value stays raw and fails the match."""
-    return rate_kbps(kbps) if type(kbps) is int and kbps > 0 else kbps
 
 
 # Restated, not imported from the builder: the tag vocabulary's label scope
@@ -960,7 +892,7 @@ def validate(plan):
         for cable in cables:
             ports = [related(cable, side) for side in ("a", "b")]
             hosts = {port.get("refs", {}).get("device") for port in ports}
-            if (any(port.get("kind") != "interface" for port in ports) or cable["attrs"].get("type") != "smf"
+            if (any(port.get("kind") != "interface" for port in ports) or cable["attrs"].get("type") not in {"smf", "mmf"}
                     or "device/dc-01/compute-01-leaf-a" not in hosts):
                 report("operations-cable-bundle", cable["key"], "Bundle members must remain actual A-side optical host connections.")
     return sorted(findings, key=lambda f: (f["code"], f["object"]))

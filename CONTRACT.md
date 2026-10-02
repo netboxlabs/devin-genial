@@ -419,8 +419,12 @@ name, device and cable termination, gaining only a `module` reference. Its
 manufacturer/model module type. Bay name is `Optic <actual interface name>`;
 position is the same actual interface name (reviewed names fit the native
 30-character limit). These are fixed chassis cages, without a parent module.
-Shared part definitions follow the profile's supported hardware-type library,
-so refreshing the last chassis using a part retains its catalog definition.
+Shared part definitions follow installed modules (`operations._prune` drops
+the rest), except the bank acquisition lineage (`optics.retained_hosts`), whose
+part definitions stay so refreshing the last chassis using a part retains it.
+A direct same-room `smf` jumper within the shortest multimode reach whose two
+cages both take a reviewed multimode part becomes `mmf` before selection, so
+it carries SR/SR4 optics; `optics-reach-class` refuses LR on such a jumper.
 Types have no replicated interface templates. Installed ownership and compatible
 bay types are native references; descriptive type attributes are not validation
 authority. Selection reads actual cage name, configured speed and local media.
@@ -501,9 +505,11 @@ factor or width; no rack groups), per-role VM types, the site service-class
 field (committed-bandwidth band), fixed-geometry IP ranges
 (`networking.address_ranges`), graph-derived tags (`naming.TAGS`), one colour
 palette across coloured taxonomy (`naming.PALETTE`), jacket colours by cable
-medium, one owner on every infrastructure record, unused-taxonomy and region
-pruning, every unused physical port disabled on every role, a planned next
-compute cabinet per gridded room, platform SVI names on modeless SVIs, Junos
+medium, one owner on every infrastructure record, unused-taxonomy, region and
+hardware-type pruning, every unused physical port disabled on every role, a planned next
+compute cabinet per gridded room, platform SVI names on modeless SVIs, access
+mode only on switch-side non-management ports (host and `mgmt_only` ports
+carry none; their segment is their address's prefix VLAN), Junos
 `lo0.0` loopback units, backbone MTU agreed across each link, DNS names on
 primaries, VMs, loopbacks and management ports only, and loopback IP roles. `validate_operations._shared` re-derives each independently; see
 [docs/modeling.md](docs/modeling.md#list-view-hygiene).
@@ -515,21 +521,14 @@ Enterprise, school and hospital purchase through their estate accounts; provider
 service policy retains separate customer/NOC/transit/transport account identities.
 
 Equipment history is bounded to the first eligible infrastructure device per
-actual rack, ordered by permanent U position and then canonical key. Two dated
-records describe initial chassis placement and maintenance coordination. A third
-PSU preparation record follows an installed module through its own power port,
-module bay and type when present on the selected device. Facts exclude mutable
+actual rack, ordered by permanent U position and then canonical key. One dated
+`Installed` record names its seeded change ticket and the site facilities desk
+that booked the visit; it never restates the device's model, serial, cabinet,
+U position or modules. Facts exclude mutable
 upstream wiring, inventory totals and current tenant desk names; the stable site
 facilities desk coordinates access, while current technical assignments remain
 separate. New racks gain records and ordinary growth preserves old subjects and
 comments. These records do not provision spares or execute component replacement.
-An additional optical preparation note is required when the selected device's first
-fixed catalog optical cage is occupied. Selection is independent of occupancy,
-so new occupied ports cannot change the anchor; a formerly empty fixed cage may
-append its first note. Its 40–59-day chronology is disjoint from the existing
-equipment/maintenance/PSU bands. Exact body facts follow the actual module, bay,
-type and facilities contact. The independent checker derives that obligation
-without metadata/contracts and rejects a missing or foreign-device association.
 Shared equipment validation derives configured PSU requirements from the actual
 device type and catalog, requiring the correct manufacturer/SKU, active installed
 module, enabled bay at its declared position, explicit compatible bay type, and
@@ -655,9 +654,10 @@ application execution follows from these inventory checks. Carrier-wide failures
 are excluded, and per-PoP carrier diversity is not guaranteed. Reports count the
 actual providers of inter-PoP spans through their cabled A/Z router attachments;
 multiple spans at a PoP may share one carrier. Different carriers do not establish
-independent underlying infrastructure. Two-site circuit journals derive both real
-termination names and speeds. External-transit journals name the local handoff and
-provider-network boundary, leaving the remote interface and owner unknown;
+independent underlying infrastructure. A circuit's `Handed over` journal cites
+only its seeded change ticket and, for a third-party carrier, that carrier's
+desk confirming the handover; terminations, rates and cid stay on the circuit
+record, and the remote interface and owner of an external transit stay unknown;
 ordinary growth retains the
 purchased CIR and dated record. Reports keep two-site handoffs separate from
 the other profiles' additive opaque-carrier WAN budgets.

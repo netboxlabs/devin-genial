@@ -34,17 +34,63 @@ def svi_findings(plan):
             and is_svi(obj) and (obj["attrs"].get("mode") or obj["refs"].get("untagged_vlan"))]
 
 
-def routed_vlan_view(plan):
-    """The plan as the checks read it: each SVI joined to the VLAN it routes.
+# Restated, not imported from the builder: the device roles that switch
+# frames. Only their non-management ports may carry an access-mode VLAN.
+SWITCH_ROLES = frozenset({"role/access", "role/management", "role/distribution", "role/stack",
+                          "role/leaf", "role/spine"})
 
-    An SVI names no VLAN field in NetBox, so the checks re-derive it from the
-    graph: the VLAN bound to the most specific prefix, in the address's own
-    VRF, that holds one of the SVI's addresses — or, when the address sits in
-    the wrong VRF, the VLAN of the device's own site whose prefix holds it, so
-    the routing-context mismatch is reported against the right segment. The
-    result is a copy carrying that VLAN as ``untagged_vlan`` on those
-    interfaces only; the plan itself is never mutated, and an SVI with no such
-    address gains nothing.
+
+def host_port_findings(plan):
+    """A host's own port, or any dedicated management port, carries no access mode.
+
+    802.1Q access mode is the switchport's claim. A router, server, console
+    server or endpoint port (and a ``mgmt_only`` port on any device) states its
+    segment through its address's prefix instead. A host trunk (``tagged``)
+    and the subinterfaces under one are real 802.1Q tagging and stay, as does
+    an L2 attachment carrying a VLAN translation policy.
+    """
+    objects = plan.get("objects") if isinstance(plan, dict) else None
+    # Generated estates only: a hand-authored legacy graph carries no roles to
+    # tell a switch from a host (the generic dimensional fixtures).
+    generated = isinstance(plan, dict) and ("generator_version" in plan or isinstance(plan.get("recipe"), dict)
+                                            and "profile" in plan["recipe"])
+    index = ({o.get("key"): o for o in objects if isinstance(o, dict) and isinstance(o.get("key"), str)}
+             if isinstance(objects, list) and generated else {})
+
+    def part(obj, name):
+        value = obj.get(name) if isinstance(obj, dict) else None
+        return value if isinstance(value, dict) else {}
+
+    def get(key):
+        return index.get(key) if isinstance(key, str) else None
+    findings = []
+    for obj in index.values():
+        attrs, refs = part(obj, "attrs"), part(obj, "refs")
+        if obj.get("kind") != "interface" or attrs.get("mode") != "access" or is_svi(obj):
+            continue
+        role = part(get(refs.get("device")), "refs").get("role")
+        if ((role not in SWITCH_ROLES or attrs.get("mgmt_only"))
+                and part(get(refs.get("parent")), "attrs").get("mode") != "tagged"
+                and not refs.get("vlan_translation_policy")):
+            findings.append({"code": "interface-host-mode", "object": obj["key"],
+                             "message": "Only a switch's own port carries an access-mode VLAN; a host or management "
+                                        "port states its segment through its address's prefix."})
+    return findings
+
+
+def routed_vlan_view(plan):
+    """The plan as the checks read it: each routed port joined to its VLAN.
+
+    An SVI names no VLAN field in NetBox, and a host or management port
+    carries no 802.1Q mode (host_port_findings), so the checks re-derive the
+    segment from the graph: the VLAN bound to the most specific prefix, in the
+    address's own VRF, that holds one of the interface's addresses — or, when
+    the address sits in the wrong VRF, the VLAN of the device's own site whose
+    prefix holds it, so the routing-context mismatch is reported against the
+    right segment. Any interface without a mode qualifies. The result is a
+    copy carrying that VLAN as ``untagged_vlan`` on those interfaces only,
+    flagged ``meta.vlan_from_address``; the plan itself is never mutated, and
+    an interface with no such address gains nothing.
     """
     objects = plan.get("objects") if isinstance(plan, dict) else None
     if not isinstance(objects, list):
@@ -68,8 +114,8 @@ def routed_vlan_view(plan):
     for obj in index.values():
         refs = part(obj, "refs")
         port = index.get(refs.get("assigned_object")) if obj.get("kind") == "ip_address" else None
-        if (not isinstance(port, dict) or not is_svi(port) or part(port, "refs").get("untagged_vlan")
-                or port.get("key") in routed):
+        if (not isinstance(port, dict) or port.get("kind") != "interface" or part(port, "attrs").get("mode")
+                or part(port, "refs").get("untagged_vlan") or port.get("key") in routed):
             continue
         try:
             host = ipaddress.ip_interface(part(obj, "attrs").get("address")).ip
@@ -82,10 +128,25 @@ def routed_vlan_view(plan):
                    or [(length, vlan) for length, vlan, _, vlan_site in holding if site and vlan_site == site])
         if matches:
             routed[port["key"]] = max(matches)[1]
-    if not routed:
+    # A modeless physical port whose untagged logical unit holds the address
+    # (Junos ``fxp0.0`` under ``fxp0``) sits on that unit's segment.
+    for key in sorted(routed):
+        unit = index[key]
+        parent = index.get(part(unit, "refs").get("parent")) if isinstance(part(unit, "refs").get("parent"), str) else None
+        if (part(unit, "attrs").get("type") == "virtual" and isinstance(parent, dict)
+                and parent.get("kind") == "interface" and parent.get("key") not in routed
+                and not part(parent, "attrs").get("mode") and not part(parent, "refs").get("untagged_vlan")):
+            routed[parent["key"]] = routed[key]
+    # The flag is the view's own: one already present in the input is dropped,
+    # so a plan cannot claim a derived VLAN to escape the mode checks.
+    forged = {o.get("key") for o in index.values() if part(o, "meta").get("vlan_from_address")} - routed.keys()
+    if not routed and not forged:
         return plan
-    return {**plan, "objects": [{**o, "refs": {**o["refs"], "untagged_vlan": routed[o["key"]]}}
-                                if isinstance(o, dict) and o.get("key") in routed else o for o in objects]}
+    return {**plan, "objects": [{**o, "refs": {**o["refs"], "untagged_vlan": routed[o["key"]]},
+                                 "meta": {**part(o, "meta"), "vlan_from_address": True}}
+                                if isinstance(o, dict) and o.get("key") in routed else
+                                {**o, "meta": {k: v for k, v in part(o, "meta").items() if k != "vlan_from_address"}}
+                                if isinstance(o, dict) and o.get("key") in forged else o for o in objects]}
 
 
 def validate(plan, catalog=None):

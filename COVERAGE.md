@@ -12,7 +12,7 @@ Diode, strict readback and rendered UI qualification across all five profiles:
   VLAN/trunk/service context and source-backed PSE/supply budgets. Guest demand
   must fit its local IPv4 segment. Wireless is not forced into a pure fabric or
   provider backbone.
-- Source-backed LR/LX/LR4 modules (LH/ER4 Lite where the operator's own fiber runs past 10 km), reference-server optics and two captive ends
+- Source-backed SR/SR4 multimode modules on in-room jumpers, LR/LX/LR4 single-mode beyond the room (LH/ER4 Lite where the operator's own fiber runs past 10 km), generic server optics and two captive ends
   per actual Arista AOC assembly, preserving existing interface ownership and
   including installed optical power reserves.
 

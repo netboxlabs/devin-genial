@@ -186,8 +186,6 @@ class EstateHygieneTests(unittest.TestCase):
                 checked += 1
             elif note["key"].endswith("/access-plan") and site in first:
                 self.assertLess(when, first[site])  # the site is readied before service
-            elif note["key"].endswith("/psu-replacement-plan") and site in first:
-                self.assertGreaterEqual(when, first[site])
         self.assertTrue(checked)
 
         def shifted(plan, objects):

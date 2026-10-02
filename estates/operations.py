@@ -17,6 +17,7 @@ from .model import DesignError
 from .naming import main_scoped_name
 from .networking import _physical_peers, address_ranges, ipam_roles
 from .operations_context import enrich as operational_context
+from .optics import RETAINED, retained_hosts
 
 # Real enclosure per emitted cabinet height (catalog/README.md, rack type).
 RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
@@ -70,10 +71,13 @@ JUMBO_MTU_DEFAULT = 9000
 TYPE_SPEED = {"1000base-x-sfp": 1000000, "10gbase-x-sfpp": 10000000, "25gbase-x-sfp28": 25000000,
               "40gbase-x-qsfpp": 40000000, "100gbase-x-qsfp28": 100000000}
 # Taxonomy kinds that exist only to be referenced; unreferenced rows are dropped.
-# Device types, platforms and makers stay a fixed library (growth, refresh and
-# acquisition snapshots must not delete one); only passive cabling types, which
-# the recipe's frozen patching choice alone decides, are dropped when unused.
-PRUNABLE = ("device_role", "rack_role", "region")
+# Hardware types follow the installed estate, not the whole catalog: a device
+# type no device uses (a spare console-server size, the generic endpoint in a
+# carrier that inventories no customer desks) or a module type nothing installs
+# is shelf clutter. Pruning runs on the generated plan only; refresh and
+# acquisition snapshots edit a finished plan and keep the types they retire.
+PRUNABLE = ("device_role", "rack_role", "region", "device_type", "module_type",
+            "module_bay_type", "module_type_profile", "manufacturer")
 
 
 def _owner(w, name):
@@ -355,6 +359,7 @@ def finalize(w):
     _service_classes(w)
     _tags(w)
     _svis(w)
+    _host_ports(w)
     _ports(w)
     _addresses(w)
     _cables(w)
@@ -438,6 +443,37 @@ def _svis(w):
     for obj in w.objects.values():
         if (obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual"
                 and not obj["refs"].get("parent") and obj["attrs"].get("mode") == "access"):
+            obj["attrs"].pop("mode")
+            obj["refs"].pop("untagged_vlan", None)
+
+
+def _host_ports(w):
+    """An access VLAN is the switch's claim, not the host's.
+
+    802.1Q ``mode`` describes a switchport. A router's, server's, console
+    server's or endpoint's own port plugged into an access port, and any
+    dedicated management port (``mgmt_only``, even on a switch), is a host
+    interface: it carries no mode, and its segment is the one its address's
+    prefix is bound to (validate_networking.routed_vlan_view). The switch side
+    keeps its access VLAN. A host's tagged trunk (a hypervisor uplink, a
+    firewall or AP trunk) does tag frames and keeps its mode, as do the
+    802.1Q subinterfaces under it; a subinterface whose parent carries no
+    trunk names no tag, so it is a routed unit and loses its access VLAN too.
+    An L2VPN attachment with a VLAN translation policy bridges its VLAN and
+    keeps its mode (NetBox translation is an 802.1Q-mode feature).
+    """
+    from .automation import SWITCH_ROLES  # lazy: automation is imported by operations_context
+    objects = w.objects
+
+    def host(obj):
+        return (objects[obj["refs"]["device"]]["refs"].get("role") not in SWITCH_ROLES
+                or obj["attrs"].get("mgmt_only"))
+
+    ports = [o for o in objects.values() if o["kind"] == "interface" and o["attrs"].get("mode") == "access"]
+    for obj in sorted(ports, key=lambda o: bool(o["refs"].get("parent"))):  # parents first
+        parent = objects.get(obj["refs"].get("parent"), {})
+        if (host(obj) and parent.get("attrs", {}).get("mode") != "tagged"
+                and not obj["refs"].get("vlan_translation_policy")):
             obj["attrs"].pop("mode")
             obj["refs"].pop("untagged_vlan", None)
 
@@ -766,20 +802,21 @@ def _addresses(w):
 
 
 def _prune(w):
-    """Drop taxonomy nothing references, so lists show only what the estate uses."""
-    # A maker stays while anything references it now, so only the maker of a
-    # dropped passive type can fall away with it.
-    kept_makers = {target for obj in w.objects.values() if obj["kind"] != "device_type"
-                   or not w.catalog["models"][obj["key"].removeprefix("hardware/")].get("front_ports")
-                   for value in obj["refs"].values()
-                   for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
+    """Drop taxonomy nothing references, so lists show only what the estate uses.
+
+    Runs to a fixed point: a dropped device or module type can leave its maker,
+    bay type or profile unreferenced in turn. Growth that later installs a
+    pruned type simply creates it again. RETAINED lineage types and the part
+    definitions they can carry stay, so an access refresh deletes no type.
+    """
+    hosts = retained_hosts(w)
+    retained = {f"hardware/{alias}" for alias in RETAINED} | {
+        f"module-type/{part['manufacturer']}/{part['model']}" for part in w.catalog["optics"]["parts"].values()
+        if set(part["compatible_interfaces"]) & hosts}
     while True:
-        referenced = {target for obj in w.objects.values() for value in obj["refs"].values()
-                      for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
-        unused = [key for key, obj in w.objects.items() if key not in referenced and (
-            obj["kind"] in PRUNABLE or obj["kind"] == "device_type"
-            and w.catalog["models"][key.removeprefix("hardware/")].get("front_ports")
-            or obj["kind"] == "manufacturer" and key not in kept_makers)]
+        referenced = retained | {target for obj in w.objects.values() for value in obj["refs"].values()
+                                 for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
+        unused = [key for key, obj in w.objects.items() if key not in referenced and obj["kind"] in PRUNABLE]
         if not unused:
             return
         for key in unused:

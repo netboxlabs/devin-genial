@@ -1,4 +1,4 @@
-"""Stable optical preparation notes and report facts follow actual inventory."""
+"""Optics report facts follow actual inventory; no journal restates an installed optic."""
 
 from copy import deepcopy
 from collections import defaultdict
@@ -11,12 +11,6 @@ from estates.validate_operations import validate
 
 
 PROFILES = ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone")
-NOTE = re.compile(r"(?P<interface>.+) \((?P<bay>.+)\) holds (?P<part>.+) serial (?P<serial>\S+); "
-                  r"if it fails, swap in a like-for-like part and replace (?P<replace>the whole cable assembly|the transceiver)\.")
-
-
-def note_fields(note):
-    return NOTE.fullmatch(note["attrs"]["comments"].split("\n", 1)[1])
 
 
 class OpticsContextTests(unittest.TestCase):
@@ -31,90 +25,25 @@ class OpticsContextTests(unittest.TestCase):
             obj["meta"] = {}
         return plan, {obj["key"]: obj for obj in plan["objects"]}
 
-    def test_all_five_have_bounded_device_optic_notes_without_metadata(self):
+    def test_no_journal_restates_installed_optics(self):
+        # An optic's part, serial, bay and interface are module fields; a note
+        # repeating them added nothing, so none is written or accepted.
         for profile in PROFILES:
             with self.subTest(profile=profile):
                 plan, objects = self.bare(profile)
                 self.assertEqual(validate(plan), [])
-                notes = [o for o in plan["objects"] if o["key"].endswith("/optic-replacement-plan")]
+                serials = {o["attrs"]["serial"] for o in plan["objects"] if o["kind"] == "module"}
+                notes = [o for o in plan["objects"] if o["kind"] == "journal_entry"]
                 self.assertTrue(notes)
-                self.assertLessEqual(len(notes), sum(o["kind"] == "rack" for o in plan["objects"]))
-                for note in notes:
-                    device = note["refs"]["assigned_object"]
-                    self.assertEqual(objects[device]["kind"], "device")
-                    self.assertEqual(note["attrs"]["kind"], "info")
-                    fields = note_fields(note)
-                    self.assertIsNotNone(fields, note["attrs"]["comments"])
-                    port = next(o for o in plan["objects"] if o["kind"] == "interface"
-                                and o["refs"].get("device") == device and o["attrs"]["name"] == fields["interface"])
-                    self.assertEqual(objects[port["refs"]["module"]]["attrs"]["serial"], fields["serial"])
-
-    def test_note_facts_subject_chronology_and_execution_claims_rejected(self):
-        for change in ("part", "serial", "interface", "bay", "replace", "date", "execution", "missing", "subject"):
-            with self.subTest(change=change):
-                plan, objects = self.bare()
-                note = next(o for o in plan["objects"] if o["key"].endswith("/optic-replacement-plan"))
-                if change == "missing":
-                    plan["objects"].remove(note)
-                elif change == "subject":
-                    note["refs"]["assigned_object"] = "site/dc-01"
-                else:
-                    head, body = note["attrs"]["comments"].split("\n", 1)
-                    if change == "date":
-                        head = "2099-01-01" + head[10:]
-                    elif change == "execution":
-                        body += "\nReplacement was executed successfully."
-                    else:
-                        fields = note_fields(note)
-                        start, end = fields.span(change)
-                        wrong = ("the whole cable assembly" if fields["replace"] == "the transceiver"
-                                 else "the transceiver") if change == "replace" else "wrong"
-                        body = body[:start] + wrong + body[end:]
-                    note["attrs"]["comments"] = f"{head}\n{body}"
-                self.assertTrue(any(f["code"].startswith("operations-journal") for f in validate(plan)))
-
-    def test_missing_or_wrong_device_module_cannot_waive_note_obligation(self):
-        for change in ("missing-module", "wrong-device", "wrong-bay", "missing-reference-and-note"):
-            with self.subTest(change=change):
-                plan, objects = self.bare()
-                note = next(o for o in plan["objects"] if o["key"].endswith("/optic-replacement-plan"))
-                device = note["refs"]["assigned_object"]
-                interface_name = note_fields(note)["interface"]
-                port = next(o for o in plan["objects"] if o["kind"] == "interface" and o["refs"].get("device") == device and o["attrs"]["name"] == interface_name)
-                module = objects[port["refs"]["module"]]
-                if change == "missing-module":
-                    plan["objects"].remove(module)
-                elif change == "wrong-device":
-                    module["refs"]["device"] = "device/not-the-serving-device"
-                elif change == "wrong-bay":
-                    objects[module["refs"]["module_bay"]]["refs"]["device"] = "device/not-the-serving-device"
-                else:
-                    port["refs"].pop("module")
-                    plan["objects"].remove(note)
-                self.assertIn("operations-journal-facts", {f["code"] for f in validate(plan)})
-
-    def test_ordinary_growth_preserves_exact_optic_journal_identity(self):
-        for profile in PROFILES:
-            with self.subTest(profile=profile):
-                before = self.plans[profile]
-                recipe = deepcopy(before["recipe"])
-                if profile == "regional-bank":
-                    recipe["branches"]["small"] += 1
-                elif profile == "enterprise-data-center":
-                    recipe["workloads"][0]["groups"] += 2
-                    recipe["workloads"].append({"key": "aaa-new", "groups": 1})
-                elif profile == "school-district":
-                    recipe["schools"][0]["classrooms"] += 2
-                elif profile == "hospital-clinics":
-                    recipe["hospitals"][0]["wards"][0]["beds"] += 2
-                else:
-                    recipe["customers"][0]["sites"][0]["count"] += 1
-                after = generate(recipe, previous=before)
-                self.assertEqual(validate(after), [])
-                objects = {o["key"]: o for o in after["objects"]}
-                for note in before["objects"]:
-                    if note["key"].endswith("/optic-replacement-plan"):
-                        self.assertEqual(note, objects[note["key"]])
+                self.assertFalse([n["key"] for n in notes if any(s in n["attrs"]["comments"] for s in serials)])
+        plan, objects = self.bare()
+        device = next(o for o in plan["objects"] if o["kind"] == "journal_entry"
+                      and o["key"].endswith("/equipment-record"))["refs"]["assigned_object"]
+        plan["objects"].append({"key": f"journal/{device}/optic-replacement-plan", "kind": "journal_entry",
+                                "attrs": {"kind": "info", "comments": "2026-01-01 — Optic replacement note\nSwap it.",
+                                          "created": "2026-01-01T15:00:00Z"},
+                                "refs": {"assigned_object": device}, "meta": {}})
+        self.assertIn("operations-journal", {f["code"] for f in validate(plan)})
 
     def test_report_uses_actual_part_identity_sources_support_and_aoc_assembly(self):
         plan, objects = self.bare()

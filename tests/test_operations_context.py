@@ -8,7 +8,6 @@ import tempfile
 import unittest
 
 from estates.generate import generate
-from estates.naming import rate_kbps
 from estates.diode import export
 from estates.validate_operations import validate
 
@@ -40,73 +39,38 @@ class OperationsContextTests(unittest.TestCase):
             obj.pop("meta")
         return plan, objects
 
-    def test_provider_handoff_notes_distinguish_network_boundaries_and_real_sites(self):
+    def test_provider_handover_notes_cite_only_change_and_carrier_confirmation(self):
         plan, objects = self.provider_plan()
-        terms = {(o["refs"]["circuit"], o["attrs"]["term_side"]): o for o in objects.values()
-                 if o["kind"] == "circuit_termination"}
-        observed = set()
-        for circuit in (o for o in objects.values() if o["kind"] == "circuit"):
+        seen = set()
+        for circuit in (o for o in objects.values() if o["kind"] == "circuit" and "install_date" in o["attrs"]):
             key, data = circuit["key"], circuit["attrs"]
-            a, z = terms[key, "A"], terms[key, "Z"]
-            # A local handoff terminates in its room; the note names that room's site.
-            local, remote = (objects[objects[t["refs"]["termination"]]["refs"].get("site", t["refs"]["termination"])]
-                             if objects[t["refs"]["termination"]]["kind"] == "location" else objects[t["refs"]["termination"]]
-                             for t in (a, z))
-            note = objects[f"journal/{key}/handoff-plan"]
-            header = f"{data['install_date']} — Circuit handoff plan\n"
-            if remote["kind"] == "provider_network":
-                expected = (f"Circuit: {data['cid']}\nA termination: {local['attrs']['name']}\n"
-                    f"Z network boundary: {remote['attrs']['name']}\nA handoff: {rate_kbps(a['attrs']['port_speed'])}\n"
-                    f"Recorded service date: {data['install_date']}\nRemote side: upstream carrier network.\n"
-                    "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
-                self.assertNotIn("Z handoff:", note["attrs"]["comments"])
-            else:
-                # Preserve the pre-correction wording for actual two-site circuits.
-                expected = (f"Circuit: {data['cid']}\nA termination: {local['attrs']['name']}\nZ termination: {remote['attrs']['name']}\n"
-                    f"A handoff: {rate_kbps(a['attrs']['port_speed'])}\nZ handoff: {rate_kbps(z['attrs']['port_speed'])}\n"
-                    f"Recorded service date: {data['install_date']}\nUse both termination records to coordinate the local handoffs.")
-            self.assertEqual(note["attrs"], {"kind": "info", "comments": header + expected,
-                                             "created": f"{data['install_date']}T15:00:00Z"})
-            self.assertEqual(note["refs"], {"assigned_object": key})
-            observed.add(remote["kind"])
-        self.assertEqual(observed, {"site", "provider_network"})
+            note = objects[f"journal/{key}/handover"]
+            body = note["attrs"]["comments"].split("\n", 1)[1]
+            self.assertTrue(note["attrs"]["comments"].startswith(f"{data['install_date']} — Handed over\n"))
+            self.assertEqual(note["attrs"]["kind"], "success")
+            # Nothing the circuit already shows: no cid, rate or termination.
+            self.assertNotIn(data["cid"], body)
+            self.assertNotIn("bps", body)
+            own = circuit["refs"]["provider"] == "provider/operator"
+            self.assertEqual("support desk confirmed the handover" in body, not own)
+            seen.add(own)
+        self.assertEqual(seen, {True, False})
         self.assertEqual(validate(plan), [])
 
-    def test_external_note_cannot_claim_two_local_physical_handoffs(self):
+    def test_handover_change_ticket_and_carrier_are_checked(self):
         plan, objects = self.provider_plan()
-        circuit = objects["circuit/transit/a"]
-        a, z = (objects[f"{circuit['key']}/{side}"] for side in ("A", "Z"))
-        local, remote = (objects[t["refs"]["termination"]] for t in (a, z))
-        data = circuit["attrs"]
-        note = objects[f"journal/{circuit['key']}/handoff-plan"]
-        note["attrs"]["comments"] = (f"{data['install_date']} — Circuit handoff plan\nCircuit: {data['cid']}\n"
-            f"A termination: {local['attrs']['name']}\nZ termination: {remote['attrs']['name']}\n"
-            f"A handoff: {rate_kbps(a['attrs']['port_speed'])}\nZ handoff: {rate_kbps(z['attrs']['port_speed'])}\n"
-            f"Recorded service date: {data['install_date']}\nUse both termination records to coordinate the local handoffs.")
+        note = objects["journal/circuit/transit/a/handover"]
+        ticket = note["attrs"]["comments"].split("change ", 1)[1][:10]
+        for before, after in ((ticket, "CHG0000001"), ("support desk confirmed", "support desk restored"),
+                              ("closed its ticket.", "closed its ticket.\nCircuit: transit-a")):
+            with self.subTest(change=after):
+                plan, objects = self.provider_plan()
+                note = objects["journal/circuit/transit/a/handover"]
+                note["attrs"]["comments"] = note["attrs"]["comments"].replace(before, after)
+                self.assert_code(plan, "operations-journal-facts")
+        plan, objects = self.provider_plan()
+        objects["circuit/transit/a"]["refs"]["provider"] = "provider/operator"
         self.assert_code(plan, "operations-journal-facts")
-
-    def test_external_handoff_facts_and_unknown_remote_scope_are_checked(self):
-        mutations = (("A termination: ", "A termination: wrong "),
-                     ("Z network boundary: ", "Z network boundary: wrong "),
-                     ("A handoff: 10 Gbps", "A handoff: 1 Gbps"),
-                     ("Remote side: upstream carrier network.", "Remote interface and owner: transit-router xe-0/0/0."),
-                     ("the Z record identifies an external network boundary.", "both local physical handoffs are installed."))
-        for before, after in mutations:
-            plan, objects = self.provider_plan()
-            note = objects["journal/circuit/transit/a/handoff-plan"]
-            self.assertIn(before, note["attrs"]["comments"])
-            note["attrs"]["comments"] = note["attrs"]["comments"].replace(before, after)
-            with self.subTest(field=before):
-                self.assert_code(plan, "operations-journal-facts")
-
-    def test_handoff_form_follows_actual_z_kind_not_circuit_name(self):
-        plan, objects = self.provider_plan()
-        span = min(key for key in objects if key.startswith("circuit/backbone/") and objects[key]["kind"] == "circuit")
-        for subject, other in (("circuit/transit/a", span), (span, "circuit/transit/a")):
-            plan, objects = self.provider_plan()
-            objects[f"{subject}/Z"]["refs"]["termination"] = objects[f"{other}/Z"]["refs"]["termination"]
-            with self.subTest(subject=subject):
-                self.assert_code(plan, "operations-journal-facts")
 
     def test_all_profiles_have_bounded_meaningful_history_without_metadata(self):
         for profile in PROFILES:
@@ -115,10 +79,14 @@ class OperationsContextTests(unittest.TestCase):
                 self.assertEqual(validate(plan), [])
                 scopes = {(o["refs"]["cluster"], o["key"].split("/")[2]) for o in plan["objects"] if o["kind"] == "virtual_machine"}
                 journals = [o for o in plan["objects"] if o["kind"] == "journal_entry"]
-                legacy_notes = [o for o in journals if objects[o["refs"]["assigned_object"]]["kind"] != "device"]
+                legacy_notes = [o for o in journals if objects[o["refs"]["assigned_object"]]["kind"] != "device"
+                                and not o["key"].endswith("/delivery-slip")]
+                slips = [o for o in journals if o["key"].endswith("/delivery-slip")]
+                self.assertTrue(all(o["attrs"]["kind"] == "warning" for o in slips))
+                self.assertLess(len(slips), sum(o["kind"] == "circuit" for o in plan["objects"]))
                 # One placement note per workload scope, one access note per
-                # site and an order plus an in-service note per circuit.
-                self.assertEqual(len(legacy_notes), len(scopes) + sum({"site": 1, "circuit": 2}.get(o["kind"], 0) for o in plan["objects"]))
+                # site and one handover per circuit (plus the occasional slip).
+                self.assertEqual(len(legacy_notes), len(scopes) + sum({"site": 1, "circuit": 1}.get(o["kind"], 0) for o in plan["objects"]))
                 for vm in (o for o in plan["objects"] if o["kind"] == "virtual_machine"):
                     self.assertEqual(objects[f"contact-assignment/{vm['key']}/operations"]["attrs"], {"priority": "secondary"})
                 by_target = {}
@@ -202,7 +170,7 @@ class OperationsContextTests(unittest.TestCase):
 
     def test_journal_kind_follows_its_event(self):
         for key, kind in (("journal/site/dc-01/access-plan", "success"),
-                          ("journal/circuit/dc-01/a/1/handoff-plan", "info"),
+                          ("journal/circuit/dc-01/a/1/handover", "info"),
                           ("journal/vm/dc-01/inventory-api/001/resource-plan", "warning")):
             with self.subTest(key=key):
                 plan, objects = self.plan()
@@ -247,9 +215,7 @@ class OperationsContextTests(unittest.TestCase):
 
     def test_journal_facts_and_added_execution_claim_are_rejected(self):
         for key, before, after in (
-                ("journal/circuit/dc-01/a/1/capacity-request", "Ordered 1 Gbps", "Ordered 999.999 Mbps"),
-                ("journal/circuit/dc-01/a/1/capacity-request", "quote summit-dc-01-A-001", "quote summit-dc-02-A-001"),
-                ("journal/circuit/dc-01/a/1/handoff-plan", "on a 1 Gbps port", "on a 10 Gbps port"),
+                ("journal/circuit/dc-01/a/1/handover", "under change CHG", "under change CHG9"),
                 ("journal/vm/dc-01/inventory-api/001/resource-plan", "dc01-inventory-api-h01", "dc01-inventory-api-h02")):
             with self.subTest(key=key):
                 plan, objects = self.plan()

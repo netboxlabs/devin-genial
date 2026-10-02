@@ -376,13 +376,8 @@ def _optics_walkthrough(objects, kinds, cable_peer, passive_peer, cable_at):
         if len(examples) == 10:
             break
     _table(lines, ["Open interface", "Installed part / bay", "Actual local cable path", "Local length / reach", "Device technical contact"], examples)
-    journal_targets = [o["refs"]["assigned_object"] for o in sorted(kinds["journal_entry"], key=lambda o: o["key"])
-                       if o["key"].endswith("/optic-replacement-plan")][:3]
-    if journal_targets:
-        lines += ["Optical preparation journals: " + "; ".join(f"{label(key)} [{key}]" for key in journal_targets) + ". "
-                  "These fixed-cage notes are bounded to the rack equipment anchors.", ""]
     lines += ["These bounded examples follow cable and passive-port references only; they do not traverse a switch or carrier network. "
-              "The authored local SMF envelope is 3–100m. Catalog reach does not establish an optical loss budget, measured receive power, "
+              "The authored local envelope is 3–100 m; an in-room jumper whose two cages both take a reviewed short-reach part runs OM4 multimode with SR/SR4 optics, and single-mode serves backbones, handoffs and owned spans. Catalog reach does not establish an optical loss budget, measured receive power, "
               "FEC configuration or multivendor certification. Indexed-only and reference-host evidence retain their catalog limitations.", "",
               "The installed module owns its interface in NetBox: deleting that module can cascade to the interface. "
               "No module removal, hot-swap or executed replacement is modeled.", ""]
