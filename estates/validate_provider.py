@@ -1170,6 +1170,33 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-premises-geography", f"site/{sid}", "Customer premises lie in their serving PoP's area: within "
                    f"{PREMISES_KM} km and nearer it than any other same-metro PoP that existed when they were ordered.")
 
+    # --- Dual-homed means it: two carriers, or two provider edges ---
+    # Restated: a site's active WAN access comes from two different third-party
+    # carriers (the operator's own circuits are not a carrier, console
+    # broadband is not WAN access), or its active access circuits land on two
+    # different provider edges.
+    carriers, edges = defaultdict(set), defaultdict(set)
+    for key in by_kind["circuit"]:
+        if attrs(key).get("status") != "active" or refs(key).get("type") == "circuit-type/out-of-band":
+            continue
+        ends = {attrs(term).get("term_side"): term for term in child("circuit", key, "circuit_termination")}
+        for side, term in ends.items():
+            place = refs(term).get("termination")
+            site = refs(place).get("site") if kind(place) == "location" else place
+            if kind(site) != "site":
+                continue
+            if refs(key).get("provider") != "provider/operator":
+                carriers[site].add(refs(key).get("provider"))
+            far = refs(peers.get(ends.get("Z" if side == "A" else "A"))).get("device")
+            if refs(key).get("type") == "circuit-type/access" and refs(far).get("role") == "role/provider-edge":
+                edges[site].add(far)
+    dual = {site for site in expected_sites if len(carriers[site]) >= 2 or len(edges[site]) >= 2}
+    tagged = {site for site in expected_sites if "tag/dual-homed" in (refs(site).get("tags") or [])}
+    if tagged != dual and not (not tagged and kind("tag/dual-homed") is None and dual in (set(), expected_sites)):
+        for site in sorted(tagged ^ dual):
+            report("provider-dual-homed", site, "The dual-homed tag marks exactly the sites with active WAN access from two "
+                   "different carriers or into two different provider edges.")
+
     # --- BGP inventory: documentation records, never applied configuration ---
     def ipv4_of(port):
         found = [key for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses]

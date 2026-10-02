@@ -426,16 +426,29 @@ def _context(plan, objects, kinds):
                     or account.get("refs", {}).get("owner") != "owner/operations"):
                 fail("operations-provider-account", key, "WAN procurement must retain its actual provider and procurement lineage; acquisition does not renew the account.")
         provider_name = attrs(provider).get("name", "")
-        # A provider-backbone third-party carrier answers from its own domain.
-        own_domain = recipe.get("profile") == "provider-backbone" and provider != "provider/operator"
-        contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
-                                 None if own_domain else f"carrier-{provider.removeprefix('provider/')}.support")
-        expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        # A provider backbone's own circuits are its products: no carrier desk
+        # escalates them and their order is a service order, never a purchase.
+        own = recipe.get("profile") == "provider-backbone" and provider == "provider/operator"
+        if not own:
+            # A provider-backbone third-party carrier answers from its own domain.
+            contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
+                                     None if recipe.get("profile") == "provider-backbone"
+                                     else f"carrier-{provider.removeprefix('provider/')}.support")
+            expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        if data.get("termination_date") is not None:
+            if data.get("status") != "deprovisioning":
+                fail("operations-journal", key, "Only a circuit being withdrawn carries a disconnect date.")
+            expect_note(key, "disconnect-order", scheduled(key, "disconnect-order", recipe.get("as_of"), 3, 25),
+                        (data.get("cid"), data.get("termination_date")), "warning")
         if data.get("status") in {"planned", "provisioning"}:
             if "install_date" in data:
                 fail("operations-journal", key, "A circuit not yet in service has no install date.")
             continue  # and no dated order or handoff history yet
-        if "commit_rate" in data or recipe.get("profile") != "provider-backbone":  # owned fiber purchases nothing
+        if own and "commit_rate" in data:
+            buyer = "the NOC" if refs.get("tenant") == "tenant" else attrs(refs.get("tenant")).get("name")
+            expect_note(key, "service-order", scheduled(key, "service-order", data.get("install_date"), 30, 31),
+                        (_rate(data.get("commit_rate")), buyer, data.get("cid")))
+        elif "commit_rate" in data or recipe.get("profile") != "provider-backbone":  # owned fiber purchases nothing
             expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
                         (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
         local = terms[key]
@@ -624,6 +637,8 @@ def _context(plan, objects, kinds):
         "psu-replacement-plan": ("Keep a spare PSU", r"Confirm a like-for-like ([^\n]+) is on hand for ([^\n]+) \(installed serial ([^\n]+)\) before the next maintenance window\."),
         "optic-replacement-plan": ("Optic replacement note", r"([^\n]+) \(([^\n]+)\) holds ([^\n]+) serial ([^\n]+); if it fails, swap in a like-for-like part and replace (the whole cable assembly|the transceiver)\."),
         "access-plan": ("Site access", r"Equipment-room visits are booked through ([^\n]+); give two working days' notice and flag any planned power work\."),
+        "service-order": ("Service order", r"Service order for ([^\n]+) from ([^\n]+); ([^\n]+) is the service ID on the order\."),
+        "disconnect-order": ("Disconnect order", r"Disconnect of ([^\n]+) scheduled for ([^\n]+); recover the handoff optics and cabling after that date\."),
         "capacity-request": ("Order placed", r"Ordered ([^\n]+) from ([^\n]+); quote ([^\n]+) on every call to the carrier\."),
         "handoff-plan": ("In service", r"([^\n]+) handed the circuit over at ([^\n]+) on a ([^\n]+) port\."),
         "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\.")}

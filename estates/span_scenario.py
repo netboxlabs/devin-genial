@@ -271,6 +271,9 @@ def _derive(baseline, changed, span_filter, subject):
     contact_rows = dict(customer=contacts(set(affected["premises"] + affected["hubs"] + affected["virtual_circuits"]), "contact-role/operations"),
                         operator=contacts({span} | end_devices, "contact-role/operations"),
                         carrier=contacts({span}, "contact-role/carrier"), facilities=contacts(end_sites, "contact-role/facilities"))
+    # Owned dark fiber is the operator's own: no carrier desk answers for it.
+    if objects[span]["refs"].get("provider") == "provider/operator":
+        _require(not contact_rows.pop("carrier"), "the operator's own fiber has no carrier escalation")
     _require(all(contact_rows.values()), "actual customer, operator, carrier and PoP facilities assignments are required")
     hashes = dict(baseline=digest(baseline), changed=digest(changed))
     checks = dict(baseline_valid=True, changed_expected_findings=True, one_circuit_status_changed=True,
