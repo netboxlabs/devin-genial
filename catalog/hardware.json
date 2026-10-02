@@ -3988,7 +3988,13 @@
       "part_number": "ACX5448-M",
       "u_height": 1,
       "is_full_depth": true,
+      "airflow": "front-to-rear",
       "interfaces": [
+        {
+          "name": "em0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
         {
           "name": "xe-0/0/0",
           "type": "10gbase-x-sfpp"
@@ -4166,9 +4172,28 @@
           "type": "10gbase-x-sfpp"
         },
         {
-          "name": "em0",
-          "type": "1000base-t",
-          "mgmt_only": true
+          "name": "et-0/1/0",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/1/1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/1/2",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/1/3",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/1/4",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "et-0/1/5",
+          "type": "100gbase-x-qsfp28"
         }
       ],
       "uni_ports": [
@@ -4238,14 +4263,1131 @@
       "source_ids": [
         "wpc-stub"
       ],
-      "description": "WP-C STUB: placeholder until WP-A pins this model.",
-      "serial_format": "AX{yyww}######",
-      "airflow": "front-to-rear",
+      "serial_format": "DK{yyww}######",
       "platform": {
         "name": "Juniper Junos",
         "slug": "juniper-junos",
         "svi_format": "irb.{vid}"
-      }
+      },
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS)"
+    },
+    "pop-mgmt": {
+      "manufacturer": "Juniper",
+      "model": "EX3400-24T",
+      "slug": "juniper-ex3400-24t",
+      "part_number": "EX3400-24T",
+      "u_height": 1,
+      "is_full_depth": true,
+      "airflow": "front-to-rear",
+      "interfaces": [
+        {
+          "name": "ge-0/0/0",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/1",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/2",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/3",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/4",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/5",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/6",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/7",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/8",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/9",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/10",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/11",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/12",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/13",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/14",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/15",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/16",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/17",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/18",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/19",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/20",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/21",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/22",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/23",
+          "type": "1000base-t"
+        },
+        {
+          "name": "xe-0/2/0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/2/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/2/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/2/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "et-0/1/0",
+          "type": "juniper-vcp"
+        },
+        {
+          "name": "et-0/1/1",
+          "type": "juniper-vcp"
+        },
+        {
+          "name": "me0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "access_ports": [
+        "ge-0/0/0",
+        "ge-0/0/1",
+        "ge-0/0/2",
+        "ge-0/0/3",
+        "ge-0/0/4",
+        "ge-0/0/5",
+        "ge-0/0/6",
+        "ge-0/0/7",
+        "ge-0/0/8",
+        "ge-0/0/9",
+        "ge-0/0/10",
+        "ge-0/0/11",
+        "ge-0/0/12",
+        "ge-0/0/13",
+        "ge-0/0/14",
+        "ge-0/0/15",
+        "ge-0/0/16",
+        "ge-0/0/17",
+        "ge-0/0/18",
+        "ge-0/0/19",
+        "ge-0/0/20",
+        "ge-0/0/21",
+        "ge-0/0/22",
+        "ge-0/0/23"
+      ],
+      "uplink_ports": [
+        "xe-0/2/0",
+        "xe-0/2/1",
+        "xe-0/2/2",
+        "xe-0/2/3"
+      ],
+      "power_ports": [
+        {
+          "name": "Power Supply 0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "Power Supply 1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "NX{yyww}#####",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
+      },
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "oob-server": {
+      "manufacturer": "Opengear",
+      "model": "OM2216-L",
+      "slug": "opengear-om2216-l",
+      "part_number": "OM2216-L",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "eth1",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "Cellular Interface (LTE)",
+          "type": "lte"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PS1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PS2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "console_server_ports": [
+        {
+          "name": "Port 1",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 2",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 3",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 4",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 5",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 6",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 7",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 8",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 9",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 10",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 11",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 12",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 13",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 14",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 15",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 16",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "2216{yyww}####",
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "pdu-switched": {
+      "manufacturer": "APC",
+      "model": "AP8941",
+      "slug": "apc-ap8941",
+      "part_number": "AP8941",
+      "u_height": 0,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "Network",
+          "type": "100base-tx",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "Power Port 1",
+          "type": "nema-l6-30p"
+        }
+      ],
+      "power_outlets": [
+        {
+          "name": "Power Outlet 1",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 2",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 3",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 4",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 5",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 6",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 7",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 8",
+          "type": "iec-60320-c19"
+        },
+        {
+          "name": "Power Outlet 9",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 10",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 11",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 12",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 13",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 14",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 15",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 16",
+          "type": "iec-60320-c19"
+        },
+        {
+          "name": "Power Outlet 17",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 18",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 19",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 20",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 21",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 22",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 23",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Power Outlet 24",
+          "type": "iec-60320-c19"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "airflow": "passive",
+      "serial_format": "5A{yyww}E#####",
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "osp-panel": {
+      "manufacturer": "CommScope",
+      "model": "FMS-K2BI-L1A1-48-SP",
+      "slug": "commscope-fms-48",
+      "part_number": "FMS-K2BI-L1A1-48-SP",
+      "u_height": 1,
+      "is_full_depth": false,
+      "is_powered": false,
+      "interfaces": [],
+      "power_ports": [],
+      "front_ports": [
+        {
+          "name": "Port 1",
+          "type": "lc"
+        },
+        {
+          "name": "Port 2",
+          "type": "lc"
+        },
+        {
+          "name": "Port 3",
+          "type": "lc"
+        },
+        {
+          "name": "Port 4",
+          "type": "lc"
+        },
+        {
+          "name": "Port 5",
+          "type": "lc"
+        },
+        {
+          "name": "Port 6",
+          "type": "lc"
+        },
+        {
+          "name": "Port 7",
+          "type": "lc"
+        },
+        {
+          "name": "Port 8",
+          "type": "lc"
+        },
+        {
+          "name": "Port 9",
+          "type": "lc"
+        },
+        {
+          "name": "Port 10",
+          "type": "lc"
+        },
+        {
+          "name": "Port 11",
+          "type": "lc"
+        },
+        {
+          "name": "Port 12",
+          "type": "lc"
+        },
+        {
+          "name": "Port 13",
+          "type": "lc"
+        },
+        {
+          "name": "Port 14",
+          "type": "lc"
+        },
+        {
+          "name": "Port 15",
+          "type": "lc"
+        },
+        {
+          "name": "Port 16",
+          "type": "lc"
+        },
+        {
+          "name": "Port 17",
+          "type": "lc"
+        },
+        {
+          "name": "Port 18",
+          "type": "lc"
+        },
+        {
+          "name": "Port 19",
+          "type": "lc"
+        },
+        {
+          "name": "Port 20",
+          "type": "lc"
+        },
+        {
+          "name": "Port 21",
+          "type": "lc"
+        },
+        {
+          "name": "Port 22",
+          "type": "lc"
+        },
+        {
+          "name": "Port 23",
+          "type": "lc"
+        },
+        {
+          "name": "Port 24",
+          "type": "lc"
+        },
+        {
+          "name": "Port 25",
+          "type": "lc"
+        },
+        {
+          "name": "Port 26",
+          "type": "lc"
+        },
+        {
+          "name": "Port 27",
+          "type": "lc"
+        },
+        {
+          "name": "Port 28",
+          "type": "lc"
+        },
+        {
+          "name": "Port 29",
+          "type": "lc"
+        },
+        {
+          "name": "Port 30",
+          "type": "lc"
+        },
+        {
+          "name": "Port 31",
+          "type": "lc"
+        },
+        {
+          "name": "Port 32",
+          "type": "lc"
+        },
+        {
+          "name": "Port 33",
+          "type": "lc"
+        },
+        {
+          "name": "Port 34",
+          "type": "lc"
+        },
+        {
+          "name": "Port 35",
+          "type": "lc"
+        },
+        {
+          "name": "Port 36",
+          "type": "lc"
+        },
+        {
+          "name": "Port 37",
+          "type": "lc"
+        },
+        {
+          "name": "Port 38",
+          "type": "lc"
+        },
+        {
+          "name": "Port 39",
+          "type": "lc"
+        },
+        {
+          "name": "Port 40",
+          "type": "lc"
+        },
+        {
+          "name": "Port 41",
+          "type": "lc"
+        },
+        {
+          "name": "Port 42",
+          "type": "lc"
+        },
+        {
+          "name": "Port 43",
+          "type": "lc"
+        },
+        {
+          "name": "Port 44",
+          "type": "lc"
+        },
+        {
+          "name": "Port 45",
+          "type": "lc"
+        },
+        {
+          "name": "Port 46",
+          "type": "lc"
+        },
+        {
+          "name": "Port 47",
+          "type": "lc"
+        },
+        {
+          "name": "Port 48",
+          "type": "lc"
+        }
+      ],
+      "rear_ports": [
+        {
+          "name": "Port 1",
+          "type": "splice"
+        },
+        {
+          "name": "Port 2",
+          "type": "splice"
+        },
+        {
+          "name": "Port 3",
+          "type": "splice"
+        },
+        {
+          "name": "Port 4",
+          "type": "splice"
+        },
+        {
+          "name": "Port 5",
+          "type": "splice"
+        },
+        {
+          "name": "Port 6",
+          "type": "splice"
+        },
+        {
+          "name": "Port 7",
+          "type": "splice"
+        },
+        {
+          "name": "Port 8",
+          "type": "splice"
+        },
+        {
+          "name": "Port 9",
+          "type": "splice"
+        },
+        {
+          "name": "Port 10",
+          "type": "splice"
+        },
+        {
+          "name": "Port 11",
+          "type": "splice"
+        },
+        {
+          "name": "Port 12",
+          "type": "splice"
+        },
+        {
+          "name": "Port 13",
+          "type": "splice"
+        },
+        {
+          "name": "Port 14",
+          "type": "splice"
+        },
+        {
+          "name": "Port 15",
+          "type": "splice"
+        },
+        {
+          "name": "Port 16",
+          "type": "splice"
+        },
+        {
+          "name": "Port 17",
+          "type": "splice"
+        },
+        {
+          "name": "Port 18",
+          "type": "splice"
+        },
+        {
+          "name": "Port 19",
+          "type": "splice"
+        },
+        {
+          "name": "Port 20",
+          "type": "splice"
+        },
+        {
+          "name": "Port 21",
+          "type": "splice"
+        },
+        {
+          "name": "Port 22",
+          "type": "splice"
+        },
+        {
+          "name": "Port 23",
+          "type": "splice"
+        },
+        {
+          "name": "Port 24",
+          "type": "splice"
+        },
+        {
+          "name": "Port 25",
+          "type": "splice"
+        },
+        {
+          "name": "Port 26",
+          "type": "splice"
+        },
+        {
+          "name": "Port 27",
+          "type": "splice"
+        },
+        {
+          "name": "Port 28",
+          "type": "splice"
+        },
+        {
+          "name": "Port 29",
+          "type": "splice"
+        },
+        {
+          "name": "Port 30",
+          "type": "splice"
+        },
+        {
+          "name": "Port 31",
+          "type": "splice"
+        },
+        {
+          "name": "Port 32",
+          "type": "splice"
+        },
+        {
+          "name": "Port 33",
+          "type": "splice"
+        },
+        {
+          "name": "Port 34",
+          "type": "splice"
+        },
+        {
+          "name": "Port 35",
+          "type": "splice"
+        },
+        {
+          "name": "Port 36",
+          "type": "splice"
+        },
+        {
+          "name": "Port 37",
+          "type": "splice"
+        },
+        {
+          "name": "Port 38",
+          "type": "splice"
+        },
+        {
+          "name": "Port 39",
+          "type": "splice"
+        },
+        {
+          "name": "Port 40",
+          "type": "splice"
+        },
+        {
+          "name": "Port 41",
+          "type": "splice"
+        },
+        {
+          "name": "Port 42",
+          "type": "splice"
+        },
+        {
+          "name": "Port 43",
+          "type": "splice"
+        },
+        {
+          "name": "Port 44",
+          "type": "splice"
+        },
+        {
+          "name": "Port 45",
+          "type": "splice"
+        },
+        {
+          "name": "Port 46",
+          "type": "splice"
+        },
+        {
+          "name": "Port 47",
+          "type": "splice"
+        },
+        {
+          "name": "Port 48",
+          "type": "splice"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "{yy}@######",
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "demarc-panel": {
+      "manufacturer": "Generic",
+      "model": "LC-24-port Fiber Patch Panel",
+      "slug": "generic-lc-24",
+      "part_number": "LC-24",
+      "u_height": 1,
+      "is_full_depth": false,
+      "is_powered": false,
+      "interfaces": [],
+      "power_ports": [],
+      "front_ports": [
+        {
+          "name": "Port 1",
+          "type": "lc"
+        },
+        {
+          "name": "Port 2",
+          "type": "lc"
+        },
+        {
+          "name": "Port 3",
+          "type": "lc"
+        },
+        {
+          "name": "Port 4",
+          "type": "lc"
+        },
+        {
+          "name": "Port 5",
+          "type": "lc"
+        },
+        {
+          "name": "Port 6",
+          "type": "lc"
+        },
+        {
+          "name": "Port 7",
+          "type": "lc"
+        },
+        {
+          "name": "Port 8",
+          "type": "lc"
+        },
+        {
+          "name": "Port 9",
+          "type": "lc"
+        },
+        {
+          "name": "Port 10",
+          "type": "lc"
+        },
+        {
+          "name": "Port 11",
+          "type": "lc"
+        },
+        {
+          "name": "Port 12",
+          "type": "lc"
+        },
+        {
+          "name": "Port 13",
+          "type": "lc"
+        },
+        {
+          "name": "Port 14",
+          "type": "lc"
+        },
+        {
+          "name": "Port 15",
+          "type": "lc"
+        },
+        {
+          "name": "Port 16",
+          "type": "lc"
+        },
+        {
+          "name": "Port 17",
+          "type": "lc"
+        },
+        {
+          "name": "Port 18",
+          "type": "lc"
+        },
+        {
+          "name": "Port 19",
+          "type": "lc"
+        },
+        {
+          "name": "Port 20",
+          "type": "lc"
+        },
+        {
+          "name": "Port 21",
+          "type": "lc"
+        },
+        {
+          "name": "Port 22",
+          "type": "lc"
+        },
+        {
+          "name": "Port 23",
+          "type": "lc"
+        },
+        {
+          "name": "Port 24",
+          "type": "lc"
+        }
+      ],
+      "rear_ports": [
+        {
+          "name": "Port 1",
+          "type": "lc"
+        },
+        {
+          "name": "Port 2",
+          "type": "lc"
+        },
+        {
+          "name": "Port 3",
+          "type": "lc"
+        },
+        {
+          "name": "Port 4",
+          "type": "lc"
+        },
+        {
+          "name": "Port 5",
+          "type": "lc"
+        },
+        {
+          "name": "Port 6",
+          "type": "lc"
+        },
+        {
+          "name": "Port 7",
+          "type": "lc"
+        },
+        {
+          "name": "Port 8",
+          "type": "lc"
+        },
+        {
+          "name": "Port 9",
+          "type": "lc"
+        },
+        {
+          "name": "Port 10",
+          "type": "lc"
+        },
+        {
+          "name": "Port 11",
+          "type": "lc"
+        },
+        {
+          "name": "Port 12",
+          "type": "lc"
+        },
+        {
+          "name": "Port 13",
+          "type": "lc"
+        },
+        {
+          "name": "Port 14",
+          "type": "lc"
+        },
+        {
+          "name": "Port 15",
+          "type": "lc"
+        },
+        {
+          "name": "Port 16",
+          "type": "lc"
+        },
+        {
+          "name": "Port 17",
+          "type": "lc"
+        },
+        {
+          "name": "Port 18",
+          "type": "lc"
+        },
+        {
+          "name": "Port 19",
+          "type": "lc"
+        },
+        {
+          "name": "Port 20",
+          "type": "lc"
+        },
+        {
+          "name": "Port 21",
+          "type": "lc"
+        },
+        {
+          "name": "Port 22",
+          "type": "lc"
+        },
+        {
+          "name": "Port 23",
+          "type": "lc"
+        },
+        {
+          "name": "Port 24",
+          "type": "lc"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "{yy}@######",
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "cable-manager-1u": {
+      "manufacturer": "Generic",
+      "model": "Cable Management Panel 1U",
+      "slug": "generic-cable-management-1u",
+      "u_height": 1,
+      "is_full_depth": false,
+      "is_powered": false,
+      "interfaces": [],
+      "power_ports": [],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "{yy}@######",
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "cable-manager-2u": {
+      "manufacturer": "Generic",
+      "model": "Cable Management Panel 2U",
+      "slug": "generic-cable-management-2u",
+      "u_height": 2,
+      "is_full_depth": false,
+      "is_powered": false,
+      "interfaces": [],
+      "power_ports": [],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "{yy}@######",
+      "stub": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "blanking-1u": {
+      "manufacturer": "Generic",
+      "model": "Blanking Panel 1U",
+      "slug": "generic-blanking-1u",
+      "u_height": 1,
+      "is_full_depth": false,
+      "is_powered": false,
+      "interfaces": [],
+      "power_ports": [],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "{yy}@######",
+      "stub": true,
+      "exclude_from_utilization": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
+    },
+    "blanking-2u": {
+      "manufacturer": "Generic",
+      "model": "Blanking Panel 2U",
+      "slug": "generic-blanking-2u",
+      "u_height": 2,
+      "is_full_depth": false,
+      "is_powered": false,
+      "interfaces": [],
+      "power_ports": [],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "serial_format": "{yy}@######",
+      "stub": true,
+      "exclude_from_utilization": true,
+      "description": "WP-C STUB (copied from fibre.STUB_MODELS): placeholder until WP-A pins this model."
     }
   },
   "optics": {

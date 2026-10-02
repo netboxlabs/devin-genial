@@ -1295,6 +1295,11 @@ def _private_l3(w,site,c,pop,pop_sites,hub,rate,installed,distance,code,kind,ser
     key,sid=c["key"],site.id; tenant=f"tenant/cust-{key}"; vrf=f"vrf/customer/{key}"
     managed_lan = c["lan_endpoints"] > 0
     targets = [sid]+([f"{sid}/b"] if hub else [])
+    # A new hub reserves its two back-to-back home slots so NID-1 (CE wan1)
+    # lands on side A and NID-2 (wan2) on side B.
+    scope = f"provider-agg-home/{pop}"
+    if hub and sid not in w.reservations.get(scope,{}) and w._next.get(scope,0)%2:
+        home_side(w,pop,targets[1])
     sides = [home_side(w,pop,target) for target in targets]
     pop_site = pop_sites[pop][0]
     # Hub commitments stop at 1G (hub_commit_mbps), so every VPN NID is the 1G tier.
@@ -1487,6 +1492,11 @@ def _apply_lifecycle(w,entries):
             owner[circuit] = owner[f"{circuit}/A"] = owner[f"{circuit}/Z"] = site
             for prefix in (f"prefix/link/{circuit}",f"ipv6/prefix/link/{circuit}"):
                 if prefix in objects: owner[prefix] = site
+    # The PoP-side service records (AGG UNI, PE subinterface, service VLAN,
+    # DIA assignment, EPL termination) move with the premises they serve.
+    for site in stages:
+        for key in w.provider_service_records.get(site,()):
+            owner[key] = site
     for key,obj in objects.items():
         if obj["kind"] == "cable":
             ends = [owner.get(obj["refs"][side]) for side in ("a","b")]
@@ -1499,11 +1509,6 @@ def _apply_lifecycle(w,entries):
             owner[key] = obj["refs"]["scope_site"]
         elif obj["kind"] == "power_feed" and objects.get(obj["refs"].get("rack"),{}).get("refs",{}).get("site") in stages:
             owner[key] = objects[obj["refs"]["rack"]]["refs"]["site"]
-    # The PoP-side service records (AGG UNI, PE subinterface, service VLAN,
-    # DIA assignment, EPL termination) move with the premises they serve.
-    for site in stages:
-        for key in w.provider_service_records.get(site,()):
-            owner[key] = site
     for key,obj in objects.items():
         if obj["kind"] == "ip_address" and obj["refs"].get("assigned_object") in owner:
             owner[key] = owner[obj["refs"]["assigned_object"]]
