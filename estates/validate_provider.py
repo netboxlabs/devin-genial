@@ -17,6 +17,8 @@ from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
 from .naming import role_label, titleize
+# Authored address localities (suburbs map to their metro); geography data, not builder policy.
+from .places import LOCALITIES
 
 
 METROS = {"chicago": ("Chicago", "IL", "Illinois", "America/Chicago"),
@@ -438,7 +440,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         region = f"region/{recipe['namespace']}/us/{state_code.lower()}"
         group = f"site-group/{recipe['namespace']}/{category}"
         street = {"pop": "Exchange Avenue", "customer": "Business Way", "dc": "Technology Way"}[category]
-        expected_address = f"{100 + 4 * allocations[sid]} {street}\n{city}, {state}\nUnited States"
+        address_lines = str(attrs(site).get("physical_address")).split("\n")
+        locality = address_lines[1].partition(", ")[0] if len(address_lines) == 3 else None
+        locality = locality if LOCALITIES.get(locality) == city else city
+        expected_address = f"{100 + 4 * allocations[sid]} {street}\n{locality}, {state}\nUnited States"
         description = {"pop": "Provider routing, local management and carrier handoffs",
                        "customer": "Private-L3 customer premises and wired office",
                        "dc": "Provider NOC services, inventory and monitoring"}[category]

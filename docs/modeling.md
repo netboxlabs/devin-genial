@@ -150,6 +150,44 @@ cross-site placement, room overcapacity, floor disagreement, bypassed outlets,
 and cables outside the authored route limits. Stable site IDs determine geography;
 growing the estate or refreshing access hardware leaves placement intact.
 
+### Site geography
+
+Map coordinates are placed, not scattered. `estates/places.py` `ANCHORS` holds
+authored points for each metro — real neighbourhood and suburb centroids
+(Pilsen, Corktown, the Flats, West Allis, Elk Grove Village…) and straight runs
+of the real streets the branch and store names use (Halsted, Woodward, Euclid,
+Burleigh). A site whose display name mentions an anchor sits on it: `Chicago
+Pilsen Exchange` in Pilsen, `Wabash and 9th Branch` along Wabash Avenue,
+`Franklin Park Data Center` in Franklin Park, a customer premises at its PoP's
+neighbourhood (the last mention in the name wins, then the longest), and
+`North`/`South`/`East`/`West`/`Central` resolve to a real neighbourhood on that
+side of the city where the city has one (Chicago has no `East` and Cleveland
+no `North` on land). HQs default to downtown; every university building shares one
+campus neighbourhood; any other site takes an in-city neighbourhood hashed from
+its site id. A hash of the site id then offsets it at most ±0.0035° latitude
+and ±0.0045° longitude (about 390 × 370 m), and for a street run chooses the
+point along it, so growth never moves an existing site and seeds never reshuffle
+positions. The street address names the anchor's municipality — `Dearborn,
+Michigan`, `Lakewood, Ohio` — while region, time zone and the metro in
+`meta.geography` stay the metro's; the hospital, school and provider checks
+accept any authored locality of the expected metro (`places.LOCALITIES`).
+
+Every anchor point, both ends and the middle of every street run, and the four
+corners of their full offset box were reverse-geocoded against OpenStreetMap
+Nominatim on 2026-10-01 to a road in the stated municipality, state and the
+United States, and every street run lies within 0.3 km of the real street of that
+name (OpenStreetMap Overpass geometry). Points within about a kilometre of Lake
+Michigan, Lake Erie or the Detroit River were nudged inland, and campus names
+were moved to real industrial or carrier areas (350 E Cermak, Elk Grove
+Village, Franklin Park, Northlake, Southfield, Independence). The old ±0.12°
+metro jitter plotted about half the lakeshore sites in the lakes or in Windsor,
+Ontario. `tests/test_places.py` keeps coarse water/Canada exclusion polygons
+offshore of each metro and fails if any anchor offset box or any site in a
+sample recipe falls inside one, or off the anchor its name and address imply.
+The coordinates remain synthetic: a position, never a premises claim. Adding
+an in-city neighbourhood changes every hashed pick, so the anchor table is
+rebaseline-frozen like the other naming pools.
+
 ### Equipment-room cabinet layout
 
 Data-hall profiles author a cabinet grid in metres on each rack
@@ -262,7 +300,12 @@ lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `100 Gbps backbone
 committed on a 100G handoff` (`bandwidth`/`port_speed`), and routed /31s name
 both ends. Material limitations stay on the record but move to `comments`, out
 of the list view: VM placement notes, external-transit ownership, provider
-accounts, the private-L3 control plane and the diagnostic radio link. The estate-wide tag is `Managed`
+accounts, the private-L3 control plane, the diagnostic radio link, unverified
+AP RF coverage, the inventory-only status of OT, station and clinical endpoints,
+and the matching room notes (patient, imaging, production-line, switchyard-bay,
+residence and lab rooms). Endpoint descriptions read in sentence case with
+acronyms intact — `Classroom AP`, `Point-of-sale lane`, `Station HMI`,
+`Bedside monitor`. The estate-wide tag is `Managed`
 (slug `<namespace>-managed`); nothing selects rows by it. Journals state rates
 in operator units (`Committed capacity: 100 Gbps`, `naming.rate_kbps`), WAN
 circuit comments name their procurement cohort in words (`Standard branch

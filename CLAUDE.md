@@ -747,8 +747,14 @@ for the separately recorded pinned-target live qualification.
   automation kinds have no REST-writable `comments`, so their inert limitation
   lives in `estates/automation.py` and docs, not in their descriptions — the
   `.invalid` webhook and disabled rule remain enforced.
-- Site naming: authored display names, facility codes and metro-jittered
-  synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
+- Site naming: authored display names, facility codes and anchor-placed
+  synthetic coordinates are the default (`naming = "authored"`, since 0.10.0;
+  anchors since 0.16). Coordinates sit at most ~400 m from an authored
+  `places.ANCHORS` point or street run that was verified on land in its
+  municipality; a site named after a neighbourhood, suburb or street sits there
+  and its address names that municipality. Never reintroduce free metro-wide
+  jitter: it put lakeshore sites in the lakes and in Windsor, Ontario;
+  `tests/test_places.py` water polygons guard it;
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`
   overrides any site by id. Slugs, DNS, device names and matching keys keep the
   stable namespace form; name pools hash the site id (never the seed or other

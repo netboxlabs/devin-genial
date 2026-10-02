@@ -201,11 +201,13 @@ class ManufacturingCompositionTests(unittest.TestCase):
     def test_ot_endpoint_records_deny_control_function_and_protocols(self):
         objects = self.objects()
         for key in (f"device/{SITE}/plc-01", f"device/{SITE}/hmi-01-1", f"device/{SITE}/field-02-3"):
-            description = objects[key]["attrs"]["description"]
-            self.assertIn("Reference", description)
-            self.assertIn("no control function, safety rating or industrial protocol", description)
-        room = objects[f"location/{SITE}/line-01"]["attrs"]["description"]
-        self.assertIn("no control function or industrial protocol is configured", room)
+            # Limitations stay on the record, in comments, out of the list-view description.
+            attrs = objects[key]["attrs"]
+            self.assertNotIn("Reference", attrs["description"])
+            self.assertIn("no control function, safety rating or industrial protocol", attrs["comments"])
+        room = objects[f"location/{SITE}/line-01"]["attrs"]
+        self.assertIn("no control function or industrial protocol is configured", room["comments"].lower())
+        self.assertNotIn("configured", room["description"])
 
     def test_plant_endpoints_use_only_catalog_reference_hardware(self):
         aliases = {o["meta"]["hardware"] for o in self.plan["objects"] if o["kind"] == "device"}
