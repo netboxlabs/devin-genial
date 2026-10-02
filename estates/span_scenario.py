@@ -134,7 +134,14 @@ def _traffic(plan, graph):
         circuit, local, remote = term_owner[parent]
         vc = obj["refs"]["virtual_circuit"]
         tenant = objects[vc]["refs"]["tenant"]
-        _require(remote["device"] in adjacency and local["device"] == ce and site not in premises and
+        if site in premises:
+            # A hub's second attachment, into its PoP's other PE; the declared
+            # spoke-to-hub flow keeps the primary attachment.
+            _require(obj["attrs"].get("role") == "hub" and premises[site]["virtual_circuit"] == obj["refs"]["virtual_circuit"]
+                     and remote["device"] in adjacency and remote["device"] != premises[site]["pe"]["device"],
+                     "only a hub takes a second access attachment, on its PoP's other PE")
+            continue
+        _require(remote["device"] in adjacency and local["device"] == ce and
                  objects[site]["refs"].get("tenant") == tenant and objects[ce]["refs"].get("tenant") == tenant,
                  "customer service, premise, CE and actual access attachment must share ownership")
         premises[site] = dict(site=site, tenant=tenant, virtual_circuit=vc, membership=key, ce=ce,

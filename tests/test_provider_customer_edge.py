@@ -136,6 +136,38 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
                 mutate()
                 self.assertIn(code, self.codes())
 
+    # --- Hubs are dual-homed to both PEs of their PoP -----------------------
+
+    def test_hubs_take_two_circuits_into_both_pes(self):
+        hubs = {t["refs"]["interface"].split("/")[1] for t in self.of("virtual_circuit_termination")
+                if t["attrs"]["role"] == "hub"}
+        self.assertEqual(len(hubs), len(self.plan["recipe"]["customers"]))
+        cabled = {}
+        for cable in self.of("cable"):
+            cabled[cable["refs"]["a"]], cabled[cable["refs"]["b"]] = cable["refs"]["b"], cable["refs"]["a"]
+        for sid in hubs:
+            pes = set()
+            for key in (f"circuit/customer/{sid}", f"circuit/customer/{sid}/b"):
+                self.assertIn(key, self.o)
+                pes.add(self.o[cabled[f"{key}/Z"]]["refs"]["device"])
+                self.assertIn(f"bgp-session/{key.removeprefix('circuit/')}", self.o)
+            self.assertEqual(len(pes), 2, sid)
+            self.assertEqual(self.o[f"virtual-circuit-termination/{sid}/b"]["attrs"]["role"], "hub")
+            tagged = "tag/dual-homed" in self.o[f"site/{sid}"]["refs"].get("tags", [])
+            self.assertEqual(tagged, self.o[f"circuit/customer/{sid}"]["attrs"]["status"] == "active", sid)
+
+    def test_hub_homing_counterexamples_are_refused(self):
+        hub = next(t["refs"]["interface"].split("/")[1] for t in self.of("virtual_circuit_termination")
+                   if t["attrs"]["role"] == "hub")
+        cases = ((lambda: self.plan["objects"].remove(self.o[f"bgp-session/customer/{hub}/b"]), "provider-bgp-inventory"),
+                 (lambda: self.o[f"virtual-circuit-termination/{hub}/b"]["attrs"].update(role="spoke"),
+                  "provider-virtual-membership"))
+        for mutate, code in cases:
+            with self.subTest(code):
+                self.setUp()
+                mutate()
+                self.assertIn(code, self.codes())
+
     def test_untruthful_dual_homed_tag_is_refused(self):
         site = next(s for s in self.of("site") if s["key"].startswith("site/pop-")
                     and "tag/dual-homed" not in s["refs"].get("tags", []))

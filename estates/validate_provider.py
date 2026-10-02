@@ -199,7 +199,8 @@ def _recipe(recipe):
                 raise ValueError("Customer site entries need distinct valid PoPs, 1–12 premises each and a "
                                  "lifecycle status; every entry of a planned customer is planned.")
             entries.add(entry["pop"])
-            occupancy[entry["pop"]] += entry["count"]
+            # The hub premises takes a second service position for its second circuit.
+            occupancy[entry["pop"]] += entry["count"] + (entry["pop"] == item["hub_pop"])
             for ordinal in range(1, entry["count"] + 1):
                 sid = f"ce-{item['key']}-{entry['pop']}-{ordinal:03}"
                 if sid in demand:
@@ -312,6 +313,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     except (ValueError, TypeError, OverflowError) as exc:
         report("provider-recipe", "plan", str(exc))
         return findings
+
+    def hub_premises(sid):
+        customer = premises[sid][0]
+        return f"ce-{customer['key']}-{customer['hub_pop']}-001"
 
     if poe_watts is None:
         _, poe_watts = analyze_poe(plan, catalog)
@@ -477,11 +482,14 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         service_targets[recipe[f"noc_pop_{side}"]].add(f"noc/{side}")
     for sid, (_, pop, _) in premises.items():
         service_targets[pop].add(sid)
+        if sid == hub_premises(sid):
+            service_targets[pop].add(f"{sid}/b")
     try:
         transport_ports = {router: _ledger(reservations, f"provider-transport-ports/{router}", expected_transport[router], 2) for router in routers}
         service_ports = {pop: _ledger(reservations, f"provider-service-ports/{pop}", service_targets[pop], 12) for pop in pops}
         private = {f"management/pop-{pop}/{s}" for pop in pops for s in ("a", "b")}
         private |= {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")}
+        private |= {f"circuit/customer/{sid}/b" for sid in premises if sid == hub_premises(sid)}
         link_slots = _ledger(reservations, "provider-link-prefixes", private, 16384)
         lan_slots = {c["key"]: _ledger(reservations, f"provider-customer-lans/{c['key']}",
                                        [sid for sid, (item, _, _) in premises.items() if item["key"] == c["key"]], 255)
@@ -884,15 +892,23 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         attachments[sid] = router
         hub = pop == customer["hub_pop"] and ordinal == 1
         rate = customer["hub_commit_mbps"] if hub else next(t for t in recipe["wan_tiers_mbps"] if Decimal(t) * usable >= customer["site_peak_mbps"])
-        key = f"circuit/customer/{sid}"
-        customer_peerings[sid] = (router, port, cpe, cpe_wan, tenant, customer["key"], key)
-        routed(key, (cpe_wan, port), vrf, tenant)
-        circuit(key, cpe_wan, port, f"site/{sid}", f"site/pop-{pop}", "provider/operator", 1000000, rate * 1000,
-                tenant, f"provider-account/customer/{customer['key']}")
-        ends = [site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")]
-        route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
-        if (attrs(key).get("distance"), attrs(key).get("distance_unit")) != ((route, "km") if route else (None, None)):
-            report("provider-access-geography", key, "An access circuit records the route length from its premises to its serving PoP.")
+        # A hub is dual-homed: wan1 and wan2 into both PEs of its PoP.
+        homes = [(sid, cpe_wan, router, port)]
+        if hub:
+            second, second_port = service_port(pop, f"{sid}/b")
+            homes.append((f"{sid}/b", f"{cpe}/if/wan2", second, second_port))
+            if second == router:
+                report("provider-hub-homing", f"site/{sid}", "A hub's two access circuits land on the two different PEs of its PoP.")
+        for target, wan, pe, pe_port in homes:
+            key = f"circuit/customer/{target}"
+            customer_peerings[target] = (pe, pe_port, cpe, wan, tenant, customer["key"], key, stages[sid])
+            routed(key, (wan, pe_port), vrf, tenant)
+            circuit(key, wan, pe_port, f"site/{sid}", f"site/pop-{pop}", "provider/operator", 1000000, rate * 1000,
+                    tenant, f"provider-account/customer/{customer['key']}")
+            ends = [site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")]
+            route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
+            if (attrs(key).get("distance"), attrs(key).get("distance_unit")) != ((route, "km") if route else (None, None)):
+                report("provider-access-geography", key, "An access circuit records the route length from its premises to its serving PoP.")
         lan = f"{cpe}/if/port1"
         if customer["lan_endpoints"]:
             clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
@@ -1016,7 +1032,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 any(link_network[key].subnet_of(ip_network(a)) for a in PUBLIC_AGGREGATES)):
             report("provider-public-space", key, "A transit /31 is numbered from its upstream's own recorded assignment, "
                    "which carries no operator tenancy and sits outside every operator aggregate.")
-    if by_kind["circuit"] != (set(spans) | {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")} |
+    if by_kind["circuit"] != (set(spans) | {f"circuit/customer/{sid}" for sid in premises} |
+                              {f"circuit/customer/{sid}/b" for sid in premises if sid == hub_premises(sid)} | {f"circuit/noc/{s}" for s in ("a", "b")} |
                               {f"circuit/transit/{s}" for s in ("a", "b")} | {f"circuit/oob/{pop}" for pop in pops}):
         report("provider-circuit-inventory", "plan", "Physical circuit inventory must exactly cover requested backbone, customer, NOC and external transit attachments.")
     for router, required in used_pe_ports.items():
@@ -1122,11 +1139,14 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-customer-service", vc, "The private-L3 service (planned while its customer onboards) must belong to the correct customer, operator network and customer procurement account.")
         members = {sid for sid, (item, _, _) in premises.items() if item["key"] == key}
         hub = f"ce-{key}-{customer['hub_pop']}-001"
-        for sid in members:
-            now[0] = stages[sid]
+        for sid, port_name, parent_name in [(sid, "PrivateL3", "wan1") for sid in members] + [(f"{hub}/b", "PrivateL3-2", "wan2")]:
+            if sid.removesuffix("/b") not in members:
+                continue
+            now[0] = stages[sid.removesuffix("/b")]
             term = f"virtual-circuit-termination/{sid}"
             expected_terms.add(term)
-            port, parent = f"device/{sid}/edge-01/if/PrivateL3", f"device/{sid}/edge-01/if/wan1"
+            sid = sid.removesuffix("/b")
+            port, parent = f"device/{sid}/edge-01/if/{port_name}", f"device/{sid}/edge-01/if/{parent_name}"
             if attrs(port).get("description") != "Private L3 VPN attachment over the access circuit":
                 report("provider-scope-text", port, "The virtual interface describes inventory membership over its actual access circuit, not executed tunneling or routing.")
             if (kind(term) != "virtual_circuit_termination" or refs(term).get("virtual_circuit") != vc or refs(term).get("interface") != port or
@@ -1175,7 +1195,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if (day := in_service(key)) is not None:
             for router in ends:
                 first_span[pop_of(router)] = min(day, first_span.get(pop_of(router), day))
-    pending = {f"circuit/customer/{sid}" for sid, stage in stages.items() if stage in ("planned", "provisioning")}
+    pending = {f"circuit/customer/{sid}{tail}" for sid, stage in stages.items() if stage in ("planned", "provisioning")
+               for tail in ("", "/b")}
     for key in sorted(by_kind["circuit"]):
         if key in pending:
             if "install_date" in attrs(key):
@@ -1327,12 +1348,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 router, f"{name_of(provider)} transit{label}", f"asn/transit-{side}", "transit",
                 f"External transit peering over {attrs(circuit_key).get('cid')}", local,
                 remote_prefix=candidates[0] if len(candidates) == 1 else None)
-        for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key) in sorted(customer_peerings.items()):
+        for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key, stage) in sorted(customer_peerings.items()):
             expected_sessions[f"bgp-session/customer/{sid}{tail}"] = peering(
                 router, f"{name_of(cpe)} customer{label}", f"asn/customer/{ckey}", "customer",
                 f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
                 address_of(port, family), remote_address=address_of(cpe_wan, family), tenant=tenant,
-                status=LIFE[stages[sid]]["bgp"])
+                status=LIFE[stage]["bgp"])
     if by_kind["bgp_session"] != set(expected_sessions):
         report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair, "
                "every other provider edge against both reflectors, each actual transit handoff and "

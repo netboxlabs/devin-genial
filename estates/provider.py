@@ -266,7 +266,8 @@ def resolve(raw):
                 raise DesignError(f"Customer {key}: attachment PoPs must be unique known keys")
             seen.add(pop)
             entry["count"] = _integer(entry.get("count",1),f"Customer {key} site count",1,12)
-            attachment_count[pop] += entry["count"]
+            # A hub premises takes a second service position for its second circuit.
+            attachment_count[pop] += entry["count"]+(pop == c["hub_pop"])
             for n in range(1,entry["count"]+1):
                 sid = f"ce-{key}-{pop}-{n:03}"
                 if sid in site_ids:
@@ -1035,27 +1036,34 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
             w.obj(port)["attrs"]["mode"] = "access"; w.obj(port)["refs"]["untagged_vlan"] = vlan
         site.patch(switch,access_ports[i],device,"eth0",panel,i+1)
         site.address(target,"clients",primary=True,device=device)
-    pop_site,pe_port = _service_port(w,pop_sites,pop,sid)
     hub = pop==c["hub_pop"] and number==1
+    # A hub is dual-homed: its CE's wan1 and wan2 take two access circuits
+    # into both PEs of its PoP. The two service positions are reserved back to
+    # back, so they always sit on opposite PEs.
+    attachments = [("wan1",sid,"","PrivateL3")]+([("wan2",f"{sid}/b","-2","PrivateL3-2")] if hub else [])
+    ports = [_service_port(w,pop_sites,pop,target) for _,target,_,_ in attachments]
+    pop_site,pe_port = ports[0]
     usable = 1-Decimal(str(w.recipe["reserve_fraction"]))
     rate = c["hub_commit_mbps"] if hub else next(tier for tier in w.recipe["wan_tiers_mbps"] if tier*usable>=c["site_peak_mbps"])
-    port=site.interface(edge,"wan1"); circuit=f"circuit/customer/{sid}"
     # The access tail's route length: premises to serving PoP times the route
     # factor, recorded on the circuit so optics read it rather than re-derive it.
     here,there = (w.obj(k)["attrs"] for k in (site.key,pop_site.key))
     distance = (round(km((here["latitude"],here["longitude"]),(there["latitude"],there["longitude"]))*ROUTE_FACTOR,1)
                 if "latitude" in here and "latitude" in there else None)
-    _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,pe_port,rate,tenant,handoff_mbps=1000,
-             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",
-             installed=installed if lifecycle(c,pop) in ("active","decommissioning") else None,distance_km=distance)
-    _routed_pair(w,circuit,port,pe_port,vrf,tenant)
-    vi=w.add("interface",f"{edge}/if/PrivateL3",dict(name="PrivateL3",type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
-             dict(device=edge,parent=port,vrf=vrf))
-    w.add("virtual_circuit_termination",f"virtual-circuit-termination/{sid}",dict(role="hub" if hub else "spoke",description=f"{site.display} {'hub' if hub else 'spoke'}"),
-          dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
+    for (wan,target,suffix,name),(_,peer) in zip(attachments,ports):
+        port=site.interface(edge,wan); circuit=f"circuit/customer/{target}"
+        _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,peer,rate,tenant,handoff_mbps=1000,
+                 cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}{suffix}",
+                 installed=installed if lifecycle(c,pop) in ("active","decommissioning") else None,distance_km=distance)
+        _routed_pair(w,circuit,port,peer,vrf,tenant)
+        vi=w.add("interface",f"{edge}/if/{name}",dict(name=name,type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
+                 dict(device=edge,parent=port,vrf=vrf))
+        w.add("virtual_circuit_termination",f"virtual-circuit-termination/{target}",dict(role="hub" if hub else "spoke",description=f"{site.display} {'hub' if hub else 'spoke'}"),
+              dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
     site.contract.update(required_device_roles={"role/customer-edge":1,**({"role/access":1} if managed_lan else {})},endpoint_count=c["lan_endpoints"],
                          demand=dict(lan_endpoints=c["lan_endpoints"],peak_mbps=c["site_peak_mbps"],hub=hub,commit_mbps=rate),access_hardware=w.hardware_alias("access"))
-    site.contract["assumptions"].extend(["The private-L3 customer has one physical access circuit and one CE. A CE, access-link or serving-PE failure can isolate this premises.",
+    site.contract["assumptions"].extend(["The hub has two access circuits from one CE into both PEs of its PoP; a CE failure can still isolate it."
+        if hub else "The private-L3 customer has one physical access circuit and one CE. A CE, access-link or serving-PE failure can isolate this premises.",
         "Twelve fixed office positions and a same-room access switch preserve existing endpoint cables and addresses during growth. Customer LAN is wired; no wireless service is modeled."
         if managed_lan else "The CE hands the customer LAN to customer-owned equipment that is not inventoried; the carrier manages only the CE."])
     if managed_lan:
@@ -1090,10 +1098,11 @@ def _apply_lifecycle(w,entries):
     for key,obj in objects.items():
         if obj["refs"].get("device") in owner: owner[key] = owner[obj["refs"]["device"]]
     for site,(_,sid) in stages.items():
-        circuit = f"circuit/customer/{sid}"
-        owner[circuit] = owner[f"{circuit}/A"] = owner[f"{circuit}/Z"] = site
-        for prefix in (f"prefix/link/{circuit}",f"ipv6/prefix/link/{circuit}"):
-            if prefix in objects: owner[prefix] = site
+        for circuit in (f"circuit/customer/{sid}",f"circuit/customer/{sid}/b"):
+            if circuit not in objects: continue
+            owner[circuit] = owner[f"{circuit}/A"] = owner[f"{circuit}/Z"] = site
+            for prefix in (f"prefix/link/{circuit}",f"ipv6/prefix/link/{circuit}"):
+                if prefix in objects: owner[prefix] = site
     for key,obj in objects.items():
         if obj["kind"] == "cable":
             ends = [owner.get(obj["refs"][side]) for side in ("a","b")]

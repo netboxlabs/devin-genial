@@ -136,7 +136,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertEqual(validate(self.plan), [])
         self.assertEqual(validate(generate(self.plan["recipe"] | {"patching": "panels"})), [])
         self.assertEqual(sum(o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge" for o in self.plan["objects"]), 6)
-        self.assertEqual(sum(o["kind"] == "virtual_circuit_termination" for o in self.plan["objects"]), 3)
+        self.assertEqual(sum(o["kind"] == "virtual_circuit_termination" for o in self.plan["objects"]), 4)
 
     def test_missing_noc_circuit_cannot_hide_behind_shared_wan_mode(self):
         self.plan["objects"].remove(self.objects["circuit/noc/a"])

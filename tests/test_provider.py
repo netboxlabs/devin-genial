@@ -110,11 +110,12 @@ class ProviderTests(unittest.TestCase):
         kinds=Counter(o["kind"] for o in plan["objects"])
         self.assertEqual(kinds["site"],7)
         self.assertEqual(kinds["virtual_circuit"],1)
-        self.assertEqual(kinds["virtual_circuit_termination"],3)
+        # Three premises; the hub takes a second attachment into its PoP's other PE.
+        self.assertEqual(kinds["virtual_circuit_termination"],4)
         # Two diverse spans per metro adjacency (Chicago-Detroit, Detroit-Cleveland),
         # three customer access circuits, two NOC handoffs, two transit ports
-        # and one out-of-band broadband circuit per PoP.
-        self.assertEqual(kinds["circuit"],14)
+        # and one out-of-band broadband circuit per PoP; the hub has two access circuits.
+        self.assertEqual(kinds["circuit"],15)
         # The NOC sits in Chicago: its Detroit handoff is a leased private line.
         self.assertEqual(objects_of(plan)["circuit/noc/b"]["refs"]["provider"],"provider/transport-b")
         self.assertEqual(objects_of(plan)["circuit/noc/a"]["refs"]["provider"],"provider/operator")
