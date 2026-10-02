@@ -289,7 +289,7 @@ def _generate(recipe, previous=None):
     radio_sites = []
     for sid, item in plants:
         site = Site(world, sid, "plant",
-                    "Manufacturing plant; separated plant-floor and corporate zones on one authored ground floor")
+                    "Manufacturing plant; separated plant-floor and corporate zones on one ground floor")
         world.obj(site.key)["meta"]["plant"] = item["key"]
         _plant(site, item)
         radio_sites.append(world.obj(site.key))

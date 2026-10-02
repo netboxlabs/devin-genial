@@ -233,6 +233,14 @@ fresh-only on resume too (only receipt-created or name-adopted rows are
 tolerated), re-runs the plan-free invariants before any write, and the exact
 readback verifies each shape's `dcim.rack` object_type, resolved rack id and
 layer — never a claim about what any visualization renders.
+Procurement history (`just lifecycle PLAN OUT`, `lifecycle-check PLAN OUT`, and
+`LIFECYCLE_WRITES=1 just seed-lifecycle OUT TARGET [RECEIPT]`) is the same
+sidecar shape for the Asset Lifecycle plugin: a BOM per site generated on the
+target by site/role scope rules, POs from two fictional vendors with null unit
+prices, deliveries dated from the equipment journals via a courier with no
+tracking URL (never the builtin UPS/FedEx/DHL), plugin-action installs, and
+spares pools in multi-cabinet rooms. Lifecycle rows protect sites and
+locations: remove them before `teardown-main`. See docs/loading.md.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
@@ -299,6 +307,9 @@ for the separately recorded pinned-target live qualification.
 - [docs/seeding.md](docs/seeding.md): zero-write target verification and restore-based seeding.
 - [docs/qualification.md](docs/qualification.md): scale, limits and preserved history.
 - [CONTRACT.md](CONTRACT.md): canonical graph, ledgers, units and module interfaces.
+- [docs/schema-map.md](docs/schema-map.md): generated map of every kind to its NetBox
+  model, endpoint, references, Diode identity and delivery path, plus the plugin
+  sidecars; `just schema-map` regenerates it and a test fails when it is stale.
 - [COVERAGE.md](COVERAGE.md): hospital/provider omissions and ranked next work;
   a reviewed backlog, not implemented scope.
 - [catalog/README.md](catalog/README.md): pinned vendor sources, fictional hardware
@@ -367,6 +378,11 @@ for the separately recorded pinned-target live qualification.
   fresh-only REST seeder with exact protected-field readback;
   `just geometry PLAN OUT`, `just geometry-check PLAN OUT`,
   `just seed-geometry OUT TARGET [RECEIPT]`.
+- `estates/lifecycle.py`: the Asset Lifecycle procurement sidecar — BOMs,
+  purchase orders, deliveries, installs and spares pools derived from a frozen
+  plan and bound to its SHA, plus the resumable REST seeder with exact
+  readback; `just lifecycle`, `lifecycle-check`, `seed-lifecycle`. Pinned by
+  `tests/test_lifecycle.py`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
@@ -709,6 +725,15 @@ for the separately recorded pinned-target live qualification.
   native limit (`naming.NAME_LIMITS`: 64 for `vlan` and `virtual_chassis`,
   read back from the pinned 4.7.1 source; 100 otherwise) naming the object,
   rather than letting a target reject the row mid-load.
+- Descriptions are operational wording, not generator notes (0.16): device
+  roles, segment purposes and rates come from `naming.ROLE_LABELS`,
+  `SEGMENT_PURPOSES`, `bandwidth` and `port_speed`; a material limitation goes
+  in `comments`, never the list-view `description`. Provider premises and PoP
+  hostnames are readable stems (`<customer>-<metro3><slot>`, the PoP key);
+  provider customer VRFs carry an RD equal to their `<asn>:<n>` route target;
+  contacts carry 555-0100..0199 lines in their metro's real area code; the
+  estate tag is `Managed`. The private-L3 virtual-circuit note points at the
+  documented CE-to-PE BGP sessions and must never deny them.
 - Site naming: authored display names, facility codes and metro-jittered
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`

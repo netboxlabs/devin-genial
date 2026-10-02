@@ -87,6 +87,24 @@ geometry-check plan out:
 seed-geometry out target receipt='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.geometry seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
+# Derive a deterministic procurement story (Asset Lifecycle plugin records:
+# BOMs, purchase orders, deliveries, installs, spares) from a frozen plan
+lifecycle plan out:
+    python3 -m estates.lifecycle build {{quote(plan)}} --out {{quote(out)}}
+
+# Recompute a saved lifecycle artifact from its bound plan (operands match `lifecycle`)
+lifecycle-check plan out:
+    python3 -m estates.lifecycle check {{quote(out)}} --plan {{quote(plan)}}
+
+# Write the procurement story through the Asset Lifecycle REST API and read it
+# back exactly. Requires LIFECYCLE_WRITES=1 and the estate seeded on main.
+seed-lifecycle out target receipt='':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
+
+# Regenerate docs/schema-map.md (kind -> NetBox model -> endpoint -> identity -> delivery)
+schema-map:
+    python3 -m estates.schema_map
+
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:
     python3 -m estates.load {{quote(artifact)}} --load-check

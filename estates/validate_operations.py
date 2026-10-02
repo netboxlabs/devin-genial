@@ -21,6 +21,9 @@ _EVENT_TYPES = {"object_created", "object_updated", "object_deleted",
                 "job_started", "job_completed", "job_failed", "job_errored"}
 # A server list names a small, redundant set of hosts, never the whole workload.
 _MAX_ENDPOINT_HOSTS = 2
+# Restated, not imported: real metro area codes; the 555-0100..0199 block is
+# reserved for fictional use, so no contact can carry a dialable number.
+AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
 
 
 def _renders_csv_rows(code):
@@ -234,9 +237,15 @@ def _context(plan, objects, kinds):
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
         "ap", "console-server", "stack", "laboratory", "provider-edge", "customer-edge")}
 
-    def expect_contact(key, name, role, scope, mailbox):
-        contacts[key] = (name, role, scope, mailbox)
+    def expect_contact(key, name, role, scope, mailbox, area=None):
+        contacts[key] = (name, role, scope, mailbox, area)
         return key
+
+    def site_area(site):
+        # The metro is read back from the site's own postal address line.
+        lines = attrs(site).get("physical_address", "")
+        city = lines.split("\n")[1].split(",")[0] if isinstance(lines, str) and lines.count("\n") >= 1 else None
+        return AREA_CODES.get(city)
 
     def expect_assignment(target, contact, role, suffix=""):
         assignments[f"contact-assignment/{target}{suffix}"] = {
@@ -274,7 +283,7 @@ def _context(plan, objects, kinds):
         site = obj["refs"].get("site", "")
         name = attrs(site).get("name", "")
         contact = expect_contact(f"contact/biomedical/{site}", f"{name} biomedical desk", "biomedical", name,
-                                 f"{site.removeprefix('site/')}.biomedical")
+                                 f"{site.removeprefix('site/')}.biomedical", site_area(site))
         expect_assignment(obj["key"], contact, "biomedical")
     for site in kinds["site"]:
         key, data = site["key"], site["attrs"]
@@ -284,7 +293,8 @@ def _context(plan, objects, kinds):
             fail("operations-journal-facts", key, "Site history needs a textual address from the actual site record.")
             address = ""
         contact_name = f"{name} facilities desk"
-        contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, f"{key.removeprefix('site/')}.facilities")
+        contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, f"{key.removeprefix('site/')}.facilities",
+                                 site_area(key))
         expect_assignment(key, contact, "facilities", "/facilities")
         expect_note(key, "site-record", scheduled(key, "site-record", recipe.get("as_of"), 150, 31),
                     (name, address.replace("\n", ", "), data.get("time_zone", "")))
@@ -469,13 +479,16 @@ def _context(plan, objects, kinds):
         if expected is None:
             fail("operations-contact", key, "Contact has no tenant, site, provider or workload responsibility in this estate.")
             continue
-        expected_name, role, scope, mailbox = expected
+        expected_name, role, scope, mailbox, area = expected
+        phone = re.fullmatch(r"\+1 (\d{3})-555-01\d\d", data["phone"]) if isinstance(data.get("phone"), str) else None
+        if not phone or phone.group(1) not in AREA_CODES.values() or (area is not None and phone.group(1) != area):
+            fail("operations-contact", key, "Contact phone must be a fictional 555-0100..0199 line in the area code of the metro it serves.")
         description = data.get("description", "")
         responsibility = re.fullmatch(responsibility_forms[role], description) if isinstance(description, str) else None
         if (name != expected_name or data.get("title") != roles[role][0]
                 or data.get("email") != f"{mailbox}@{ns}.example" or len(mailbox) > 64
                 or not responsibility or responsibility.group(1) != scope or len(description) > 200
-                or set(data) != {"name", "title", "email", "description"}
+                or set(data) != {"name", "title", "phone", "email", "description"}
                 or obj["refs"] != {"groups": [f"contact-group/{role}"]}):
             fail("operations-contact", key, "Contact name, safe mailbox, responsibility and group must match its actual scope.")
     for key in contacts:

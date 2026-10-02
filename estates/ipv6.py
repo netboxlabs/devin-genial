@@ -165,8 +165,10 @@ created on a spare interface or an unmodeled far end of a circuit.
             container = f"ipv6/reservation/{site}/{refs['vrf']}"
             container_network = IPv6Network((site_networks[site], 48))
             container_refs = {name: refs[name] for name in ("vrf", "tenant", "scope_site")}
-            container_description = "Stable IPv6 site reservation"
-            description = (f"IPv6 {world.obj(refs['vlan'])['attrs']['name']} segment" if policy == "lan"
+            container_description = f"{world.obj(site)['attrs']['name']} IPv6 site block"
+            # The IPv4 leaf already names its purpose and site; its gateway
+            # reservation clause is IPv4-only, so only the first clause carries.
+            description = (f"{obj['attrs']['description'].split(';')[0][:193]} (IPv6)" if policy == "lan"
                            else "IPv6 routed diagnostic radio segment; no RF budget claimed")
         else:
             routed = policy == "routed"
@@ -179,8 +181,7 @@ created on a spare interface or an unmodeled far end of a circuit.
             container_network = IPv6Network((base, 64))
             container_refs = {name: refs[name] for name in ("vrf", "tenant")}
             container_description = "Routed IPv6 infrastructure reservation" if routed else "IPv6 loopback reservation"
-            description = ("IPv6 point-to-point routed attachment; far end may be explicitly unmodeled" if routed
-                           else "IPv6 router inband management loopback")
+            description = f"{obj['attrs']['description'].split(';')[0][:193]} (IPv6)"
         container_value = str(container_network), container_refs
         if container in containers and containers[container] != container_value:
             raise DesignError(f"IPv6 enrichment: {key} conflicts with actual ownership of {container}")
