@@ -43,7 +43,7 @@ to power feeds in 0.13.0 and completed in 0.15.0): regions read `Illinois`,
 device roles `WAN Edge`, providers `Aurora Peak Networks`, power panels
 `MDF Supply A`, power feeds `Network 01 A` under that panel, VRFs `Applications`
 or `Harbor Logistics Private L3`, VLANs `Brady and 9th Branch Users`, FHRP
-groups `Fulton Market Data Center Applications Gateway`, tunnels `DC Recovery`.
+groups `Franklin Park Data Center Applications Gateway`, tunnels `DC Recovery`.
 Where NetBox gives a model no `name` field at all — ASN and Aggregate — the
 `description` is what the graph renders, so it is authored the same way and
 names the holder: `Northstar Transit routing domain`, not a role token.

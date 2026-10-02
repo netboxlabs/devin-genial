@@ -15,7 +15,7 @@ from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
 # Authored address localities (suburbs map to their metro); geography data, not builder policy.
-from .places import LOCALITIES
+from .places import LOCALITIES, endpoint_label
 
 
 NETWORK_OFFSETS = {"management": 0, "clinical": 1, "medical": 2, "wireless": 3,
@@ -468,11 +468,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 report("hospital-endpoint-placement", device, "Required clinical identity, active role, endpoint hardware and actual care/circulation room must match demand.")
             if meta(device).get("cohort") != cohort or meta(device).get("network") != network or meta(device).get("endpoint") is not True:
                 report("hospital-endpoint-description", device, "Endpoint labels must agree with independently derived clinical responsibilities and segment.")
-            label = f"Reference {cohort.replace('-', ' ')}" if role in {"medical-device", "imaging-device"} else cohort.replace("-", " ").title()
-            description = f"{label} in {attrs(room).get('name')} at {attrs(site).get('name')}"
+            description = f"{endpoint_label(cohort)} in {attrs(room).get('name')} at {attrs(site).get('name')}"
             if role == "ap":
-                description += "; staff WLAN on wlan0; RF coverage unverified"
-            if attrs(device).get("description") != description:
+                description += "; staff WLAN on wlan0"
+            limitation = ("no clinical function" if role in {"medical-device", "imaging-device"}
+                          else "RF coverage is unverified" if role == "ap" else None)
+            if (attrs(device).get("description") != description or
+                    (limitation and limitation not in str(attrs(device).get("comments", "")))):
                 report("hospital-endpoint-description", device, "Endpoint prose must describe its actual reference role and location without adding clinical guarantees or certification claims.")
             if role == "camera" and rooms[room]["space_type"] not in {"corridor", "reception"}:
                 report("hospital-camera-placement", device, "Cameras belong only in circulation or reception, never care rooms.")

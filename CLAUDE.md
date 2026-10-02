@@ -734,8 +734,14 @@ for the separately recorded pinned-target live qualification.
   contacts carry 555-0100..0199 lines in their metro's real area code; the
   estate tag is `Managed`. The private-L3 virtual-circuit note points at the
   documented CE-to-PE BGP sessions and must never deny them.
-- Site naming: authored display names, facility codes and metro-jittered
-  synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
+- Site naming: authored display names, facility codes and anchor-placed
+  synthetic coordinates are the default (`naming = "authored"`, since 0.10.0;
+  anchors since 0.16). Coordinates sit at most ~400 m from an authored
+  `places.ANCHORS` point or street run that was verified on land in its
+  municipality; a site named after a neighbourhood, suburb or street sits there
+  and its address names that municipality. Never reintroduce free metro-wide
+  jitter: it put lakeshore sites in the lakes and in Windsor, Ontario;
+  `tests/test_places.py` water polygons guard it;
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`
   overrides any site by id. Slugs, DNS, device names and matching keys keep the
   stable namespace form; name pools hash the site id (never the seed or other

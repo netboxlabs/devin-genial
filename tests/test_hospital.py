@@ -38,7 +38,8 @@ class HospitalTests(unittest.TestCase):
         self.assertEqual(len(modalities),3)
         for obj in monitors+modalities:
             self.assertEqual(obj["refs"]["device_type"],"hardware/endpoint")
-            self.assertIn("Reference ",obj["attrs"]["description"])
+            self.assertNotIn("Reference",obj["attrs"]["description"])
+            self.assertIn("no clinical function",obj["attrs"]["comments"])
             ip = actual[obj["refs"]["primary_ip4"]]
             self.assertEqual(ip["refs"]["assigned_object"],f"{obj['key']}/if/eth0")
         cameras = [obj for obj in actual.values() if obj["kind"] == "device" and obj["refs"]["role"] == "role/camera"]

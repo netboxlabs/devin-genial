@@ -266,12 +266,15 @@ class UtilityCompositionTests(unittest.TestCase):
         objects = self.objects()
         for key in (f"device/{SITE}/rtu-01", f"device/{SITE}/relay-02",
                     f"device/{SITE}/hmi-01", f"device/{SITE}/gateway-01"):
-            description = objects[key]["attrs"]["description"]
-            self.assertIn("Reference", description)
+            # Limitations stay on the record, in comments, out of the list-view description.
+            attrs = objects[key]["attrs"]
+            self.assertNotIn("Reference", attrs["description"])
             self.assertIn("no telemetry point, protection setting, control action or utility protocol",
-                          description)
-        room = objects[f"location/{SITE}/bay-01"]["attrs"]["description"]
-        self.assertIn("no electrical rating, protection setting or control function is configured", room)
+                          attrs["comments"])
+        room = objects[f"location/{SITE}/bay-01"]["attrs"]
+        self.assertIn("no electrical rating, protection setting or control function is configured",
+                      room["comments"].lower())
+        self.assertNotIn("configured", room["description"])
 
     def test_substation_uses_only_catalog_reference_hardware(self):
         aliases = {o["meta"]["hardware"] for o in self.plan["objects"] if o["kind"] == "device"}
@@ -760,7 +763,10 @@ class UtilityValidatorTests(unittest.TestCase):
             small(substations=[dict(key="oakridge", kind="transmission", bays=16)],
                   site_names={"sub-oakridge": {"name": "The Consolidated Municipal Power "
                               "and Light Authority Oakridge Transmission Interconnection Yard"}})
-        self.assertIn("200-character", str(caught.exception))
+        # Descriptions no longer carry disclaimers, so the native name limit now
+        # trips first; either way generation fails naming this site's records.
+        self.assertRegex(str(caught.exception), "200-character|native limit")
+        self.assertIn("sub-oakridge", str(caught.exception))
 
     def test_a_station_gateway_borrowing_a_corporate_routing_context_is_reported(self):
         self.assertIn("utl-zone-isolation", self.mutated(

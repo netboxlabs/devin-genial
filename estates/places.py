@@ -13,6 +13,7 @@ import hashlib
 import math
 
 from .model import DesignError
+from .naming import _ACRONYMS
 
 
 METROS = (
@@ -69,7 +70,7 @@ ANCHORS = {
         (("Portage Park",), "Chicago", 41.9580, -87.7650),
         (("Little Village",), "Chicago", 41.8445, -87.7130),
         (("Austin",), "Chicago", 41.8940, -87.7650),
-        (("Elk Grove", "Elk Grove Village"), "Elk Grove Village", 41.9950, -87.9650),
+        (("Elk Grove", "Elk Grove Village"), "Elk Grove Village", 42.0000, -87.9700),
         (("Franklin Park",), "Franklin Park", 41.9353, -87.8656),
         (("Northlake",), "Northlake", 41.9170, -87.8956),
         (("Oak Park",), "Oak Park", 41.8850, -87.7845),
@@ -105,7 +106,7 @@ ANCHORS = {
         (("Livonia",), "Livonia", 42.3684, -83.3527),
         (("Royal Oak",), "Royal Oak", 42.4895, -83.1446),
         (("Novi",), "Novi", 42.4806, -83.4800),
-        (("Woodward",), "Detroit", 42.3401, -83.0530, 42.3903, -83.0868),
+        (("Woodward",), "Detroit", 42.3401, -83.0530, 42.3850, -83.0832),
         (("Gratiot",), "Detroit", 42.3395, -83.0419, 42.4360, -82.9771),
         (("Cass",), "Detroit", 42.3348, -83.0546, 42.3698, -83.0749),
         (("Livernois",), "Detroit", 42.3506, -83.1347, 42.4399, -83.1418),
@@ -139,7 +140,7 @@ ANCHORS = {
         (("Prospect",), "Cleveland", 41.4987, -81.6878, 41.5025, -81.6551),
         (("Carnegie",), "Cleveland", 41.4986, -81.6759, 41.5011, -81.6152),
         (("Woodland",), "Cleveland", 41.4914, -81.6681, 41.4885, -81.6021),
-        (("Fleet",), "Cleveland", 41.4558, -81.6546, 41.4579, -81.6359),
+        (("Fleet",), "Cleveland", 41.4563, -81.6500, 41.4579, -81.6359),
         (("Denison",), "Cleveland", 41.4667, -81.7542, 41.4507, -81.7016),
     ),
     "Milwaukee": (
@@ -214,11 +215,11 @@ SPACE_DESCRIPTIONS = {
     "office": "Private staff work area with twelve desk positions",
     "reception": "Visitor reception and building entrance",
     "classroom": "Teaching room with declared student seats and a teacher position",
-    "computer_lab": "Shared student computer lab; seats do not add to enrollment",
-    "patient_room": "Two bed stations with reference networked monitoring endpoints; no clinical equipment certification",
+    "computer_lab": "Shared student computer lab",
+    "patient_room": "Two bed stations with networked monitoring endpoints",
     "nurse_station": "Clinical workstation area supporting the assigned ward",
     "exam_room": "Outpatient examination room with an installed clinical workstation",
-    "imaging_room": "Reference imaging modality and diagnostic workstation; no clinical function is executed",
+    "imaging_room": "Imaging modality and diagnostic workstation",
     "corridor": "Circulation space with access-point and security-camera locations",
     "sales_floor": "Customer sales floor with point-of-sale lane positions",
     "back_office": "Store back office with staff workstation positions",
@@ -227,14 +228,28 @@ SPACE_DESCRIPTIONS = {
     "shipping_dock": "Shipping and receiving dock",
     "lecture_hall": "Teaching room with an installed instructor position and coverage radio",
     "teaching_lab": "Instructional and research computing lab with installed workstation seats",
-    "dorm_room": "Residence room with installed wired data ports; no resident-owned device is represented",
+    "dorm_room": "Residence room with installed wired data ports",
     "reading_room": "Library reading area with installed study workstation positions",
     "staff_office": "Customer staff office pod with installed workstation positions",
-    "production_line": "Production line cell with installed controller, operator-panel and field-device positions; no control function or industrial protocol is configured",
+    "production_line": "Production line cell with installed controller, operator-panel and field-device positions",
     "loading_dock": "Warehouse loading dock with installed scanner-station positions",
     "control_room": "Substation control-house room with installed station HMI, gateway and corporate desk positions",
-    "switchyard_bay": "Switchyard bay position with installed remote-terminal-unit and protection-relay records; no electrical rating, protection setting or control function is configured",
+    "switchyard_bay": "Switchyard bay position with installed remote-terminal-unit and protection-relay records",
 }
+# Material limitations stay on the record, in comments, out of the list view.
+SPACE_COMMENTS = {
+    "computer_lab": "Lab seats are shared and do not add to enrollment.",
+    "patient_room": "Monitoring endpoints are reference inventory; no clinical equipment certification is claimed.",
+    "imaging_room": "The modality is reference inventory; no clinical function is executed.",
+    "dorm_room": "Ports are installed capacity; no resident-owned device is represented.",
+    "production_line": "No control function or industrial protocol is configured.",
+    "switchyard_bay": "No electrical rating, protection setting or control function is configured.",
+}
+RF_UNVERIFIED = "AP mount positions are planned; RF coverage is unverified."
+CONTROL_INVENTORY = "Inventory only: no control function, safety rating or industrial protocol is configured."
+STATION_INVENTORY = ("Inventory only: no telemetry point, protection setting, control action "
+                     "or utility protocol is configured.")
+CLINICAL_INVENTORY = "Reference inventory: no clinical function or equipment certification is claimed."
 
 
 def _site_display(site):
@@ -246,6 +261,19 @@ def _ordinal(number):
     if 10 <= number % 100 <= 20:
         return f"{number}th"
     return f"{number}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th') }"
+
+
+def endpoint_label(cohort):
+    """Sentence-case operational label: 'classroom-ap' -> 'Classroom AP'."""
+    text = " ".join(_ACRONYMS.get(word, word) for word in cohort.split("-")).replace("point of sale", "point-of-sale")
+    return text[:1].upper() + text[1:]
+
+
+def _describe(site, node, space, cohort, detail="", comments=None):
+    node["attrs"]["description"] = (f"{endpoint_label(cohort)} in {space['attrs']['name']} at {_site_display(site)}"
+                                    + (f"; {detail}" if detail else ""))
+    if comments:
+        node["attrs"]["comments"] = comments
 
 
 def _authored_identity(site, city):
@@ -449,9 +477,11 @@ def _location(site, suffix, name, space_type, floor, position, parent=None, capa
                            else "Control, equipment and facilities floor")
     if site.contract["kind"] == "dc" and space_type == "equipment_room":
         description = "Restricted data hall with compute, network and power distribution"
-    site.w.add("location", key,
-               {"name": name, "slug": f"{site.name}-{suffix.replace('/', '-') or 'equipment'}", "status": "active",
-                "description": description}, refs, meta)
+    attrs = {"name": name, "slug": f"{site.name}-{suffix.replace('/', '-') or 'equipment'}", "status": "active",
+             "description": description}
+    if space_type in SPACE_COMMENTS:
+        attrs["comments"] = SPACE_COMMENTS[space_type]
+    site.w.add("location", key, attrs, refs, meta)
     return key
 
 
@@ -732,9 +762,8 @@ def school_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: school access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node = site.w.obj(key)
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role == "role/ap":
-        node["attrs"]["description"] += "; staff on wlan0, students on wlan1; RF coverage unverified"
+    ap = role == "role/ap"
+    _describe(site, node, space, cohort, ap and "staff on wlan0, students on wlan1", ap and RF_UNVERIFIED)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving}, access_channel_length_m=route)
 
@@ -779,9 +808,8 @@ def retail_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: retail access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role == "role/ap":
-        node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
+    ap = role == "role/ap"
+    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0", ap and RF_UNVERIFIED)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -836,9 +864,8 @@ def msp_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: managed-office access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role == "role/ap":
-        node["attrs"]["description"] += "; staff and any requested guest WLAN ride wlan0; RF coverage unverified"
+    ap = role == "role/ap"
+    _describe(site, node, space, cohort, ap and "staff and any requested guest WLAN ride wlan0", ap and RF_UNVERIFIED)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -905,13 +932,9 @@ def plant_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: plant access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role in {"role/plc", "role/hmi", "role/field-device"}:
-        node["attrs"]["description"] = (
-            f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {_site_display(site)}; "
-            "inventory only, with no control function, safety rating or industrial protocol configured")
-    elif role == "role/ap":
-        node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
+    ap = role == "role/ap"
+    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0",
+              CONTROL_INVENTORY if role in {"role/plc", "role/hmi", "role/field-device"} else ap and RF_UNVERIFIED)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -959,11 +982,8 @@ def substation_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: substation access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role in {"role/rtu", "role/protection-relay", "role/hmi", "role/station-gateway"}:
-        node["attrs"]["description"] = (
-            f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {_site_display(site)}; "
-            "inventory only, with no telemetry point, protection setting, control action or utility protocol configured")
+    _describe(site, node, space, cohort, comments=STATION_INVENTORY if role in {
+        "role/rtu", "role/protection-relay", "role/hmi", "role/station-gateway"} else None)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -1085,9 +1105,8 @@ def university_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: campus access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role == "role/ap":
-        node["attrs"]["description"] += "; staff on wlan0, students on wlan1; RF coverage unverified"
+    ap = role == "role/ap"
+    _describe(site, node, space, cohort, ap and "staff on wlan0, students on wlan1", ap and RF_UNVERIFIED)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving}, access_channel_length_m=route)
 
@@ -1150,10 +1169,8 @@ def hospital_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: clinical access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    node["attrs"]["description"] = f"{cohort.replace('-', ' ').title()} in {space['attrs']['name']} at {_site_display(site)}"
-    if role in {"role/medical-device","role/imaging-device"}:
-        node["attrs"]["description"] = f"Reference {cohort.replace('-', ' ')} in {space['attrs']['name']} at {_site_display(site)}"
-    elif role == "role/ap":
-        node["attrs"]["description"] += "; staff WLAN on wlan0; RF coverage unverified"
+    ap = role == "role/ap"
+    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0",
+              CLINICAL_INVENTORY if role in {"role/medical-device", "role/imaging-device"} else ap and RF_UNVERIFIED)
     node["meta"].update(cohort=cohort,placement={"room":room,"function":space["meta"]["space_type"],
         "floor":space["meta"]["floor"],"position_m":point,"cable_origin":serving},access_channel_length_m=route)
