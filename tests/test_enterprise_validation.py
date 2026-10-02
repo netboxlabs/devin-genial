@@ -85,7 +85,7 @@ class EnterpriseValidationTests(unittest.TestCase):
     def test_cable_status_remains_an_obligation_without_uplink_contract(self):
         host = self.vm()["refs"]["device"]
         cable = next(o for o in self.plan["objects"] if o["kind"] == "cable" and
-                     f"{host}/if/eth0" in o["refs"].values())
+                     f"{host}/if/eth1" in o["refs"].values())
         cable["attrs"]["status"] = "planned"
         self.plan["contracts"] = []
         self.assertFinding("dc-uplink-path")

@@ -64,7 +64,7 @@ class OpticsPowerTests(unittest.TestCase):
         self.assertEqual(self.draws(world,'leaf')[0]['maximum_draw'],181)
 
     def test_inactive_disconnected_installed_modules_retain_load_and_repeat_is_exact(self):
-        world=self.fixture({'server':['reference-10g-lr']*2})
+        world=self.fixture({'server':['generic-10g-lr']*2})
         for obj in world.objects.values():
             if obj['kind']=='module':obj['attrs']['status']='offline'
         poe.enrich(world)
@@ -78,7 +78,7 @@ class OpticsPowerTests(unittest.TestCase):
         poe.enrich(world)
         self.assertEqual([p['allocated_draw'] for p in self.draws(world,'access')],[79,79])
         self.assertEqual(self.draws(world,'access')[0]['description'],
-            'Chassis plus reserved PoE AC planning allowance; each supply reserves the full device total')
+            'Budgeted draw: chassis and PoE; each supply sized for the full load')
         empty=self.fixture({'server':[]})
         before=deepcopy((empty.objects,empty.contracts))
         poe.enrich(empty)

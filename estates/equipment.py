@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 
+from .model import SERIAL_SPACE, vendor_serial
 from .naming import titleize
 
 
@@ -58,19 +59,34 @@ def enrich_site(site, *, demonstrations=True):
                 consoles[obj["refs"]["location"]].append(f"{device}/console_port/{port['name']}")
     for room, ports in sorted(consoles.items()):
         servers = {}
+        size = _console_size(site, room, ports)
+        server_ports = w.catalog["models"][size]["console_server_ports"]
         for port in sorted(ports):
             slot = w.reserve(f"console-ports/{site.id}/{site.room_prefix(room)}", port, 960)
-            block, position = divmod(slot, 48)
+            block, position = divmod(slot, len(server_ports))
             if block not in servers:
-                servers[block] = site.device("console-server", f"{site.room_prefix(room)}console-{block+1:02}",
+                servers[block] = site.device(size, f"{site.room_prefix(room)}console-{block+1:02}",
                                              "console-server", location=room)
-            server_port = f"{servers[block]}/console_server_port/Console{position+1:02}"
-            w.obj(port)["attrs"]["speed"] = 115200
+            server_port = f"{servers[block]}/console_server_port/{server_ports[position]['name']}"
+            for end in (port, server_port):
+                w.obj(end)["attrs"]["speed"] = 115200
             cable = site.cable(port, server_port)
             w.obj(cable)["attrs"].pop("type")
             w.obj(cable)["attrs"]["description"] = "RJ45 asynchronous serial console; separate from Ethernet management"
     site.contract["assumptions"].append(
         "Console servers provide serial access to primary network equipment in the same room; spare USB and later management-switch console ports remain uncabled.")
+
+
+def _console_size(site, room, ports):
+    """Opengear size for one room: a 16-port CM8116 unless its serial demand
+    exceeds one, then the 48-port CM8148. The first build's choice is kept in a
+    reservation ledger, so growth adds same-size units and never swaps a model."""
+    w = site.w
+    scope = f"console-server-size/{site.id}/{site.room_prefix(room)}"
+    if not w.reservations.get(scope):
+        small = len(w.catalog["models"]["console-server"]["console_server_ports"])
+        w.reserve(scope, "console-server" if len(ports) <= small else "console-server-48", 1)
+    return next(iter(w.reservations[scope]))
 
 
 def _laboratory(site):
@@ -84,11 +100,11 @@ def _laboratory(site):
     w.obj(child)["meta"]["powered_by_enclosure"] = parent
     source = w.add("cooling_source", f"cooling/{site.id}/source",
                    {"name": "Lab chiller", "type": "chiller", "status": "active", "fluid_type": "water-glycol",
-                    "cooling_capacity": 4, "description": "Reference closed-loop laboratory chiller; 4 kW rated planning capacity"},
+                    "cooling_capacity": 4, "description": "Closed-loop laboratory chiller; 4 kW rated planning capacity"},
                    {"site": site.key, "location": room})
     w.add("cooling_feed", f"cooling/{site.id}/feed",
           {"name": "Analytics loop", "status": "active", "cooling_capacity": 1,
-           "max_flow": 12, "max_flow_unit": "lpm", "description": "Reference 1 kW supply-and-return loop to analytics rack"},
+           "max_flow": 12, "max_flow_unit": "lpm", "description": "1 kW supply-and-return loop to analytics rack"},
           {"cooling_source": source, "rack": rack, "tenant": site.tenant})
     attrs = {"type": "qdc", "diameter": 10, "diameter_unit": "mm"}
     intake = w.add("cooling_intake", f"{parent}/cooling/supply", attrs | {
@@ -107,13 +123,13 @@ def _laboratory(site):
         ns = w.recipe["namespace"]
         w.add("inventory_item_role", role, {"name": "Cooling assembly", "slug": f"{ns}-cooling-assembly", "color": "00838f"})
     assembly = w.add("inventory_item", f"{child}/inventory/cold-plate",
-                     {"name": "Cold plate assembly", "part_id": "REF-COLDPLATE-01", "status": "active",
-                      "description": "Serviceable cold plate; original reference design"},
-                     {"device": child, "role": role, "manufacturer": "manufacturer/Devin Reference Designs"})
+                     {"name": "Cold plate assembly", "part_id": "CP-10MM-01", "status": "active",
+                      "description": "Serviceable cold plate"},
+                     {"device": child, "role": role, "manufacturer": "manufacturer/Generic"})
     w.add("inventory_item", f"{child}/inventory/coupling",
-          {"name": "Supply coupling", "part_id": "REF-QDC-10MM", "status": "active"},
+          {"name": "Supply coupling", "part_id": "QDC-10MM", "status": "active"},
           {"device": child, "parent": assembly, "role": role,
-           "manufacturer": "manufacturer/Devin Reference Designs", "component": f"{child}/cooling/supply"})
+           "manufacturer": "manufacturer/Generic", "component": f"{child}/cooling/supply"})
     site.contract["assumptions"].append(
         "One fictional analytics blade demonstrates enclosure power, device bays, replaceable cooling inventory and a rated coolant loop. The 400 W chassis allowance includes its blade; cooling capacities are planning ratings, not telemetry.")
 
@@ -123,8 +139,8 @@ def enrich(w):
     # ModuleType identity is vendor/model globally. Keep these shared descriptive
     # definitions namespace-independent; installed bays/modules are device-scoped.
     profile = "module-profile/installed-psu"
-    w.add("module_type_profile", profile, {"name": "Devin installed PSU inventory",
-          "description": "Source-linked installed PSU configuration; no inferred power rating",
+    w.add("module_type_profile", profile, {"name": "Installed power supply",
+          "description": "Field-replaceable power supply module",
           "schema": json.dumps({"type": "object", "properties": {"source": {"type": "string"}}, "required": ["source"]}, sort_keys=True)})
     for device in list(w.objects.values()):
         if device["kind"] != "device":
@@ -147,7 +163,8 @@ def enrich(w):
                         {"name": config["bay"], "position": config["position"], "enabled": True},
                         {"device": key, "module_bay_types": [bay_type]})
             module = w.add("module", f"{key}/module/{config['bay']}",
-                           {"status": "active", "serial": f"SYN-PSU-{w.choose(key + config['bay'], 'serial', range(10**10)):010d}"},
+                           {"status": "active", "serial": vendor_serial(spec["module_serial_format"],
+                                                         w.choose(f"{w.recipe['namespace']}/{key}{config['bay']}", "serial", SERIAL_SPACE))},
                            {"device": key, "module_bay": bay, "module_type": module_type})
             w.obj(f"{key}/power/{config['power_port']}")["refs"]["module"] = module
 

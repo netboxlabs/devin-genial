@@ -98,8 +98,8 @@ def enrich(world):
                     ("power_reservation_mw", "integer"), ("power_basis", "string"),
                     ("source", "string"))}
                 world.add("module_type_profile", profile,
-                          {"name": "Devin installed optics inventory",
-                           "description": "Source-linked parts and explicit local-link planning reservations",
+                          {"name": "Installed pluggable optic",
+                           "description": "Field-replaceable pluggable transceiver",
                            "schema": json.dumps({"type": "object", "properties": fields,
                                                  "required": sorted(fields)}, sort_keys=True)})
             attributes = {field: part[field] for field in (

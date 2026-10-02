@@ -133,6 +133,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
     w = site.w
     reserve = w.recipe["reserve_fraction"]
     fabric_ports, leaf_uplinks = (w.hardware("leaf")[field] for field in ("fabric_ports", "uplink_ports"))
+    data_ports = w.hardware("server")["data_ports"]
     rack_diversity = any(workload.get("failure_domain") == "rack" for workload in workloads)
     # Replica racks alone are insufficient if a rack loss removes both upstreams.
     spines = [site.device("core", f"spine-{s}", "spine", **({"rack_domain": i} if rack_diversity else {}))
@@ -202,7 +203,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             pool.append(host)
             hosts.append(host)
             for j, leaf in enumerate(leaves):
-                a, b = site.interface(host, f"eth{j}"), site.interface(leaf, fabric_ports[stable_slot%40])
+                a, b = site.interface(host, data_ports[j]), site.interface(leaf, fabric_ports[stable_slot%40])
                 site.cable(a, b, "smf")
                 trunk(site, [a, b], (network, "backup", "storage"))
             site.redundant(host, leaves)

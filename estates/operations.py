@@ -10,6 +10,9 @@ from .model import DesignError
 from .networking import ipam_roles
 from .operations_context import enrich as operational_context
 
+# Real enclosure per emitted cabinet height (catalog/README.md, rack type).
+RACK_TYPES = {24: ("AR3104", "NetShelter SX 24U server rack enclosure, 600 mm wide x 1070 mm deep, with sides")}
+
 
 def _wan_accounts(w, owner):
     """Purchased WAN accounts; provider service accounts have their own policy."""
@@ -79,11 +82,16 @@ def enrich(w):
     racks = add("rack_group", "rack-group/estate", {"name": "Estate cabinets", "slug": f"{ns}-estate-cabinets"}, {"owner": owner})
     rack_types = {}
     for height in sorted({rack["attrs"]["u_height"] for rack in by_kind["rack"]}):
-        rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": f"Reference {height}U cabinet",
-            "slug": f"{ns}-reference-{height}u", "u_height": height, "width": 19, "form_factor": "4-post-cabinet",
-            "description": "Standard four-post equipment cabinet",
-            "comments": "Reference dimensions; no vendor product or environmental rating is asserted."},
-            {"manufacturer": "manufacturer/Devin Reference Designs", "owner": owner})
+        # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
+        # cabinet grid (blocks.CABINET_WIDTH_M) is authored around. The pinned
+        # library has no 24U SX type, so catalog/README.md cites APC's page.
+        if height not in RACK_TYPES:
+            raise DesignError(f"No catalog rack type for a {height}U cabinet; add one before changing rack height")
+        model, description = RACK_TYPES[height]
+        rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": model,
+            "slug": f"{ns}-apc-{model.lower()}", "u_height": height, "width": 19, "form_factor": "4-post-cabinet",
+            "description": description},
+            {"manufacturer": "manufacturer/APC", "owner": owner})
     for rack in by_kind["rack"]:
         rack["refs"].update(rack_type=rack_types[rack["attrs"]["u_height"]], group=racks)
 
