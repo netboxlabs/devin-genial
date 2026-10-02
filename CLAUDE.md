@@ -233,6 +233,14 @@ fresh-only on resume too (only receipt-created or name-adopted rows are
 tolerated), re-runs the plan-free invariants before any write, and the exact
 readback verifies each shape's `dcim.rack` object_type, resolved rack id and
 layer — never a claim about what any visualization renders.
+Procurement history (`just lifecycle PLAN OUT`, `lifecycle-check PLAN OUT`, and
+`LIFECYCLE_WRITES=1 just seed-lifecycle OUT TARGET [RECEIPT]`) is the same
+sidecar shape for the Asset Lifecycle plugin: a BOM per site generated on the
+target by site/role scope rules, POs from two fictional vendors with null unit
+prices, deliveries dated from the equipment journals via a courier with no
+tracking URL (never the builtin UPS/FedEx/DHL), plugin-action installs, and
+spares pools in multi-cabinet rooms. Lifecycle rows protect sites and
+locations: remove them before `teardown-main`. See docs/loading.md.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
@@ -367,6 +375,11 @@ for the separately recorded pinned-target live qualification.
   fresh-only REST seeder with exact protected-field readback;
   `just geometry PLAN OUT`, `just geometry-check PLAN OUT`,
   `just seed-geometry OUT TARGET [RECEIPT]`.
+- `estates/lifecycle.py`: the Asset Lifecycle procurement sidecar — BOMs,
+  purchase orders, deliveries, installs and spares pools derived from a frozen
+  plan and bound to its SHA, plus the resumable REST seeder with exact
+  readback; `just lifecycle`, `lifecycle-check`, `seed-lifecycle`. Pinned by
+  `tests/test_lifecycle.py`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;

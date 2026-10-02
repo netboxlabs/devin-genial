@@ -180,6 +180,10 @@ the same frozen plan — the estate's own authored rack coordinates where it has
 them, a deterministic row layout elsewhere — and `seed-geometry` writes it
 through the physical-geometry plugin — see
 [floorplan geometry](docs/loading.md#floorplan-geometry-for-visual-explorer).
+For a procurement story behind the same equipment, `just lifecycle PLAN OUT`
+derives BOMs, purchase orders, deliveries and spares pools from the plan and
+`seed-lifecycle` writes them through the Asset Lifecycle plugin — see
+[procurement history](docs/loading.md#procurement-history-for-asset-lifecycle).
 
 A few behaviors worth knowing before your first load; the
 [loading guide](docs/loading.md) has the full mechanics:
