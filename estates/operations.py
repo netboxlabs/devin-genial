@@ -337,6 +337,7 @@ def finalize(w):
     _service_classes(w)
     _tags(w)
     _svis(w)
+    _host_ports(w)
     _ports(w)
     _addresses(w)
     _cables(w)
@@ -420,6 +421,37 @@ def _svis(w):
     for obj in w.objects.values():
         if (obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual"
                 and not obj["refs"].get("parent") and obj["attrs"].get("mode") == "access"):
+            obj["attrs"].pop("mode")
+            obj["refs"].pop("untagged_vlan", None)
+
+
+def _host_ports(w):
+    """An access VLAN is the switch's claim, not the host's.
+
+    802.1Q ``mode`` describes a switchport. A router's, server's, console
+    server's or endpoint's own port plugged into an access port, and any
+    dedicated management port (``mgmt_only``, even on a switch), is a host
+    interface: it carries no mode, and its segment is the one its address's
+    prefix is bound to (validate_networking.routed_vlan_view). The switch side
+    keeps its access VLAN. A host's tagged trunk (a hypervisor uplink, a
+    firewall or AP trunk) does tag frames and keeps its mode, as do the
+    802.1Q subinterfaces under it; a subinterface whose parent carries no
+    trunk names no tag, so it is a routed unit and loses its access VLAN too.
+    An L2VPN attachment with a VLAN translation policy bridges its VLAN and
+    keeps its mode (NetBox translation is an 802.1Q-mode feature).
+    """
+    from .automation import SWITCH_ROLES  # lazy: automation is imported by operations_context
+    objects = w.objects
+
+    def host(obj):
+        return (objects[obj["refs"]["device"]]["refs"].get("role") not in SWITCH_ROLES
+                or obj["attrs"].get("mgmt_only"))
+
+    ports = [o for o in objects.values() if o["kind"] == "interface" and o["attrs"].get("mode") == "access"]
+    for obj in sorted(ports, key=lambda o: bool(o["refs"].get("parent"))):  # parents first
+        parent = objects.get(obj["refs"].get("parent"), {})
+        if (host(obj) and parent.get("attrs", {}).get("mode") != "tagged"
+                and not obj["refs"].get("vlan_translation_policy")):
             obj["attrs"].pop("mode")
             obj["refs"].pop("untagged_vlan", None)
 

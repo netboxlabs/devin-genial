@@ -944,7 +944,7 @@ def validate(plan):
         for cable in cables:
             ports = [related(cable, side) for side in ("a", "b")]
             hosts = {port.get("refs", {}).get("device") for port in ports}
-            if (any(port.get("kind") != "interface" for port in ports) or cable["attrs"].get("type") != "smf"
+            if (any(port.get("kind") != "interface" for port in ports) or cable["attrs"].get("type") not in {"smf", "mmf"}
                     or "device/dc-01/compute-01-leaf-a" not in hosts):
                 report("operations-cable-bundle", cable["key"], "Bundle members must remain actual A-side optical host connections.")
     return sorted(findings, key=lambda f: (f["code"], f["object"]))

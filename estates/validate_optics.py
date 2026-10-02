@@ -24,6 +24,9 @@ _CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP2
 # A smaller module in a larger backward-compatible cage, at that module's own
 # rate. Everything else must match the cage's own form factor exactly.
 _DOWNRATED = {("sfp", "sfpp", 1000000), ("sfpp", "sfp28", 10000000)}
+# Detachable fibre optics: duplex LC on single-mode; duplex LC (SR) or MPO-12
+# (SR4) on multimode. Both ends of a channel use the same connector.
+_FIBRE_CONNECTORS = {"smf": {"lc"}, "mmf": {"lc", "mpo"}}
 # Restated provider route factor: owned fiber runs 1.3x the great-circle distance.
 ROUTE_FACTOR = 1.3
 _EPOCH = date(2000, 1, 3)
@@ -84,7 +87,7 @@ def analyze(plan, catalog=None):
                 all(isinstance(part[f], str) and part[f] for f in ("manufacturer", "model", "form_factor", "protocol", "medium", "connector")) and
                 all(type(part[f]) is int and part[f] > 0 for f in ("rate_kbps", "reach_m", "power_reservation_mw")) and
                 part["form_factor"] in {"sfp", "sfpp", "qsfp28"} and
-                part["medium"] in {"smf", "aoc"} and isinstance(part["compatible_interfaces"], dict) and
+                part["medium"] in {"smf", "mmf", "aoc"} and isinstance(part["compatible_interfaces"], dict) and
                 bool(part["compatible_interfaces"]) and
                 all(alias in models and isinstance(names, list) and names and all(isinstance(n, str) for n in names)
                     for alias, names in part["compatible_interfaces"].items()) and
@@ -349,6 +352,16 @@ def analyze(plan, catalog=None):
             current = mate
         return None, route, length, "contains a loop rather than a terminated channel"
 
+    # Catalog cages a reviewed multimode part fits, at that part's rate.
+    multimode = {(alias, name, p["rate_kbps"]) for p in parts.values() if p["medium"] == "mmf"
+                 for alias, names in p["compatible_interfaces"].items() for name in names}
+    multimode_reach = min((p["reach_m"] for p in parts.values() if p["medium"] == "mmf"), default=0)
+
+    def short_reach(end):
+        alias, name = hardware.get(refs(end).get("device")), attrs(end).get("name")
+        cage = _CAGES.get(catalog_ports.get(alias, {}).get(name, {}).get("type"))
+        return cage is not None and (alias, name, attrs(end).get("speed", cage[1])) in multimode
+
     assemblies = defaultdict(set)
     for port, part in installed.items():
         if not cables[port]:
@@ -364,11 +377,18 @@ def analyze(plan, catalog=None):
             report("optics-path", port, "Local optical peer needs an actual compatible installed module.")
         if (any(attrs(c).get("type") != part["medium"] for c in route) or
                 other and (other["medium"] != part["medium"] or other["protocol"] != part["protocol"] or other["rate_kbps"] != part["rate_kbps"]) or
-                part["medium"] == "smf" and (part["connector"] != "lc" or other and other["connector"] != "lc") or
+                part["medium"] in _FIBRE_CONNECTORS and (part["connector"] not in _FIBRE_CONNECTORS[part["medium"]]
+                                                         or other and other["connector"] != part["connector"]) or
                 kind(peer) == "circuit_termination" and attrs(peer).get("port_speed") != part["rate_kbps"]):
             report("optics-media", port, "Complete channel media, local endpoint protocol/rate and LC connectors must match; the circuit boundary does not assert a remote optic.")
         if length < minimum or length > min(part["reach_m"], other["reach_m"] if other else part["reach_m"]):
             report("optics-reach", port, "Complete channel length must meet local policy and the smaller installed endpoint reach.")
+        rooms = {refs(refs(end).get("device")).get("location") for end in (port, peer)}
+        if (part["medium"] == "smf" and kind(peer) == "interface" and len(route) == 1 and len(rooms) == 1
+                and None not in rooms and length <= multimode_reach
+                and all(short_reach(end) for end in (port, peer))):
+            report("optics-reach-class", port, "An in-room jumper between two cages that both take a reviewed "
+                   "short-reach multimode part runs multimode SR optics, not long-reach single-mode.")
         span = owned_span(peer) if kind(peer) == "circuit_termination" else 0
         if span is None or length + span > part["reach_m"]:
             report("optics-span-reach", port, "An optic lighting the operator's own fiber must reach the circuit's recorded distance "

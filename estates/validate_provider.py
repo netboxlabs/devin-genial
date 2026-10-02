@@ -889,7 +889,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             block = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
             management = ip_network((int(block.network_address) + 1, 32))
             prefix = f"prefix/{sid}/management"
-            if (peers.get(lan) or vlans(lan) != {clients_vlan} or attrs(lan).get("mode") != "access" or
+            if (peers.get(lan) or attrs(lan).get("mode") or refs(lan).get("untagged_vlan") or refs(lan).get("tagged_vlans") or
                     not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
                     kind(loop) != "interface" or attrs(loop).get("type") != "virtual" or refs(loop).get("parent") or vlans(loop) or
                     not address(loop, management, vrf, 0, tenant) or not primary(cpe, loop) or

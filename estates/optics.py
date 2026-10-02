@@ -93,6 +93,33 @@ def enrich(world):
                     raise DesignError(f"Optics catalog has ambiguous selection for {lookup}")
                 selections.setdefault(lookup, []).append(part_id)
         part_bay_types[part_id] = sorted(supported)
+
+    def cage_lookup(key, medium):
+        """(alias, cage name, rate, medium) for an optical interface, else None."""
+        interface = objects.get(key, {})
+        cage = _CAGES.get(interface.get("attrs", {}).get("type")) if interface.get("kind") == "interface" else None
+        if cage is None:
+            return None
+        alias = objects[interface["refs"]["device"]]["refs"]["device_type"].removeprefix("hardware/")
+        return alias, interface["attrs"]["name"], interface["attrs"].get("speed", cage[1]), medium
+
+    # Reach follows the run, not the cage: a single-mode jumper between two
+    # cages in one room, short enough for multimode and with a reviewed
+    # short-reach part on both ends, is OM4 multimode carrying SR/SR4 optics.
+    # Building backbones, carrier handoffs and owned spans keep single-mode;
+    # so does a link whose cage has no reviewed multimode part (FortiGate).
+    # ponytail: direct jumpers only; an LC patch-panel channel stays single-mode
+    # until the passive lane model covers MPO.
+    mmf_reach = min(p["reach_m"] for p in parts.values() if p["medium"] == "mmf")
+    for cable in {id(c): c for c in attached.values()}.values():
+        a, b = cable["refs"]["a"], cable["refs"]["b"]
+        rooms = {objects.get(objects.get(end, {}).get("refs", {}).get("device"), {}).get("refs", {}).get("location")
+                 for end in (a, b)}
+        if (cable["attrs"].get("type") == "smf" and cable["attrs"].get("length_unit") == "m"
+                and cable["attrs"].get("length", mmf_reach + 1) <= mmf_reach
+                and len(rooms) == 1 and None not in rooms
+                and all(selections.get(cage_lookup(end, "mmf")) for end in (a, b))):
+            cable["attrs"]["type"] = "mmf"
     occupied = []
     for interface in objects.values():
         if interface["kind"] != "interface" or interface["key"] not in attached:

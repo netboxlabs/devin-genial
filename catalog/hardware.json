@@ -141,13 +141,15 @@
       "url": "https://www.juniper.net/assets/br/pt/local/pdf/datasheets/1000389-en.pdf",
       "checked": "2026-09-10",
       "representation": "parsed-primary-pdf",
-      "purpose": "Printed page 11 ordering table lists EX-SFP-10GE-LR for EX3300: 1310 nm, 10GBASE-LR, 10 km SMF. Catalog selects the four existing standalone 10G uplink cages."
+      "purpose": "Printed page 11 ordering table lists EX-SFP-10GE-LR for EX3300: 1310 nm, 10GBASE-LR, 10 km SMF. Catalog selects the four existing standalone 10G uplink cages. The same ordering table lists EX-SFP-10GE-SR: 850 nm, up to 300 m on MMF (fibre grade not stated).",
+      "response_sha256": "363182a03e488cfa315749d975a8bd76f4619c690e5416c481147496c82eea3d"
     },
     "juniper-mx204-optics-host": {
       "url": "https://apps.juniper.net/hct/product/MX204/100001",
       "checked": "2026-09-10",
       "representation": "parsed-primary-html",
-      "purpose": "Exact MX204 HCT lists EX-SFP-10GE-LR on native SFP+ from Junos 17.4R1; SFP-1GE-LX on native SFP from 18.1R1; JNP-QSFP-100G-LR4 from 18.2R1. Selected port modes are separately bounded by mx204-port-modes; no QSA or breakout is modeled."
+      "purpose": "Exact MX204 HCT lists EX-SFP-10GE-LR on native SFP+ from Junos 17.4R1; SFP-1GE-LX on native SFP from 18.1R1; JNP-QSFP-100G-LR4 from 18.2R1. Selected port modes are separately bounded by mx204-port-modes; no QSA or breakout is modeled. The same HCT product page (re-fetched 2026-10-02) lists EX-SFP-10GE-SR natively on SFP+ and JNP-QSFP-100G-SR4 from 18.2R1.",
+      "response_sha256": "8cf4ce10b5263927bc8d2680c81ab789caafd4c3ed2150e568398b82f5cf0de4"
     },
     "juniper-ex-sfp-10ge-lr": {
       "url": "https://apps.juniper.net/hct/model/EX-SFP-10GE-LR",
@@ -201,7 +203,7 @@
       "url": "https://www.arista.com/assets/data/pdf/Transceiver-Guide.pdf",
       "checked": "2026-09-10",
       "representation": "archived-primary-pdf",
-      "purpose": "Overview gives platform applicability unless restricted; actual cage form factor remains mandatory. Tables 6/10/14 distinguish SFP-10G-LR and QSFP-100G-LR4 from single-lambda LR; selected LR/LR4 are duplex SMF, 10 km. LR4/AOC minimum EOS 4.15.2 also requires the chassis minimum release.",
+      "purpose": "Overview gives platform applicability unless restricted; actual cage form factor remains mandatory. Tables 6/10/14 distinguish SFP-10G-LR and QSFP-100G-LR4 from single-lambda LR; selected LR/LR4 are duplex SMF, 10 km. LR4/AOC minimum EOS 4.15.2 also requires the chassis minimum release. Tables 10/12 (SFP-10G-SR: duplex LC MMF, OM3 300 m / OM4 400 m) and Tables 6/14.0 (QSFP-100G-SR4: MPO-12 MMF, OM3 70 m / OM4 100 m); neither row restricts platforms, so the overview's all-platform rule applies.",
       "archive_path": "build/goal-connected-depth/design/phase5-sources/arista-transceiver-guide.pdf",
       "sha256": "de4d6d06586d52e0cf16e7371f3e901483ae418c3b53499edf539bc8fb414bd3"
     },
@@ -209,7 +211,7 @@
       "url": "https://www.arista.com/assets/data/pdf/Datasheets/Transceiver-Data-Sheet.pdf",
       "checked": "2026-09-10",
       "representation": "archived-primary-pdf",
-      "purpose": "Physical specifications and exact AOC-Q-Q-100G-3M ordering entry (printed page 22): one 3 m preterminated optical assembly with QSFP28 ends. No explicit SFP-10G-LR electrical maximum was established by this review.",
+      "purpose": "Physical specifications and exact AOC-Q-Q-100G-3M ordering entry (printed page 22): one 3 m preterminated optical assembly with QSFP28 ends. No explicit SFP-10G-LR electrical maximum was established by this review. Printed page 6 'Power Requirements (Maximum)' gives 1 W for SFP/SFP+ optics (SFP-10G-SR).",
       "archive_path": "build/goal-connected-depth/design/phase5-sources/arista-transceiver-datasheet.pdf",
       "sha256": "603e6d607001a8b6e06b15ebdb853ef45c45e97eee02a0e57d5652b7d093dbd5"
     },
@@ -224,7 +226,7 @@
       "url": "https://www.arista.com/assets/data/pdf/Datasheets/Arista-100G_Optics_FAQ.pdf",
       "checked": "2026-09-10",
       "representation": "archived-primary-pdf",
-      "purpose": "Printed page 5 maximum-power table gives QSFP-100G-LR4 4.5 W and AOC 3.5 W. AOC end-versus-assembly scope is not explicit: reserving 3.5 W at each captive end (7 W total) is an authored conservative interpretation.",
+      "purpose": "Printed page 5 maximum-power table gives QSFP-100G-LR4 4.5 W and AOC 3.5 W. AOC end-versus-assembly scope is not explicit: reserving 3.5 W at each captive end (7 W total) is an authored conservative interpretation. The same table gives QSFP-100G-SR4 3.5 W; page 7 lists its MPO connector.",
       "archive_path": "build/goal-connected-depth/design/phase5-sources/arista-100g-qa.pdf",
       "sha256": "60b171829cf113493d87abe258c319705a910cd2ce4282dddc5f27ec8cb977ba"
     },
@@ -247,7 +249,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Server eth1/eth2 use a generic third-party SFP-10G-LR, duplex LC SMF, 10 km nominal reach and an authored 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Server eth1/eth2 use a generic third-party SFP-10G-LR, duplex LC SMF, 10 km nominal reach and an authored 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency. In-room jumpers between two cages that both carry a reviewed short-reach part run on OM4 multimode with SR/SR4 optics; a generic third-party SFP-10G-SR (duplex LC, 400 m on OM4, authored 1000 mW envelope) serves server eth1/eth2. Long-reach single-mode stays for building backbones, carrier handoffs and owned spans, and for any cage (the FortiGate 100F) without a reviewed multimode part."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -279,7 +281,7 @@
       "url": "https://apps.juniper.net/hct/product/EX3400/100001",
       "checked": "2026-09-19",
       "representation": "parsed-primary-html",
-      "purpose": "EX3400 Hardware Compatibility Tool transceiver list includes EX-SFP-10GE-LR (Juniper part 740-021309) from Junos OS 15.1X53-D50. Catalog installs it only in the four selected 10G uplink cages.",
+      "purpose": "EX3400 Hardware Compatibility Tool transceiver list includes EX-SFP-10GE-LR (Juniper part 740-021309) from Junos OS 15.1X53-D50. Catalog installs it only in the four selected 10G uplink cages. The same list includes EX-SFP-10GE-SR.",
       "response_sha256": "ae1e18c3c63d8d9fb77d07466980bcb661c9aec4f4dec46fcedb8f6a8cadb398",
       "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/juniper-ex3400-optics.html"
     },
@@ -314,7 +316,7 @@
       "url": "https://apps.juniper.net/hct/product/QFX5120-48Y/transceivers",
       "checked": "2026-09-19",
       "representation": "parsed-primary-html",
-      "purpose": "Exact QFX5120-48Y HCT transceiver list includes EX-SFP-10GE-LR (740-021309), JNP-QSFP-100G-LR4 (740-061409) and JNP-100G-AOC-3M (740-065631), each from Junos OS 18.3R1 and none end-of-life. No breakout or channelized mode is modeled.",
+      "purpose": "Exact QFX5120-48Y HCT transceiver list includes EX-SFP-10GE-LR (740-021309), JNP-QSFP-100G-LR4 (740-061409) and JNP-100G-AOC-3M (740-065631), each from Junos OS 18.3R1 and none end-of-life. No breakout or channelized mode is modeled. The same list includes EX-SFP-10GE-SR and JNP-QSFP-100G-SR4, from 18.3R1 and not end-of-life.",
       "response_sha256": "bf091be17b9f84dd5bfc8872aca16f37da0e3f8db9159735b62e854dc0ad6e8b",
       "evidence_path": "build/goal-connected-depth/design/phase5-sources/vendor-lines/qfx5120-optics-host.html"
     },
@@ -417,6 +419,27 @@
       "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
       "sha256": "9516247769b5794e27e4cd5a27b255c8ecadcb95c46f59cdcc467601274514d4",
       "license": "CC0-1.0"
+    },
+    "juniper-ex-sfp-10ge-sr": {
+      "url": "https://apps.juniper.net/hct/model/EX-SFP-10GE-SR",
+      "checked": "2026-10-02",
+      "representation": "primary-response-hash-and-field-extraction",
+      "purpose": "Exact model HCT (740-021308): 10GBASE-SR, MMF, duplex LC PC/UPC, OM3 300 m / OM4 400 m, maximum power consumption 1 W. Platforms: MX204 17.4R1 (native SFP+), QFX5120-48Y 18.3R1, EX3400 15.1X53-D50. EX3300 support rests on its own datasheet (juniper-ex3300-optics). Response bytes hashed, not archived.",
+      "response_sha256": "016bca1086018f2636b4e265adc47d58f445e6c44935dd4b6205f091f679ebb2"
+    },
+    "juniper-jnp-qsfp-100g-sr4": {
+      "url": "https://apps.juniper.net/hct/model/JNP-QSFP-100G-SR4",
+      "checked": "2026-10-02",
+      "representation": "primary-response-hash-and-field-extraction",
+      "purpose": "Exact model HCT (740-061405): IEEE 802.3bm 100GBASE-SR4, MMF, MPO-12 PC/UPC, OM3 70 m / OM4 100 m, maximum power consumption 3.5 W. Platforms: MX204 18.2R1, QFX5120-48Y 18.3R1. No breakout is modeled.",
+      "response_sha256": "90288e21b267602235fd50416a7a8287170d4fdd03752fee0bae29062d5d2850"
+    },
+    "cisco-optics-host-notes-sr": {
+      "url": "https://tmgmatrix.cisco.com/public/api/networkdevice/notes",
+      "checked": "2026-10-02",
+      "representation": "primary-response-hash-and-field-extraction",
+      "purpose": "TMG notes for C9200L-24P-4X / SFP-10G-SR (POST networkModelId 1767, softwareReleaseId 1522, transceiverModelId 73): fixed onboard uplinks only; OM3 300 m, OM4/OM5 400 m. The archived C9200L search response (cisco-optics-host-json) lists the SFP-10G-SR row: 10GBASE-SR, duplex MMF LC/UPC, IOS XE 16.9.2.",
+      "response_sha256": "41f175608b9ec770036db4cdc36ac86d1c3a4fd103c9d72ca78478d2bd69d1fe"
     }
   },
   "hardware_lines": {
@@ -3784,6 +3807,32 @@
         },
         "vendor_max_power_mw": 1000
       },
+      "cisco-10g-sr": {
+        "manufacturer": "Cisco",
+        "model": "SFP-10G-SR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-SR",
+        "medium": "mmf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 400,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "cisco-optics-host-json",
+          "cisco-optics-host-notes-sr",
+          "cisco-sfp-10g-power"
+        ],
+        "compatible_interfaces": {
+          "access": [
+            "TenGigabitEthernet1/1/1",
+            "TenGigabitEthernet1/1/2",
+            "TenGigabitEthernet1/1/3",
+            "TenGigabitEthernet1/1/4"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
       "juniper-10g-lr": {
         "manufacturer": "Juniper",
         "model": "EX-SFP-10GE-LR",
@@ -3800,6 +3849,101 @@
           "juniper-mx204-optics-host",
           "juniper-ex-sfp-10ge-lr",
           "mx204-port-modes",
+          "juniper-ex3400-optics",
+          "qfx5120-optics-host"
+        ],
+        "compatible_interfaces": {
+          "inherited-access": [
+            "xe-0/1/0",
+            "xe-0/1/1",
+            "xe-0/1/2",
+            "xe-0/1/3"
+          ],
+          "provider-edge": [
+            "xe-0/1/0",
+            "xe-0/1/1",
+            "xe-0/1/2",
+            "xe-0/1/3",
+            "xe-0/1/4",
+            "xe-0/1/5",
+            "xe-0/1/6",
+            "xe-0/1/7"
+          ],
+          "access-juniper": [
+            "xe-0/2/0",
+            "xe-0/2/1",
+            "xe-0/2/2",
+            "xe-0/2/3"
+          ],
+          "leaf-juniper": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2",
+            "et-0/0/3",
+            "et-0/0/4",
+            "et-0/0/5",
+            "et-0/0/6",
+            "et-0/0/7",
+            "et-0/0/8",
+            "et-0/0/9",
+            "et-0/0/10",
+            "et-0/0/11",
+            "et-0/0/12",
+            "et-0/0/13",
+            "et-0/0/14",
+            "et-0/0/15",
+            "et-0/0/16",
+            "et-0/0/17",
+            "et-0/0/18",
+            "et-0/0/19",
+            "et-0/0/20",
+            "et-0/0/21",
+            "et-0/0/22",
+            "et-0/0/23",
+            "et-0/0/24",
+            "et-0/0/25",
+            "et-0/0/26",
+            "et-0/0/27",
+            "et-0/0/28",
+            "et-0/0/29",
+            "et-0/0/30",
+            "et-0/0/31",
+            "et-0/0/32",
+            "et-0/0/33",
+            "et-0/0/34",
+            "et-0/0/35",
+            "et-0/0/36",
+            "et-0/0/37",
+            "et-0/0/38",
+            "et-0/0/39",
+            "et-0/0/40",
+            "et-0/0/41",
+            "et-0/0/42",
+            "et-0/0/43",
+            "et-0/0/44",
+            "et-0/0/45",
+            "et-0/0/46",
+            "et-0/0/47"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "juniper-10g-sr": {
+        "manufacturer": "Juniper",
+        "model": "EX-SFP-10GE-SR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-SR",
+        "medium": "mmf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 400,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "juniper-ex-sfp-10ge-sr",
+          "juniper-mx204-optics-host",
+          "mx204-port-modes",
+          "juniper-ex3300-optics",
           "juniper-ex3400-optics",
           "qfx5120-optics-host"
         ],
@@ -3949,6 +4093,75 @@
           ]
         }
       },
+      "arista-10g-sr": {
+        "manufacturer": "Arista",
+        "model": "SFP-10G-SR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-SR",
+        "medium": "mmf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 400,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "arista-transceiver-guide",
+          "arista-transceiver-datasheet"
+        ],
+        "compatible_interfaces": {
+          "leaf": [
+            "Ethernet1",
+            "Ethernet2",
+            "Ethernet3",
+            "Ethernet4",
+            "Ethernet5",
+            "Ethernet6",
+            "Ethernet7",
+            "Ethernet8",
+            "Ethernet9",
+            "Ethernet10",
+            "Ethernet11",
+            "Ethernet12",
+            "Ethernet13",
+            "Ethernet14",
+            "Ethernet15",
+            "Ethernet16",
+            "Ethernet17",
+            "Ethernet18",
+            "Ethernet19",
+            "Ethernet20",
+            "Ethernet21",
+            "Ethernet22",
+            "Ethernet23",
+            "Ethernet24",
+            "Ethernet25",
+            "Ethernet26",
+            "Ethernet27",
+            "Ethernet28",
+            "Ethernet29",
+            "Ethernet30",
+            "Ethernet31",
+            "Ethernet32",
+            "Ethernet33",
+            "Ethernet34",
+            "Ethernet35",
+            "Ethernet36",
+            "Ethernet37",
+            "Ethernet38",
+            "Ethernet39",
+            "Ethernet40",
+            "Ethernet41",
+            "Ethernet42",
+            "Ethernet43",
+            "Ethernet44",
+            "Ethernet45",
+            "Ethernet46",
+            "Ethernet47",
+            "Ethernet48"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
       "arista-100g-lr4": {
         "manufacturer": "Arista",
         "model": "QSFP-100G-LR4",
@@ -4012,6 +4225,70 @@
           ]
         },
         "vendor_max_power_mw": 4500
+      },
+      "arista-100g-sr4": {
+        "manufacturer": "Arista",
+        "model": "QSFP-100G-SR4",
+        "form_factor": "qsfp28",
+        "protocol": "100GBASE-SR4",
+        "medium": "mmf",
+        "connector": "mpo",
+        "rate_kbps": 100000000,
+        "reach_m": 100,
+        "power_reservation_mw": 3500,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "arista-transceiver-guide",
+          "arista-transceiver-datasheet",
+          "arista-100g-qa"
+        ],
+        "compatible_interfaces": {
+          "leaf": [
+            "Ethernet49/1",
+            "Ethernet50/1",
+            "Ethernet51/1",
+            "Ethernet52/1",
+            "Ethernet53/1",
+            "Ethernet54/1",
+            "Ethernet55/1",
+            "Ethernet56/1"
+          ],
+          "core": [
+            "Ethernet1/1",
+            "Ethernet2/1",
+            "Ethernet3/1",
+            "Ethernet4/1",
+            "Ethernet5/1",
+            "Ethernet6/1",
+            "Ethernet7/1",
+            "Ethernet8/1",
+            "Ethernet9/1",
+            "Ethernet10/1",
+            "Ethernet11/1",
+            "Ethernet12/1",
+            "Ethernet13/1",
+            "Ethernet14/1",
+            "Ethernet15/1",
+            "Ethernet16/1",
+            "Ethernet17/1",
+            "Ethernet18/1",
+            "Ethernet19/1",
+            "Ethernet20/1",
+            "Ethernet21/1",
+            "Ethernet22/1",
+            "Ethernet23/1",
+            "Ethernet24/1",
+            "Ethernet25/1",
+            "Ethernet26/1",
+            "Ethernet27/1",
+            "Ethernet28/1",
+            "Ethernet29/1",
+            "Ethernet30/1",
+            "Ethernet31/1",
+            "Ethernet32/1"
+          ]
+        },
+        "vendor_max_power_mw": 3500
       },
       "fortinet-10g-lr": {
         "manufacturer": "Fortinet",
@@ -4158,6 +4435,42 @@
         },
         "vendor_max_power_mw": 3500
       },
+      "juniper-100g-sr4": {
+        "manufacturer": "Juniper",
+        "model": "JNP-QSFP-100G-SR4",
+        "form_factor": "qsfp28",
+        "protocol": "100GBASE-SR4",
+        "medium": "mmf",
+        "connector": "mpo",
+        "rate_kbps": 100000000,
+        "reach_m": 100,
+        "power_reservation_mw": 3500,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "juniper-jnp-qsfp-100g-sr4",
+          "juniper-mx204-optics-host",
+          "mx204-port-modes",
+          "qfx5120-optics-host"
+        ],
+        "compatible_interfaces": {
+          "provider-edge": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2"
+          ],
+          "leaf-juniper": [
+            "et-0/0/48",
+            "et-0/0/49",
+            "et-0/0/50",
+            "et-0/0/51",
+            "et-0/0/52",
+            "et-0/0/53",
+            "et-0/0/54",
+            "et-0/0/55"
+          ]
+        },
+        "vendor_max_power_mw": 3500
+      },
       "arista-100g-aoc-3m": {
         "manufacturer": "Arista",
         "model": "AOC-Q-Q-100G-3M",
@@ -4232,6 +4545,27 @@
         "rate_kbps": 10000000,
         "reach_m": 10000,
         "power_reservation_mw": 2000,
+        "power_basis": "authored generic component envelope",
+        "source_ids": [
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "server": [
+            "eth1",
+            "eth2"
+          ]
+        }
+      },
+      "generic-10g-sr": {
+        "manufacturer": "Generic",
+        "model": "SFP-10G-SR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-SR",
+        "medium": "mmf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 400,
+        "power_reservation_mw": 1000,
         "power_basis": "authored generic component envelope",
         "source_ids": [
           "reference-optics-v1"
