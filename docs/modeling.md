@@ -193,16 +193,33 @@ rebaseline-frozen like the other naming pools.
 
 Street addresses follow the same anchor (since 0.16.0). `places.ADDRESS_STREETS`
 names, per anchor, real streets inside it: a street run is addressed on its own
-street, a point anchor on the road Nominatim reverse-geocoded at its centre plus
-a few well-known main streets, each checked with a bounded Nominatim search
-inside the anchor box (2026-10-02; two that failed were replaced by roads the
-reverse lookup returned). A hash of the site id picks the street and a house
-number from 100 to 9899; inside Chicago a `North`/`South` street is instead
-numbered from the site's latitude and an `East`/`West` street from its
-longitude on the city grid (800 numbers a mile from State and Madison), so
-`1455 West 18th Street` sits where its map pin does. The number is synthetic,
-never a surveyed premises, and no ZIP code is claimed. `naming = "legacy"` keeps
-the pre-0.16 sequential street lines.
+street; a point anchor on the road Nominatim reverse-geocoded at its centre plus
+the numbered streets reverse geocoding returned at eight more points inside its
+jitter box (2026-10-02, cached under ignored `build/geo-verify/`). A hash of the site
+id picks the street; the **house number follows the site's position**, never a
+hash (only the odd/even side is hashed), so two sites near each other on one
+street read near each other:
+
+- **Chicago** directional streets use the city grid (800 numbers a mile from
+  State and Madison; south of Madison through `CHICAGO_SOUTH`, read from the
+  samples, because twelve hundred numbers fit Roosevelt Road's first mile).
+- **Milwaukee County** (Milwaukee, West Allis, Wauwatosa, Oak Creek, Glendale)
+  directional streets interpolate `MILWAUKEE_NS`/`MILWAUKEE_EW`, fitted to the
+  samples: North/South divides near the Menomonee Valley and East/West at the
+  Milwaukee River, so Oak Creek's Howell Avenue reads ~8,900 South.
+- **Every other street** (Detroit, Cleveland, their suburbs, the Chicago
+  suburbs) interpolates `STREET_REFS`: real numbered points on that street.
+  Two well-separated points number it linearly along the line through them;
+  one point numbers it by distance from the locality's address origin
+  (`ADDRESS_ORIGINS`: Woodward at the river for Detroit, Dearborn and Highland
+  Park; Public Square for Cleveland; otherwise the suburb's anchor centre).
+
+In both grids a directional prefix follows the side of the grid the site is on.
+`Workspace.finish` (`places.unique_addresses`) keeps every full address unique:
+an earlier-allocated site keeps its number and a later one on the same street
+steps two numbers along, and `validate` reports `site-address-unique`. Numbers
+are synthetic, never a surveyed premises, and no ZIP code is claimed.
+`naming = "legacy"` keeps the pre-0.16 sequential street lines.
 
 Facility codes are per metro (`CHI01`, `DET03`, `CLE02`, `MIL04`), numbered by a
 permanent `facility-codes/<metro>` ledger in creation order, so growth appends a
@@ -629,11 +646,11 @@ inspection on the pinned stack. The final offline scale and SDK results are
 indexed in [GOAL.md](../GOAL.md); these do not prove optical loss budgets or a
 large live load.
 
-The finite [catalog](../catalog/README.md) selects LR/LX/LR4 parts for reviewed
+The finite [catalog](../catalog/README.md) selects LR/LX/LR4 (and long-reach LH/ER4 Lite) parts for reviewed
 Cisco, Juniper, Arista and Fortinet cages, plus an explicit reference-server
 transceiver. The alternate Juniper access and leaf lines carry their own
-reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives LX even though its cage can
-also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
+reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives a 1G part (LX, or LH past 10 km of owned
+fiber) even though its cage can also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
 one active optical cable, two captive end modules, one shared assembly serial.
 The existing cable label remains stable and its comments show the assembly
 serial. The two end records are not two independently replaceable purchases.
@@ -641,8 +658,14 @@ Unused cages remain empty; fixed copper ports do not receive optical modules.
 
 Source-backed host fit, protocol and medium are separate checks. The authored
 local SMF envelope is 3–100m; catalog reach is not an optical loss budget or
-measured receive power. A circuit termination ends the local path: it does not
-reveal the carrier's intercity span or remote optic. Source records retain
+measured receive power. A third-party carrier's circuit termination ends the
+local path: it does not reveal the carrier's intercity span or remote optic.
+The operator's own fiber does not end there (since 0.16.0): on a circuit the
+estate's operator provides, the optic must reach the circuit's `distance` (or
+its two sites' route distance), so owned dark-fiber spans past 10 km carry
+`QSFP-100G-ER4L` and premises past 10 km `SFP-1GE-LH` (with the vendor's
+short-link attenuator noted on the module); `optics-span-reach` re-derives it
+([catalog](../catalog/README.md#installed-optics-policy)). Source records retain
 indexed-only retrieval limits, software/FEC conditions and reference-host
 assumptions. No additional RF, breakout, DWDM or applied routing behavior is
 implied.
@@ -765,9 +788,19 @@ actual site, provider, circuit, host and module records. The dates describe
 authored history; NetBox's native journal creation timestamps describe
 ingestion. No entry asserts an acceptance test or application health check.
 
+Dates follow **one timeline** (since 0.16.0), derived from the graph's circuit
+install dates: a site's service day is its first circuit (a PoP's first span, a
+premises' access circuit) — the earliest service its equipment carries. Every
+device there is installed 7–37 days before it, so a PE pair arrives together;
+every serial's date code is a manufacture week 30–180 days before that install
+(an optic serving a later circuit is made before its own port's circuit). The `Site access` note is written 40–70
+days before the service day, ahead of any equipment. `validate_operations`
+re-derives the chain and reports `operations-serial-date` and
+`operations-journal-date`.
+
 The first eligible infrastructure device by permanent U position in each rack
 has an `Installed` note (model, serial, room, cabinet, U position and its
-management interface; success). Where that device has an installed PSU module,
+management interface; success), dated by that device's own install. Where that device has an installed PSU module,
 a `Keep a spare PSU` note asks for a like-for-like part on hand for that bay
 (warning); it does not claim a spare does or does not exist, since the
 lifecycle sidecar may stock one. New racks gain stories without rewriting
@@ -953,9 +986,12 @@ facilities desk is the remote-hands desk of the carrier hotel's operator — one
 invented colocation company per metro (Windward Interconnect, Motorline Data
 Centers, Cuyahoga Colocation, Kinnickinnic Colocation) — not carrier staff.
 
-**Known gap.** Intra-metro dark fiber is lit by the PE's JNP-QSFP-100G-LR4
-(10 km reach) while some metro routes are longer; a source-backed 40 km optic
-and distance-aware optic selection are the follow-up.
+**Optic reach.** Intra-metro dark fiber and access tails are the operator's own
+fiber, so each optic is chosen by the run it lights (since 0.16.0): spans up to
+10 km keep JNP-QSFP-100G-LR4, longer ones take QSFP-100G-ER4L (30 km without
+host FEC); premises tails up to 10 km keep SFP-1GE-LX, longer ones SFP-1GE-LH
+(70 km, with the vendor's short-link attenuator noted on the module). See the
+[installed optics policy](#installed-optics-policy).
 
 ## Provider BGP inventory
 

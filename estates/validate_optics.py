@@ -5,13 +5,14 @@ JSON, descriptive metadata and emitted contracts cannot establish compatibility.
 """
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import hashlib
 import json
 import math
 import re
 
-from .model import hardware_catalog, serial_pattern, vendor_serial
+from .model import hardware_catalog, redate_serial, serial_pattern, vendor_serial
 
 
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
@@ -21,7 +22,15 @@ _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
 # A smaller module in a larger backward-compatible cage, at that module's own
 # rate. Everything else must match the cage's own form factor exactly.
 _DOWNRATED = {("sfp", "sfpp", 1000000), ("sfpp", "sfp28", 10000000)}
+# Restated provider route factor: owned fiber runs 1.3x the great-circle distance.
+ROUTE_FACTOR = 1.3
+_EPOCH = date(2000, 1, 3)
 _LENGTH = {"m": 1, "cm": .01, "ft": .3048, "in": .0254, "km": 1000}
+
+
+def same_unit(fmt, serial, expected):
+    """Serials equal apart from the date code, which the estate timeline sets."""
+    return redate_serial(fmt, serial, _EPOCH) == redate_serial(fmt, expected, _EPOCH)
 
 
 def analyze(plan, catalog=None):
@@ -105,7 +114,7 @@ def analyze(plan, catalog=None):
         return (name, model) if (kind(key) == expected_kind and kind(manufacturer) == "manufacturer" and
                                  isinstance(name, str) and isinstance(model, str)) else None
 
-    kinds, children, cables, passive, occupancy, bindings = (defaultdict(list) for _ in range(6))
+    kinds, children, cables, passive, occupancy, bindings, circuit_ends = (defaultdict(list) for _ in range(7))
     for key, record in objects.items():
         kinds[record["kind"]].append(key)
         device, name = refs(key).get("device"), attrs(key).get("name")
@@ -122,6 +131,29 @@ def analyze(plan, catalog=None):
             occupancy[refs(key)["module_bay"]].append(key)
         if "module" in refs(key) and isinstance(refs(key)["module"], str):
             bindings[refs(key)["module"]].append(key)
+        if record["kind"] == "circuit_termination":
+            circuit_ends[refs(key).get("circuit")].append(key)
+
+    def owned_span(term):
+        """Metres of the operator's own fiber behind a termination (0 for a carrier).
+
+        The larger of the recorded route distance and the two terminating
+        sites' great-circle distance times the restated route factor, so
+        neither a shortened record nor moved sites can hide a reach shortfall.
+        None when an owned circuit cannot be measured at all.
+        """
+        circuit = refs(term).get("circuit")
+        if refs(circuit).get("provider") != "provider/operator":
+            return 0
+        recorded = attrs(circuit).get("distance")
+        recorded = recorded * 1000 if type(recorded) in (int, float) and attrs(circuit).get("distance_unit") == "km" else 0
+        points = [(attrs(refs(t).get("termination")).get("latitude"), attrs(refs(t).get("termination")).get("longitude"))
+                  for t in circuit_ends[circuit]]
+        if len(points) == 2 and all(type(v) in (int, float) for p in points for v in p):
+            (la1, lo1), (la2, lo2) = ((math.radians(x), math.radians(y)) for x, y in points)
+            h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+            return max(recorded, 2 * 6371008.8 * math.asin(math.sqrt(h)) * ROUTE_FACTOR)
+        return recorded or None
 
     host_ids = {(m.get("manufacturer"), m.get("model")): alias for alias, m in models.items() if isinstance(m, dict)}
     part_ids = {(p["manufacturer"], p["model"]): p for p in parts.values()}
@@ -188,7 +220,7 @@ def analyze(plan, catalog=None):
         if not isinstance(serial, str) or len(serial) > 50 or not fmt or re.fullmatch(serial_pattern(fmt), serial) is None:
             report("optics-serial", module, "Installed optical inventory requires a serial in its maker's catalog label shape; native serial fields are at most 50 characters.")
         elif (not part.get("assembly") and isinstance(namespace, str) and len(bindings[module]) == 1 and
-              serial != vendor_serial(fmt, int.from_bytes(hashlib.sha256(f"{namespace}/{bindings[module][0]}".encode()).digest()[:8], "big"))):
+              not same_unit(fmt, serial, vendor_serial(fmt, int.from_bytes(hashlib.sha256(f"{namespace}/{bindings[module][0]}".encode()).digest()[:8], "big")))):
             report("optics-serial", module, "Detachable optical serial must retain its actual interface and namespace identity.")
         if isinstance(serial, str):
             serials[serial].append(module)
@@ -320,6 +352,10 @@ def analyze(plan, catalog=None):
             report("optics-media", port, "Complete channel media, local endpoint protocol/rate and LC connectors must match; the circuit boundary does not assert a remote optic.")
         if length < minimum or length > min(part["reach_m"], other["reach_m"] if other else part["reach_m"]):
             report("optics-reach", port, "Complete channel length must meet local policy and the smaller installed endpoint reach.")
+        span = owned_span(peer) if kind(peer) == "circuit_termination" else 0
+        if span is None or length + span > part["reach_m"]:
+            report("optics-span-reach", port, "An optic lighting the operator's own fiber must reach the circuit's recorded distance "
+                   "and its two sites' route distance; a carrier handoff stops at the local demarcation.")
         if part.get("assembly"):
             module, peer_module = refs(port).get("module"), refs(peer).get("module")
             serial = attrs(module).get("serial")
@@ -329,8 +365,8 @@ def analyze(plan, catalog=None):
                     attrs(peer_module).get("serial") != serial or module == peer_module or
                     attrs(module).get("asset_tag") and attrs(module).get("asset_tag") == attrs(peer_module).get("asset_tag")):
                 report("optics-assembly", port, "AOC requires one exact-length cable, two matching captive modules and one shared assembly serial, with no duplicated asset tag or passive ports.")
-            elif isinstance(namespace, str) and serial != vendor_serial(aoc_format(part), int.from_bytes(
-                    hashlib.sha256(f"{namespace}/{route[0]}".encode()).digest()[:8], "big")):
+            elif isinstance(namespace, str) and not same_unit(aoc_format(part), serial, vendor_serial(aoc_format(part), int.from_bytes(
+                    hashlib.sha256(f"{namespace}/{route[0]}".encode()).digest()[:8], "big"))):
                 report("optics-assembly", port, "AOC assembly serial must be bound to its actual cable identity and namespace.")
             if (attrs(route[0]).get("comments") != f"Assembly serial: {serial}\nOne active optical cable assembly with two captive ends; replace the complete assembly." or
                     any(attrs(refs(endpoint).get("module")).get("description") !=

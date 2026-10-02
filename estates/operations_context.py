@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from .automation import enrich as automation_records
-from .model import DesignError, digest
+from .model import DesignError, digest, redate_serial
 from .naming import main_scoped_name, rate_kbps, titleize
 from .wireless_context import enrich as wireless_context
 
@@ -16,6 +16,94 @@ from .wireless_context import enrich as wireless_context
 # Numbering Plan reserves for fictional use, so a directory reads like one
 # without ever dialling a real subscriber.
 AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
+
+
+SERIAL_SHIFT_WEEKS = 8
+
+
+def timeline(world, kinds, dated):
+    """One timeline: service days, device installs and serial date codes.
+
+    A site's service day is its first circuit's install date (a PoP's first
+    span, a premises' access circuit): the earliest service any of its
+    equipment carries. Every device there is installed 7-37 days before it, so
+    a redundant pair arrives together (as_of-relative only for a site with no
+    circuit). Each unit was manufactured 30-180 days before it was installed,
+    so the date code in its serial (the catalog's {yyww}/{yy}) precedes the
+    install; an optic serving a later circuit is made before that circuit
+    (its own port's install), else before its host's install.
+    Returns (service_day per site, install date per device), ISO strings.
+    """
+    circuit_day = {term["key"]: world.obj(term["refs"]["circuit"])["attrs"]["install_date"]
+                   for term in kinds["circuit_termination"]}
+    service_day, port_day = {}, {}
+    for term in kinds["circuit_termination"]:
+        site = term["refs"]["termination"]
+        if site.startswith("site/"):
+            service_day[site] = min(circuit_day[term["key"]], service_day.get(site, circuit_day[term["key"]]))
+    for cable in kinds["cable"]:
+        ends = (cable["refs"].get("a"), cable["refs"].get("b"))
+        for port, far in (ends, ends[::-1]):
+            if far in circuit_day and world.objects.get(port, {}).get("kind") == "interface":
+                port_day[port] = min(circuit_day[far], port_day.get(port, circuit_day[far]))
+    as_of, installed_on = world.recipe["as_of"], {}
+    for device in kinds["device"]:
+        key, site = device["key"], device["refs"].get("site")
+        anchor = service_day.get(site)
+        installed_on[key] = (dated(key, "equipment-record", anchor, 7, 31) if anchor
+                             else dated(key, "equipment-record", as_of, 100, 20))
+
+    def made(key, anchor):
+        return date.fromisoformat(dated(key, "manufactured", anchor, 30, 151))
+
+    models = world.catalog["models"]
+    formats = world.catalog["optics"]["serial_formats"]
+    for device in kinds["device"]:
+        fmt = models.get(device["meta"].get("hardware"), {}).get("serial_format")
+        if fmt and device["attrs"].get("serial"):
+            device["attrs"]["serial"] = redate_serial(fmt, device["attrs"]["serial"], made(device["key"], installed_on[device["key"]]))
+    # AOC captive ends share one assembly serial: date the assembly once, from
+    # its earlier end, keyed by the shared serial.
+    groups, assembly_cables = defaultdict(list), defaultdict(list)
+    for cable in kinds["cable"]:
+        comments = cable["attrs"].get("comments", "")
+        if comments.startswith("Assembly serial: "):
+            assembly_cables[comments.split("\n", 1)[0].removeprefix("Assembly serial: ")].append(cable)
+    for module in kinds["module"]:
+        groups[module["attrs"].get("serial")].append(module)
+    taken = set()
+    for serial, members in sorted(groups.items(), key=lambda item: min(m["key"] for m in item[1])):
+        anchors, fmt = [], None
+        for module in members:
+            device = world.obj(module["refs"]["device"])
+            maker = world.obj(world.obj(module["refs"]["module_type"])["refs"]["manufacturer"])["attrs"]["name"]
+            fmt = (models.get(device["meta"].get("hardware"), {}).get("module_serial_format")
+                   if module["key"].startswith(f"{device['key']}/module/") else formats.get(maker, formats["Generic"]))
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on[device["key"]])
+        if fmt and serial:
+            when = made(min(m["key"] for m in members), min(anchors))
+            redated = redate_serial(fmt, serial, when)
+            # Short label formats leave few non-date digits: two modules may
+            # differ only in their old placeholder date. Keep detachable
+            # serials unique by dating the later key one week earlier.
+            # ponytail: first key in sort order wins; a growth-added module that
+            # sorts earlier and collides could re-date an existing one (rare).
+            for _ in range(SERIAL_SHIFT_WEEKS):
+                if redated not in taken:
+                    break
+                when -= timedelta(days=7)
+                redated = redate_serial(fmt, serial, when)
+            else:
+                raise DesignError(f"{members[0]['key']}: no unique dated serial within {SERIAL_SHIFT_WEEKS} weeks")
+            taken.add(redated)
+            for module in members:
+                module["attrs"]["serial"] = redated
+            if len(members) > 1:  # the AOC cable names its assembly serial
+                for cable in assembly_cables.get(serial, ()):
+                    cable["attrs"]["comments"] = cable["attrs"]["comments"].replace(serial, redated, 1)
+    return service_day, installed_on
+
+
 # A provider's PoPs are cages in carrier hotels: their facilities desk is the
 # building operator's remote-hands desk, one invented colocation company per metro.
 COLOCATION = {"Chicago": ("Windward Interconnect", "windward-interconnect.example"),
@@ -125,15 +213,7 @@ def enrich(world):
         except OverflowError as exc:
             raise DesignError(f"{target}: as_of is too early for the authored operations chronology") from exc
 
-    # A site's service day is its first circuit's install date (the graph's own
-    # timeline: a PoP's first span, a premises' access circuit). Equipment is
-    # installed in a lead window before it, and no note predates it.
-    service_day = {}
-    for term in kinds["circuit_termination"]:
-        site = term["refs"]["termination"]
-        if site.startswith("site/"):
-            day = world.obj(term["refs"]["circuit"])["attrs"]["install_date"]
-            service_day[site] = min(day, service_day.get(site, day))
+    service_day, installed_on = timeline(world, kinds, dated)
 
     def journal(target, event, when, title, body, kind="info"):
         add("journal_entry", f"journal/{target}/{event}", {"kind": kind, "comments": f"{when} — {title}\n{body}"}, {"assigned_object": target})
@@ -152,7 +232,10 @@ def enrich(world):
         assign(key, desk, "facilities", "/facilities", "secondary")
         if key in biomedical_desks:
             assign(key, biomedical_desks[key], "biomedical", "/biomedical", "tertiary")
-        journal(key, "access-plan", max(dated(key, "access-plan", as_of, 60, 31), service_day.get(key, "")), "Site access",
+        # Written when the site was readied: before its first equipment
+        # arrives (installs lead the service day by at most 37 days).
+        journal(key, "access-plan", dated(key, "access-plan", service_day[key], 40, 31) if key in service_day
+                else dated(key, "access-plan", as_of, 60, 31), "Site access",
             f"Equipment-room visits are booked through {world.obj(desk)['attrs']['name']}; "
             "give two working days' notice and flag any planned power work.")
 
@@ -249,8 +332,7 @@ def enrich(world):
         rack, room, site = (world.obj(refs[field])["attrs"]["name"] for field in ("rack", "location", "site"))
         model = world.obj(refs["device_type"])["attrs"]["model"]
         access = world.obj(world.obj(refs["primary_ip4"])["refs"]["assigned_object"])["attrs"]["name"]
-        installed = (dated(key, "equipment-record", service_day[refs["site"]], 7, 31) if refs["site"] in service_day
-                     else dated(key, "equipment-record", as_of, 100, 20))
+        installed = installed_on[key]
         journal(key, "equipment-record", installed, "Installed",
             f"{model} serial {attrs['serial']} racked in {room}, cabinet {rack} at U{attrs['position']}; "
             f"managed through {access}.", "success")

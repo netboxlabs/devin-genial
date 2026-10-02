@@ -30,7 +30,9 @@ def digest(value):
 # Serial grammar for the catalog's `serial_format` templates. The formats are
 # fictional imitations of each vendor's printed convention, never real units:
 # `#` digit, `@` letter (no I/O, as vendors avoid them), `*` either, `{yy}` a
-# 2018-2024 year, `{yyww}` that year plus an ISO week; anything else is literal.
+# year, `{yyww}` that year plus an ISO week; anything else is literal. The
+# hashed date is a placeholder: operations_context.timeline re-dates it to the
+# unit's manufacture week (redate_serial) once circuit dates are known.
 SERIAL_DIGITS = "0123456789"
 SERIAL_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 SERIAL_CLASSES = {"#": SERIAL_DIGITS, "@": SERIAL_LETTERS, "*": SERIAL_DIGITS + SERIAL_LETTERS}
@@ -57,6 +59,42 @@ def vendor_serial(fmt, n):
             out.append(fmt[i])
         i += 1
     return "".join(out)
+
+
+def _date_code_span(fmt):
+    """(offset, width) of the {yyww}/{yy} date code in an expanded serial, else None."""
+    out = i = 0
+    while i < len(fmt):
+        for token, width in (("{yyww}", 4), ("{yy}", 2)):
+            if fmt.startswith(token, i):
+                return out, width
+        out, i = out + 1, i + 1
+    return None
+
+
+def redate_serial(fmt, serial, made):
+    """The serial with its date code set to `made` (a date): ISO year and week.
+
+    vendor_serial's hashed year/week is only a placeholder; the estate's
+    timeline replaces it so manufacture precedes installation.
+    """
+    span = _date_code_span(fmt)
+    if span is None or not isinstance(serial, str):
+        return serial
+    at, width = span
+    year, week, _ = made.isocalendar()
+    return serial[:at] + f"{year % 100:02}{week:02}"[:width] + serial[at + width:]
+
+
+def serial_date_code(fmt, serial):
+    """(year, ISO week or None) printed in a serial's date code, else None."""
+    span = _date_code_span(fmt)
+    if span is None or not isinstance(serial, str) or len(serial) < sum(span):
+        return None
+    code = serial[span[0]:sum(span)]
+    if not code.isdigit():
+        return None
+    return 2000 + int(code[:2]), (int(code[2:]) if span[1] == 4 else None)
 
 
 def serial_pattern(fmt):
@@ -391,6 +429,8 @@ class World:
             raise DesignError("site_names overrides reference unknown site ids: "
                               + ", ".join(sorted(unused))
                               + f"; this estate's site ids are: {shown}")
+        from .places import unique_addresses  # lazy: places imports this module
+        unique_addresses([o for o in self.objects.values() if o["kind"] == "site"], self.allocations)
         names = defaultdict(list)
         for obj in self.objects.values():
             if obj["kind"] == "site":

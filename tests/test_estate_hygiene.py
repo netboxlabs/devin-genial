@@ -175,7 +175,9 @@ class EstateHygieneTests(unittest.TestCase):
             if note["key"].endswith("/equipment-record") and site in first:
                 self.assertLessEqual(when, first[site])  # racked before the site's first circuit
                 checked += 1
-            elif note["key"].endswith(("/access-plan", "/psu-replacement-plan")) and site in first:
+            elif note["key"].endswith("/access-plan") and site in first:
+                self.assertLess(when, first[site])  # the site is readied before service
+            elif note["key"].endswith("/psu-replacement-plan") and site in first:
                 self.assertGreaterEqual(when, first[site])
         self.assertTrue(checked)
 

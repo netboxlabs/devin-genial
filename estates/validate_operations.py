@@ -5,7 +5,7 @@ from datetime import date
 import math
 import re
 
-from .model import digest, hardware_catalog
+from .model import digest, hardware_catalog, serial_date_code
 from .naming import dedicated, rate_kbps, titleize
 
 
@@ -22,6 +22,8 @@ _EVENT_TYPES = {"object_created", "object_updated", "object_deleted",
                 "job_started", "job_completed", "job_failed", "job_errored"}
 # A server list names a small, redundant set of hosts, never the whole workload.
 _MAX_ENDPOINT_HOSTS = 2
+# Restated: the builder's bounded week shift that keeps detachable serials unique.
+SERIAL_SHIFT_WEEKS = 8
 # Restated, not imported: real metro area codes; the 555-0100..0199 block is
 # reserved for fictional use, so no contact can carry a dialable number.
 AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
@@ -279,6 +281,69 @@ def _context(plan, objects, kinds):
         if site.startswith("site/") and isinstance(day, str):
             service_day[site] = min(day, service_day.get(site, day))
 
+    # Every device installs 7-37 days before its site's service day; every
+    # serial's date code is a manufacture 30-180 days before the install of the
+    # unit it sits in, or before the circuit an optic's own port serves.
+    # Re-derived from the graph alone.
+    circuit_day = {t["key"]: attrs(t["refs"].get("circuit")).get("install_date") for t in kinds["circuit_termination"]}
+    port_day = {}
+    for cable in kinds["cable"]:
+        ends = (cable["refs"].get("a"), cable["refs"].get("b"))
+        for port, far in (ends, ends[::-1]):
+            if isinstance(circuit_day.get(far), str) and objects.get(port, {}).get("kind") == "interface":
+                port_day[port] = min(circuit_day[far], port_day.get(port, circuit_day[far]))
+    installed_on = {}
+    for device in kinds["device"]:
+        anchor = service_day.get(device["refs"].get("site"))
+        installed_on[device["key"]] = (scheduled(device["key"], "equipment-record", anchor, 7, 31) if anchor
+                                       else scheduled(device["key"], "equipment-record", recipe.get("as_of"), 100, 20))
+    serial_catalog = hardware_catalog()
+    host_specs = {(m["manufacturer"], m["model"]): m for m in serial_catalog["models"].values()}
+    optic_formats = serial_catalog["optics"]["serial_formats"]
+
+    def host_spec(device):
+        dtype = objects.get(objects.get(device, {}).get("refs", {}).get("device_type"), {})
+        return host_specs.get((attrs(dtype.get("refs", {}).get("manufacturer")).get("name"), dtype.get("attrs", {}).get("model")), {})
+
+    def check_serial(key, fmt, serial, installed, slack_weeks=0):
+        """The printed date code is a manufacture 30-180 days before the install
+        (plus the builder's bounded uniqueness shift for detachable modules)."""
+        if not fmt or not isinstance(serial, str) or not serial or not installed:
+            return
+        code = serial_date_code(fmt, serial)
+        latest = date.fromisoformat(installed).toordinal() - 30
+        earliest = date.fromisoformat(installed).toordinal() - 180 - 7 * slack_weeks
+        if code is None:
+            ok = False
+        elif code[1] is None:
+            ok = date.fromordinal(earliest).year <= code[0] <= date.fromordinal(latest).year
+        else:
+            try:
+                monday = date.fromisocalendar(code[0], code[1], 1).toordinal()
+            except ValueError:
+                monday = None
+            ok = monday is not None and earliest - 6 <= monday <= latest
+        if not ok:
+            fail("operations-serial-date", key, "A serial's date code must be a manufacture week 30-180 days before "
+                 "the install the graph's own circuit dates imply.")
+    for device in kinds["device"]:
+        check_serial(device["key"], host_spec(device["key"]).get("serial_format"), device["attrs"].get("serial"),
+                     installed_on[device["key"]])
+    assemblies = defaultdict(list)
+    for module in kinds["module"]:
+        assemblies[module["attrs"].get("serial")].append(module)
+    for serial, members in assemblies.items():
+        anchors, fmt = [], None
+        for module in members:
+            owner = module["refs"].get("device")
+            module_type = objects.get(module["refs"].get("module_type"), {})
+            maker = attrs(module_type.get("refs", {}).get("manufacturer")).get("name")
+            fmt = (host_spec(owner).get("module_serial_format") if module["key"].startswith(f"{owner}/module/")
+                   else optic_formats.get(maker, optic_formats.get("Generic")))
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on.get(owner))
+        if all(anchors):
+            check_serial(members[0]["key"], fmt, serial, min(anchors), SERIAL_SHIFT_WEEKS)
+
     def later(when, floor):
         return max(when, floor) if isinstance(when, str) and isinstance(floor, str) else when
 
@@ -329,8 +394,8 @@ def _context(plan, objects, kinds):
                        f"@{site['refs']['tenant'].removeprefix('tenant/cust-')}.example")
         contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, mailbox, site_area(key))
         expect_assignment(key, contact, "facilities", "/facilities", "secondary")
-        expect_note(key, "access-plan", later(scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), service_day.get(key, "")),
-                    (contact_name,))
+        expect_note(key, "access-plan", scheduled(key, "access-plan", service_day[key], 40, 31) if key in service_day
+                    else scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), (contact_name,))
     terms = defaultdict(list)
     far_terms = defaultdict(list)
     for term in kinds["circuit_termination"]:
@@ -445,8 +510,7 @@ def _context(plan, objects, kinds):
         if objects.get(access, {}).get("refs", {}).get("device") != key:
             fail("operations-journal-facts", key, "Installation history must name the device's own primary inventory interface.")
         site = refs.get("site")
-        installed = (scheduled(key, "equipment-record", service_day[site], 7, 31) if site in service_day
-                     else scheduled(key, "equipment-record", recipe.get("as_of"), 100, 20))
+        installed = installed_on.get(key)
         expect_note(key, "equipment-record", installed,
                     (attrs(refs.get("device_type")).get("model"), data.get("serial"),
                      room, rack, data.get("position"), attrs(access).get("name")), "success")

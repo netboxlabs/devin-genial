@@ -28,6 +28,29 @@ def optic_serial(catalog, part, identity):
     return vendor_serial(fmt, int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "big"))
 
 
+def owned_span_m(objects, endpoint):
+    """Metres of the operator's own fiber behind a circuit termination, else 0.
+
+    A third-party carrier's handoff is local: tracing stops there. Only a
+    circuit the estate's own operator provides (provider/operator) carries the
+    optic's light end to end — its recorded route `distance`, or, without one,
+    the two terminating sites' great-circle distance times the authored route
+    factor (the same rule the provider uses for span distances).
+    """
+    from .provider import ROUTE_FACTOR, km  # lazy: provider imports this module
+    term = objects.get(endpoint, {})
+    circuit = objects.get(term.get("refs", {}).get("circuit"), {})
+    if term.get("kind") != "circuit_termination" or circuit.get("refs", {}).get("provider") != "provider/operator":
+        return 0
+    attrs = circuit["attrs"]
+    if attrs.get("distance") and attrs.get("distance_unit") == "km":
+        return round(attrs["distance"] * 1000)
+    ends = [objects.get(objects.get(f"{circuit['key']}/{side}", {}).get("refs", {}).get("termination"), {}).get("attrs", {})
+            for side in "AZ"]
+    points = [(e["latitude"], e["longitude"]) for e in ends if "latitude" in e and "longitude" in e]
+    return round(km(*points) * ROUTE_FACTOR * 1000) if len(points) == 2 else 0
+
+
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
           "25gbase-x-sfp28": ("sfp28", 25000000),
@@ -60,9 +83,9 @@ def enrich(world):
                 supported.add((bay_type, alias))
                 bay_types[bay_type] = (host["manufacturer"], factor)
                 lookup = (alias, name, part["rate_kbps"], part["medium"])
-                if lookup in selections:
+                if any(parts[other]["reach_m"] == part["reach_m"] for other in selections.get(lookup, ())):
                     raise DesignError(f"Optics catalog has ambiguous selection for {lookup}")
-                selections[lookup] = part_id
+                selections.setdefault(lookup, []).append(part_id)
         part_bay_types[part_id] = sorted(supported)
     occupied = []
     for interface in objects.values():
@@ -76,12 +99,17 @@ def enrich(world):
         device = objects[interface["refs"]["device"]]
         alias = device["refs"]["device_type"].removeprefix("hardware/")
         rate = attrs.get("speed", cage[1])
-        part_id = selections.get((alias, attrs["name"], rate, cable["attrs"]["type"]))
+        span = owned_span_m(objects, cable["refs"]["b" if cable["refs"]["a"] == key else "a"])
+        # The shortest reviewed reach that covers the owned span; local channels
+        # (span 0) keep the catalog's short-reach part.
+        part_id = min((p for p in selections.get((alias, attrs["name"], rate, cable["attrs"]["type"]), ())
+                       if parts[p]["reach_m"] >= span), key=lambda p: parts[p]["reach_m"], default=None)
         if part_id is None:
             raise DesignError(f"{key}: no reviewed optic for {models[alias]['model']} "
-                              f"{attrs['name']} at {rate} kbps over {cable['attrs']['type']}; "
-                              "use a supported link design or extend the source-backed catalog")
-        occupied.append((interface, device, cable, part_id, cage))
+                              f"{attrs['name']} at {rate} kbps over {cable['attrs']['type']}"
+                              + (f" reaching {span / 1000:g} km" if span else "") +
+                              "; use a supported link design or extend the source-backed catalog")
+        occupied.append((interface, device, cable, part_id, cage, span))
 
     # Keep the available parts catalog across replacement of the final chassis
     # using a part. Installed modules still follow only occupied cages; shared
@@ -123,7 +151,7 @@ def enrich(world):
                       {"manufacturer": f"manufacturer/{part['manufacturer']}",
                        "profile": profile, "module_bay_types": part_bays})
 
-    for interface, device, cable, part_id, cage in occupied:
+    for interface, device, cable, part_id, cage, span in occupied:
         attrs, key = interface["attrs"], interface["key"]
         alias = device["refs"]["device_type"].removeprefix("hardware/")
         part = parts[part_id]
@@ -139,7 +167,9 @@ def enrich(world):
             cable["attrs"]["comments"] = (f"Assembly serial: {serial}\n"
                 "One active optical cable assembly with two captive ends; replace the complete assembly.")
         description = (f"Captive end on {attrs['name']}; replace the complete AOC assembly"
-                       if assembly else f"Installed {part['model']} on {attrs['name']}")
+                       if assembly else f"Installed {part['model']} on {attrs['name']}"
+                       + (f" for a {span / 1000:.1f} km owned fiber run" if span else "")
+                       + (f"; {part['installation_note']}" if span and part.get("installation_note") else ""))
         module = world.add("module", f"optics-module/{key}",
                            {"status": "active", "serial": serial, "description": description},
                            {"device": device["key"], "module_bay": bay,

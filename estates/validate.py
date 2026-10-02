@@ -154,6 +154,16 @@ def _validate(plan):
     def kind(key):
         return objects.get(key, {}).get("kind") if isinstance(key, str) else None
 
+    # Two sites never share one postal address (a reviewer read two customers
+    # at one street number as copy-paste data).
+    addresses = defaultdict(list)
+    for key, obj in objects.items():
+        if obj["kind"] == "site" and isinstance(obj["attrs"].get("physical_address"), str):
+            addresses[obj["attrs"]["physical_address"]].append(key)
+    for keys in addresses.values():
+        for key in sorted(keys)[1:]:
+            report("site-address-unique", key, f"Site shares its postal address with {sorted(keys)[0]}.")
+
     by_kind = defaultdict(list)
     children = defaultdict(list)
     scalar_refs = {"device", "virtual_machine", "site", "scope_site", "location", "rack", "role", "parent", "bridge", "cluster", "vrf", "group", "manufacturer", "device_type", "rear_port", "assigned_object", "primary_ip4", "primary_ip6", "termination", "circuit", "provider", "vlan", "untagged_vlan", "power_port", "power_panel", "a", "b", "tenant", "platform", "region", "site_group", "type", "interface", "virtual_circuit", "provider_network", "provider_account"}

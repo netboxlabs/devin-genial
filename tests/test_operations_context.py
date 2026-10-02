@@ -265,6 +265,40 @@ class OperationsContextTests(unittest.TestCase):
                 note["attrs"]["comments"] = replacement + note["attrs"]["comments"][10:]
                 self.assert_code(plan, "operations-journal-date")
 
+    def test_one_timeline_installs_lead_service_and_manufacture_leads_install(self):
+        """Every device installs 7-37 days before its site's first circuit (the
+        earliest service its equipment carries); every serial date code precedes that."""
+        from estates.model import hardware_catalog, serial_date_code
+        catalog = hardware_catalog()
+        specs = {(m["manufacturer"], m["model"]): m for m in catalog["models"].values()}
+        for profile in ("provider-backbone", "regional-bank"):
+            plan, objects = self.plan(profile)
+            self.assertEqual(validate(plan), [])
+            first = {}
+            for term in (o for o in objects.values() if o["kind"] == "circuit_termination"):
+                day = objects[term["refs"]["circuit"]]["attrs"]["install_date"]
+                first[term["refs"]["termination"]] = min(day, first.get(term["refs"]["termination"], day))
+            for note in (o for o in objects.values() if o["key"].endswith("/equipment-record")):
+                device = objects[note["refs"]["assigned_object"]]
+                installed = date.fromisoformat(note["attrs"]["comments"][:10])
+                with self.subTest(profile=profile, device=device["key"]):
+                    if device["refs"]["site"] in first:
+                        self.assertTrue(7 <= (date.fromisoformat(first[device["refs"]["site"]]) - installed).days <= 37)
+                    dtype = objects[device["refs"]["device_type"]]
+                    fmt = specs[(objects[dtype["refs"]["manufacturer"]]["attrs"]["name"], dtype["attrs"]["model"])]["serial_format"]
+                    year, week = serial_date_code(fmt, device["attrs"]["serial"])
+                    self.assertTrue(30 <= (installed - date.fromisocalendar(year, week, 1)).days <= 186)
+        # Failing mutations: a unit made after its install, or a circuit that
+        # moves the install years earlier than the printed manufacture week.
+        plan, objects = self.plan("provider-backbone")
+        pe = objects["device/pop-chicago-west/pe-a"]
+        pe["attrs"]["serial"] = pe["attrs"]["serial"][:2] + "2652" + pe["attrs"]["serial"][6:]
+        self.assert_code(plan, "operations-serial-date")
+        plan, objects = self.plan("provider-backbone")
+        circuit = next(o for o in objects.values() if o["kind"] == "circuit" and o["key"].startswith("circuit/customer/"))
+        circuit["attrs"]["install_date"] = "2012-01-02"
+        self.assert_code(plan, "operations-serial-date")
+
     def test_nontext_contact_and_journal_fields_are_findings(self):
         for field in ("description", "name"):
             plan, objects = self.plan()

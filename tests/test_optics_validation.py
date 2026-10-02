@@ -175,7 +175,8 @@ class OpticsValidationTests(unittest.TestCase):
         port = next(o for o in objects.values() if o["kind"] == "interface" and o["attrs"].get("speed") == 1000000
                     and o["attrs"].get("type") == "10gbase-x-sfpp" and "module" in o["refs"])
         self.assertEqual(analyze(plan)[0], [])
-        self.assertEqual(objects[port["refs"]["module"]]["refs"]["module_type"], "module-type/Juniper/SFP-1GE-LX")
+        self.assertIn(objects[port["refs"]["module"]]["refs"]["module_type"],
+                      {"module-type/Juniper/SFP-1GE-LX", "module-type/Juniper/SFP-1GE-LH"})
         port["attrs"].pop("speed")
         self.assertIn("optics-compatibility", self.codes(plan))
 
@@ -281,6 +282,31 @@ class OpticsValidationTests(unittest.TestCase):
                 self.assertIn(expected, self.codes(plan)) if expected else self.assertEqual(analyze(plan)[0], [])
             term["refs"]["termination"] = "site/unknown"
             self.assertIn("optics-path", self.codes(plan))
+
+    def test_owned_fiber_optic_must_reach_the_actual_span(self):
+        """Owned spans pick the shortest reviewed reach that covers them; a carrier
+        handoff stops at the local demarcation, so leased spans keep LR4."""
+        def owned_link(plan, objects, model):
+            for cable in (o for o in objects.values() if o["kind"] == "cable" and o["attrs"].get("type") == "smf"):
+                ends = [objects[cable["refs"][s]] for s in "ab"]
+                port = next((e for e in ends if e["kind"] == "interface"), None)
+                term = next((e for e in ends if e["kind"] == "circuit_termination"), None)
+                if port and term and objects[port["refs"]["module"]]["refs"]["module_type"].endswith("/" + model):
+                    return port, objects[port["refs"]["module"]], objects[term["refs"]["circuit"]]
+            self.fail(f"Fixture needs an installed {model} on an owned circuit")
+        plan, objects = self.fixture(self.provider)
+        self.assertNotIn("optics-span-reach", self.codes(plan))
+        installed = {o["refs"]["module_type"] for o in objects.values() if o["kind"] == "module"}
+        self.assertIn("module-type/Juniper/SFP-1GE-LH", installed)
+        self.assertIn("module-type/Juniper/SFP-1GE-LX", installed)
+        mutations = (lambda port, module, circuit: module["refs"].update(module_type="module-type/Juniper/SFP-1GE-LX"),
+                     lambda port, module, circuit: circuit["attrs"].update(distance=90, distance_unit="km"),
+                     lambda port, module, circuit: objects[objects[circuit["key"] + "/A"]["refs"]["termination"]]["attrs"].update(latitude=44.5))
+        for index, mutate in enumerate(mutations):
+            with self.subTest(mutation=index):
+                plan, objects = self.fixture(self.provider)
+                mutate(*owned_link(plan, objects, "SFP-1GE-LH"))
+                self.assertIn("optics-span-reach", self.codes(plan))
 
     def test_aoc_two_ends_reserve_seven_watts_once_with_separate_host_rounding(self):
         plan, objects = self.fixture(self.aoc)

@@ -13,7 +13,8 @@ class OpticsEmitterTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.plans = {name: generate(recipe_from_file(f"profiles/{name}.toml")) for name in (
-            "bank-depth", "enterprise-dc", "school-wireless", "hospital-wireless", "provider-backbone")}
+            "bank-depth", "enterprise-dc", "school-wireless", "hospital-wireless", "provider-backbone",
+            "showcase-provider")}
         # The alternate vendor lines install their own reviewed parts; without a
         # variant estate the exhaustive-coverage assertion below could not see them.
         variant = recipe_from_file("profiles/school-wireless.toml")
@@ -63,13 +64,29 @@ class OpticsEmitterTests(unittest.TestCase):
             self.assertEqual((cable["attrs"]["length"], cable["attrs"]["length_unit"]), (3, "m"))
 
     def test_provider_effective_1g_rate_uses_lx_in_sfp_plus_cage(self):
-        objects = {o["key"]: o for o in self.plans["provider-backbone"]["objects"]}
+        """A 1G handoff in an SFP+ cage takes a 1G part: LX up to 10 km of owned
+        fiber, LH (70 km) beyond; the same rule picks LR4 or ER4 Lite at 100G."""
+        objects = {o["key"]: o for o in self.plans["showcase-provider"]["objects"]}
         ports = [o for o in objects.values() if o["kind"] == "interface" and o["attrs"].get("type") == "10gbase-x-sfpp"
                  and o["attrs"].get("speed") == 1000000 and "module" in o["refs"]]
         self.assertTrue(ports)
+        models = Counter()
         for port in ports:
-            module = objects[port["refs"]["module"]]
-            self.assertEqual(objects[module["refs"]["module_type"]]["attrs"]["model"], "SFP-1GE-LX")
+            cable = next(c for c in objects.values() if c["kind"] == "cable" and port["key"] in c["refs"].values())
+            far = cable["refs"]["b" if cable["refs"]["a"] == port["key"] else "a"]
+            span = optics.owned_span_m(objects, far)
+            model = objects[objects[port["refs"]["module"]]["refs"]["module_type"]]["attrs"]["model"]
+            models[model] += 1
+            self.assertEqual(model, "SFP-1GE-LX" if span <= 10000 else "SFP-1GE-LH", (port["key"], span))
+        self.assertTrue(models["SFP-1GE-LX"] and models["SFP-1GE-LH"], models)
+        spans = {o["attrs"]["cid"]: (o["attrs"]["distance"], objects[objects["optics-module/" + p]["refs"]["module_type"]]["attrs"]["model"])
+                 for o in objects.values() if o["kind"] == "circuit" and o["key"].startswith("circuit/backbone/")
+                 and o["refs"]["type"] == "circuit-type/dark-fiber"
+                 for c in objects.values() if c["kind"] == "cable" and f"{o['key']}/A" in c["refs"].values()
+                 for p in c["refs"].values() if p != f"{o['key']}/A"}
+        self.assertTrue(spans)
+        for cid, (km, model) in spans.items():
+            self.assertEqual(model, "JNP-QSFP-100G-LR4" if km <= 10 else "QSFP-100G-ER4L", cid)
 
     def test_unsupported_media_and_ambiguous_catalog_fail_actionably(self):
         for mode in ("media", "ambiguous"):

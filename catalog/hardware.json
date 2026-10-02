@@ -1,5 +1,5 @@
 {
-  "version": "0.12",
+  "version": "0.13",
   "sources": {
     "access-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9200L-24P-4X.yaml",
@@ -172,6 +172,30 @@
       "purpose": "Exact model HCT: duplex LC PC/UPC, 10 km selected SMF reach, maximum electrical module power 3500 mW. Original response bytes were hashed but not archived; the maximum field extraction is preserved separately.",
       "response_sha256": "1edb443e08de55a091b5a34ed1ab022aba4ca7df2e520ba2bde67d8d35374e62",
       "evidence_path": "build/goal-connected-depth/design/phase5-power-bindings.json"
+    },
+    "juniper-mx204-long-reach-optics-host": {
+      "url": "https://apps.juniper.net/hct/product/MX204/100001",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact MX204 HCT transceiver list includes SFP-1GE-LH (740-031849) from Junos OS 18.1R1 and QSFP-100G-ER4L (740-071175) from Junos OS 17.4R1, neither end-of-life. Installed only where an owned span outruns the 10 km LX/LR4 parts; no QSA or breakout is modeled.",
+      "response_sha256": "8cf4ce10b5263927bc8d2680c81ab789caafd4c3ed2150e568398b82f5cf0de4",
+      "evidence_path": "build/catalog-evidence/juniper-long-reach/product_MX204_100001.html"
+    },
+    "juniper-sfp-1ge-lh": {
+      "url": "https://apps.juniper.net/hct/model/SFP-1GE-LH",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact model HCT: GE SFP LH, duplex LC PC/UPC, 70 km SMF distance, maximum power consumption 1 W. Vendor note: high Tx power, so appropriate optical attenuation is required on shorter links.",
+      "response_sha256": "57c142682d5403dd4f0fe3f5edf08a93eaf34382850c0a5675aaa22127b95745",
+      "evidence_path": "build/catalog-evidence/juniper-long-reach/model_SFP-1GE-LH.html"
+    },
+    "juniper-qsfp-100g-er4l": {
+      "url": "https://apps.juniper.net/hct/model/QSFP-100G-ER4L",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact model HCT: QSFP28 100G-ER4 Lite, duplex LC PC/UPC, 40 km distance; distance note: full 40 km requires host FEC, 30 km without FEC. Maximum power 5.0 W (0-70 C) and 5.5 W (0-75 C). The catalog selects the 30 km no-FEC reach and the 5.5 W maximum.",
+      "response_sha256": "6cc78bb6f7319f60e764f7d5e8d1068b0febb3f2e71ebe01211ee5ff578175c2",
+      "evidence_path": "build/catalog-evidence/juniper-long-reach/model_QSFP-100G-ER4L.html"
     },
     "arista-transceiver-guide": {
       "url": "https://www.arista.com/assets/data/pdf/Transceiver-Guide.pdf",
@@ -3999,6 +4023,62 @@
           ]
         },
         "vendor_max_power_mw": 1000
+      },
+      "juniper-1g-lh": {
+        "manufacturer": "Juniper",
+        "model": "SFP-1GE-LH",
+        "form_factor": "sfp",
+        "protocol": "1000BASE-LH",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 1000000,
+        "reach_m": 70000,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "installation_note": "in-line attenuator fitted per the vendor's short-link note",
+        "source_ids": [
+          "juniper-mx204-long-reach-optics-host",
+          "juniper-sfp-1ge-lh",
+          "mx204-port-modes"
+        ],
+        "compatible_interfaces": {
+          "provider-edge": [
+            "xe-0/1/0",
+            "xe-0/1/1",
+            "xe-0/1/2",
+            "xe-0/1/3",
+            "xe-0/1/4",
+            "xe-0/1/5",
+            "xe-0/1/6",
+            "xe-0/1/7"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "juniper-100g-er4l": {
+        "manufacturer": "Juniper",
+        "model": "QSFP-100G-ER4L",
+        "form_factor": "qsfp28",
+        "protocol": "100GBASE-ER4 Lite",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 100000000,
+        "reach_m": 30000,
+        "power_reservation_mw": 5500,
+        "power_basis": "vendor maximum (0-75 C)",
+        "source_ids": [
+          "juniper-mx204-long-reach-optics-host",
+          "juniper-qsfp-100g-er4l",
+          "mx204-port-modes"
+        ],
+        "compatible_interfaces": {
+          "provider-edge": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2"
+          ]
+        },
+        "vendor_max_power_mw": 5500
       },
       "juniper-100g-lr4": {
         "manufacturer": "Juniper",

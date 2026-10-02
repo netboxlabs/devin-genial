@@ -48,3 +48,10 @@ Do this instead:
   Nominatim search inside the anchor box (`build/geo-verify/streets.py`, one
   lookup per new street). In Chicago, write directional streets with their
   `North`/`South`/`East`/`West` prefix: the grid renumbers and may flip them.
+- House numbers follow position. Chicago and Milwaukee County directional
+  streets use the grids in `places.py`; every other street needs a
+  `STREET_REFS[(locality, street)]` entry of real numbered points (a reverse
+  geocode inside the anchor box returns road + house number in one lookup;
+  `build/geo-verify/sample.py` and `gen_streets.py` were the 2026-10-02 pass, ~700
+  cached lookups in ~13 minutes, background). `tests/test_places.py` fails a
+  pool street without a reference and two nearby sites thousands apart.
