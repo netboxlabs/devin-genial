@@ -12,8 +12,10 @@ from decimal import Decimal
 import gzip
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
+import re
 import socket
 from pathlib import Path
 import tempfile
@@ -66,7 +68,7 @@ class WorkerDied(JobTimeout):
 
 
 RECEIPT_VERSION = 4
-COMPILER_VERSION = "v02-turbobulk-13"
+COMPILER_VERSION = "v02-turbobulk-14"
 DEFAULT_JOB_ROWS = 2_000
 # TurboBulk's JSONL reader fixes the column set from the first chunk (10,000
 # rows), so a sparse payload spanning chunks can silently drop columns.
@@ -810,9 +812,11 @@ class Client:
                       else "without retry because the request could write")
             raise LoadError(f"{method} {path} failed {detail}: {exc}") from exc
 
-    def all(self, path):
+    def all(self, path, ordering="id"):
+        """Every page of ``path``; ``ordering=None`` keeps the model's Meta ordering."""
         rows = []
-        next_url = self.base + path + ("&" if "?" in path else "?") + "limit=1000&ordering=id"
+        next_url = (self.base + path + ("&" if "?" in path else "?") + "limit=1000"
+                    + (f"&ordering={ordering}" if ordering else ""))
         seen = set()
         while next_url:
             target = urllib.parse.urlsplit(next_url)
@@ -1307,23 +1311,198 @@ def _save_copies(obj, objects):
     NOT NULL integer would otherwise insert as 0. ``WeightMixin`` stores the
     weight in grams for rack totals (utilities/conversion.py ``to_grams``).
     """
-    attrs = obj["attrs"]
-    if obj["kind"] == "rack" and obj["refs"].get("rack_type") in objects:
+    attrs, kind = obj["attrs"], obj["kind"]
+    if kind == "rack" and obj["refs"].get("rack_type") in objects:
         source = objects[obj["refs"]["rack_type"]]["attrs"]
         return {field: source[field] for field in RACK_TYPE_COPIES if field in source and field not in attrs}
-    if obj["kind"] == "device_type" and "weight" in attrs and attrs.get("weight_unit") in GRAMS_PER_UNIT:
+    if kind == "device_type" and "weight" in attrs and attrs.get("weight_unit") in GRAMS_PER_UNIT:
         return {"_abs_weight": int(Decimal(str(attrs["weight"])) * GRAMS_PER_UNIT[attrs["weight_unit"]])}
+    if kind == "device" and obj["refs"].get("device_type") in objects:
+        # Device.save() (dcim/models/devices.py) copies these from the type on
+        # create when the device sets none of its own.
+        source = objects[obj["refs"]["device_type"]]["attrs"]
+        return {field: source[field] for field in DEVICE_TYPE_COPIES
+                if source.get(field) and not attrs.get(field)}
+    if kind in NATURAL_NAME_KINDS and attrs.get("name"):
+        # NaturalOrderingField(target_field='name', naturalize_interface,
+        # max_length=100).pre_save: the column NetBox's Meta ordering sorts on.
+        row = {"_name": naturalize_interface(attrs["name"], 100)}
+        if kind == "interface" and attrs.get("rf_channel"):
+            # Interface.save() -> wireless.utils.get_channel_attr
+            # ("<band>-<id>-<frequency>-<width>").
+            band, _channel, frequency, width = attrs["rf_channel"].split("-")
+            if not attrs.get("rf_channel_frequency"):
+                row["rf_channel_frequency"] = float(Decimal(frequency))
+            if not attrs.get("rf_channel_width"):
+                row["rf_channel_width"] = float(Decimal(width))
+        return row
+    if kind == "ip_range":
+        # IPRange.save(): size = int(end.ip - start.ip) + 1.
+        start = ipaddress.ip_interface(attrs["start_address"]).ip
+        end = ipaddress.ip_interface(attrs["end_address"]).ip
+        return {"size": int(end) - int(start) + 1}
+    if kind == "power_feed" and {"voltage", "amperage", "max_utilization"} <= set(attrs):
+        return {"available_power": _available_power(attrs)}
+    if kind == "cable" and attrs.get("length") is not None and attrs.get("length_unit") in METERS_PER_UNIT:
+        # Cable.save(): _abs_length = to_meters(length, unit), 4 places (ordering only).
+        meters = round(METERS_PER_UNIT[attrs["length_unit"]](Decimal(str(attrs["length"]))), 4)
+        return {"_abs_length": float(meters)}
+    if kind == "vlan_group" and "vid_ranges" not in attrs:
+        # The model default is [1, 4095) with total_vlan_ids 4094; TurboBulk's
+        # raw insert would otherwise manufacture '{}' and 0 (engine/merge.py
+        # _get_sql_default), an empty group no VLAN can validate against.
+        return {"vid_ranges": ["[1,4095)"], "total_vlan_ids": 4094}
     return {}
+
+
+def _available_power(attrs):
+    """PowerFeed.save() (dcim/models/power.py), ported with its float arithmetic."""
+    kva = abs(attrs["voltage"]) * attrs["amperage"] * (attrs["max_utilization"] / 100)
+    return round(kva * 1.732) if attrs.get("phase") == "three-phase" else round(kva)
 
 
 # The Rack.RACKTYPE_FIELDS the plan's rack types carry.
 RACK_TYPE_COPIES = ("form_factor", "width")
+DEVICE_TYPE_COPIES = ("airflow", "cooling_method")
 GRAMS_PER_UNIT = {"kg": Decimal(1000), "g": Decimal(1), "lb": Decimal("453.592"), "oz": Decimal("28.3495")}
+# utilities/conversion.py to_meters, including its float-built Decimal factors.
+METERS_PER_UNIT = {
+    "km": lambda v: v * 1000, "m": lambda v: v, "cm": lambda v: v / 100,
+    "mi": lambda v: v * Decimal(1609.344), "ft": lambda v: v * Decimal(0.3048),
+    "in": lambda v: v * Decimal(0.0254),
+}
+# Models NetBox gives a NaturalOrderingField ``_name`` (naturalize_interface).
+NATURAL_NAME_KINDS = {"interface", "vm_interface"}
+# CachedScopeMixin models the plan scopes to a site (VLANGroup has no cache).
+SCOPE_CACHE_KINDS = {"prefix", "cluster", "wireless_lan"}
+# REST filters strict readback queries to prove the compiled caches; preflight
+# requires them before any write.
+READBACK_FILTERS = {
+    **{kind: {"site_id", "location_id", "rack_id"} for kind in DEVICE_COMPONENT_KINDS},
+    **{kind: {"site_id", "region_id", "site_group_id"} for kind in SCOPE_CACHE_KINDS},
+    "power_feed": {"available_power"},
+}
+
+# utilities/ordering.py, ported verbatim so the compiled ``_name`` is
+# byte-identical to what NetBox's pre_save would store.
+INTERFACE_NAME_REGEX = (r'(^(?P<type>[^\d\.:]+)?)'
+                        r'((?P<slot>\d+)/)?'
+                        r'((?P<subslot>\d+)/)?'
+                        r'((?P<position>\d+)/)?'
+                        r'((?P<subposition>\d+)/)?'
+                        r'((?P<id>\d+))?'
+                        r'(:(?P<channel>\d+))?'
+                        r'(\.(?P<vc>\d+))?'
+                        r'(?P<remainder>.*)$')
 
 
-def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
+def naturalize(value, max_length, integer_places=8):
+    if not value:
+        return value
+    output = []
+    for segment in re.split(r'(\d+)', value):
+        if segment.isdigit():
+            output.append(segment.rjust(integer_places, '0'))
+        elif segment:
+            output.append(segment)
+    return ''.join(output)[:max_length]
+
+
+def naturalize_interface(value, max_length):
+    output = ''
+    match = re.search(INTERFACE_NAME_REGEX, value)
+    if match is None:
+        return value
+    for part_name in ('slot', 'subslot', 'position', 'subposition'):
+        part = match.group(part_name)
+        output += part.rjust(4, '0') if part is not None else '9999'
+    if match.group('type') is not None:
+        output += match.group('type')
+    for part_name in ('id', 'channel', 'vc'):
+        part = match.group(part_name)
+        output += part.rjust(6, '0') if part is not None else '......'
+    if match.group('remainder') is not None and len(output) < max_length:
+        output += naturalize(match.group('remainder'), max_length - len(output))
+    return output[:max_length]
+
+
+def _scope_cache_ids(obj, objects, ids):
+    """CachedScopeMixin.cache_related_objects() for a site scope."""
+    site = objects[obj["refs"]["scope_site"]]
+    region, group = site["refs"].get("region"), site["refs"].get("group")
+    return {"_site_id": ids[site["key"]], "_location_id": None,
+            "_region_id": ids[region] if region else None,
+            "_site_group_id": ids[group] if group else None}
+
+
+def _vm_site_key(obj, objects):
+    """VirtualMachine.save(): an unset site comes from cluster._site, else device.site."""
+    refs = obj["refs"]
+    if "site" in refs:
+        return None
+    cluster = objects.get(refs.get("cluster"))
+    if cluster is not None and "scope_site" in cluster["refs"]:
+        return cluster["refs"]["scope_site"]
+    device = objects.get(refs.get("device"))
+    return device["refs"].get("site") if device is not None else None
+
+
+def _prefix_hierarchy(rows):
+    """``{key: (_depth, _children)}`` for ``(key, vrf, prefix)`` rows.
+
+    Mirrors PrefixQuerySet.annotate_hierarchy, which the post_save signal
+    stores: depth counts DISTINCT strictly-containing prefixes and children
+    counts strictly-contained rows, both within one VRF (NULL is the global
+    table, never another VRF).
+    """
+    networks = [(key, vrf, ipaddress.ip_network(prefix, strict=False)) for key, vrf, prefix in rows]
+    present = Counter((vrf, network) for _, vrf, network in networks)
+    children = Counter()
+    result = {}
+    for key, vrf, network in networks:
+        parents = [parent for length in range(network.prefixlen)
+                   if (vrf, parent := network.supernet(new_prefix=length)) in present]
+        result[key] = len(parents)
+        for parent in parents:
+            children[(vrf, parent)] += 1
+    return {key: (result[key], children[(vrf, network)]) for key, vrf, network in networks}
+
+
+def _plan_prefix_hierarchy(objects, ids=None, existing=()):
+    """Hierarchy of the plan's prefixes, counted among ``existing`` target rows too.
+
+    ``existing`` is the target's current ``/api/ipam/prefixes/`` rows (VRF by
+    target ID, so ``ids`` must resolve the plan's VRFs). A foreign container
+    already on the target deepens the plan's rows exactly as NetBox's signal
+    would; that container's own ``_children`` is not rewritten, because the
+    loader never writes rows the plan does not own.
+    """
+    vrf = ((lambda obj: obj["refs"].get("vrf")) if ids is None else
+           (lambda obj: ids[obj["refs"]["vrf"]] if "vrf" in obj["refs"] else None))
+    rows = [(obj["key"], vrf(obj), obj["attrs"]["prefix"])
+            for obj in objects.values() if obj["kind"] == "prefix"]
+    # A row with a plan prefix's own (VRF, prefix) identity is that prefix,
+    # already loaded by an earlier batch or attempt — not a second row.
+    owned = {(vrf_id, ipaddress.ip_network(prefix, strict=False)) for _, vrf_id, prefix in rows}
+    rows += [(("existing", row["id"]), _nested_id(row.get("vrf")), row["prefix"])
+             for row in existing
+             if (_nested_id(row.get("vrf")), ipaddress.ip_network(row["prefix"], strict=False))
+             not in owned]
+    return _prefix_hierarchy(rows)
+
+
+def _render(obj, objects, ids, content_types, service_shape="protocol_ports", hierarchy=None):
+    """Compile one database row; ``hierarchy`` is a precomputed _plan_prefix_hierarchy."""
     row = dict(obj["attrs"])
     row.update(_save_copies(obj, objects))
+    if obj["kind"] in SCOPE_CACHE_KINDS and "scope_site" in obj["refs"]:
+        row.update(_scope_cache_ids(obj, objects, ids))
+    if obj["kind"] == "prefix":
+        # Prefix post_save signal (ipam/signals.py) stores the hierarchy counters.
+        depth, children = (hierarchy or _plan_prefix_hierarchy(objects))[obj["key"]]
+        row.update(_depth=depth, _children=children)
+    if obj["kind"] == "virtual_machine" and (site := _vm_site_key(obj, objects)):
+        row["site_id"] = ids[site]
     for name, value in RENDER_DEFAULTS.get(obj["kind"], {}).items():
         row.setdefault(name, value)
     for (kind, source), target in ATTRIBUTE_RENAMES.items():
@@ -1381,6 +1560,22 @@ def _rendered_columns(obj, service_shape="protocol_ports"):
         columns.update(RACK_TYPE_COPIES)
     if obj["kind"] == "device_type" and "weight" in obj["attrs"]:
         columns.add("_abs_weight")
+    # Save-derived columns (_save_copies and _render); a superset is harmless
+    # here because this only proves the target schema can store them.
+    columns.update({
+        "device": DEVICE_TYPE_COPIES if "device_type" in obj["refs"] else (),
+        "interface": ("_name", "rf_channel_frequency", "rf_channel_width")
+        if obj["attrs"].get("rf_channel") else ("_name",),
+        "vm_interface": ("_name",),
+        "ip_range": ("size",),
+        "power_feed": ("available_power",),
+        "cable": ("_abs_length",) if obj["attrs"].get("length") is not None else (),
+        "vlan_group": ("vid_ranges", "total_vlan_ids"),
+        "prefix": ("_depth", "_children"),
+        "virtual_machine": ("site_id",) if {"cluster", "device"} & set(obj["refs"]) else (),
+    }.get(obj["kind"], ()))
+    if obj["kind"] in SCOPE_CACHE_KINDS and "scope_site" in obj["refs"]:
+        columns.update(("_site_id", "_location_id", "_region_id", "_site_group_id"))
     if obj["kind"] == "cable" and "bundle" in obj["refs"]:
         columns.add("bundle_id")
     if obj["kind"] == "service":
@@ -1943,6 +2138,9 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                         base_settings, *, upload_format):
     """Submit deterministic model batches and checkpoint IDs after each one."""
     batches = _batches(candidates, max_job_rows)
+    hierarchy = (_plan_prefix_hierarchy(
+        objects, ids, client.all(SPECS["prefix"][1] + "?fields=id,prefix,vrf"))
+        if kind == "prefix" else None)
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
         settings = _batch_request_settings(base_settings, kind)
@@ -1960,7 +2158,7 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                     _write_receipt(receipt_path, receipt)
         if prior is None and not all(obj["key"] in ids for obj in batch):
             pending = [obj for obj in batch if obj["key"] not in ids]
-            rows = [_render(obj, objects, ids, content_types, service_shape)
+            rows = [_render(obj, objects, ids, content_types, service_shape, hierarchy)
                     for obj in pending]
             _submit(client, branch_name, SPECS[kind][0], rows, batch_purpose,
                     [obj["key"] for obj in pending], receipt, receipt_path, timeout,
@@ -2184,8 +2382,8 @@ def _schema_preflight(client, objects):
 
 
 def _component_filter_preflight(client, objects):
-    """Require the REST filters used to prove ComponentModel cache fields."""
-    kinds = sorted({obj["kind"] for obj in objects.values()} & DEVICE_COMPONENT_KINDS)
+    """Require the REST filters readback uses to prove save()-maintained caches."""
+    kinds = sorted({obj["kind"] for obj in objects.values()} & set(READBACK_FILTERS))
     if not kinds:
         return {}
     _, schema = client.request("/api/schema/?format=json", branch=False)
@@ -2199,9 +2397,9 @@ def _component_filter_preflight(client, objects):
             value = value[part.replace("~1", "/").replace("~0", "~")]
         return value
 
-    required = {"site_id", "location_id", "rack_id"}
     result = {}
     for kind in kinds:
+        required = READBACK_FILTERS[kind]
         endpoint = SPECS[kind][1]
         operation = (schema.get("paths") or {}).get(endpoint, {}).get("get") or {}
         available = {resolved.get("name") for parameter in operation.get("parameters", [])
@@ -2209,7 +2407,7 @@ def _component_filter_preflight(client, objects):
                      and resolved.get("in") == "query"}
         if absent := required - available:
             raise LoadError(
-                f"REST schema {endpoint} lacks component-cache readback filters: "
+                f"REST schema {endpoint} lacks cache readback filters: "
                 + ", ".join(sorted(absent))
             )
         result[kind] = sorted(required)
@@ -2630,6 +2828,9 @@ def _readback_fields(plan):
             fields[kind] = set(base) | identity
         fields[kind].update(obj["attrs"])
         fields[kind].update(obj["refs"])
+        if kind == "interface" and obj["attrs"].get("rf_channel"):
+            # Save-derived; _verify_save_derived reads them from this inventory.
+            fields[kind].update(("rf_channel_frequency", "rf_channel_width"))
     return fields
 
 
@@ -2771,6 +2972,110 @@ def _verify_circuit_terminations(client, objects, ids, expect_caches=True):
     }
 
 
+def _comparable(value):
+    """REST shapes -> plain values: choices and nested refs by value/id, numbers exact."""
+    if isinstance(value, dict):
+        value = value.get("value", value.get("id"))
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return Decimal(str(value))
+    if isinstance(value, str):
+        try:
+            return Decimal(value)
+        except ArithmeticError:
+            return value
+    return value
+
+
+def _region_chain(key, objects):
+    while key is not None:
+        yield key
+        key = objects[key]["refs"].get("parent")
+
+
+def _verify_save_derived(client, objects, ids, inventory):
+    """Prove the save()-derived columns the compiler writes, through NetBox itself.
+
+    Strict readback compares only emitted fields; these columns are NetBox's to
+    derive, so each is read back the way NetBox consumes it: a serialized value
+    (prefix ``_depth``/``children`` recomputed from every prefix on the target,
+    IP-range ``size``, device ``airflow``/``cooling_method``, VM ``site``, radio
+    channel frequency/width, VLAN-group ranges), a cache-backed REST filter
+    (scope ``site_id``/``region_id``/``site_group_id``, feed
+    ``available_power``) or the model's own default ordering (interface ``_name``).
+    """
+    started = time.monotonic()
+    failures, checked = [], Counter()
+    rows = {kind: {row["id"]: row for row in inventory.get(kind, [])} for kind in inventory}
+    hierarchy = _prefix_hierarchy([(row["id"], _nested_id(row.get("vrf")), row["prefix"])
+                                   for row in inventory.get("prefix", [])])
+    filters, plan_ids = defaultdict(set), defaultdict(set)
+    for obj in objects.values():
+        kind, key = obj["kind"], obj["key"]
+        if kind not in SPECS or key not in ids:
+            continue
+        plan_ids[kind].add(ids[key])
+        expected = {}
+        if kind == "prefix":
+            expected["_depth"], expected["children"] = hierarchy.get(ids[key], (None, None))
+        elif kind == "virtual_machine" and (site := _vm_site_key(obj, objects)):
+            expected["site"] = ids[site]
+        elif kind == "vlan_group" and "vid_ranges" not in obj["attrs"]:
+            expected = {"vid_ranges": [[1, 4094]], "total_vlan_ids": 4094}
+        elif kind in {"device", "ip_range", "interface"}:
+            expected = {field: value for field, value in _save_copies(obj, objects).items()
+                        if field in {"airflow", "cooling_method", "size",
+                                     "rf_channel_frequency", "rf_channel_width"}}
+        if kind in SCOPE_CACHE_KINDS and "scope_site" in obj["refs"]:
+            site = objects[obj["refs"]["scope_site"]]
+            filters[(kind, "site_id", ids[site["key"]])].add(ids[key])
+            for region in _region_chain(site["refs"].get("region"), objects):
+                filters[(kind, "region_id", ids[region])].add(ids[key])
+            if group := site["refs"].get("group"):
+                filters[(kind, "site_group_id", ids[group])].add(ids[key])
+        if kind == "power_feed" and "available_power" in (copies := _save_copies(obj, objects)):
+            filters[(kind, "available_power", copies["available_power"])].add(ids[key])
+        if not expected:
+            continue
+        row = rows.get(kind, {}).get(ids[key])
+        for field, value in sorted(expected.items()):
+            checked[f"{kind}.{field}"] += 1
+            if row is None or field not in row:
+                failures.append({"key": key, "field": field, "error": "absent at readback"})
+            elif field == "vid_ranges":
+                if row[field] != value:
+                    failures.append({"key": key, "field": field, "expected": value, "observed": row[field]})
+            elif _comparable(row[field]) != _comparable(value):
+                failures.append({"key": key, "field": field, "expected": value,
+                                 "observed": _comparable(row[field])})
+
+    for (kind, parameter, value), expected_ids in sorted(filters.items(), key=str):
+        checked[f"{kind}?{parameter}"] += 1
+        found = {row["id"] for row in client.all(SPECS[kind][1] + "?" + urllib.parse.urlencode(
+            [(parameter, str(value)), ("brief", "1")]))} & plan_ids[kind]
+        if found != expected_ids:
+            failures.append({"kind": kind, "filter": f"{parameter}={value}",
+                             "missing_ids": sorted(expected_ids - found)[:20],
+                             "unexpected_ids": sorted(found - expected_ids)[:20]})
+
+    for kind, parent in (("interface", "device"), ("vm_interface", "virtual_machine")):
+        if not plan_ids[kind]:
+            continue
+        # The model's Meta ordering is (parent, CollateAsChar('_name')): an
+        # empty _name leaves each parent's components in arbitrary order.
+        sequences = defaultdict(list)
+        for row in client.all(f"{SPECS[kind][1]}?fields=id,name,{parent}", ordering=None):
+            if row["id"] in plan_ids[kind]:
+                sequences[_nested_id(row.get(parent))].append(row["name"])
+        checked[f"{kind}._name"] += len(sequences)
+        for parent_id, names in sorted(sequences.items()):
+            keys = [naturalize_interface(name, 100) for name in names]
+            if keys != sorted(keys):
+                failures.append({"kind": kind, parent: parent_id, "error": "not in natural order",
+                                 "observed": names[:20]})
+    return {"checked": dict(sorted(checked.items())), "failures": failures[:20],
+            "failure_count": len(failures), "wall_seconds": round(time.monotonic() - started, 6)}
+
+
 def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
     current = {kind: {row["id"]: row for row in client.all(SPECS[kind][1])}
                for kind in sorted({obj["kind"] for obj in plan["objects"]
@@ -2884,9 +3189,11 @@ def verify_target(plan_path, *, url, token, branch=None, receipt_path=None,
             client, objects, ids,
             expect_caches=delivery_contract(delivery_policy)
             ["request_settings"]["create_changelogs"] is False)
+        result["save_derived"] = _verify_save_derived(client, objects, ids, inventory)
         success = (not result["computed_paths"]["failures"]
                    and not result["component_caches"]["failures"]
-                   and not result["circuit_terminations"]["failures"])
+                   and not result["circuit_terminations"]["failures"]
+                   and not result["save_derived"]["failures"])
     result.update(success=success, wall_seconds=round(time.monotonic() - started, 6))
     if receipt_path is not None:
         _write_receipt(Path(receipt_path), result)
@@ -3099,6 +3406,9 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                     "circuit-termination readback failed for "
                     f"{len(circuit_terminations['failures'])} circuits or site filters"
                 )
+            save_derived = _verify_save_derived(client, objects, current_ids, inventory)
+            if save_derived["failures"]:
+                raise LoadError(f"save-derived readback failed for {save_derived['failure_count']} checks")
             review_history = (_verify_review_history(client, branch_row, objects, history_preflight)
                               if delivery_policy == "reviewable" else None)
             observation = {"observed_at": _now(), "wall_seconds": round(time.monotonic() - overall, 6),
@@ -3106,6 +3416,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                            "verification": existing, "computed_paths": paths,
                            "component_caches": component_caches,
                            "circuit_terminations": circuit_terminations,
+                           "save_derived": save_derived,
                            "review_history": review_history}
         except BaseException as exc:
             if receipt is not None:
@@ -3123,6 +3434,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
             receipt["computed_paths"] = paths
             receipt["component_caches"] = component_caches
             receipt["circuit_terminations"] = circuit_terminations
+            receipt["save_derived"] = save_derived
             receipt["review_history"] = review_history
             receipt["resolved_ids"] = current_ids
             receipt["success"] = True
@@ -3142,6 +3454,7 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                                      "readback_seconds": preflight_readback_seconds},
                        "computed_paths": paths, "component_caches": component_caches,
                        "circuit_terminations": circuit_terminations,
+                       "save_derived": save_derived,
                        "jobs": [], "rest_batches": [],
                        "rest_creates": [],
                        "review_history_preflight": history_preflight,
@@ -3277,6 +3590,10 @@ def load(plan_path, *, url, token, branch, receipt_path, timeout=900,
                 "circuit-termination readback failed for "
                 f"{len(receipt['circuit_terminations']['failures'])} circuits or site filters"
             )
+        receipt["save_derived"] = _verify_save_derived(client, objects, ids, inventory)
+        if receipt["save_derived"]["failures"]:
+            raise LoadError(
+                f"save-derived readback failed for {receipt['save_derived']['failure_count']} checks")
         receipt["review_history"] = (_verify_review_history(
             client, branch_row, objects, history_preflight)
                                      if delivery_policy == "reviewable" else None)

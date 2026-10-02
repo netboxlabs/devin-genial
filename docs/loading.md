@@ -331,6 +331,49 @@ component kind and placement and makes one query per group, including `null`
 location and rack values. This proves the caches without another mutation, so
 reviewable ChangeDiff counts remain exactly one create per canonical object.
 
+The same rule covers every other column NetBox derives in `save()`, a field's
+`pre_save` or a `post_save` signal, which the raw insert skips. A live review of
+a seeded showcase found them empty: `?site_id=` on prefixes returned nothing,
+interface tables were unsorted, the prefix tree was flat, IP ranges read size
+0 and every power feed offered 0 VA. The compiler now writes them into the
+original row (verified against the NetBox 4.7.2 source; TurboBulk 0.4.0's own
+`apply_save_hooks` covers only some of them and only changelog-free jobs):
+
+| Column(s) | NetBox source | Readback proof |
+|---|---|---|
+| prefix, cluster, wireless LAN `_site`/`_region`/`_site_group`/`_location` | `CachedScopeMixin.cache_related_objects` | exact `?site_id=`, `?region_id=` (region and ancestors) and `?site_group_id=` sets |
+| interface and VM interface `_name` | `NaturalOrderingField` + `naturalize_interface`, ported verbatim | each parent's components arrive in natural order under the model's own Meta ordering |
+| prefix `_depth`, `_children` | `ipam.signals` / `annotate_hierarchy` | serialized `_depth`/`children` equal a recomputation over every prefix on the target |
+| IP range `size` | `IPRange.save()` | serialized value |
+| device `airflow`, `cooling_method` (when the device sets none) | `Device.save()` copies from its type | serialized value |
+| virtual machine `site` (from its cluster's site, else its device's) | `VirtualMachine.save()` | serialized value |
+| power feed `available_power` | `PowerFeed.save()` | exact `?available_power=` sets |
+| radio `rf_channel_frequency`, `rf_channel_width` | `Interface.save()` / `get_channel_attr` | serialized value |
+| VLAN group `vid_ranges` [1, 4094], `total_vlan_ids` 4094 | model default (TurboBulk would insert `{}` and 0) | serialized value |
+| cable `_abs_length` | `Cable.save()` / `to_meters` | not REST-visible (ordering only), like `_abs_weight` |
+
+Preflight requires the scope and `available_power` filters on their REST
+endpoints. The prefix hierarchy is computed from the plan plus the prefixes
+already on the target, so a foreign container (another estate's `10.0.0.0/8`
+in main, copied into the branch) deepens the plan's rows exactly as NetBox
+would; that container's own `_children` is **not** rewritten, because the
+loader writes no row the plan does not own. Readback results are recorded as
+`save_derived` in the receipt and in `verify-target` output. A target loaded by
+an older compiler (before `v02-turbobulk-14`) fails this gate until reseeded.
+These are loader-only changes: the canonical graph and generator version are
+unchanged. Verified on NetBox Cloud 4.7.1 / TurboBulk 0.4.0 in a disposable
+branch over both JSONL and Parquet, against REST-created twins that NetBox
+computed itself (identical values, and REST-created interfaces interleaved in
+natural order with compiled ones).
+
+Still left to NetBox or out of scope, all checked against the emitted plans:
+wireless-link `_interface_a/b_device` and `_abs_distance` (8 rows across all
+profiles), cooling `_abs_diameter`/`_abs_max_flow` (ordering only); custom
+field defaults, IP `dns_name` lowercasing, prefix host-bit clearing, module-bay
+`parent`, device/VM type default platform and VM type vCPU/memory defaults do
+not arise because the plans already satisfy them or never emit the inputs.
+Circuit terminations follow the save-hook rule below.
+
 Circuit terminations need the opposite treatment, because the state NetBox
 maintains for them is not on the row being inserted. `CircuitTermination.save()`
 caches the termination's scope (`_site`, `_region`, `_site_group`, `_location`,

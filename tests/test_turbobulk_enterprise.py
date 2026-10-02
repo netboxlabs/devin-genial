@@ -12,7 +12,7 @@ from estates.turbobulk import (LoadError, REST_CREATE_KINDS, SPECS, SUPPORTED_RE
                                _bound_job_id, _complete_rest, _create_rest, _index,
                                _matches, _render, _rendered_columns, _required_content_types,
                                _schema_preflight, _submit, delivery_contract, load,
-                               SAVE_HOOK_REQUIRED_COLUMNS)
+                               READBACK_FILTERS, SAVE_HOOK_REQUIRED_COLUMNS)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +54,7 @@ class SchemaClient:
             model = SPECS[obj["kind"]][0]
             if model:
                 self.schemas.setdefault(model, set()).update(
-                    obj["attrs"] if obj["kind"] == "cable" else
+                    set(obj["attrs"]) | {"_abs_length"} if obj["kind"] == "cable" else
                     _rendered_columns(obj, service_shape))
         if any(obj["kind"] == "cable" for obj in objects.values()):
             self.schemas["dcim.cabletermination"] = {
@@ -69,12 +69,10 @@ class SchemaClient:
     def request(self, path, method="GET", **_kwargs):
         self.calls.append((method, path))
         if path == "/api/schema/?format=json":
-            parameters = [{"name": name, "in": "query"}
-                          for name in ("site_id", "location_id", "rack_id")]
             return 200, {"paths": {
-                SPECS[kind][1]: {"get": {"parameters": parameters}}
-                for kind in ("console_port", "console_server_port", "interface", "module_bay",
-                             "power_outlet", "power_port")
+                SPECS[kind][1]: {"get": {"parameters": [{"name": name, "in": "query"}
+                                                        for name in sorted(names)]}}
+                for kind, names in READBACK_FILTERS.items()
             }}
         if path == SPECS["module_bay_type"][1]:
             if not self.rest:
