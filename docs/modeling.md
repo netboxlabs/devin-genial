@@ -19,6 +19,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Contact and journal context](#contact-and-journal-context)
   - [Automation records](#automation-records)
 - [Provider BGP inventory](#provider-bgp-inventory)
+- [Provider network lab](#provider-network-lab)
 - [Extending it](#extending-it)
 
 ## Procedural design, without AI
@@ -650,6 +651,50 @@ Transport: the three `netbox_bgp` models have no Diode SDK entity — the SDK
 carries no plugin entity at all — so they are loader-only like the automation
 pack, and they take the bounded REST create path
 (see [loading](loading.md#artifacts-and-diode)).
+
+## Provider network lab
+
+`discovery_lab = true` in a provider recipe (off by default; `{ nodes = 4 }`
+for four routers) adds a small staging lab that a real orb-agent can discover
+(`estates/discovery_lab.py`, since 0.16.0). It is what
+[lab/discovery](../lab/discovery/README.md) runs as Nokia SR Linux containers:
+`render.py` reads the lab records from the plan, so the plan is the single
+source of truth for what discovery must find.
+
+| Record | What it is |
+| --- | --- |
+| Room and rack | `Network Lab` under the NOC's floor, cabinet `L01` (rack role Network). |
+| Lab routers | `lab-<production name>` for the first PoP's PE pair (permanent `provider-pop-order` ledger) plus PE A's first-ordered backbone neighbour; a fourth node adds PE B's. Device type `Nokia 7220 IXR-D2L`, platform `NOKIA_SRL v26.7.2`, role `Lab Router`, serial `Sim Serial No.`. |
+| Ports | All 58 front-panel ports from the pinned devicetype-library file plus `mgmt0`, `system0` and `.0` subinterfaces, each physical port with its SR Linux MAC. |
+| Links | One cable per routed /31 adjacency among the mirrored production routers; 100G production ports map onto the D2L's QSFP28 cages 49–56. |
+| Addresses | RFC 2544 benchmarking space only: management `198.18.0.0/24`, links `198.19.0.0/24`, loopbacks `198.19.255.0/24`, no VRF. |
+
+The lab is deliberately **not** the production routers. A container reports a
+7220 IXR-D2L, `ethernet-1/N` ports and a simulator serial; matched against the
+MX204 records it would produce dozens of deviations that are demo artefacts.
+So every lab record states what discovery truly reports — model, serial and
+platform strings verbatim (the devicetype-library model string `7220 IXR-D2L
+25/100GE` is the labelled deviation) — and each device's comments name the
+production router whose wiring it mirrors. Nothing claims physical hardware,
+optics, power draw or customer traffic.
+
+`validate_provider.discovery_lab` checks the lab as a closed slice, then
+removes it so every production check sees exactly the estate it would see with
+the lab off. Membership comes from the lab role, references and addresses, not
+from meta, so a production device given the lab role must pass the lab rules
+instead of escaping the production ones. Codes: `lab-recipe` (records exist
+exactly when the key enables them, with the requested node count),
+`lab-isolation` (no production record references a lab record; no VRF,
+circuit, power, console or module; lab cables join only lab ports),
+`lab-address` (lab addresses only from 198.18.0.0/15, that space only in the
+lab, every address in a lab prefix), `lab-hardware` (model, serial, platform,
+the complete front panel and MACs), `lab-placement` (the NOC's Network Lab room
+and rack) and `lab-mirror` (the first PoP's PE pair and neighbours, cabled
+exactly as their routed /31 adjacencies). `tests/test_discovery_lab.py` holds a
+failing mutation for each. Turning the lab on or off, or changing its size,
+requires a new baseline; with it off no lab record is emitted, and turning it
+on only appends records.
+
 The shared bank/DC/school milestone passed independent offline review and live
 Harbor qualification: 3,331 objects match initial/repeat strict readback with
 unchanged IDs. See `build/goal-richness/live/summary.json` and `walkthrough.md`

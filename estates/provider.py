@@ -14,7 +14,7 @@ from hashlib import sha256
 import ipaddress
 import re
 
-from . import bgp, datacenter, equipment, ipv6, networking, operations, places, poe, optics
+from . import bgp, datacenter, discovery_lab, equipment, ipv6, networking, operations, places, poe, optics
 from .blocks import Site, foundation, trunk
 from .model import DesignError, World, canonical, resolve_bank_recipe, resolve_demo
 from .naming import bandwidth, port_speed, segment_purpose, titleize
@@ -67,7 +67,7 @@ _RESERVED_POP_KEY = re.compile(r"dc-?\d+|.*-(?:chi|det|cle|mil)\d{4,}")
 
 
 def resolve(raw):
-    fields = {"profile","demo","topology","pops","customers","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base"}
+    fields = {"profile","demo","topology","pops","customers","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base","discovery_lab"}
     if unknown := raw.keys()-(COMMON|fields):
         raise DesignError(f"Unknown provider fields: {', '.join(sorted(unknown))}; describe PoPs and private-L3 customer demand")
     base = dict(namespace="lakes-fiber",name="Great Lakes Fiber",address_pool="10.0.0.0/8")
@@ -163,6 +163,7 @@ def resolve(raw):
     r["asn_base"] = _integer(raw.get("asn_base",default_asn),"asn_base",4200000000,4294967294-1023)
     if (r["asn_base"]-4200000000)%1024:
         raise DesignError("asn_base must start a 1024-number block aligned from 4200000000; target global collision preflight is still required")
+    r["discovery_lab"] = discovery_lab.resolve(raw.get("discovery_lab"))
     return r
 
 
@@ -190,7 +191,7 @@ def generate(recipe,previous=None):
         if any(canonical(reproduced[k]) != canonical(previous[k]) for k in ("objects","contracts","reservations","allocations")):
             raise DesignError("Previous provider plan does not reproduce from its recipe and ledgers; use an intact frozen plan or rebaseline")
         old = previous["recipe"]
-        for field in ("topology","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base"):
+        for field in ("topology","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base","discovery_lab"):
             if old[field] != recipe[field]:
                 raise DesignError(f"Changing {field} requires a new provider baseline")
         current_pops = {p["key"]:p for p in recipe["pops"]}
@@ -618,4 +619,5 @@ def _generate(recipe,previous=None):
         management_mode="in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
     equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w); operations.supporting_records(w)
     bgp.enrich(w)
+    discovery_lab.add_discovery_lab(w)
     return w.finish()

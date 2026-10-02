@@ -270,6 +270,7 @@ empty. `demo` additionally accepts `provider-span-maintenance`.
 | `noc_pop_b` | string | second PoP key in sorted order | An existing PoP key, distinct from `noc_pop_a` | **rebaseline** |
 | `noc_peak_mbps` | integer | `100` | `1`–`800`, and ≤ `1000 × (1 − reserve_fraction)`. Excluded from backbone offered-load accounting. | **rebaseline** |
 | `asn_base` | integer | namespace-derived | `4200000000`–`4294966271`, aligned to a 1024-number block from `4200000000`. Global target ASN conflict preflight is still required. | **rebaseline** |
+| `discovery_lab` | boolean or table | `false` | `true` (three lab routers) or `{ nodes = 3 }` / `{ nodes = 4 }`. Adds the [network lab](modeling.md#provider-network-lab) the real-discovery lab runs: 392 records for three nodes. | **rebaseline** |
 
 Each `[[pops]]` entry (`estates/provider.py:70`) requires exactly two keys:
 
