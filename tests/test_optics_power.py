@@ -58,17 +58,17 @@ class OpticsPowerTests(unittest.TestCase):
         poe.enrich(world)
         self.assertEqual(self.draws(world,'access')[0]['maximum_draw'],123)
         self.assertEqual(self.draws(world,'leaf')[0]['maximum_draw'],165)
-        world=self.fixture({'leaf':['arista-10g-lr']*2+['arista-100g-lr4']*2+['arista-100g-aoc-3m']})
+        world=self.fixture({'leaf':['arista-10g-lr']*2+['arista-100g-sr4']*2+['arista-100g-aoc-3m']})
         poe.enrich(world)
-        self.assertEqual([p['allocated_draw'] for p in self.draws(world,'leaf')],[91,90])
-        self.assertEqual(self.draws(world,'leaf')[0]['maximum_draw'],181)
+        self.assertEqual([p['allocated_draw'] for p in self.draws(world,'leaf')],[90,89])
+        self.assertEqual(self.draws(world,'leaf')[0]['maximum_draw'],179)
 
     def test_inactive_disconnected_installed_modules_retain_load_and_repeat_is_exact(self):
-        world=self.fixture({'server':['generic-10g-lr']*2})
+        world=self.fixture({'server':['generic-10g-sr']*2})
         for obj in world.objects.values():
             if obj['kind']=='module':obj['attrs']['status']='offline'
         poe.enrich(world)
-        self.assertEqual(self.draws(world,'server')[0]['maximum_draw'],255)
+        self.assertEqual(self.draws(world,'server')[0]['maximum_draw'],253)
         before=deepcopy((world.objects,world.contracts))
         poe.enrich(world)
         self.assertEqual((world.objects,world.contracts),before)

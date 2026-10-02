@@ -428,7 +428,7 @@ their presence here is not a claim of completed native round-trip testing.
 
 ## Installed optics policy
 
-The top-level `optics.parts` map defines eighteen selected parts. Each stable part ID
+The top-level `optics.parts` map defines sixteen selected parts. Each stable part ID
 records manufacturer/model, form factor, optical protocol, medium, connector,
 rate in **kbps**, reach in metres, power reservation in integer **mW**, source
 IDs and an explicit `compatible_interfaces` map from hardware alias to existing
@@ -444,13 +444,11 @@ Arista both sell a part named `SFP-10G-LR`.
 | `juniper-10g-sr` | Juniper `EX-SFP-10GE-SR` (MMF, LC, 400 m OM4) | same cages as `juniper-10g-lr` | 1,000 |
 | `arista-10g-lr` | Arista `SFP-10G-LR` | `leaf` `Ethernet1–48`, 10G | 2,000 authored |
 | `arista-10g-sr` | Arista `SFP-10G-SR` (MMF, LC, 400 m OM4) | `leaf` `Ethernet1–48`, 10G | 1,000 |
-| `arista-100g-lr4` | Arista `QSFP-100G-LR4` | `leaf` `Ethernet49/1–56/1`; `core` `Ethernet1/1–32/1`, 100G | 4,500 |
-| `arista-100g-sr4` | Arista `QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | same cages as `arista-100g-lr4` | 3,500 |
+| `arista-100g-sr4` | Arista `QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | `leaf` `Ethernet49/1–56/1`; `core` `Ethernet1/1–32/1`, 100G | 3,500 |
 | `fortinet-10g-lr` | Fortinet `FN-TRAN-SFP+LR` | `edge` `x1/x2`, 10G | 1,000 authored |
 | `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7` configured **1G** | 1,000 |
 | `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`, 100G | 3,500 |
 | `juniper-100g-sr4` | Juniper `JNP-QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | same cages as `juniper-100g-lr4` | 3,500 |
-| `generic-10g-lr` | Generic `SFP-10G-LR` (third-party compatible) | `server` `eth1/eth2`, 10G | 2,000 authored |
 | `generic-10g-sr` | Generic `SFP-10G-SR` (third-party compatible) | `server` `eth1/eth2`, 10G | 1,000 authored |
 | `arista-100g-aoc-3m` | Arista `AOC-Q-Q-100G-3M` | `leaf` QSFP28 cages; existing peer uses `Ethernet49/1`, 100G | 3,500 authored per captive end |
 | `juniper-100g-aoc-3m` | Juniper `JNP-100G-AOC-3M` | `leaf-juniper` QSFP28 cages `et-0/0/48–55`, 100G | 3,500 authored per captive end |
@@ -466,7 +464,7 @@ copper optic or inferred automatic negotiation is added.
 
 Arista's [guide](https://www.arista.com/assets/data/pdf/Transceiver-Guide.pdf)
 states platform applicability with restrictions and chassis/software minima;
-its LR4 and AOC families require at least EOS 4.15.2. The exact 7050SX3 host
+its AOC family requires at least EOS 4.15.2. The exact 7050SX3 host
 entries are also present in the [DMF HCL](https://www.arista.com/en/hcl-dmf/hcl-supported-transceivers-and-cables-for-arista-7050x3-and-7260x3-series-switches).
 The latter's raw response was challenge HTML: its catalog source is explicitly
 an indexed primary-page extraction, with no claimed original-HCL hash.
@@ -497,7 +495,12 @@ requires both ends of a multimode channel to share the connector. SR host fit:
 Juniper's HCT pages for `EX-SFP-10GE-SR` and `JNP-QSFP-100G-SR4` (MX204,
 QFX5120-48Y, EX3400; EX3300 by its datasheet's ordering table), Cisco's TMG
 notes for `SFP-10G-SR` on the C9200L fixed uplinks, and Arista's transceiver
-guide (Tables 10/12 and 6/14.0, no platform restriction on either SR row). The shared authored
+guide (Tables 10/12 and 6/14.0, no platform restriction on either SR row).
+Two 0.15 parts left the catalog because no estate can reach them any more:
+Arista `QSFP-100G-LR4` (every Arista 100G link is an in-room jumper) and the
+generic server `SFP-10G-LR` (a server always sits in the room of its leaf). A
+future link that needs one fails generation with the actionable no-reviewed-
+optic error rather than silently installing a 10 km part. The shared authored
 `local_min_m: 3` / `local_max_m: 100` envelope applies to the **sum of the
 complete known local cable path**, bounded by both endpoint reaches. It is a
 conservative modeling limit, not a vendor minimum, computed loss budget or
@@ -546,7 +549,7 @@ Juniper [LR](https://apps.juniper.net/hct/model/EX-SFP-10GE-LR),
 [SR](https://apps.juniper.net/hct/model/EX-SFP-10GE-SR),
 [SR4](https://apps.juniper.net/hct/model/JNP-QSFP-100G-SR4),
 [LX](https://apps.juniper.net/hct/model/SFP-1GE-LX),
-[LR4](https://apps.juniper.net/hct/model/JNP-QSFP-100G-LR4), Arista LR4 and SR4
+[LR4](https://apps.juniper.net/hct/model/JNP-QSFP-100G-LR4), Arista SR4
 ([FAQ, page 5](https://www.arista.com/assets/data/pdf/Datasheets/Arista-100G_Optics_FAQ.pdf))
 and Arista SR (transceiver datasheet page 6, 1 W for SFP+ optics).
 Arista 10G LR keeps its authored 2 W reserve; the same datasheet line would

@@ -249,11 +249,11 @@ class OpticsValidationTests(unittest.TestCase):
 
     def test_smaller_endpoint_reach_is_enforced(self):
         plan, objects = self.fixture()
-        cable, _, _ = self.link(objects, part="module-type/Generic/SFP-10G-LR")
+        cable, _, _ = self.link(objects, medium="mmf", part="module-type/Generic/SFP-10G-SR")
         catalog = deepcopy(self.catalog)
         catalog["optics"]["local_max_m"] = 1000
         # The part's own reach, not the local envelope, must bound the path.
-        catalog["optics"]["parts"]["generic-10g-lr"]["reach_m"] = 100
+        catalog["optics"]["parts"]["generic-10g-sr"]["reach_m"] = 100
         cable["attrs"]["length"] = 101
         self.assertIn("optics-reach", self.codes(plan, catalog))
 
@@ -334,7 +334,7 @@ class OpticsValidationTests(unittest.TestCase):
                 for module in modules:
                     module["attrs"]["asset_tag"] = "same-tag"
             elif change == "wrong-part":
-                modules[0]["refs"]["module_type"] = "module-type/Arista/QSFP-100G-LR4"
+                modules[0]["refs"]["module_type"] = "module-type/Arista/QSFP-100G-SR4"
             elif change == "disconnected":
                 plan["objects"].remove(cable)
             elif change == "comments":

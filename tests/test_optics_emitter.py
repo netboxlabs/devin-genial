@@ -95,7 +95,7 @@ class OpticsEmitterTests(unittest.TestCase):
                 world.add("device", "d", refs={"device_type": "hardware/access"})
                 world.add("interface", "i", {"name": "TenGigabitEthernet1/1/1", "type": "10gbase-x-sfpp"}, {"device": "d"})
                 world.add("circuit_termination", "t")
-                world.add("cable", "c", {"type": "mmf" if mode == "media" else "smf"}, {"a": "i", "b": "t"})
+                world.add("cable", "c", {"type": "aoc" if mode == "media" else "smf"}, {"a": "i", "b": "t"})
                 if mode == "ambiguous":
                     world.catalog["optics"]["parts"]["duplicate"] = deepcopy(world.catalog["optics"]["parts"]["cisco-10g-lr"])
                 with self.assertRaisesRegex(DesignError, "no reviewed optic|ambiguous selection"):

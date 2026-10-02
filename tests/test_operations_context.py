@@ -79,9 +79,13 @@ class OperationsContextTests(unittest.TestCase):
                 self.assertEqual(validate(plan), [])
                 scopes = {(o["refs"]["cluster"], o["key"].split("/")[2]) for o in plan["objects"] if o["kind"] == "virtual_machine"}
                 journals = [o for o in plan["objects"] if o["kind"] == "journal_entry"]
-                legacy_notes = [o for o in journals if objects[o["refs"]["assigned_object"]]["kind"] != "device"]
+                legacy_notes = [o for o in journals if objects[o["refs"]["assigned_object"]]["kind"] != "device"
+                                and not o["key"].endswith("/delivery-slip")]
+                slips = [o for o in journals if o["key"].endswith("/delivery-slip")]
+                self.assertTrue(all(o["attrs"]["kind"] == "warning" for o in slips))
+                self.assertLess(len(slips), sum(o["kind"] == "circuit" for o in plan["objects"]))
                 # One placement note per workload scope, one access note per
-                # site and one handover per circuit.
+                # site and one handover per circuit (plus the occasional slip).
                 self.assertEqual(len(legacy_notes), len(scopes) + sum({"site": 1, "circuit": 1}.get(o["kind"], 0) for o in plan["objects"]))
                 for vm in (o for o in plan["objects"] if o["kind"] == "virtual_machine"):
                     self.assertEqual(objects[f"contact-assignment/{vm['key']}/operations"]["attrs"], {"priority": "secondary"})

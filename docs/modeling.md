@@ -672,7 +672,7 @@ large live load.
 The finite [catalog](../catalog/README.md) selects SR/SR4 multimode parts for
 in-room jumpers and LR/LX/LR4 (and long-reach LH/ER4 Lite) single-mode parts
 for everything that leaves the room, for reviewed Cisco, Juniper, Arista and
-Fortinet cages, plus explicit generic server transceivers. The alternate Juniper access and leaf lines carry their own
+Fortinet cages, plus an explicit generic server SR transceiver. The alternate Juniper access and leaf lines carry their own
 reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives a 1G part (LX, or LH past 10 km of owned
 fiber) even though its cage can also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
 one active optical cable, two captive end modules, one shared assembly serial.
