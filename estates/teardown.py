@@ -46,6 +46,9 @@ DELETE_BATCH_ROWS = REST_PATCH_ROWS
 IMPLICIT_KINDS = {"cable_termination"}
 
 
+TRANSIENT_RETRIES = 3
+
+
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -273,6 +276,16 @@ def teardown(artifact, *, url, token, receipt_path, branch="", confirm=False,
             _write_receipt(receipt_path, receipt)
             continue
         deleted, error = _delete_batch(client, kind, present)
+        # A dropped connection (not an HTTP verdict) leaves the outcome to the
+        # target's state, which _delete_batch already re-read: retry only the
+        # survivors, a bounded number of times. A 409 PROTECT is never retried.
+        for attempt in range(TRANSIENT_RETRIES):
+            if not error or "returned HTTP" in error:
+                break
+            time.sleep(5 * (attempt + 1))
+            present = _existing_ids(client, kind, present)
+            more, error = _delete_batch(client, kind, present) if present else (0, None)
+            deleted += more
         if error:
             entry.update(deleted=deleted, status="failed", error=error, completed_at=_now())
             receipt.update(failed_at=_now(), error=f"{kind}: {error}")

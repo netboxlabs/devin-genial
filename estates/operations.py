@@ -232,7 +232,7 @@ def _shared(w, owner):
         site["attrs"].setdefault("custom_fields", {})[field_name] = {"selection": tier}
         site["meta"].setdefault("requires", []).append(field)
     add("custom_link", "custom-link/site-equipment", {"name": main_scoped_name(w.recipe, "Site equipment"), "object_types": ["dcim.site"],
-        "enabled": True, "link_text": "{% if object.name.startswith('" + ns + "-') %}Site equipment{% endif %}",
+        "enabled": True, "link_text": "{% if object.slug.startswith('" + ns + "-') %}Site equipment{% endif %}",
         "link_url": "/dcim/devices/?site_id={{ object.pk }}", "button_class": "default", "new_window": False}, {"owner": owner})
 
     address_ranges(w)

@@ -261,6 +261,23 @@ class TeardownRun(unittest.TestCase):
             self.assertEqual(sorted(e for e, _ in client.deletes),
                              ["dcim/racks", "dcim/sites"])
 
+    def test_a_dropped_connection_is_retried_from_the_survivors(self):
+        class Flaky(_FakeClient):
+            dropped = False
+
+            def request(self, path, *, method="GET", body=None, headers=None, branch=True):
+                if method == "DELETE" and not Flaky.dropped:
+                    Flaky.dropped = True   # first delete never reaches the target
+                    raise LoadError("DELETE /api/dcim/racks/ failed without retry because the "
+                                    "request could write: [Errno 54] Connection reset by peer")
+                return super().request(path, method=method, body=body, headers=headers, branch=branch)
+
+        with tempfile.TemporaryDirectory() as temporary, patch("estates.teardown.time.sleep"):
+            client = Flaky({"dcim/sites": {10}, "dcim/racks": {20}})
+            result, _, _ = self._run(temporary, {}, {}, client=client)
+            self.assertTrue(result["success"])
+            self.assertEqual(client.present["dcim/racks"], set())
+
 
 if __name__ == "__main__":
     unittest.main()
