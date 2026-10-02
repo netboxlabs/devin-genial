@@ -89,7 +89,7 @@ def main_scoped_name(recipe, label):
 
 # Tokens whose conventional casing a naive .title() would destroy.
 _ACRONYMS = {
-    "ap": "AP", "atm": "ATM", "bgp": "BGP", "ce": "CE", "csv": "CSV", "dc": "DC",
+    "ap": "AP", "atm": "ATM", "nid": "NID", "bgp": "BGP", "ce": "CE", "csv": "CSV", "dc": "DC",
     "api": "API", "db": "DB", "dhcp": "DHCP", "dns": "DNS", "ems": "EMS", "erp": "ERP",
     "hmi": "HMI", "hq": "HQ", "idf": "IDF",
     "ike": "IKE", "ip": "IP", "ipam": "IPAM", "ipsec": "IPsec", "it": "IT",
@@ -189,7 +189,7 @@ ROLE_COLORS = {
     "pos-terminal": "ef6c00", "scanner": "5d4037",
     "plc": "bf360c", "hmi": "ff8f00", "field-device": "827717",
     "rtu": "00695c", "protection-relay": "ad1457", "station-gateway": "4527a0",
-    "provider-edge": "5e35b1", "customer-edge": "0097a7",
+    "provider-edge": "5e35b1", "customer-edge": "0097a7", "nid": "00897b",
     "console-server": "455a64", "laboratory": "37474f", "stack": "283593", "lab-router": "ff6f00",
     # VM roles
     "application": "43a047", "database": "3949ab", "backup-service": "8d6e63",
@@ -352,6 +352,8 @@ IPAM_ROLES = {
     "clinical": ("Clinical", "Clinical workstations, imaging and medical devices"),
     "ot": ("Operational technology", "Plant-floor and substation equipment segments"),
     "customer": ("Customer", "Address space allocated to customer VPNs"),
+    "customer-dia": ("Customer DIA", "Public address space assigned to dedicated internet customers"),
+    "nid-management": ("NID management", "In-band management of customer-premises NIDs"),
     "dhcp": ("DHCP pools", "Dynamic client address scopes"),
     "reserved": ("Reserved", "Addresses held for onboarding and growth"),
 }
@@ -359,7 +361,7 @@ IPAM_ROLES = {
 # The IPAM role each addressed segment (the VLAN/VRF role key) belongs to.  An
 # unlisted segment is a hard error, so a new segment cannot ship role-less.
 SEGMENT_ROLES = {
-    "management": "management", "users": "users", "staff": "users", "students": "users",
+    "management": "management", "nid-management": "nid-management", "customer": "customer", "users": "users", "staff": "users", "students": "users",
     "clients": "users", "office": "users", "backoffice": "users", "logistics": "users",
     "voice": "voice", "wireless": "wireless", "guest": "guest",
     "applications": "servers", "database": "servers", "research": "servers",
@@ -393,6 +395,10 @@ def prefix_role(key, prefix, vrf, vlan):
         return "loopbacks"
     if net.max_prefixlen - net.prefixlen == 1:
         return "transit"
+    if key.startswith("prefix/dia/"):
+        return "customer-dia"
+    if key.startswith("prefix/nid-management/"):
+        return "nid-management"
     if key.startswith("ipv6/infrastructure/"):
         return "loopbacks" if key.endswith("/loopbacks") else "transit"
     if vlan:

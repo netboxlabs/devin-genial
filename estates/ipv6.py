@@ -112,6 +112,11 @@ created on a spare interface or an unmodeled far end of a circuit.
         site, vlan = refs.get("scope_site"), refs.get("vlan")
         if provider and refs.get("vrf") in PROVIDER_IPV4_ONLY_VRFS:
             continue
+        if provider and key.startswith(("prefix/dia/", "prefix/nid-management/")):
+            # Customer DIA (its /29 and managed public /31) and in-band NID
+            # management are IPv4-only.
+            customer_lans.add((refs.get("vrf"), network))
+            continue
         if provider and customer_lan(key, refs):
             # A CE-only customer numbers its own LAN; the carrier records the
             # IPv4 route it carries and assigns it no IPv6.
@@ -175,7 +180,10 @@ created on a spare interface or an unmodeled far end of a circuit.
         parent = world.objects.get(owner["refs"].get("parent"), {})
         if policy == "routed" and owner["attrs"].get("name") == f"{parent.get('attrs', {}).get('name')}.0":
             owner = parent  # a Junos unit 0 stands for its physical port
-        if policy == "routed" and provider and (owner["kind"] != "interface" or
+        # A PE service subinterface ae1.<vid> routes over its actual LAG.
+        subinterface = (owner["attrs"].get("type") == "virtual" and parent.get("attrs", {}).get("type") == "lag" and
+                        device.get("refs", {}).get("role") == "role/provider-edge")
+        if policy == "routed" and provider and not subinterface and (owner["kind"] != "interface" or
                 owner["attrs"].get("type") in (None, "virtual", "bridge", "lag") or
                 device.get("refs", {}).get("role") not in {
                     "role/provider-edge", "role/customer-edge", "role/management", "role/wan-edge"}):

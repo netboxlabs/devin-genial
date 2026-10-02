@@ -22,7 +22,9 @@ NETWORKS = ("management", "users", "atm", "wireless", "security", "voice",
 PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  "leaf": 160, "leaf-juniper": 160,
                  "core": 220, "edge": 40, "server": 250,
-                 "console-server": 40, "console-server-48": 40, "liquid-chassis": 400, "provider-edge": 320}
+                 "console-server": 40, "console-server-48": 40, "liquid-chassis": 400, "provider-edge": 320,
+                 # Provider premises kit (catalog/README.md planning allowances).
+                 "nid": 52, "nid-10g": 40, "ce-small": 40, "aggregation": 300}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the

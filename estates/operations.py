@@ -382,6 +382,23 @@ def _racks(w):
     owner = "owner/operations" if "owner/operations" in w.objects else None
     for rack in sorted((o for o in w.objects.values() if o["kind"] == "rack"), key=lambda o: o["key"]):
         height = rack["attrs"]["u_height"]
+        if alias := rack["meta"].get("rack_type"):
+            # A builder-chosen catalog rack type (catalog rack_types), such as
+            # the provider premises' MPOE wall cabinet.
+            spec = w.catalog["rack_types"][alias]
+            key = f"rack-type/{alias}"
+            if key not in w.objects:
+                maker = spec["manufacturer"]
+                if f"manufacturer/{maker}" not in w.objects:
+                    w.add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
+                w.add("rack_type", key, {k: spec[k] for k in ("model", "slug", "u_height", "width", "form_factor", "description") if k in spec}
+                      | {"slug": f"{w.recipe['namespace']}-{spec['slug']}"},
+                      {"manufacturer": f"manufacturer/{maker}", **({"owner": owner} if owner else {})}, {"operations": True})
+            rack["refs"]["rack_type"] = key
+            rack["refs"].pop("group", None)
+            for field in ("width", "form_factor"):
+                rack["attrs"].pop(field, None)
+            continue
         if height not in RACK_TYPES:
             raise DesignError(f"No catalog rack type for a {height}U cabinet; add one before changing rack height")
         key = f"rack-type/{height}u"
