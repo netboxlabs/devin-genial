@@ -52,7 +52,9 @@ def problems(catalog):
     nid = ports.get("nid", {})
     # Declared deviation: the combo UNI in its RJ-45 personality; 1 and 2 stay SFP.
     if ([nid.get(n, {}).get("type") for n in ("1", "2", "3")] != ["1000base-x-sfp", "1000base-x-sfp", "1000base-t"]
-            or nid.get("Management", {}).get("type") != "virtual"
+            # Virtual interfaces are builder-created, never hardware inventory.
+            or m["nid"]["management_interface"] in nid
+            or any(i["type"] == "virtual" for i in m["nid"]["interfaces"] + m["nid-10g"]["interfaces"])
             or (m["nid"]["nni_port"], m["nid"]["uni_port"], m["nid"]["spare_port"]) != ("1", "3", "2")):
         out.append("nid ports")
     rad = ports.get("nid-10g", {})
