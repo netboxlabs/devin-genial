@@ -41,6 +41,15 @@ def _agg(w, site, side):
     # Stub only: the PoP's PDUs are already cabled, so the stub AGG claims none.
     for port in w.hardware("aggregation")["power_ports"]:
         w.obj(f"{device}/power/{port['name']}")["attrs"]["mark_connected"] = True
+    # Dedicated management: em0 on the PoP management switch, like fxp0.
+    switch, index = f"device/{site.id}/mgmt-01", "ab".index(side)
+    em0, peer = f"{device}/if/em0", site.interface(switch, w.hardware("access")["access_ports"][2 + index])
+    site.cable(em0, peer)
+    mgmt_vlan, _ = site.network("management")
+    for port in (em0, peer):
+        w.obj(port)["attrs"]["mode"] = "access"
+        w.obj(port)["refs"]["untagged_vlan"] = mgmt_vlan
+    site.address(em0, "management", host=6 + index, primary=True, device=device)
     lags = {}
     for owner, name, members in ((device, "ae0", [f"xe-0/0/{n}" for n in range(40, 44)]),
                                  (pe, "ae1", [f"xe-0/1/{n}" for n in range(4)])):

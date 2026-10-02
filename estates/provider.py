@@ -1312,9 +1312,9 @@ def _private_l3(w,site,c,pop,pop_sites,hub,rate,installed,distance,code,kind,ser
             vi = site.virtual_interface(edge,name,role); w.obj(vi)["refs"]["parent"] = lan_port
             site.address(vi,role,host=1,primary=role=="management",device=edge)
         vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=2,primary=True,device=switch)
-    else:
-        _mpoe_cabinet(w,site,edge)
-        _customer_power(w,edge,"in the MPOE")
+    _mpoe_cabinet(w,site,edge)
+    _customer_power(w,edge,"in the MPOE")
+    if not managed_lan:
         # CE only: the LAN port is a routed handoff into the customer's own
         # LAN, numbered from the customer's own address plan (customer_lan);
         # the CE is managed on a carrier loopback, exported to Carrier Management.
@@ -1367,7 +1367,9 @@ def _private_l3(w,site,c,pop,pop_sites,hub,rate,installed,distance,code,kind,ser
         if managed_lan else "The CE hands the customer LAN to customer-owned equipment that is not inventoried; the carrier manages the NID and CE."])
     if managed_lan:
         _console_management(site,switch)
-        site.power()
+        _customer_power(w,switch,"in the MPOE")
+    if managed_lan:
+        site.contract["assumptions"].append("The MPOE cabinet, CE and office switch are on customer power; the building circuit is not inventoried.")
     else:
         site.contract["assumptions"].append("The MPOE wall cabinet is carrier-installed on customer power; the building circuit is not inventoried.")
 

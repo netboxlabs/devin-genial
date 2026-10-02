@@ -4,6 +4,7 @@ Traffic is the existing directed spoke-to-hub plan, not executed forwarding.
 Status-only Diode updates need separate pinned-target qualification.
 """
 
+import ipaddress
 from collections import Counter, defaultdict
 from copy import deepcopy
 from decimal import Decimal
@@ -13,6 +14,7 @@ from .power_scenario import _healthy as _healthy_plan
 from .report import _cell, _table
 from .scenarios import _changes
 from .validate import validate
+from .provider import premises as premises_of, site_peak
 from .validate_provider import _connected, _loads, _recipe, _tree
 
 
@@ -28,6 +30,10 @@ LIMITATIONS = [
     "Installed cables, interfaces and optical power remain unchanged. No approval, dated work completion or journal event is fabricated.",
     "Offline restoration is exact. Diode status update, repeated update and same-ID live restoration require separate pinned-target evidence.",
 ]
+
+
+# Backbone transport the maintenance story may take offline.
+SPAN_TYPES = ("circuit-type/backbone", "circuit-type/dark-fiber")
 
 
 def _require(condition, message):
@@ -57,9 +63,20 @@ def _graph(plan):
         return (obj.get("kind") == "interface" and obj["attrs"].get("type") not in (None, "virtual", "lag", "bridge") and
                 obj["attrs"].get("enabled") is True and owner.get("kind") == "device" and owner["attrs"].get("status") == "active")
 
-    def end(term):
+    # Passive plant: a circuit lands on a patch panel's rear port and leaves by
+    # the front port mapped to it (OSP and colo demarcation panels).
+    front_of = {obj["refs"]["rear_port"]: key for key, obj in objects.items()
+                if obj["kind"] == "front_port" and obj["refs"].get("rear_port")}
+
+    def trace(term):
         key = peers.get(term)
-        _require(port(key), "transport requires direct typed physical handoffs; passive backbone shapes are unsupported")
+        while key in front_of:
+            key = peers.get(front_of[key])
+        return key
+
+    def end(term):
+        key = trace(term)
+        _require(port(key), "transport requires typed physical handoffs, directly or through 1:1 patch panels")
         obj, iface = objects[term], objects[key]
         device = iface["refs"]["device"]
         site = objects[device]["refs"]["site"]
@@ -77,6 +94,8 @@ def _graph(plan):
         # Opaque transit has no second local owner. It is outside this story.
         if len(ends) != 2 or any(not peers.get(term) for term in ends):
             continue
+        if objects[circuit]["refs"].get("type") not in SPAN_TYPES:
+            continue  # access attachments are traced from their services in _traffic
         sides = sorted((end(term) for term in ends), key=lambda value: value["side"])
         _require([value["side"] for value in sides] == ["A", "Z"], "a circuit needs its actual A/Z handoffs")
         circuit_ends[circuit] = sides
@@ -119,8 +138,34 @@ def _graph(plan):
 def _traffic(plan, graph):
     objects, peers, circuits, _, adjacency, _ = graph
     _, customers, demand, _, usable = _recipe(plan["recipe"])
-    term_owner = {side["interface"]: (key, side, other) for key, ends in circuits.items()
-                  for side, other in (ends, ends[::-1])}
+    customers = [c for c in customers if c.get("service", "private-l3") == "private-l3"]
+    vpn_sites = {sid for sid, c, _, _ in premises_of(plan["recipe"]) if c.get("service", "private-l3") == "private-l3"}
+    # A VPN attachment, from the finished graph: the CE access port is cabled
+    # to its NID, whose network port carries the access circuit; the port's
+    # /31 names the PE service subinterface holding the other address.
+    nni = {}
+    for key, obj in objects.items():
+        if obj["kind"] == "circuit_termination" and objects.get(peers.get(key), {}).get("kind") == "interface":
+            nni.setdefault(objects[peers[key]]["refs"]["device"], []).append((obj["refs"]["circuit"], peers[key]))
+    holders = defaultdict(list)
+    for key, obj in objects.items():
+        if obj["kind"] == "ip_address" and obj["refs"].get("assigned_object"):
+            holders[(obj["refs"].get("vrf"), ipaddress.ip_interface(obj["attrs"]["address"]).network)].append(obj)
+    addressed = {obj["refs"]["assigned_object"]: obj for rows in holders.values() for obj in rows
+                 if ipaddress.ip_interface(obj["attrs"]["address"]).version == 4}
+
+    def attachment(parent):
+        nid = objects.get(objects.get(peers.get(parent), {}).get("refs", {}).get("device"), {})
+        carried = nni.get(nid.get("key"), [])
+        ip = addressed.get(parent)
+        _require(len(carried) == 1 and ip is not None, "private-L3 membership needs its CE port, cabled NID, one access circuit and its /31")
+        circuit, local = carried[0]
+        net = ipaddress.ip_interface(ip["attrs"]["address"]).network
+        ends = [obj["refs"]["assigned_object"] for obj in holders[(ip["refs"].get("vrf"), net)] if obj is not ip]
+        _require(len(ends) == 1, "a customer /31 needs exactly one provider-edge end")
+        pe = dict(device=objects[ends[0]]["refs"]["device"], interface=ends[0])
+        return circuit, dict(device=nid["key"], site=nid["refs"]["site"], interface=local), pe
+
     premises = {}
     for key, obj in sorted(objects.items()):
         if obj["kind"] != "virtual_circuit_termination":
@@ -129,9 +174,7 @@ def _traffic(plan, graph):
         virtual = objects[iface]
         ce = virtual["refs"]["device"]
         site = objects[ce]["refs"]["site"]
-        parent = virtual["refs"]["parent"]
-        _require(parent in term_owner, "private-L3 membership needs its actual direct customer access circuit")
-        circuit, local, remote = term_owner[parent]
+        circuit, local, remote = attachment(virtual["refs"]["parent"])
         vc = obj["refs"]["virtual_circuit"]
         tenant = objects[vc]["refs"]["tenant"]
         if site in premises:
@@ -141,12 +184,12 @@ def _traffic(plan, graph):
                      and remote["device"] in adjacency and remote["device"] != premises[site]["pe"]["device"],
                      "only a hub takes a second access attachment, on its PoP's other PE")
             continue
-        _require(remote["device"] in adjacency and local["device"] == ce and
+        _require(remote["device"] in adjacency and local["site"] == site and
                  objects[site]["refs"].get("tenant") == tenant and objects[ce]["refs"].get("tenant") == tenant,
                  "customer service, premise, CE and actual access attachment must share ownership")
         premises[site] = dict(site=site, tenant=tenant, virtual_circuit=vc, membership=key, ce=ce,
             service_interface=iface, access_circuit=circuit, local=local, pe=remote)
-    _require(set(premises) == {"site/" + key for key in demand}, "actual private-L3 membership must match every demanded premise")
+    _require(set(premises) == {"site/" + key for key in demand if key in vpn_sites}, "actual private-L3 membership must match every demanded premise")
     rows, flows = [], Counter()
     for customer in sorted(customers, key=lambda value: value["key"]):
         hub = "site/ce-" + customer["key"] + "-" + customer["hub_pop"] + "-001"
@@ -155,7 +198,8 @@ def _traffic(plan, graph):
             if premises[site]["virtual_circuit"] != vc or site == hub:
                 continue
             origin, destination = premises[site]["pe"]["device"], premises[hub]["pe"]["device"]
-            peak = customer["site_peak_mbps"] * 1000
+            pop = site.removeprefix(f"site/ce-{customer['key']}-").rsplit("-", 1)[0]
+            peak = site_peak(customer, pop) * 1000
             rows.append(dict(site=site, hub=hub, tenant=premises[site]["tenant"], virtual_circuit=vc,
                              from_pe=origin, to_pe=destination, offered_kbps=peak))
             flows[(origin, destination)] += peak
