@@ -793,3 +793,25 @@ own design pass and touches every provider builder):
   at site scope the BGP topology force layout stacks every node on one point.
 - Diode SDK 1.14.0 has no `created` on JournalEntry, so dated journals reach a
   target only through `just load`.
+
+**Open on `crsk8600` after the final seed (2026-10-02), needs the operator:**
+
+- **Fleet device inventory is empty.** Orb agents, credentials and the agent's
+  MQTT session work (agent ONLINE, Vault-referenced credential created), but
+  the credential's "Add device" picker and the job wizard list no devices even
+  though 133 NetBox devices have primary IPs. Slack reports a second,
+  instance-level switch (`NETBOX_FLEET_ENABLED`) besides the org preview flag;
+  it is set by NetBox Labs staff, not from this repo. Until it is on, a Device
+  discovery job cannot be created, so Jobs/Run history stay empty.
+- **Direct Diode ingest produces no Assurance deviations here.** The drift
+  twin's 12 entities were acknowledged twice by `crsk8600`'s Diode
+  (`genial-showcase` client) yet no deviation appeared and no NetBox row
+  changed. The same path created deviations on `rksd1051` in September, and the
+  Fleet agent's OTLP bridge path did create deviations on `crsk8600` (see
+  next item), so the difference is per-instance Diode/Assurance configuration
+  we cannot read; Cloud exposes no reconciler ingestion logs to tenants.
+- **Accidental real ingest, cleaned up.** The first `discovery-lab-check`
+  collided with the running Fleet agent on `127.0.0.1:8072`, so its dry-run
+  policy ran on the Fleet agent's backend and ingested ~200 create deviations
+  (old lab hostnames, pre-seed). Fixed in `lab/discovery/vm.sh` (the dry run
+  pauses the Fleet agent); all were marked Ignored.

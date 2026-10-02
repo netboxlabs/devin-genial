@@ -76,3 +76,18 @@ product skills to read per feature), `visual-review` (the acceptance pass),
   see `site-geography` before touching anchors.
 - Visual Explorer reads through TurboBulk export jobs and caches in the
   browser: stale views after a reseed are the cache, not the data.
+- The platform session can bounce to `auth.netboxlabs.com` "Choose an
+  Organization": pick the workspace (Devins Lab) and continue — the login
+  itself is intact.
+- The Assurance deviations table renders one page at a time; to bulk-act on a
+  subset, set page size 10 and drive page-by-page from the shell (one short
+  `eval` per page: tick matching rows, press the toolbar action). Long in-page
+  async loops get the CDP client killed. Match evaluated JSON output in shell
+  without quotes — the driver prints it escaped.
+- Never run `discovery-lab-check` dry runs while an older Fleet agent backend
+  owns port 8072 (fixed in `vm.sh`, but remember the failure mode: it ingests
+  for real).
+- Fleet needs the instance-level enablement before devices appear in the
+  credential/job pickers; Diode-direct ingest did not surface deviations on
+  `crsk8600` (COVERAGE.md, "Open on crsk8600").
+
