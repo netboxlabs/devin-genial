@@ -375,6 +375,11 @@ for the separately recorded pinned-target live qualification.
   the complete bank included), live-qualified
   only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
+- [lab/discovery/README.md](lab/discovery/README.md): real-discovery lab — the
+  provider's first PoP rendered as SR Linux containers (own `genial-discovery`
+  Colima VM) for a real orb-agent; the lab is its own honestly-typed slice, never
+  matched against the MX204 records it mirrors. `render.py --check` proves an
+  orb-agent dry run differs only by its documented `drift.json`.
 
 ## Design boundaries
 
