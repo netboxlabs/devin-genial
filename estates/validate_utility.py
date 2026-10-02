@@ -216,7 +216,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for room, (space_type, origin) in rooms.items():
             if (kind_of(room) != "location" or meta(room).get("space_type") != space_type or
                     meta(room).get("floor") != 1 or meta(room).get("position_m") != origin or
-                    refs(room).get("parent") != f"location/{sid}/floor-01" or
+                    refs(room).get("parent") is not None or
                     attrs(room).get("status") != "active" or
                     (room in capacities and meta(room).get("capacity", {}).get("workstations") != capacities[room])):
                 report("utl-room-placement", room, "Substation rooms must occupy their fixed active ground-floor "

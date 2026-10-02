@@ -122,22 +122,43 @@ RETIREMENT_ENDPOINTS = (
     ("/api/users/owners/", "prefix"),
     ("/api/users/owner-groups/", "prefix"),
 )
-# Exact per-namespace names the generator emits for kinds where a prefix match
-# could reach a customer's own live row (a webhook is an integration, not an
-# inert owner record); extend alongside estates/operations.py and
-# estates/automation.py when a profile adds one.
+# Every label the generator emits per endpoint, without the "<namespace> "
+# prefix naming.main_scoped_name adds on a shared tenant; extend alongside
+# estates/operations.py and estates/automation.py when a profile adds one
+# (tests/test_branch.py proves every generated row resolves here, both modes).
+# A shared tenant matches "exact" endpoints by "<namespace> <label>" — a prefix
+# match could reach a customer's own live webhook — and "prefix" endpoints by
+# the "<namespace> " prefix. A dedicated tenant has no prefix to match, so every
+# endpoint matches these bare labels exactly. Custom-field names are an
+# identifier that keeps the underscored namespace in both modes.
 CUSTOM_FIELD_NAMES = ("{ns}_operations_tier",)
-EXACT_RETIREMENT_NAMES = {
-    "/api/extras/custom-fields/": CUSTOM_FIELD_NAMES,
-    "/api/extras/event-rules/": ("{ns} Device change notification",),
-    "/api/extras/webhooks/": ("{ns} NetOps automation endpoint",),
-    "/api/extras/export-templates/": ("{ns} Device inventory (CSV)",
-                                      "{ns} Cable report (CSV)"),
+RETIREMENT_LABELS = {
+    "/api/extras/event-rules/": ("Device change notification",),
+    "/api/extras/webhooks/": ("NetOps automation endpoint",),
+    "/api/extras/export-templates/": ("Device inventory (CSV)", "Cable report (CSV)"),
+    "/api/extras/custom-links/": ("Site equipment",),
+    "/api/extras/custom-field-choice-sets/": ("Operations tiers",),
+    "/api/users/owners/": ("Network operations", "Infrastructure operations"),
+    "/api/users/owner-groups/": ("Infrastructure teams",),
 }
 RETIREMENT_PATHS = tuple(endpoint for endpoint, _ in RETIREMENT_ENDPOINTS)
 
 
-def retire_namespace_rows(client, namespace, *, endpoints=RETIREMENT_PATHS,
+def retirement_matcher(endpoint, namespace, *, dedicated=False):
+    """Return ``name -> bool`` selecting this namespace's rows at one endpoint."""
+    if endpoint == "/api/extras/custom-fields/":
+        ns = namespace.replace("-", "_")
+        names = {pattern.format(ns=ns) for pattern in CUSTOM_FIELD_NAMES}
+        return names.__contains__
+    labels = RETIREMENT_LABELS.get(endpoint, ())
+    if dedicated:
+        return set(labels).__contains__
+    if dict(RETIREMENT_ENDPOINTS).get(endpoint, "prefix") == "exact":
+        return {f"{namespace} {label}" for label in labels}.__contains__
+    return lambda name: name.startswith(namespace + " ")
+
+
+def retire_namespace_rows(client, namespace, *, dedicated=False, endpoints=RETIREMENT_PATHS,
                           attempts=8, poll_interval=3, sleep=time.sleep):
     """Delete the namespace's own main-scoped rows.
 
@@ -145,25 +166,18 @@ def retire_namespace_rows(client, namespace, *, endpoints=RETIREMENT_PATHS,
     automation event rule, webhook and export templates, the custom-link,
     custom-field and choice-set definitions, and the owner/owner_group pair.
     Branch deletion leaves them behind and they block the namespace's next fresh
-    load. Names are authored as "<namespace> …", so an exact prefix match
-    selects only this estate's rows.
+    load. On a shared tenant names are authored as "<namespace> …", so an exact
+    prefix match selects only this estate's rows; ``dedicated`` (the recipe's
+    ``tenancy = "dedicated"``) matches the generator's bare labels exactly.
     A just-deleted branch's schema drop can briefly hold PROTECT references to
     these rows, so a still-present row is retried within a bounded window.
     """
-    matchers = dict(RETIREMENT_ENDPOINTS)
     deleted = []
     for endpoint in endpoints:
-        mode = matchers.get(endpoint, "prefix")
-        # Custom-field names use the underscored namespace form; the automation
-        # records carry the raw namespace like every other shared record.
-        ns = namespace.replace("-", "_") if endpoint == "/api/extras/custom-fields/" else namespace
-        exact_names = {pattern.format(ns=ns) for pattern in EXACT_RETIREMENT_NAMES.get(endpoint, ())}
+        selected = retirement_matcher(endpoint, namespace, dedicated=dedicated)
         for row in client.all(endpoint):
             name = row.get("name") or ""
-            if mode == "exact":
-                if name not in exact_names:
-                    continue
-            elif not name.startswith(namespace + " "):
+            if not selected(name):
                 continue
             for attempt in range(attempts):
                 try:
@@ -196,6 +210,9 @@ def main(argv=None):
                              "main-scoped rows — automation event rule, webhook and export "
                              "templates, custom links/fields/choice sets, owners and owner "
                              "groups (full demo retirement)")
+    parser.add_argument("--tenancy", choices=("shared", "dedicated"), default="shared",
+                        help="the estate recipe's tenancy: dedicated rows carry no namespace "
+                             "prefix and are matched by the generator's exact labels")
     args = parser.parse_args(argv)
     token = os.environ.get("NETBOX_TOKEN")
     if not token:
@@ -214,7 +231,8 @@ def main(argv=None):
                     raise
                 row = {"name": args.name, "deleted": False, "branch": "already absent"}
             if args.retire_namespace:
-                row["retired_rows"] = retire_namespace_rows(client, args.retire_namespace)
+                row["retired_rows"] = retire_namespace_rows(client, args.retire_namespace,
+                                                            dedicated=args.tenancy == "dedicated")
                 if row.get("branch") == "already absent" and row["retired_rows"]:
                     # The named branch was gone but rows still existed — likely a
                     # second live branch under this namespace, whose strict

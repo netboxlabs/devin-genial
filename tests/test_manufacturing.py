@@ -201,12 +201,12 @@ class ManufacturingCompositionTests(unittest.TestCase):
     def test_ot_endpoint_records_deny_control_function_and_protocols(self):
         objects = self.objects()
         for key in (f"device/{SITE}/plc-01", f"device/{SITE}/hmi-01-1", f"device/{SITE}/field-02-3"):
-            # Limitations stay on the record, in comments, out of the list-view description.
+            # Limitations live in docs/modeling.md and the report, never on the record.
             attrs = objects[key]["attrs"]
             self.assertNotIn("Reference", attrs["description"])
-            self.assertIn("no control function, safety rating or industrial protocol", attrs["comments"])
+            self.assertNotIn("comments", attrs)
         room = objects[f"location/{SITE}/line-01"]["attrs"]
-        self.assertIn("no control function or industrial protocol is configured", room["comments"].lower())
+        self.assertNotIn("comments", room)
         self.assertNotIn("configured", room["description"])
 
     def test_plant_endpoints_use_only_catalog_reference_hardware(self):

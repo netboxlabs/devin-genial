@@ -105,8 +105,8 @@ def validate(plan):
     expected_prefixes, companions, ipv4_prefixes = {}, {}, {}
     ns = recipe.get("namespace")
     if (kind("ipv6/rir") != "rir" or attrs("ipv6/rir") !=
-            dict(name="IPv6 documentation registry", slug=f"{ns}-ipv6-docs",
-                 is_private=False, description="Documentation address registry") or refs("ipv6/rir")):
+            dict(name="IPv6 allocations", slug=f"{ns}-ipv6-docs",
+                 is_private=False, description="Global IPv6 address allocations") or refs("ipv6/rir")):
         report("ipv6-registry", "ipv6/rir", "IPv6 allocation requires the estate's documentation registry identity.")
     if (kind("ipv6/aggregate") != "aggregate" or attrs("ipv6/aggregate").get("prefix") != str(pool) or
             refs("ipv6/aggregate") != {"rir": "ipv6/rir"}):

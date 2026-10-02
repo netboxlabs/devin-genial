@@ -6,7 +6,7 @@ import math
 import re
 
 from .model import digest, hardware_catalog
-from .naming import rate_kbps, titleize
+from .naming import dedicated, rate_kbps, titleize
 
 
 # A CSV export template must be one header line plus exactly one queryset loop,
@@ -55,7 +55,7 @@ def _emitted(kinds, content_type):
             and bool(kinds.get(content_type.split(".", 1)[1])))
 
 
-def _automation(objects, kinds, ns, fail):
+def _automation(objects, kinds, ns, fail, solo=False):
     """Check the estate's automation inventory against its own graph.
 
     Config-context server lists must be addresses this estate's own service
@@ -87,12 +87,12 @@ def _automation(objects, kinds, ns, fail):
         description = obj["attrs"].get("description", "")
         main_scoped = obj["kind"] != "config_context"
         if (not isinstance(name, str) or len(name) > 100
-                or name.startswith(f"{ns} ") is not main_scoped
+                or name.startswith(f"{ns} ") is not (main_scoped and not solo)
                 or not isinstance(description, str) or not 1 <= len(description) <= 200
                 or objects.get(obj["refs"].get("owner"), {}).get("kind") != "owner"):
             fail("automation-record", obj["key"],
-                 "Main-scoped automation records must carry the namespace and branch-scoped "
-                 "config contexts must not; all need a native-length name, description and the estate's owner.")
+                 "Main-scoped automation records carry the namespace on a shared tenant only and "
+                 "branch-scoped config contexts never do; all need a native-length name, description and the estate's owner.")
 
     contexts = {obj["key"]: obj for obj in listed("config_context")}
     weights = {}
@@ -522,7 +522,7 @@ def _context(plan, objects, kinds):
         title, body = forms[event]
         if event == "handoff-plan" and target in external_handoffs:
             body = (r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ network boundary: ([^\n]+)\n"
-                    r"A handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nRemote interface and owner: unknown\.\n"
+                    r"A handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nRemote side: upstream carrier network\.\n"
                     r"Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary\.")
         comments = obj["attrs"].get("comments", "")
         match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
@@ -540,7 +540,7 @@ def _context(plan, objects, kinds):
     for key in notes:
         if objects.get(key, {}).get("kind") != "journal_entry":
             fail("operations-journal", key, "Required bounded lifecycle event is missing.")
-    _automation(objects, kinds, ns, fail)
+    _automation(objects, kinds, ns, fail, dedicated(recipe))
     return findings
 
 

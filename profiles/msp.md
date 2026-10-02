@@ -101,7 +101,8 @@ devices were declared, an open guest WLAN, both on `wlan0`. The provider's own
 DNS and RADIUS inventory in the NOC serves those WLANs. That is the one
 dependency that crosses from the provider to a customer, it is named in the WLAN
 comments, and no customer ever depends on another customer's inventory. No
-captive portal, authentication result, association or RF survey is represented.
+captive portal, authentication result, association or RF survey is represented
+(stated here and in the report, never on the records).
 
 ## Ownership versus operation
 

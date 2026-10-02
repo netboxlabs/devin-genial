@@ -94,9 +94,14 @@ manufacturer is gone — real devicetype-library models (Supermicro, APC, Pandui
 Opengear 16/48-port sized by console demand, Cisco 9120AXI default AP) plus
 plainly-named Generic parts; serials follow vendor formats instead of `SYN-`;
 network devices carry vendor platforms; every prefix and VLAN carries one of
-sixteen authored IPAM roles; descriptions use operator wording with material
-limitations moved to `comments`; provider hostnames, customer VLANs, rates and
-contact phones read like a production network. Identities, names and the
+sixteen authored IPAM roles; descriptions use operator wording and no record
+carries a disclaimer (limitations live in docs/modeling.md and the report;
+`record-disclaimer` refuses them); provider hostnames, customer VLANs, rates and
+contact phones read like a production network. Physical sites read real too:
+real-street addresses, per-metro and CLLI-style facility codes, flat location
+trees (a PoP is a suite holding a cage), room-scoped cabinet codes, short
+sequential asset tags, 208 V US feeds and a small-room kit for single-CE
+premises. Identities, names and the
 hardware digest move across every profile, so 0.15 plans reject growth by
 version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
@@ -149,7 +154,8 @@ the normal read-only preflight is `just load-explain ARTIFACT TARGET [BRANCH]`.
 `just load-check ARTIFACT` reports TurboBulk contract fit offline; `just branch
 TARGET NAME` creates the ready branch a load requires and refuses existing names;
 `just branch-delete TARGET NAME` permanently deletes one branch (reset replaces);
-`just retire TARGET NAME NAMESPACE` also removes the namespace's main-scoped owner rows.
+`just retire TARGET NAME NAMESPACE [TENANCY]` also removes the namespace's main-scoped owner rows
+(`dedicated` matches the bare labels a `tenancy = "dedicated"` recipe emits).
 `just verify-target ARTIFACT TARGET [BRANCH]` runs the final strict gate with zero writes.
 Target recipes source `.env` only when `NETBOX_TOKEN` is not already exported.
 TurboBulk jobs default to at most 2,000 rows. Keep deterministic batch purposes,
@@ -442,8 +448,8 @@ for the separately recorded pinned-target live qualification.
   envelope without a new loader or graph framework. Status updates require a
   baseline/change/repeat/restore/repeat target sequence before live claims.
   Carrier-wide failure is outside this contract; show actual span providers per
-  PoP without promising carrier diversity. External-transit journals must leave
-  remote interface and owner unknown, unlike real two-site handoff records.
+  PoP without promising carrier diversity. External-transit journals must not invent
+  a remote interface or owner, unlike real two-site handoff records.
 - The demo composer orchestrates and never bypasses. `estates/demo.py` calls
   the same entry points the Justfile recipes run — generate, check, load-check,
   drift/drift-check, scenario/scenario-check, branch, load, verify-target —
@@ -572,9 +578,17 @@ for the separately recorded pinned-target live qualification.
   intersecting 0.6 × 1.07 m footprints and disproportionate room layouts, not
   just duplicate coordinates; coordinates are rounded so the plan, the checks
   and the geometry sidecar's centimetre conversion all agree. Cabinets are
-  enclosed four-post 24U with a room-scoped `facility_id`, sized to the ten-device
-  lane that mounts contiguously from the bottom rail; 0U equipment is racked
-  without a position, exactly as NetBox models it. Device types carry `airflow`
+  sized to content: enclosed four-post 24U (AR3104) for the ten-device lane that
+  mounts contiguously from the bottom rail — 42U would read three-quarters
+  empty — and the small-room kit (13U Panduit R2P26 two-post, one 1U 120 V
+  AP9563 at the top unit, one 120 V / 20 A circuit, no console server) for a
+  single-CE premises (`Site.small_kit`, provider customers). PoP cabinets add
+  real passive content, one FCE1U fibre enclosure per PE cabinet — never
+  padding. `facility_id` is a room-scoped cabinet code (`DH-02-C03`,
+  `G09-01-N02`); 0U equipment is racked
+  without a position, exactly as NetBox models it. US feeds are 208 V / 20 A
+  single-phase (the AP9572 is a 16 A PDU); only the provider validator's own
+  premises list may pass `single_feed` to `validate_power`. Device types carry `airflow`
   only where the pinned source declares it (Cisco C9200L-24P-4X and FortiGate
   100F declare none); our own reference designs state it as authored fiction.
 - Hospital wards occupy permanent reserved floors; beds and desks are installed
@@ -600,16 +614,19 @@ for the separately recorded pinned-target live qualification.
   `bgp-topology` view describe the same estate the rest of the graph does.
   Nothing is configured, applied or established: no convergence, session state,
   route exchange or policy evaluation may be claimed in code, descriptions,
-  docs or contracts — the inert-webhook precedent, restated on every record's
-  `comments` and checked independently. The reviewed kind set is closed to
-  routing policies, peer groups and sessions; a policy *rule*, community or
-  prefix list would read as configuration and the validator refuses it, and the
-  named policies therefore carry no rules. Every field is attributed from the
+  docs or contracts. The records themselves carry operational fields only — no
+  disclaimer prose (see the record-text rule below); the limitation is stated
+  in docs/modeling.md and the report. The reviewed kind set is closed to
+  routing policies, peer groups and sessions and the field set to name,
+  description, status and weight (`validate_provider.BGP_FIELDS`); a policy
+  *rule*, community, prefix list or session-state field would read as
+  configuration and the validator refuses it, and the named policies therefore
+  carry no rules. Every field is attributed from the
   finished graph — PE `lo0` addresses, the transit and access circuits' own
   terminations and cables, and the ASNs sites already reference — never
   invented per site. A transit peer keeps `remote_prefix` on the real /31
   rather than an invented remote address, because the remote interface and its
-  owner are unknown. iBGP is a route-reflector pair at the first PoP in the
+  owner belong to the upstream. iBGP is a route-reflector pair at the first PoP in the
   permanent `provider-pop-order` ledger, not a full mesh: linear growth keeps
   the 64-PoP ceiling bounded (a full mesh would be 8,128 sessions there) and
   appending a PoP or customer appends sessions without moving an existing one.
@@ -674,8 +691,9 @@ for the separately recorded pinned-target live qualification.
 - Recipe `name` is fixed during growth: the provider uses it in Diode matching
   identities. Renaming requires a new baseline for every profile.
 - Ordinary descriptions use operational wording and reference hardware labels.
-  Keep provenance and planning assumptions in the catalog/contracts/report;
-  retain material limitations such as unverified RF and external ownership.
+  Keep provenance, planning assumptions and material limitations (unverified RF,
+  external ownership, inert automation, documentation-only BGP, OT/clinical
+  reference inventory) in the catalog/contracts/report and docs/modeling.md.
   The final v0.8 reference-label revision changes the catalog digest and requires
   a new baseline; archived intermediate v0.8 plans remain historical evidence.
 - Verify a reused frozen plan reproduces from its recipe and ledgers before
@@ -720,9 +738,11 @@ for the separately recorded pinned-target live qualification.
   Preserve failed receipts; do not clear logs or manually repair estate records.
 - Short device names require site/tenant in every Diode reference; DNS retains
   the full namespace. Serial numbers are not a replacement for matching identity.
-- Rack asset tags retain accepted short labels; longer labels use a readable
-  prefix and stable digest of the full site/room identity to fit native 50-character
-  limits. Validate global tag uniqueness before export; site names are unchanged.
+- Rack asset tags (since 0.16) are `<NAMESPACE>-<nnnnn>`: the uppercase
+  namespace (at most 20 characters) keeps NetBox's global uniqueness across
+  coexisting estates and the permanent `asset-tags` ledger numbers racks in
+  creation order, so growth appends. Room scope lives in the `facility_id`
+  cabinet code. Validate global tag uniqueness before export.
 - Display naming (`estates/naming.py` is the single policy home since 0.12.0;
   the sweep became exhaustive in 0.15.0): every object family emits an authored,
   namespace-free `name`; identities — slugs, object keys, device names, circuit
@@ -738,7 +758,12 @@ for the separately recorded pinned-target live qualification.
   `naming.py`: `NAMESPACED_KINDS` (owner/owner_group and the automation
   export_template/webhook/event_rule plus custom_field/choice_set/custom_link
   records), because those main-scoped rows coexist across namespaces on one main
-  and `just retire` matches them by exact `"<namespace> …"` prefix; and
+  and `just retire` matches them by exact `"<namespace> …"` prefix — except
+  under the recipe's `tenancy = "dedicated"` (solo-tenant mode,
+  `naming.main_scoped_name`), which drops the visible prefix for a tenant one
+  estate owns and retires/tears down by the exact bare labels in
+  `branch.RETIREMENT_LABELS` (custom-field names and root ContactGroups keep
+  the namespace: both are identities); and
   `IDENTITY_NAMED_KINDS` — the root ContactGroup, whose canonical slug is derived
   from its name and omitted on the wire for the auto-slug matcher, and
   `route_target`, whose name IS the `<asn>:<n>` route distinguisher NetBox holds
@@ -764,26 +789,38 @@ for the separately recorded pinned-target live qualification.
   native limit (`naming.NAME_LIMITS`: 64 for `vlan` and `virtual_chassis`,
   read back from the pinned 4.7.1 source; 100 otherwise) naming the object,
   rather than letting a target reject the row mid-load.
-- Descriptions are operational wording, not generator notes (0.16): device
+- Records carry operational data only (0.16). No NetBox record — name,
+  description, comments, label, module attributes or journal — may carry a
+  disclaimer, provenance note or self-reference ("not verified", "no … is
+  claimed", "documentation inventory", "fictional", "placeholder", "planning
+  intent", "unknown owner"…): both showcase reviewers called those the loudest
+  synthetic tell. Limitations are documented in the repo (docs/modeling.md,
+  profile guides) and the generated report; `naming.DISCLAIMER` backs the
+  `record-disclaimer` validation finding with a failing-mutation test. The
+  substantive safety properties stay enforced as structure, not prose: the
+  webhook endpoint stays reserved `.invalid` and its rule disabled, the BGP
+  kind and field sets stay closed, and nothing models session state. Device
   roles, segment purposes and rates come from `naming.ROLE_LABELS`,
-  `SEGMENT_PURPOSES`, `bandwidth` and `port_speed`; a material limitation goes
-  in `comments`, never the list-view `description`. Provider premises and PoP
+  `SEGMENT_PURPOSES`, `bandwidth` and `port_speed`. Provider premises and PoP
   hostnames are readable stems (`<customer>-<metro3><slot>`, the PoP key);
   provider customer VRFs carry an RD equal to their `<asn>:<n>` route target;
   contacts carry 555-0100..0199 lines in their metro's real area code; the
   estate tag is `Managed`. The private-L3 virtual-circuit note points at the
-  documented CE-to-PE BGP sessions and must never deny them. Every VLAN is
+  CE-to-PE BGP sessions and must never deny them. Every VLAN is
   named for its segment alone (names are unique per VLAN group, and every VLAN
   sits in its site's group). Every prefix and VLAN carries an `ipam.Role` from
   `naming.IPAM_ROLES`, derived by `naming.prefix_role`/`SEGMENT_ROLES` and
   re-checked (`ipam-role`); a new segment must be mapped there or generation
-  fails. Journals state rates via `naming.rate_kbps`, never raw kbps. The four
-  automation kinds have no REST-writable `comments`, so their inert limitation
-  lives in `estates/automation.py` and docs, not in their descriptions — the
-  `.invalid` webhook and disabled rule remain enforced.
+  fails. Journals state rates via `naming.rate_kbps`, never raw kbps.
 - Site naming: authored display names, facility codes and anchor-placed
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0;
-  anchors since 0.16). Coordinates sit at most ~400 m from an authored
+  anchors since 0.16). Addresses (0.16) use a real street of the site's anchor
+  (`places.ADDRESS_STREETS`) and a site-id-hashed number — Chicago's grid numbers
+  it from the coordinate — never a sequential street. Facility codes are per
+  metro from a permanent ledger (`CHI01`); provider PoPs and the NOC carry
+  fictional CLLI-style codes (`CHCGILCR`). Rooms of single-floor kinds
+  (`places.FLAT_KINDS`) hang from the site without pass-through building/floor
+  levels; a PoP is `Suite NNN` → `Cage X00`. Coordinates sit at most ~400 m from an authored
   `places.ANCHORS` point or street run that was verified on land in its
   municipality; a site named after a neighbourhood, suburb or street sits there
   and its address names that municipality. Never reintroduce free metro-wide
@@ -815,7 +852,7 @@ for the separately recorded pinned-target live qualification.
   normalized interface names are a labeled deviation, never a vendor claim.
 - HQ staff demand determines office floors and equipment rooms. Allocate access,
   management and power locally; check the actual copper paths and fiber backbone.
-  Rack names may repeat across rooms; rack references and asset tags retain room scope.
+  Rack names may repeat across rooms; rack references and `facility_id` retain room scope.
 - Keep ordinary growth stable; changing headquarters_staff needs a new baseline
   until an explicit building-remodel transition is implemented.
 - WAN CIR is purchased capacity; the physical handoff is separate. Choose tiers

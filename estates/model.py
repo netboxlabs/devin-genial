@@ -157,7 +157,7 @@ def resolve_bank_recipe(raw):
     allowed = {"profile", "namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool",
                "data_centers", "headquarters", "branches", "reserve_fraction", "max_objects", "patching",
                "design_mix", "site_designs", "acquired_sites", "headquarters_staff", "wan_tiers_mbps",
-               "reservation_user", "demo", "naming", "site_names", "hardware"}
+               "reservation_user", "demo", "naming", "site_names", "hardware", "tenancy"}
     if unknown := raw.keys() - allowed:
         raise DesignError(f"Unknown recipe fields: {', '.join(sorted(unknown))}")
     r = dict(profile="regional-bank", namespace="cedar", name="Cedar Regional Bank",
@@ -182,6 +182,9 @@ def resolve_bank_recipe(raw):
     if not isinstance(r["reservation_user"], str) or (r["reservation_user"] and
             not re.fullmatch(r"[\w.@+-]{1,150}", r["reservation_user"])):
         raise DesignError("reservation_user must be empty or an existing NetBox username (1–150 letters, digits, @/./+/-/_)")
+    if r.get("tenancy", "shared") not in ("shared", "dedicated"):
+        raise DesignError("tenancy must be 'shared' (main-scoped names carry the namespace so estates "
+                          "coexist on one main) or 'dedicated' (one estate owns the tenant; those names drop it)")
     if r["naming"] not in ("authored", "legacy"):
         raise DesignError("naming must be 'authored' (readable site names, facility codes and "
                           "coordinates) or 'legacy' (namespace-ordinal site names)")
@@ -267,7 +270,7 @@ class World:
                 raise DesignError("Previous plan has a different schema/generator version; explicit rebaseline required")
             if previous.get("hardware_digest") != digest(self.catalog):
                 raise DesignError("Hardware catalog changed since previous plan; explicit rebaseline required")
-            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming", "hardware"):
+            for k in ("namespace", "name", "seed", "address_pool", "ipv6_pool", "profile", "as_of", "reserve_fraction", "patching", "design_mix", "headquarters_staff", "wan_tiers_mbps", "reservation_user", "naming", "hardware", "tenancy"):
                 if previous["recipe"].get(k) != self.recipe.get(k):
                     raise DesignError(f"Changing {k} requires a new estate; omit --previous for an explicit rebaseline")
             # site_names is append-only under growth: the freeze exists to stop

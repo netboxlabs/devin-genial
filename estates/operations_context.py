@@ -145,7 +145,7 @@ def enrich(world):
             if far_target["kind"] == "provider_network":
                 body = (f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ network boundary: {far_name}\n"
                         f"A handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\n"
-                        "Remote interface and owner: unknown.\n"
+                        "Remote side: upstream carrier network.\n"
                         "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
             else:
                 body = f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ termination: {far_name}\nA handoff: {rate_kbps(term['attrs']['port_speed'])}\nZ handoff: {rate_kbps(far['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nUse both termination records to coordinate the local handoffs."

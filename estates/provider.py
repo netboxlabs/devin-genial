@@ -22,7 +22,7 @@ from .naming import bandwidth, port_speed, segment_purpose, titleize
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names", "hardware"}
+          "naming", "site_names", "hardware", "tenancy"}
 DEFAULT_POPS = [dict(key="chicago-west",metro="chicago"),dict(key="detroit-south",metro="detroit"),
                 dict(key="cleveland-east",metro="cleveland")]
 DEFAULT_CUSTOMERS = [dict(key="harbor-logistics",hub_pop="chicago-west",sites=[dict(pop=p["key"],count=1) for p in DEFAULT_POPS])]
@@ -124,7 +124,7 @@ def resolve(raw):
         if c["service"] != "private-l3":
             raise DesignError("Customer service supports private-l3; Internet and L2VPN are separate future designs")
         _integer(c["site_peak_mbps"],f"Customer {key} site_peak_mbps",1,800)
-        _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",1,12)
+        _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",0,12)
         _integer(c["hub_commit_mbps"],f"Customer {key} hub_commit_mbps",1,1000)
         if c["hub_commit_mbps"] not in r["wan_tiers_mbps"]:
             raise DesignError(f"Customer {key}: hub_commit_mbps must be one of wan_tiers_mbps")
@@ -178,7 +178,7 @@ def workloads(recipe):
         result.append(dict(key=key,slot=slot,instances=2*max(1,(number+size-1)//size),replicas=2,failure_domain="rack",
             network="applications",vcpus=cpus,memory_mb=memory,disk_mb=disk,listeners=listeners,
             criticality="tier-2" if key == "monitoring" else "tier-1",
-            replica_description="independent host and rack lanes; service execution and recovery are not verified"))
+            replica_description="independent host and rack lanes"))
     return result
 
 
@@ -218,8 +218,7 @@ def _registry(w):
     ns,r = w.recipe["namespace"],w.recipe
     w.add("rir","rir/private",dict(name="Private allocations",slug=f"{ns}-private",is_private=True))
     w.add("asn_range","asn-range/private",dict(name="Provider routing domains",slug=f"{ns}-routing",
-          start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASNs for the backbone, upstreams and customer VPNs",
-          comments="Peering records are documentation inventory, never applied configuration."),{"rir":"rir/private"})
+          start=r["asn_base"],end=r["asn_base"]+1023,description="Private 32-bit ASNs for the backbone, upstreams and customer VPNs"),{"rir":"rir/private"})
     # NetBox's ASN model has no name: the visualization layer labels an AS node
     # from its description, so it must name the party that holds the AS. The
     # transit nodes previously read "transit-a", contradicting the provider
@@ -238,17 +237,15 @@ def _registry(w):
             display = display[:70].rstrip()+"-"+sha256(display.encode()).hexdigest()[:16]
         attrs = dict(name=display,slug=f"{ns}-{label}")
         if label == "operator":
-            attrs["comments"] = (f"Operator of the {r['name']} private L3 VPN service; backbone, customer access "
-                                 "and NOC circuits are ordered against this provider record.")
+            attrs["comments"] = (f"Operator of the {r['name']} private L3 VPN service and its backbone, "
+                                 "customer access and NOC circuits.")
         w.add("provider",f"provider/{label}",attrs,refs)
         if label.startswith("transit-"):
             w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=titleize(label),
-                  description=f"{name} IP transit network",
-                  comments="External transit interior and remote interface owner are unknown."),{"provider":f"provider/{label}"})
+                  description=f"{name} IP transit network"),{"provider":f"provider/{label}"})
         if label != "operator":
             _account(w,f"provider-account/provider/{label}",f"provider/{label}",label)
-    w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs",
-          comments="The control plane is documented inventory, not executed routing."),{"provider":"provider/operator"})
+    w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs"),{"provider":"provider/operator"})
     _account(w,"provider-account/operator/noc","provider/operator","noc")
     for name in ("backbone","access","transit"):
         w.add("circuit_type",f"circuit-type/{name}",dict(name=titleize(name),slug=f"{ns}-{name}"))
@@ -274,12 +271,8 @@ def _registry(w):
 
 
 # Each premises' CE-to-PE peering is emitted by estates/bgp.py as a session in
-# the "Customer Private L3" peer group; this note must point at those records,
-# never deny them (0.14 shipped the sessions while this still said "not ...
-# configured BGP sessions", which read as a contradiction).
-VIRTUAL_CIRCUIT_NOTE = ("Peer membership is service inventory, not an all-to-all traffic matrix. "
-                        "Each premises' CE-to-PE peering is documented in the Customer Private L3 BGP peer group; "
-                        "like those sessions, it is inventory, not configured routing.")
+# the "Customer Private L3" peer group; this note points at those records.
+VIRTUAL_CIRCUIT_NOTE = "Each premises' CE-to-PE peering is in the Customer Private L3 BGP peer group."
 
 
 def virtual_circuit_description(customer):
@@ -291,8 +284,7 @@ def _account(w,key,provider,label):
     # name is the label NetBox renders, and is unique per provider.
     return w.add("provider_account",key,dict(name=titleize(label),account=f"{w.recipe['namespace']}-{label}",
           description=(f"Private L3 VPN billing for {titleize(label.removeprefix('customer-'))}" if label.startswith("customer-")
-                       else {"noc":"NOC access circuits"}.get(label,f"{titleize(label.split('-')[0])} circuits from this carrier")),
-          comments="Commercial inventory account; no credentials or live purchase."),dict(provider=provider))
+                       else {"noc":"NOC access circuits"}.get(label,f"{titleize(label.split('-')[0])} circuits from this carrier"))),dict(provider=provider))
 
 
 def _site_network(site,role,prefixlen,offset,vid):
@@ -330,7 +322,7 @@ def _link_prefix(w,key,vrf,tenant):
     # ponytail: clipped at the native 200; only 100-character site_names overrides reach it.
     attrs = dict(prefix=str(net),status="active",description=_link_description(w,key)[:200])
     if key.startswith("circuit/transit/"):
-        attrs["comments"] = "The far end belongs to the upstream; its remote interface and owner are unknown."
+        attrs["comments"] = "The far end belongs to the upstream carrier."
     w.add("prefix",f"prefix/link/{key}",attrs,dict(vrf=vrf,tenant=tenant))
     return net
 
@@ -368,14 +360,13 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
         raise DesignError("as_of is too early for the authored provider procurement history") from exc
     cid = f"{w.recipe['namespace']}-{key.removeprefix('circuit/').replace('/','-')}"
     w.add("circuit",key,dict(cid=cid,status="active",commit_rate=rate_mbps*1000,install_date=installed,
-          description=f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff",
-          comments="Purchased capacity record; no forwarding acceptance test or physical duct diversity is claimed."),
+          description=f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff"),
           dict(provider=provider,provider_account=account,type=f"circuit-type/{kind}",tenant=tenant),
           dict(procurement=dict(cohort=f"provider-{kind}",handoff_mbps=handoff)))
     for side,site,port in (("A",a_site,a_port),("Z",z_site,z_port)):
         target = site.key if isinstance(site,Site) else site
         term = w.add("circuit_termination",f"{key}/{side}",dict(term_side=side,port_speed=handoff*1000,
-                     description="Local routed handoff" if port else "Upstream network edge; remote interface unknown"),dict(circuit=key,termination=target))
+                     description="Local routed handoff" if port else "Upstream carrier handoff"),dict(circuit=key,termination=target))
         if port:
             site.cable(port,term,"cat6" if w.obj(port)["attrs"]["type"] == "1000base-t" else "smf")
             w.obj(port)["attrs"]["speed"] = handoff*1000
@@ -411,6 +402,8 @@ def _pop(w,item):
     for number,side in enumerate(("a","b")):
         device = site.device("provider-edge",f"pe-{side}","provider-edge",rack_domain=number)
         routers.append(device)
+        # One 1U fibre enclosure per PE cabinet terminates its building fibre.
+        site.device("fibre-panel",f"odf-{side}","patch-panel",rack_domain=number)
         for n in range(4):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
         for n in range(8):
@@ -494,7 +487,8 @@ def _customer(w,sid,c,pop,number,pop_sites):
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     _site_network(site,"management",26,0,10); _site_network(site,"clients",25,128,20)
-    room = places.provider_office(site)
+    # A premises with no LAN seats is a CPE and its managed switch: no office pod.
+    room = places.provider_office(site) if c["lan_endpoints"] else None
     edge = site.device("edge","edge-01","customer-edge")
     switch = site.device("access","access-01","access")
     access_ports = w.hardware("access")["access_ports"]

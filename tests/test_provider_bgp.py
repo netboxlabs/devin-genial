@@ -12,7 +12,8 @@ from pathlib import Path
 import tomllib
 import unittest
 
-from estates.bgp import GROUPS, INVENTORY_NOTE, POLICIES
+from estates.bgp import GROUPS, POLICIES
+from estates.validate_provider import BGP_FIELDS
 from estates.diode import LOADER_ONLY_KINDS, deliverable, loader_only_records
 from estates.generate import generate
 from estates.model import DesignError
@@ -93,7 +94,7 @@ class ProviderBgpShapeTests(unittest.TestCase):
             self.assertEqual(port["refs"]["device"], session["refs"]["device"])
             self.assertEqual(session["refs"]["remote_as"], f"asn/transit-{side}")
             # The far end is deliberately a prefix, not an invented address: the
-            # remote interface and its owner are unknown at a carrier handoff.
+            # remote interface and its owner belong to the upstream.
             self.assertNotIn("remote_address", session["refs"])
             link = self.objects[session["refs"]["remote_prefix"]]
             self.assertEqual(link["attrs"]["prefix"],
@@ -142,14 +143,16 @@ class ProviderBgpScopeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.plan = generate(recipe())
 
-    def test_every_record_states_that_nothing_is_configured_or_established(self):
+    def test_records_carry_inventory_fields_only_and_no_disclaimer_or_state(self):
+        # The "nothing is configured" limitation lives in docs/modeling.md and
+        # the report; the records carry operational fields only.
         records = [obj for obj in self.plan["objects"] if obj["kind"] in BGP_KINDS]
         self.assertTrue(records)
         for obj in records:
-            self.assertEqual(obj["attrs"]["comments"], INVENTORY_NOTE, obj["key"])
+            self.assertLessEqual(set(obj["attrs"]), BGP_FIELDS[obj["kind"]], obj["key"])
             text = " ".join(str(value) for value in obj["attrs"].values()).lower()
-            for claim in FORBIDDEN_CLAIMS:
-                self.assertNotIn(claim, text.replace(INVENTORY_NOTE.lower(), ""), obj["key"])
+            for claim in FORBIDDEN_CLAIMS + ("documentation inventory", "unknown", "claimed"):
+                self.assertNotIn(claim, text, obj["key"])
 
     def test_named_policies_carry_no_rules_and_no_rule_bearing_kinds_exist(self):
         kinds = {obj["kind"] for obj in self.plan["objects"] if obj["kind"].startswith("bgp_")}
@@ -228,10 +231,14 @@ class ProviderBgpValidationTests(unittest.TestCase):
             objects["bgp-peer-group/customer"]["refs"].pop("import_policies")
         self.assertIn("provider-bgp-group", self.findings(unbound))
 
-    def test_dropping_the_inventory_only_note_is_rejected(self):
-        def claim(objects, plan):
+    def test_a_session_state_field_or_disclaimer_is_rejected(self):
+        def state(objects, plan):
             objects["bgp-session/transit/b"]["attrs"]["comments"] = "Session established."
-        self.assertIn("provider-bgp-scope-text", self.findings(claim))
+        self.assertIn("provider-bgp-scope-text", self.findings(state))
+
+        def disclaimer(objects, plan):
+            objects["bgp-peer-group/transit"]["attrs"]["description"] += "; nothing is configured"
+        self.assertIn("record-disclaimer", self.findings(disclaimer))
 
 
 class ProviderBgpGrowthTests(unittest.TestCase):

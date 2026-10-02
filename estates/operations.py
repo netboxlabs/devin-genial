@@ -14,11 +14,17 @@ from . import naming
 from .blocks import (CABINET_ROW_PITCH_M, CABINET_WIDTH_M, CABINETS_PER_ROW, ROOM_ORIGIN_M, ZONE_PITCH_M,
                      dns_label)
 from .model import DesignError
+from .naming import main_scoped_name
 from .networking import _physical_peers, address_ranges, ipam_roles
 from .operations_context import enrich as operational_context
 
 # Real enclosure per emitted cabinet height (catalog/README.md, rack type).
-RACK_TYPES = {24: ("AR3104", "NetShelter SX 24U server rack enclosure, 600 mm wide x 1070 mm deep, with sides")}
+RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
+                   "NetShelter SX 24U server rack enclosure, 600 mm wide x 1070 mm deep, with sides"),
+              # Pinned devicetype-library rack-types/Panduit/R2P26.yaml: the
+              # small-room kit's two-post relay rack (blocks.SMALL_RACK).
+              13: ("Panduit", "R2P26", "2-post-frame",
+                   "2-Post Rack, 13RU, #12-24 Threaded E-Rails, Aluminum, Black")}
 
 # The group every estate tenant joins, per profile: (key, name, description).
 # Customer tenants keep the groups their profile builders already give them.
@@ -55,7 +61,7 @@ PRUNABLE = ("device_role", "rack_role")
 
 
 def _owner(w, name):
-    group = w.add("owner_group", "owner-group/operations", {"name": f"{w.recipe['namespace']} Infrastructure teams"})
+    group = w.add("owner_group", "owner-group/operations", {"name": main_scoped_name(w.recipe, "Infrastructure teams")})
     return w.add("owner", "owner/operations", {"name": name, "description": "Accountable infrastructure team"},
                  {"group": group})
 
@@ -202,17 +208,17 @@ def _shared(w, owner):
             # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
             # cabinet grid (blocks.CABINET_WIDTH_M) is authored around. The pinned
             # library has no 24U SX type, so catalog/README.md cites APC's page.
-            model, description = RACK_TYPES[height]
+            maker, model, form, description = RACK_TYPES[height]
+            if f"manufacturer/{maker}" not in w.objects:
+                add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
             rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": model,
-                "slug": f"{ns}-apc-{model.lower()}", "u_height": height, "width": 19, "form_factor": "4-post-cabinet",
-                "description": description}, {"manufacturer": "manufacturer/APC", "owner": owner})
+                "slug": f"{ns}-{maker.lower()}-{model.lower()}", "u_height": height, "width": 19, "form_factor": form,
+                "description": description}, {"manufacturer": f"manufacturer/{maker}", "owner": owner})
         rack["refs"].update(rack_type=rack_types[height], group=group)
-    if rack_types and "manufacturer/APC" not in w.objects:
-        add("manufacturer", "manufacturer/APC", {"name": "APC", "slug": "apc"})
 
     # A site service tier read from the graph, and a shortcut to its equipment.
     hubs, dual = _site_facts(w)
-    choices = add("custom_field_choice_set", "custom-field-choices/operations-tier", {"name": f"{ns} Operations tiers",
+    choices = add("custom_field_choice_set", "custom-field-choices/operations-tier", {"name": main_scoped_name(w.recipe, "Operations tiers"),
                   "extra_choices": list(TIERS), "order_alphabetically": False}, {"owner": owner})
     # Custom-field names are matched EXACTLY by estates/branch.py's retirement
     # (CUSTOM_FIELD_NAMES): adding a field here means extending that tuple too.
@@ -225,7 +231,7 @@ def _shared(w, owner):
         tier = "tier-1" if site["key"] in hubs else "tier-2" if site["key"] in dual else "tier-3"
         site["attrs"].setdefault("custom_fields", {})[field_name] = {"selection": tier}
         site["meta"].setdefault("requires", []).append(field)
-    add("custom_link", "custom-link/site-equipment", {"name": f"{ns} Site equipment", "object_types": ["dcim.site"],
+    add("custom_link", "custom-link/site-equipment", {"name": main_scoped_name(w.recipe, "Site equipment"), "object_types": ["dcim.site"],
         "enabled": True, "link_text": "{% if object.name.startswith('" + ns + "-') %}Site equipment{% endif %}",
         "link_url": "/dcim/devices/?site_id={{ object.pk }}", "button_class": "default", "new_window": False}, {"owner": owner})
 
@@ -248,7 +254,7 @@ def enrich(w):
 
     anchor = "site/dc-01"
     contract = next(c for c in w.contracts if c["site"] == anchor)
-    owner = _owner(w, f"{ns} Network operations")
+    owner = _owner(w, main_scoped_name(w.recipe, "Network operations"))
     w.obj(anchor)["refs"]["owner"] = owner
     _wan_accounts(w, owner)
 
@@ -265,14 +271,14 @@ def enrich(w):
                 if any(start <= unit < start + height for unit in units):
                     raise DesignError("DC01 future WAN reservation overlaps installed equipment; choose a new reviewed reservation")
         reservation = add("rack_reservation", "rack-reservation/dc-01/future-wan", {"units": units, "status": "pending",
-            "description": "Future WAN edge pair reservation", "comments": "Planning reservation only; no equipment purchase or installation has occurred"},
+            "description": "Future WAN edge pair reservation"},
             {"rack": rack["key"], "user": user, "tenant": "tenant", "owner": owner})
 
     # Bundle only the two A-side service-host fibers, retaining the B-side
     # physical paths outside this example bundle.
     service_hosts = {"device/dc-01/identity-host-01", "device/dc-01/dns-host-01"}
     bundle = add("cable_bundle", "cable-bundle/dc-01/service-hosts-a", {"name": "DC01 service hosts A",
-                 "description": "Modeled bundle of identity and DNS A-side host fibers; B-side links are separate"}, {"owner": owner})
+                 "description": "Identity and DNS A-side host fibers; B-side links run separately"}, {"owner": owner})
     bundled = 0
     for cable in by_kind["cable"]:
         endpoints = [w.obj(key) for key in cable["refs"].values() if isinstance(key, str) and key in w.objects]
@@ -292,7 +298,7 @@ def enrich(w):
 def supporting_records(world):
     """Attach operational context to observed infrastructure, without bank anchors."""
     ns = world.recipe["namespace"]
-    owner = _owner(world, f"{ns} Infrastructure operations")
+    owner = _owner(world, main_scoped_name(world.recipe, "Infrastructure operations"))
     rir = "rir/private"
     if rir not in world.objects:
         world.add("rir", rir, {"name": "Private allocations", "slug": f"{ns}-private", "is_private": True})

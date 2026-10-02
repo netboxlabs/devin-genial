@@ -184,13 +184,11 @@ def validate(plan):
         comments = attrs(wlan).get("comments", "")
         facts = [attrs(contact).get("name"), attrs(prefix).get("prefix"), attrs(refs(prefix).get("vrf")).get("name")]
         if external:
-            facts += [attrs(tenant).get("name"), "unknown"]
+            facts += [f"provided by {attrs(tenant).get('name')}"]
         else:
             for family in signatures:
                 for service in entry[family] if isinstance(entry[family], list) else []:
                     facts.extend((attrs(service).get("name"), attrs(refs(service).get("virtual_machine")).get("name")))
-        if (not isinstance(comments, str) or any(not isinstance(fact, str) or not fact or fact not in comments for fact in facts) or
-                "inventory intent" not in comments or "no configuration, reachability, DHCP service or authentication result" not in comments or
-                (not managed and "no captive portal, authentication or isolation enforcement" not in comments)):
-            fail("wireless-context-comments", wlan, "Native WLAN comments must name actual support, prefix and service inventory with the execution and external-ownership limits.")
+        if not isinstance(comments, str) or any(not isinstance(fact, str) or not fact or fact not in comments for fact in facts):
+            fail("wireless-context-comments", wlan, "Native WLAN comments must name actual support, prefix, serving listeners and any external provider.")
     return findings

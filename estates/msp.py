@@ -31,7 +31,7 @@ from .naming import titleize
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names", "hardware"}
+          "naming", "site_names", "hardware", "tenancy"}
 # Client segments every managed office carries. `guest` is added only where the
 # customer asked for visitor wireless; the NOC never offers any of them. Each
 # office also addresses its carrier handoff in a `wan` segment, which has no
@@ -183,7 +183,7 @@ def workloads(recipe):
         result.append(dict(key=key, slot=slot, instances=2*groups, replicas=2, failure_domain="rack",
                            network=network, vcpus=vcpus, memory_mb=memory, disk_mb=disk,
                            listeners=listeners, criticality="tier-1" if key in TIER_1 else "tier-2",
-                           replica_description="complete managed-service shard; application replication and recovery are not executed"))
+                           replica_description="complete managed-service shard"))
     return result
 
 
@@ -341,8 +341,7 @@ def _managed_by(world):
         node["attrs"]["comments"] = (
             f"Customer-owned premises operated by {world.recipe['name']} under a managed-network contract. "
             f"Escalation runs through {world.obj(desk)['attrs']['name']}; the local management segment "
-            f"({world.obj(f'prefix/{sid}/management')['attrs']['prefix']}) carries the operated equipment. "
-            "No service-level commitment, remote-access path or ticketing workflow is represented.")
+            f"({world.obj(f'prefix/{sid}/management')['attrs']['prefix']}) carries the operated equipment.")
         node["meta"]["operated_by"] = {"provider": ns, "technical_contact": desk,
                                        "management_segment": f"prefix/{sid}/management"}
 

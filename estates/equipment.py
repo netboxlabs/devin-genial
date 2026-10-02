@@ -53,6 +53,12 @@ def enrich_site(site, *, demonstrations=True):
     # Preserve each serial attachment's reservation across ordinary growth and
     # hardware refresh; retired slots remain reserved like rack/IP allocations.
     consoles = defaultdict(list)
+    if getattr(site, "small_kit", False):
+        # A single-CE premises has two consoled devices and no rack space or
+        # second feed for an out-of-band server; its consoles stay uncabled.
+        site.contract["assumptions"].append(
+            "No console server: the single CE and access switch keep their serial consoles as local spares.")
+        return
     for device in list(site.devices):
         obj = w.obj(device)
         for port in w.catalog["models"][obj["meta"]["hardware"]].get("console_ports", []):
@@ -101,7 +107,7 @@ def _laboratory(site):
     w.obj(child)["meta"]["powered_by_enclosure"] = parent
     source = w.add("cooling_source", f"cooling/{site.id}/source",
                    {"name": "Lab chiller", "type": "chiller", "status": "active", "fluid_type": "water-glycol",
-                    "cooling_capacity": 4, "description": "Closed-loop laboratory chiller; 4 kW rated planning capacity"},
+                    "cooling_capacity": 4, "description": "Closed-loop laboratory chiller; 4 kW rated capacity"},
                    {"site": site.key, "location": room})
     w.add("cooling_feed", f"cooling/{site.id}/feed",
           {"name": "Analytics loop", "status": "active", "cooling_capacity": 1,

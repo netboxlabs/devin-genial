@@ -471,10 +471,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             description = f"{endpoint_label(cohort)} in {attrs(room).get('name')} at {attrs(site).get('name')}"
             if role == "ap":
                 description += "; staff WLAN on wlan0"
-            limitation = ("no clinical function" if role in {"medical-device", "imaging-device"}
-                          else "RF coverage is unverified" if role == "ap" else None)
-            if (attrs(device).get("description") != description or
-                    (limitation and limitation not in str(attrs(device).get("comments", "")))):
+            if attrs(device).get("description") != description:
                 report("hospital-endpoint-description", device, "Endpoint prose must describe its actual reference role and location without adding clinical guarantees or certification claims.")
             if role == "camera" and rooms[room]["space_type"] not in {"corridor", "reception"}:
                 report("hospital-camera-placement", device, "Cameras belong only in circulation or reception, never care rooms.")

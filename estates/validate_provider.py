@@ -18,7 +18,7 @@ from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
 from .naming import role_label, titleize
 # Authored address localities (suburbs map to their metro); geography data, not builder policy.
-from .places import LOCALITIES
+from .places import ADDRESS_STREETS, LOCALITIES, carrier_suite
 
 
 METROS = {"chicago": ("Chicago", "IL", "Illinois", "America/Chicago"),
@@ -32,18 +32,17 @@ SERVICE_POLICY = (("identity", "premises", 128, 4, 8192, 100000, 443),
                   ("provisioning", "premises", 128, 4, 8192, 100000, 443))
 # The BGP obligation, restated here rather than read from estates/bgp.py. These
 # records document an intended peering: nothing is configured, applied or
-# established anywhere in this generator, so the inert note below is mandatory
-# on every one of them and the reviewed kind set stays closed (a policy *rule*,
-# a community or a prefix list would read as configuration and is refused).
+# established anywhere in this generator. Records carry operational fields only
+# (the limitation lives in docs/modeling.md and the report), and the reviewed
+# kind set and field set stay closed: a policy *rule*, a community, a prefix
+# list or a session-state field would read as configuration and is refused.
 BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
-BGP_NOTE = ("Documentation inventory: the intended peering is recorded, nothing is "
-            "configured, applied or established. No session state, route exchange or "
-            "policy evaluation is claimed.")
+BGP_FIELDS = {"bgp_routing_policy": {"name", "weight", "description"},
+              "bgp_peer_group": {"name", "description"},
+              "bgp_session": {"name", "status", "description"}}
 # The service note must point at the documented CE-to-PE sessions, never deny
 # them: the BGP inventory above is emitted for every premises.
-VIRTUAL_CIRCUIT_NOTE = ("Peer membership is service inventory, not an all-to-all traffic matrix. "
-                        "Each premises' CE-to-PE peering is documented in the Customer Private L3 BGP peer group; "
-                        "like those sessions, it is inventory, not configured routing.")
+VIRTUAL_CIRCUIT_NOTE = "Each premises' CE-to-PE peering is in the Customer Private L3 BGP peer group."
 BGP_POLICIES = {
     "transit-in": ("Transit Import", 100,
                    "Import policy for upstream transit peers"),
@@ -117,7 +116,7 @@ def _recipe(recipe):
     for item in customers:
         if (not isinstance(item, dict) or not _key(item.get("key")) or item["key"] in seen or
                 item.get("service") != "private-l3" or not isinstance(item.get("hub_pop"), str) or item["hub_pop"] not in pops or
-                not _integer(item.get("site_peak_mbps"), 1, 800) or not _integer(item.get("lan_endpoints"), 1, 12) or
+                not _integer(item.get("site_peak_mbps"), 1, 800) or not _integer(item.get("lan_endpoints"), 0, 12) or
                 type(item.get("hub_commit_mbps")) is not int or item["hub_commit_mbps"] not in tiers or
                 not isinstance(item.get("sites"), list) or not 1 <= len(item["sites"]) <= len(pops)):
             raise ValueError("Customer keys, service, fixed hub commitment and installed LAN demand must be bounded.")
@@ -439,11 +438,18 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         city, state_code, state, zone = METROS[site_metros[sid]]
         region = f"region/{recipe['namespace']}/us/{state_code.lower()}"
         group = f"site-group/{recipe['namespace']}/{category}"
-        street = {"pop": "Exchange Avenue", "customer": "Business Way", "dc": "Technology Way"}[category]
         address_lines = str(attrs(site).get("physical_address")).split("\n")
         locality = address_lines[1].partition(", ")[0] if len(address_lines) == 3 else None
         locality = locality if LOCALITIES.get(locality) == city else city
-        expected_address = f"{100 + 4 * allocations[sid]} {street}\n{locality}, {state}\nUnited States"
+        # A real street of an anchor in that locality and a positive house
+        # number; Chicago's grid may flip a street's North/South or East/West.
+        number, _, street = address_lines[0].partition(" ")
+        direction, _, rest = street.partition(" ")
+        streets = {name for (place, _), names in ADDRESS_STREETS.items() if place == locality for name in names}
+        if direction in {"North", "South", "East", "West"} and locality == "Chicago":
+            street = next((name for name in streets if name.partition(" ")[2] == rest), street)
+        good_address = (len(address_lines) == 3 and number.isdecimal() and int(number) > 0 and street in streets and
+                        address_lines[1:] == [f"{locality}, {state}", "United States"])
         description = {"pop": "Provider routing, local management and carrier handoffs",
                        "customer": "Private-L3 customer premises and wired office",
                        "dc": "Provider NOC services, inventory and monitoring"}[category]
@@ -451,15 +457,19 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-scope-text", site, "Facility description must state its modeled role without adding unmodeled availability or execution guarantees.")
         if (kind(site) != "site" or attrs(site).get("status") != "active" or refs(site).get("tenant") != tenant or
                 refs(site).get("region") != region or refs(site).get("group") != group or attrs(site).get("time_zone") != zone or
-                attrs(site).get("physical_address") != expected_address or kind(region) != "region" or kind(group) != "site_group" or
+                not good_address or kind(region) != "region" or kind(group) != "site_group" or
                 refs(region).get("parent") != f"region/{recipe['namespace']}/us/great-lakes"):
             report("provider-site-context", site, "Site ownership, functional group, address, metro/state and time zone must match the actual requested facility.")
         room = f"location/{sid}"
-        required_rooms = {f"{room}/building": ("building", 0, [0, 0, 0], None),
-                          f"{room}/floor-01": ("floor", 1, [0, 0, 0], f"{room}/building"),
-                          room: ("equipment_room", 1, [24, 18, 0], f"{room}/floor-01")}
-        if customer:
-            required_rooms[f"{room}/office-01"] = ("office", 1, [8, 18, 0], f"{room}/floor-01")
+        # Single-level premises: rooms hang from the site; a PoP's cage from
+        # its leased carrier-hotel suite.
+        required_rooms = {room: ("equipment_room", 1, [24, 18, 0], f"{room}/suite" if category == "pop" else None)}
+        if category == "pop":
+            required_rooms[f"{room}/suite"] = ("suite", 1, [0, 0, 0], None)
+            if [attrs(f"{room}/suite").get("name"), attrs(room).get("name")] != list(carrier_suite(sid)):
+                report("provider-room-geometry", room, "A PoP cage and its suite keep their authored carrier-hotel names.")
+        if customer and customer["lan_endpoints"]:
+            required_rooms[f"{room}/office-01"] = ("office", 1, [8, 18, 0], None)
         actual_rooms = set(child("site", site, "location"))
         if actual_rooms != set(required_rooms):
             report("provider-room-inventory", site, "Each bounded facility needs its real building, ground floor, equipment room and requested customer office.")
@@ -473,7 +483,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if sid == "dc-01":
             continue
         devices = child("site", site, "device")
-        expected = {f"device/{sid}/console-01": ("console-server", "console-server")}
+        expected = {} if customer else {f"device/{sid}/console-01": ("console-server", "console-server")}
         if customer:
             expected.update({f"device/{sid}/edge-01": ("customer-edge", "edge"),
                              f"device/{sid}/access-01": ("access", access_alias)})
@@ -498,7 +508,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if actual != set(expected):
             report("provider-device-inventory", site, "Active non-passive site inventory must exactly match the bounded PoP or customer composition.")
         for device in expected:
-            if expected[device][0] in {"workstation", "console-server"}:
+            if expected[device][0] in {"workstation", "console-server"} or customer:
                 continue
             port = f"{device}/console_port/Console"
             peer = peers.get(port)
@@ -683,7 +693,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 not primary(cpe, f"{cpe}/if/Management") or not svi(f"{switch}/if/Vlan10", management, management_vlan, vrf, 2, tenant) or
                 not primary(switch, f"{switch}/if/Vlan10")):
             report("provider-customer-gateway", cpe, "Customer LAN requires the real CPE/switch trunk, separate addressed local management/client gateways and the switch management SVI.")
-        console_management(sid, switch, management, management_vlan, vrf, tenant)
+        if objects.get(f"device/{sid}/console-01"):
+            report("provider-device-inventory", sid, "A single-CE premises carries no console server.")
         for dedicated in (f"{cpe}/if/mgmt", f"{switch}/if/{access_mgmt}"):
             if peers.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
                 report("provider-management-mode", dedicated, "Customer management uses the routed local LAN; dedicated management ports remain unused.")
@@ -713,7 +724,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             elif len(members) != 2:
                 report("provider-customer-patching", device, "Direct customer access requires exactly one real cable channel.")
         used_copper = {f"{switch}/if/{access_ports[n-1]}" for n in range(1, customer["lan_endpoints"] + 1)} | {
-            f"{switch}/if/{access_ports[-2]}", f"{switch}/if/{access_ports[-1]}"}
+            f"{switch}/if/{access_ports[-1]}"}
         actual_copper = {p for p in child("device", switch, "interface") if attrs(p).get("type") == "1000base-t" and peers.get(p)}
         if actual_copper != used_copper or Decimal(len(used_copper)) > len(access_ports) * usable:
             report("provider-customer-port-capacity", switch, "Actual customer access attachments must use the finite fixed ports and retain declared copper-port reserve.")
@@ -743,8 +754,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         used_pe_ports[router].add(port)
         key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
         transit_peerings[side] = (router, port, provider, key)
-        if attrs(f"provider-network/transit/{side}").get("comments") != "External transit interior and remote interface owner are unknown.":
-            report("provider-scope-text", f"provider-network/transit/{side}", "External transit must not invent an inspected remote interior or interface owner.")
         routed(key, (port,), "vrf/provider")
         circuit(key, port, None, f"site/pop-{pop}", f"provider-network/transit/{side}", provider, 10000000, 10000000,
                 account=f"provider-account/{provider}")
@@ -793,7 +802,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         vc, account = f"virtual-circuit/customer/{key}", f"provider-account/customer/{key}"
         if (attrs(vc).get("description") != f"{titleize(key)} private L3 VPN, hub at {titleize(customer['hub_pop'])}" or
                 attrs(vc).get("comments") != VIRTUAL_CIRCUIT_NOTE):
-            report("provider-scope-text", vc, "The service must distinguish peer membership from its finite offered traffic and avoid claiming configured forwarding or availability.")
+            report("provider-scope-text", vc, "The service must name its customer and hub and point at its customer BGP peer group.")
         expected_vcs.add(vc); expected_accounts.add(account)
         if (kind(tenant) != "tenant" or kind(vrf) != "vrf" or refs(vrf).get("tenant") != tenant or attrs(vrf).get("enforce_unique") is not True or
                 attrs(vrf).get("rd") != f"{base}:{customer_slots[key] + 1}" or
@@ -863,8 +872,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                "peer groups.")
     for slug, (name, weight, description) in BGP_POLICIES.items():
         key = f"bgp-routing-policy/{slug}"
-        expected = {"name": name, "weight": weight, "description": description,
-                    "comments": BGP_NOTE}
+        expected = {"name": name, "weight": weight, "description": description}
         if kind(key) != "bgp_routing_policy" or attrs(key) != expected or refs(key):
             report("provider-bgp-policy", key, "Each named routing policy must retain its authored "
                    "name, weight and reference-intent description and carry no rule references.")
@@ -877,7 +885,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if policies:
                 expected[field] = [f"bgp-routing-policy/{p}" for p in policies]
         if (kind(key) != "bgp_peer_group" or refs(key) != expected or
-                attrs(key) != {"name": name, "description": description, "comments": BGP_NOTE}):
+                attrs(key) != {"name": name, "description": description}):
             report("provider-bgp-group", key, "Each peer group must retain its authored name, the "
                    "operator's own routing identity and exactly its authored import/export policies.")
     reflector_pop = ordered[0]
@@ -897,7 +905,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if tenant is not None:
             expected["tenant"] = tenant
         return {"name": f"{name_of(local)} to {remote_label}", "status": "active",
-                "description": description, "comments": BGP_NOTE}, expected
+                "description": description}, expected
 
     expected_sessions[f"bgp-session/ibgp/{reflectors[0].removeprefix('device/')}/"
                       f"{reflectors[1].removeprefix('device/')}"] = peering(
@@ -917,8 +925,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         candidates = prefixes_by_vrf_network[("vrf/provider", str(network))]
         expected_sessions[f"bgp-session/transit/{side}"] = peering(
             router, f"{name_of(provider)} transit", f"asn/transit-{side}", "transit",
-            f"External transit peering over {attrs(circuit_key).get('cid')}; the remote address "
-            "and interface owner are unknown", ipv4_of(port),
+            f"External transit peering over {attrs(circuit_key).get('cid')}", ipv4_of(port),
             remote_prefix=candidates[0] if len(candidates) == 1 else None)
     for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key) in sorted(customer_peerings.items()):
         expected_sessions[f"bgp-session/customer/{sid}"] = peering(
@@ -938,11 +945,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-bgp-session", key, "Each peering record must be attributed from the "
                    "actual loopback, handoff address, routing identity and circuit it documents.")
     for key in sorted(k for kind_name in BGP_KINDS for k in by_kind[kind_name]):
-        if attrs(key).get("comments") != BGP_NOTE:
-            report("provider-bgp-scope-text", key, "Every BGP record must state that it is "
-                   "documentation inventory and claims no configured or established session.")
+        if extra := set(attrs(key)) - BGP_FIELDS[kind(key)]:
+            report("provider-bgp-scope-text", key, "BGP records carry inventory fields only; "
+                   + ", ".join(sorted(extra)) + " would read as configured or established session state.")
 
-    findings.extend(validate_power(objects, catalog, [d for d in infrastructure if d not in routers], children, peers, cable_of, poe_watts=poe_watts, optics_watts=optics_watts))
+    findings.extend(validate_power(objects, catalog, [d for d in infrastructure if d not in routers], children, peers, cable_of,
+                                   poe_watts=poe_watts, optics_watts=optics_watts,
+                                   single_feed={f"site/{sid}" for sid in premises}))
     findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),
                     peak=recipe["noc_peak_mbps"], reserve=recipe["reserve_fraction"], strict_sites=False, network_offsets=DC_OFFSETS, poe_watts=poe_watts, optics_watts=optics_watts))
     return findings
