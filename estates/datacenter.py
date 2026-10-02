@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from .blocks import NETWORKS, trunk
 from .model import DesignError
+from .naming import titleize
 from . import equipment
 
 
@@ -208,16 +209,21 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             site.redundant(host, leaves)
         for i in range(instances):
             metadata = {"service": name, "criticality": workload["criticality"]}
-            description = f"{name} service; modeled replica {i+1}, {workload['replica_description']}"
+            # The description is what the VM list shows, so it says what the VM
+            # is; the profile's placement note (and any limitation it carries)
+            # rides in comments on the record itself.
+            description = f"{titleize(name)} service, replica {i+1}"
             if domain != "none":
                 metadata.update(replica_group=i // replicas + 1, replica_lane=i % replicas,
                                 replicas=replicas, failure_domain=domain)
-                description = (f"{name} service; group {i // replicas + 1}, replica {i % replicas + 1} of {replicas}; "
-                               f"{workload['replica_description']}")
+                description = (f"{titleize(name)} service, group {i // replicas + 1}, "
+                               f"replica {i % replicas + 1} of {replicas}")
+            note = workload["replica_description"]
+            comments = f"{note[:1].upper()}{note[1:]}."
             host_index = replicas * (i // replicas // per_host) + i % replicas
             vm = w.add("virtual_machine", f"vm/{site.id}/{name}/{i+1:03}",
                        {"name": site.display_name(f"{name}-{i+1:03}"), "status": "active", "vcpus": cpus, "memory": memory,
-                        "disk": disk, "description": description},
+                        "disk": disk, "description": description, "comments": comments},
                        {"cluster": cluster, "device": pool[host_index], "tenant": "tenant", "tags": ["tag/estate"],
                         "role": "role/database" if network == "database" else "role/backup-service" if network == "backup" else "role/application",
                         "platform": "platform/services"},
@@ -230,7 +236,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
                 attrs = {"name": listener["name"], "protocol": listener["protocol"],
                          "ports": list(listener["ports"])}
                 if not suffix:
-                    attrs["description"] = f"{listener['name']} listener on {w.obj(vm)['attrs']['name']}"
+                    attrs["description"] = f"{titleize(listener['name'])} listener on {w.obj(vm)['attrs']['name']}"
                 w.add("service", f"service/{vm}{suffix}", attrs,
                       {"virtual_machine": vm, "ipaddresses": [address]})
         if domain != "none":

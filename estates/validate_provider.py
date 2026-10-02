@@ -16,6 +16,7 @@ from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
+from .naming import role_label, titleize
 
 
 METROS = {"chicago": ("Chicago", "IL", "Illinois", "America/Chicago"),
@@ -36,15 +37,20 @@ BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
 BGP_NOTE = ("Documentation inventory: the intended peering is recorded, nothing is "
             "configured, applied or established. No session state, route exchange or "
             "policy evaluation is claimed.")
+# The service note must point at the documented CE-to-PE sessions, never deny
+# them: the BGP inventory above is emitted for every premises.
+VIRTUAL_CIRCUIT_NOTE = ("Peer membership is service inventory, not an all-to-all traffic matrix. "
+                        "Each premises' CE-to-PE peering is documented in the Customer Private L3 BGP peer group; "
+                        "like those sessions, it is inventory, not configured routing.")
 BGP_POLICIES = {
     "transit-in": ("Transit Import", 100,
-                   "Reference intent for prefixes accepted from an upstream transit peer"),
+                   "Import policy for upstream transit peers"),
     "transit-out": ("Transit Export", 110,
-                    "Reference intent for prefixes advertised to an upstream transit peer"),
+                    "Export policy for upstream transit peers"),
     "customer-in": ("Customer Import", 200,
-                    "Reference intent for prefixes accepted from a private-L3 customer edge"),
+                    "Import policy for private L3 customer edges"),
     "customer-out": ("Customer Export", 210,
-                     "Reference intent for prefixes advertised to a private-L3 customer edge"),
+                     "Export policy for private L3 customer edges"),
 }
 BGP_GROUPS = {
     "ibgp-core": ("iBGP Core", "Internal peerings between provider edge loopbacks",
@@ -478,7 +484,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 report("provider-device-inventory", key, "Requested devices need their exact active hardware, role, tenant and local room.")
             if role != "workstation":
                 infrastructure.append(key)
-                if role in {"provider-edge", "customer-edge"} and attrs(key).get("description") != f"{role} at {attrs(site).get('name')}":
+                if role in {"provider-edge", "customer-edge"} and attrs(key).get("description") != f"{role_label(role)} at {attrs(site).get('name')}":
                     report("provider-scope-text", key, "Router description must retain its actual local role; modeled paths do not establish availability or running forwarding.")
                 rack = refs(key).get("rack")
                 if kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or attrs(rack).get("status") != "active":
@@ -732,7 +738,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         used_pe_ports[router].add(port)
         key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
         transit_peerings[side] = (router, port, provider, key)
-        if attrs(f"provider-network/transit/{side}").get("description") != "External transit interior and remote interface owner are unknown":
+        if attrs(f"provider-network/transit/{side}").get("comments") != "External transit interior and remote interface owner are unknown.":
             report("provider-scope-text", f"provider-network/transit/{side}", "External transit must not invent an inspected remote interior or interface owner.")
         routed(key, (port,), "vrf/provider")
         circuit(key, port, None, f"site/pop-{pop}", f"provider-network/transit/{side}", provider, 10000000, 10000000,
@@ -780,11 +786,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         key = customer["key"]
         tenant, vrf, target = f"tenant/cust-{key}", f"vrf/customer/{key}", f"route-target/customer/{key}"
         vc, account = f"virtual-circuit/customer/{key}", f"provider-account/customer/{key}"
-        if (attrs(vc).get("description") != "Customer private-L3 membership; authored spoke-to-hub traffic demand" or
-                attrs(vc).get("comments") != "Peer membership is service inventory, not a declared all-to-all traffic matrix or configured BGP sessions."):
+        if (attrs(vc).get("description") != f"{titleize(key)} private L3 VPN, hub at {titleize(customer['hub_pop'])}" or
+                attrs(vc).get("comments") != VIRTUAL_CIRCUIT_NOTE):
             report("provider-scope-text", vc, "The service must distinguish peer membership from its finite offered traffic and avoid claiming configured forwarding or availability.")
         expected_vcs.add(vc); expected_accounts.add(account)
         if (kind(tenant) != "tenant" or kind(vrf) != "vrf" or refs(vrf).get("tenant") != tenant or attrs(vrf).get("enforce_unique") is not True or
+                attrs(vrf).get("rd") != f"{base}:{customer_slots[key] + 1}" or
                 refs(vrf).get("import_targets") != [target] or refs(vrf).get("export_targets") != [target] or
                 kind(target) != "route_target" or attrs(target).get("name") != f"{base}:{customer_slots[key] + 1}" or refs(target).get("tenant") != tenant):
             report("provider-customer-routing", vrf, "Each private customer needs its own tenant VRF and exact symmetric reserved route target.")
@@ -800,7 +807,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             term = f"virtual-circuit-termination/{sid}"
             expected_terms.add(term)
             port, parent = f"device/{sid}/edge-01/if/PrivateL3", f"device/{sid}/edge-01/if/wan1"
-            if attrs(port).get("description") != "Private routed service membership over this actual circuit":
+            if attrs(port).get("description") != "Private L3 VPN attachment over the access circuit":
                 report("provider-scope-text", port, "The virtual interface describes inventory membership over its actual access circuit, not executed tunneling or routing.")
             if (kind(term) != "virtual_circuit_termination" or refs(term).get("virtual_circuit") != vc or refs(term).get("interface") != port or
                     attrs(term).get("role") != "peer" or kind(port) != "interface" or attrs(port).get("type") != "virtual" or attrs(port).get("enabled") is not True or

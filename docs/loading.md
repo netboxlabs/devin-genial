@@ -203,6 +203,83 @@ unexpected extra shapes. Seed the estate itself first: a missing rack is a hard
 stop. Geometry records are seeded and read back; nothing here claims what
 Visual Explorer renders.
 
+### Procurement history for Asset Lifecycle
+
+The NetBox Labs Asset Lifecycle plugin (`netbox_asset_lifecycle`, written
+against 0.3.1) is the same kind of sidecar: `just lifecycle PLAN OUT` derives
+`lifecycle.json` bound to the plan's canonical SHA-256, `just lifecycle-check
+PLAN OUT` recomputes and byte-compares it, and
+`LIFECYCLE_WRITES=1 just seed-lifecycle OUT TARGET [RECEIPT]` writes it over
+REST with a private receipt and exact readback. No canonical-graph change, no
+rebaseline. Everything is derived from the finished graph:
+
+- **One BOM per site** — `<site> — initial build` — scoped to the racked
+  devices plus access points and every module (PSUs, optics) installed in
+  them; endpoints, wall outlets and other unracked devices stay out. The BOM
+  is generated *on the target* by the plugin's own scope rules (devices by site
+  and role slugs, modules by site slug), so its assets are the estate's real
+  device and module rows. `build` refuses a site whose devices could not be
+  expressed that way, and `seed` refuses (leaving the BOM in `draft`) if the
+  generated assets or summed line quantities differ from the prediction.
+  Line items are compared per type, not per variant: the plugin splits lines by
+  device `airflow`, which NetBox copies from the type on save but a raw
+  TurboBulk insert does not.
+- **Two fictional vendors.** A type goes to *Ostrander Carrier Systems* only
+  when every installed instance is (or sits in) a provider-edge router; all
+  else is *Tallgrass Network Supply*. One USD purchase order per vendor per
+  BOM, with a hash-derived `order_id`, its lines at the BOM quantities and
+  `unit_price` left **null** — the plan holds no prices, so none are invented.
+  Approval/order dates live in the PO comments; the plugin has no date fields.
+- **One delivery per order** from the fictional courier *Tallgrass Freight*,
+  which deliberately has **no tracking URL**: the builtin UPS/FedEx/DHL couriers
+  would link a syntactically valid number to a stranger's real parcel. The
+  delivery goes to the site's busiest equipment room. Dates come from the
+  estate's own equipment installation journals: received 7–21 days before the
+  site's first installation record, shipped 2–5 days earlier, expected three
+  days after shipping, ordered 40–50 days before installation — each a stable
+  hash of the site key.
+- **Every asset installed** through the plugin's `assets/<id>/install/`
+  action from its vendor's delivery. The action links procurement and never
+  touches the DCIM object (live-checked: the already-`active` devices are
+  unchanged). Its `installed` timestamp is the seed's wall clock, read-only —
+  the journal-derived dates are on the delivery, not the asset.
+- **A spares pool per equipment room with two or more cabinets** (DC, NOC,
+  PoP rooms), stocking exactly the module types installed there: minimum
+  `ceil(installed/8)`, maximum minimum+max(2, minimum), serviceable stock
+  between them. By stable hash, two allocations across the estate run below
+  minimum and one more holds a unit flagged `damaged` at audit — the plugin's
+  own `below_minimum` flag is read back against that prediction.
+
+Each BOM, PO and delivery walks its permitted status ladder one PATCH at a time
+(`draft → approved → ordered → fulfilled`, `shipped → received`), so the
+changelog shows the history. Seeding is fresh-only: a BOM or spares pool of the
+same name refuses a new receipt. A resume with the same receipt snapshots the
+plugin once and adopts every row by natural key (BOM/pool name, PO by BOM and
+vendor, delivery by courier and tracking number, line items by parent,
+installs by `installed`), so a lost response is never resent; vendors and the
+courier are shared reference rows adopted by name. Installs run eight at a
+time. Readback compares every BOM, asset (installed, from the right delivery),
+PO, line, delivery (site, room, dates, quantities received) and pool exactly.
+
+Live findings on a 0.3.1 Cloud tenant: BOM and PO creates require `status`
+(`"status":["This field is required."]`) despite the schema; a shipment
+requires `courier_account` explicitly (`null` is accepted); installing from an
+unreceived delivery is refused (`Shipment has not been received.`) and a
+repeat install too (`This object has already been installed.`). For removal,
+delete each pool's allocations and spare items, then pools, deliveries, POs,
+BOMs, vendor accounts, vendors and the courier: allocations protect a pool,
+pools protect their site and location (so `teardown-main` cannot remove an
+estate until its lifecycle rows are gone), and BOM/PO children refuse
+individual deletion once their parent left `draft` — deleting the parent
+cascades them. Deleting a module type does **not** cascade to spare
+allocations that name it; they linger with a null item.
+
+For the provider showcase plan the sidecar derives 72 BOMs, 870 assets,
+84 purchase orders and deliveries, and 13 spares pools with 68 allocations.
+The seeder's mechanics, resume and readback were proven on a throwaway tenant
+against a three-device probe estate; no full-estate lifecycle seed has a
+recorded receipt yet.
+
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings, including the compiler version: a
 receipt written by an older compiler is refused with "different compiler_version;

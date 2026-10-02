@@ -43,13 +43,13 @@ from .model import DesignError
 # configuration, and this generator configures nothing.
 POLICIES = (
     ("transit-in", "Transit Import", 100,
-     "Reference intent for prefixes accepted from an upstream transit peer"),
+     "Import policy for upstream transit peers"),
     ("transit-out", "Transit Export", 110,
-     "Reference intent for prefixes advertised to an upstream transit peer"),
+     "Export policy for upstream transit peers"),
     ("customer-in", "Customer Import", 200,
-     "Reference intent for prefixes accepted from a private-L3 customer edge"),
+     "Import policy for private L3 customer edges"),
     ("customer-out", "Customer Export", 210,
-     "Reference intent for prefixes advertised to a private-L3 customer edge"),
+     "Export policy for private L3 customer edges"),
 )
 # slug, display name, description, import policies, export policies, internal
 GROUPS = (

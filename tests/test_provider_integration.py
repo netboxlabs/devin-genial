@@ -49,7 +49,8 @@ class ProviderIntegrationTests(unittest.TestCase):
         world.add("tenant", "tenant", {"name": "Operator"})
         world.add("tenant", "tenant/cust-acme", {"name": "Acme"})
         for key, name in (("site/a", "Chicago PoP"), ("site/z", "Detroit PoP")):
-            world.add("site", key, {"name": name, "physical_address": name + " address", "time_zone": "America/Chicago"}, {"tenant": "tenant"})
+            world.add("site", key, {"name": name, "physical_address": name + " address", "time_zone": "America/Chicago"}, {"tenant": "tenant"},
+                      {"geography": {"city": name.split()[0]}})
         world.add("provider", "provider/transport", {"name": "Span carrier"})
         world.add("provider_account", "account/span", {"account": "span-account"}, {"provider": "provider/transport"})
         world.add("provider_network", "carrier/transit", {"name": "Transit network"}, {"provider": "provider/transport"})

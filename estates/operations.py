@@ -29,7 +29,7 @@ def _wan_accounts(w, owner):
             accounts[(key, lineage)] = w.add("provider_account", f"provider-account/{key}{suffix}",
                 {"name": f"{code.upper()} private WAN{label}",
                  "account": f"{ns}-{lineage}-{code}",
-                 "description": "Retained Birch WAN procurement account" if suffix else "Commercial account for the estate's WAN purchases"},
+                 "description": "Retained Birch WAN procurement account" if suffix else "WAN circuit billing account"},
                 {"provider": key, "owner": owner})
     local_sites = {o["refs"]["circuit"]: o["refs"]["termination"]
                    for o in objects if o["kind"] == "circuit_termination" and o["attrs"]["term_side"] == "A"}
@@ -166,7 +166,7 @@ def supporting_records(world):
                     "description": "Site-local VLAN allocation"}, {"scope_site": key, "tenant": obj["refs"]["tenant"]})
         elif obj["kind"] == "virtual_machine":
             world.add("virtual_disk", f"virtual-disk/{key}/disk0", {"name": "disk0", "size": obj["attrs"]["disk"],
-                "description": "Provisioned volume; matches the VM disk budget rather than adding capacity"}, {"virtual_machine": key})
+                "description": "Primary VM volume"}, {"virtual_machine": key})
     for obj in world.objects.values():
         if obj["kind"] == "vlan":
             obj["refs"]["group"] = f"vlan-group/{obj['refs']['site']}"
