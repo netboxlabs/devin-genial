@@ -722,6 +722,15 @@ for the separately recorded pinned-target live qualification.
   native limit (`naming.NAME_LIMITS`: 64 for `vlan` and `virtual_chassis`,
   read back from the pinned 4.7.1 source; 100 otherwise) naming the object,
   rather than letting a target reject the row mid-load.
+- Descriptions are operational wording, not generator notes (0.16): device
+  roles, segment purposes and rates come from `naming.ROLE_LABELS`,
+  `SEGMENT_PURPOSES`, `bandwidth` and `port_speed`; a material limitation goes
+  in `comments`, never the list-view `description`. Provider premises and PoP
+  hostnames are readable stems (`<customer>-<metro3><slot>`, the PoP key);
+  provider customer VRFs carry an RD equal to their `<asn>:<n>` route target;
+  contacts carry 555-0100..0199 lines in their metro's real area code; the
+  estate tag is `Managed`. The private-L3 virtual-circuit note points at the
+  documented CE-to-PE BGP sessions and must never deny them.
 - Site naming: authored display names, facility codes and metro-jittered
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`

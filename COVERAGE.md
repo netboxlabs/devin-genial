@@ -81,7 +81,7 @@ industry. Different recipes deliberately produce different kinds.
 | IP/service intent | Partial: 256 IPv4 addresses, 72 IPv4 prefixes, 12 VRFs; clinical, imaging, staff and management segments | Partial: 170 IPv4 addresses, 79 IPv4 prefixes, 8 VRFs, 5 ASNs, 2 route targets, 2 customer virtual circuits | Neither emits IPv6 or IP ranges. Native first-hop groups are absent. Routing/security execution is outside this generator. |
 | Physical detail | Installed PSU modules, serial access, rack/feed/panel paths; medical devices remain generic reference NIC endpoints | Same shared detail plus sourced MX204 chassis/PSUs, finite port allocation and local patch lengths | No installed optic/transceiver selection or link budget. Endpoint wall power and PoE loads are excluded. |
 | Passive cabling | Absent in this direct-cabling sample; profile accepts panel mode | 186 front and 186 rear ports in this panel sample | Hospital panel omission is a recipe choice, not a missing generator capability. Native 4.7 mapping still depends on the disclosed local bridge. |
-| Contacts | 14 contacts, 70 assignments, including site-scoped biomedical desks on 31 medical/imaging devices | 23 contacts, 63 assignments, customer/operator/carrier/facilities/service desks; 7 provider accounts | Included but bounded: all assignments are primary; no backup/on-call rota, phone or coverage-hours story. Hospital lacks provider-account records. |
+| Contacts | 14 contacts, 70 assignments, including site-scoped biomedical desks on 31 medical/imaging devices | 23 contacts, 63 assignments, customer/operator/carrier/facilities/service desks; 7 provider accounts | Included but bounded: all assignments are primary; no backup/on-call rota or coverage-hours story; 0.16 added fictional 555-01xx phone lines. Hospital lacks provider-account records. |
 | Journal/history | 38 entries | 60 entries | Partial: all `info`, on sites/circuits/one VM per workload. Six finite planning-note titles; no device repair, incident, retirement or completed-change narrative. Native creation dates remain ingestion time. |
 | Resilience | Paired infrastructure and rack-separated service replicas; endpoints single-homed | Backbone connectivity and scoped span-loss traffic witness; customers single-homed; in-band PE management | Physical resilience is modeled. It does not prove clinical/application recovery, customer availability, independent ducts, UPS runtime or routing convergence. |
 | Variation | One authored metro; ward/clinic demand changes geometry and inventory, but all wards use one care-unit grammar | Four authored metro choices; one private-L3 topology/service and one small wired-office grammar | Industry labels do not yet compose arbitrary facility types. A provider customer named for healthcare still has office desks, not the hospital care-unit builder. |
@@ -324,7 +324,10 @@ by what it costs a demo.
   rack position and render as "Non-racked" beside the elevation.
 - *Device names are raw slugs* in every rendered label
   (`popchicagoloop-console01`), and circuit IDs read
-  `aurora-peak-customer-ce-harbor-energy-chicago-loop-001`.
+  `aurora-peak-customer-ce-harbor-energy-chicago-loop-001`. *0.16 renamed the
+  provider's PoP and customer-premises hostnames (`chicago-loop-console01`,
+  `harbor-energy-chi0300-gw01`); circuit IDs are matching identities and keep
+  the namespace.*
 
 **3. Leaves a feature dark** (a null field that disables a control):
 

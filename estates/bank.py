@@ -183,12 +183,12 @@ def _generate(recipe, previous=None, transition=None):
                      cameras=2*math.ceil(offices / 4), peak_mbps=2*r["headquarters_staff"])
     total_peak = sum(n*BRANCHES[size]["peak_mbps"] for size, n in r["branches"].items()) + r["headquarters"]*hq_demand["peak_mbps"]
     for i in range(r["data_centers"]):
-        data_center(Site(w, f"dc-{i+1:02}", "dc", "Primary / recovery data center; separate modeled site failure domain"), len(branch_ids), total_peak)
+        data_center(Site(w, f"dc-{i+1:02}", "dc", "Banking data center; paired with the other site for recovery"), len(branch_ids), total_peak)
     for i in range(r["headquarters"]):
         branch(Site(w, f"hq-{i+1:02}", "hq", "Headquarters campus: operations, finance, security and wireless"),
                hq_demand)
     for key, size in branch_ids:
-        site = Site(w, key, "branch", f"{size.title()} retail branch; {BRANCHES[size]['workstations']} modeled staff desks")
+        site = Site(w, key, "branch", f"{size.title()} retail branch; {BRANCHES[size]['workstations']} staff desks")
         cohort = {"modern": "new-branch", "inherited": "legacy-refresh", "refreshed": "established"}[site.design]
         state = "acquired" if site.acquired else "independent" if site.lineage == "birch" else "native"
         w.obj(site.key)["meta"].update(branch_size=size, lifecycle_cohort=cohort,

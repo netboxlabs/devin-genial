@@ -65,12 +65,14 @@ NAMESPACED_KINDS = frozenset({
 # Tokens whose conventional casing a naive .title() would destroy.
 _ACRONYMS = {
     "ap": "AP", "atm": "ATM", "bgp": "BGP", "ce": "CE", "csv": "CSV", "dc": "DC",
-    "dhcp": "DHCP", "dns": "DNS", "hmi": "HMI", "hq": "HQ", "idf": "IDF",
+    "api": "API", "db": "DB", "dhcp": "DHCP", "dns": "DNS", "ems": "EMS", "erp": "ERP",
+    "hmi": "HMI", "hq": "HQ", "idf": "IDF",
     "ike": "IKE", "ip": "IP", "ipam": "IPAM", "ipsec": "IPsec", "it": "IT",
-    "l2": "L2", "l3": "L3", "lan": "LAN", "mdf": "MDF", "noc": "NOC",
+    "l2": "L2", "l3": "L3", "lan": "LAN", "mdf": "MDF", "mes": "MES", "noc": "NOC",
     "ot": "OT", "pdu": "PDU", "pe": "PE", "poe": "PoE", "pos": "POS",
     "psu": "PSU",
-    "radius": "RADIUS", "rir": "RIR", "rtu": "RTU", "ssid": "SSID",
+    "radius": "RADIUS", "rir": "RIR", "rmm": "RMM", "rtu": "RTU", "scada": "SCADA",
+    "ssid": "SSID",
     "us": "US", "vlan": "VLAN", "vm": "VM", "vpn": "VPN", "vrf": "VRF",
     "wan": "WAN", "wifi": "Wi-Fi",
 }
@@ -125,3 +127,65 @@ def display_name(namespace, kind, text, *, titleized=True):
     if kind in NAMESPACED_KINDS:
         return f"{namespace} {label}"
     return label
+
+
+# Human labels for device roles, used where a description says what a device
+# *is*.  The role slug ("provider-edge", "pdu") is an identity, not prose; an
+# engineer reads "Provider edge router" and "Rack PDU".  Unlisted roles fall
+# back to their titleized slug.
+ROLE_LABELS = {
+    "access": "Access switch", "distribution": "Distribution switch",
+    "spine": "Spine switch", "leaf": "Leaf switch", "core": "Core switch",
+    "management": "Management switch", "stack": "Stacked access switch",
+    "wan-edge": "WAN edge router", "provider-edge": "Provider edge router",
+    "customer-edge": "Customer edge gateway", "server": "Compute host",
+    "console-server": "Console server", "pdu": "Rack PDU",
+    "patch-panel": "Patch panel", "wall-outlet": "Wall outlet",
+    "laboratory": "Analytics enclosure",
+}
+
+
+def role_label(role):
+    return ROLE_LABELS.get(role, titleize(role))
+
+
+# What each addressed segment carries, in the words an engineer puts on a VLAN.
+# The role key stays the identity; this is description only.  Keep entries
+# under 50 characters: prefix descriptions append a site name of up to 100.
+SEGMENT_PURPOSES = {
+    "management": "Network device management", "users": "Staff workstations",
+    "atm": "ATMs and self-service banking", "wireless": "Wireless clients",
+    "security": "Security cameras", "voice": "Voice and IP telephony",
+    "applications": "Application servers", "database": "Database servers",
+    "backup": "Backup network", "wan": "WAN transit", "storage": "Storage network",
+    "staff": "Staff devices", "students": "Student devices", "guest": "Guest access",
+    "clinical": "Clinical workstations", "medical": "Networked medical devices",
+    "imaging": "Imaging and diagnostic workstations",
+    "backoffice": "Back-office workstations", "pos": "Point-of-sale lanes",
+    "research": "Research computing", "office": "Corporate office devices",
+    "logistics": "Warehouse and dock scanners",
+    "process": "Line controllers and field devices",
+    "supervisory": "Line operator panels",
+    "conduit": "Routed transit between OT and IT tiers",
+    "protection": "Protection relays", "telemetry": "Remote terminal units",
+    "station": "Station HMIs and gateway", "clients": "Office workstations",
+    "provider": "Provider backbone",
+}
+
+
+def segment_purpose(role):
+    return SEGMENT_PURPOSES.get(role, f"{titleize(role)} network")
+
+
+def bandwidth(mbps):
+    """A committed rate the way a circuit order reads it: 50 Mbps, 1 Gbps, 100 Gbps."""
+    if mbps >= 1000 and mbps % 1000 == 0:
+        return f"{int(mbps) // 1000} Gbps"
+    return f"{mbps:g} Mbps"
+
+
+def port_speed(mbps):
+    """A physical handoff the way a port is spoken of: 1G, 10G, 100G."""
+    if mbps >= 1000 and mbps % 1000 == 0:
+        return f"{int(mbps) // 1000}G"
+    return f"{mbps:g}M"
