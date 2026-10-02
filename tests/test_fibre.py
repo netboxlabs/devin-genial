@@ -122,6 +122,23 @@ class PanelCompilation(unittest.TestCase):
                               ("dcim.cabletermination", "rebuild_cable_paths")}, hooks)
 
 
+class CircuitTerminationFields(unittest.TestCase):
+    def test_mark_connected_and_cross_connect_fields_compile_as_columns(self):
+        # Cellular OOB term A and single-NID handoffs are mark_connected; the
+        # colo cross-connect identity rides xconnect_id/pp_info. All three are
+        # plain CircuitTermination columns, so preflight must demand them.
+        circuit = _obj("circuit", "c", {"cid": "C1"}, {})
+        term = _obj("circuit_termination", "t",
+                    {"term_side": "A", "mark_connected": True, "xconnect_id": "XC-1",
+                     "pp_info": "MMR 2 / 14"}, {"circuit": "c", "termination": "site"})
+        objects = {"site": SITE, "c": circuit, "t": term}
+        row = _render(term, objects, {"site": 2, "c": 7}, {"site": 31})
+        self.assertEqual((row["mark_connected"], row["xconnect_id"], row["pp_info"]),
+                         (True, "XC-1", "MMR 2 / 14"))
+        self.assertEqual((row["termination_type_id"], row["termination_id"]), (31, 2))
+        self.assertLessEqual({"mark_connected", "xconnect_id", "pp_info"}, _rendered_columns(term))
+
+
 class PathReadback(unittest.TestCase):
     def _run(self, a_kind, b_kind):
         objects = {
