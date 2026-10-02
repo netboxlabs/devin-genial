@@ -24,12 +24,15 @@ RECIPES = {
     "manufacturing": dict(profile="manufacturing", plants=[dict(
         key="granite", production_lines=2, warehouse_docks=1, office_staff=12)]),
 }
+PROVIDER = dict(profile="provider-backbone", customers=[dict(
+    key="harbor-logistics", hub_pop="chicago-west", lan_endpoints=0,
+    sites=[dict(pop="chicago-west", count=1), dict(pop="cleveland-east", count=1)])])
 _PLANS = {}
 
 
 def plan_bytes(profile):
     if profile not in _PLANS:
-        _PLANS[profile] = canonical(generate(RECIPES[profile])) + b"\n"
+        _PLANS[profile] = canonical(generate(RECIPES.get(profile) or PROVIDER)) + b"\n"
     return _PLANS[profile]
 
 
@@ -241,6 +244,20 @@ class DriftCliTests(unittest.TestCase):
                 manifest = json.loads((output / "manifest.json").read_text())
                 self.assertEqual(manifest["baseline"]["profile"], RECIPES[profile]["profile"])
                 self.assertIn("Active Deviations", (output / "drift.md").read_text())
+
+    def test_a_ce_only_provider_builds_and_checks_its_pop_drift(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            _, output, built = self.build(Path(temporary), "provider-backbone")
+            self.assertEqual(built["items"], 7)
+            checked = self.run_cli("drift-check", output)
+            self.assertEqual(checked["checks"], "expected-drift verified")
+            # A replaced optic is rebound on the wire like any other record.
+            requests = sorted((output / "observed").glob("phase-*.json"))
+            payload = [json.loads(path.read_text()) for path in requests]
+            self.assertTrue(any("module" in entity for request in payload for entity in request["entities"]))
+            target = next(path for path in requests if '"module"' in path.read_text())
+            target.write_text(target.read_text().replace('"serial":"1A', '"serial":"9A', 1))
+            self.run_cli("drift-check", output, code=2)
 
     def test_drift_adds_no_gate_to_ordinary_plan_checking(self):
         with tempfile.TemporaryDirectory() as temporary:
