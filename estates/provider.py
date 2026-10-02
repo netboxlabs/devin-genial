@@ -659,7 +659,8 @@ def _former_customers(w):
         key = f["key"]; slot = w.reserve("provider-former-customers",key,FORMER_MAX)
         label = SERVICE_LABELS[f["service"]]
         tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=f["name"],slug=f"{ns}-cust-{key}",
-                       description=f"Former {label} customer of {r['name']}"),{"group":CUSTOMER_GROUP})
+                       description=f"Former {label if label.startswith('Ethernet') else label[0].lower()+label[1:]} customer of {r['name']}"),
+                       {"group":CUSTOMER_GROUP})
         account = _account(w,f"provider-account/customer/{key}","provider/operator",f["name"],f"{code}-F{slot+1:05d}",
                            f"Closed {label} billing for {f['name']}")
         # Never before its PoP served customers; at least a year of service.
@@ -678,7 +679,7 @@ def _former_customers(w):
                         dict(provider="provider/operator",type=f"circuit-type/{f['service']}-access",tenant=tenant,provider_account=account))
         from .operations_context import entry
         entry(w,circuit,"service-ceased",end.isoformat(),"Service ceased",
-              f"Service ceased at the end of the contract; NID not recovered — premises access ended. Ordered from {titleize(f['pop'])}.")
+              "Service ceased; NID not recovered — premises access ended.")
 
 
 # Each premises' CE-to-PE peering is emitted by estates/bgp.py as a session in
