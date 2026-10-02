@@ -1,0 +1,209 @@
+# NetBox Labs community showcase: one Great Lakes regional carrier seeded ALONE
+# onto a dedicated tenant's main (a second estate cannot pass the fresh-load
+# occupancy gate). 12 PoPs, three per metro, and 12 private-L3 enterprise
+# customers whose names echo the other industry profiles; dual-stack; Juniper
+# access beside the MX204 PEs, Arista leaf/spine kept. Fictional design inputs.
+# Runbook: .claude/skills/showcase-tenant/SKILL.md.
+profile = "provider-backbone"
+namespace = "inland-fiber"
+name = "Inland Lakes Fiber"
+seed = 20261001
+as_of = "2026-09-28"
+address_pool = "10.0.0.0/8"
+ipv6_pool = "2001:db8::/32"
+reserve_fraction = 0.2
+patching = "direct"
+demo = "baseline"
+topology = "incremental-mesh"
+noc_pop_a = "chicago-cermak"
+noc_pop_b = "detroit-new-center"
+noc_peak_mbps = 200
+
+[hardware]
+access = "juniper"
+
+[[pops]]
+key = "chicago-cermak"
+metro = "chicago"
+
+[[pops]]
+key = "chicago-loop"
+metro = "chicago"
+
+[[pops]]
+key = "chicago-pilsen"
+metro = "chicago"
+
+[[pops]]
+key = "detroit-corktown"
+metro = "detroit"
+
+[[pops]]
+key = "detroit-dearborn"
+metro = "detroit"
+
+[[pops]]
+key = "detroit-new-center"
+metro = "detroit"
+
+[[pops]]
+key = "cleveland-flats"
+metro = "cleveland"
+
+[[pops]]
+key = "cleveland-lakewood"
+metro = "cleveland"
+
+[[pops]]
+key = "cleveland-westlake"
+metro = "cleveland"
+
+[[pops]]
+key = "milwaukee-menomonee"
+metro = "milwaukee"
+
+[[pops]]
+key = "milwaukee-west-allis"
+metro = "milwaukee"
+
+[[pops]]
+key = "milwaukee-oak-creek"
+metro = "milwaukee"
+
+[[customers]]
+key = "lakeshore-health"
+hub_pop = "cleveland-flats"
+lan_endpoints = 12
+site_peak_mbps = 100
+sites = [
+  { pop = "cleveland-flats", count = 2 },
+  { pop = "cleveland-lakewood", count = 1 },
+  { pop = "detroit-corktown", count = 1 },
+]
+
+[[customers]]
+key = "great-lakes-credit"
+hub_pop = "detroit-dearborn"
+lan_endpoints = 8
+site_peak_mbps = 50
+sites = [
+  { pop = "detroit-dearborn", count = 2 },
+  { pop = "detroit-new-center", count = 2 },
+  { pop = "milwaukee-menomonee", count = 1 },
+  { pop = "milwaukee-west-allis", count = 1 },
+]
+
+[[customers]]
+key = "harbor-logistics"
+hub_pop = "milwaukee-oak-creek"
+lan_endpoints = 6
+site_peak_mbps = 50
+sites = [
+  { pop = "milwaukee-oak-creek", count = 1 },
+  { pop = "chicago-pilsen", count = 2 },
+  { pop = "chicago-loop", count = 1 },
+  { pop = "detroit-new-center", count = 1 },
+  { pop = "cleveland-flats", count = 1 },
+]
+
+[[customers]]
+key = "riverbend-schools"
+hub_pop = "detroit-corktown"
+lan_endpoints = 12
+site_peak_mbps = 50
+sites = [
+  { pop = "detroit-corktown", count = 3 },
+  { pop = "detroit-dearborn", count = 2 },
+  { pop = "detroit-new-center", count = 1 },
+]
+
+[[customers]]
+key = "northpoint-retail"
+hub_pop = "chicago-pilsen"
+lan_endpoints = 4
+site_peak_mbps = 50
+sites = [
+  { pop = "chicago-pilsen", count = 3 },
+  { pop = "milwaukee-menomonee", count = 2 },
+  { pop = "cleveland-westlake", count = 1 },
+]
+
+[[customers]]
+key = "summit-legal"
+hub_pop = "chicago-loop"
+lan_endpoints = 8
+site_peak_mbps = 50
+sites = [
+  { pop = "chicago-loop", count = 1 },
+  { pop = "detroit-dearborn", count = 1 },
+  { pop = "cleveland-lakewood", count = 1 },
+  { pop = "milwaukee-west-allis", count = 1 },
+]
+
+[[customers]]
+key = "keystone-foods"
+hub_pop = "milwaukee-west-allis"
+lan_endpoints = 6
+site_peak_mbps = 50
+sites = [
+  { pop = "milwaukee-west-allis", count = 1 },
+  { pop = "detroit-dearborn", count = 2 },
+  { pop = "cleveland-flats", count = 1 },
+]
+
+[[customers]]
+key = "crescent-energy"
+hub_pop = "chicago-loop"
+lan_endpoints = 6
+site_peak_mbps = 50
+sites = [
+  { pop = "chicago-loop", count = 2 },
+  { pop = "detroit-corktown", count = 2 },
+  { pop = "milwaukee-west-allis", count = 1 },
+]
+
+[[customers]]
+key = "lakemont-university"
+hub_pop = "cleveland-flats"
+lan_endpoints = 12
+site_peak_mbps = 200
+sites = [
+  { pop = "cleveland-flats", count = 1 },
+  { pop = "detroit-corktown", count = 1 },
+]
+
+[[customers]]
+key = "meridian-plastics"
+hub_pop = "detroit-new-center"
+lan_endpoints = 6
+site_peak_mbps = 50
+sites = [
+  { pop = "detroit-new-center", count = 2 },
+  { pop = "detroit-dearborn", count = 1 },
+  { pop = "chicago-loop", count = 1 },
+]
+
+[[customers]]
+key = "cedar-regional-bank"
+hub_pop = "chicago-cermak"
+lan_endpoints = 8
+site_peak_mbps = 50
+sites = [
+  { pop = "chicago-cermak", count = 2 },
+  { pop = "chicago-pilsen", count = 1 },
+  { pop = "cleveland-lakewood", count = 2 },
+  { pop = "cleveland-westlake", count = 2 },
+  { pop = "milwaukee-menomonee", count = 1 },
+]
+
+[[customers]]
+key = "northgate-power"
+hub_pop = "detroit-corktown"
+lan_endpoints = 4
+site_peak_mbps = 50
+sites = [
+  { pop = "detroit-corktown", count = 1 },
+  { pop = "detroit-new-center", count = 1 },
+  { pop = "milwaukee-west-allis", count = 1 },
+  { pop = "chicago-pilsen", count = 1 },
+]
