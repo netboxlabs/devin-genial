@@ -287,11 +287,11 @@ Each `[[customers]]` entry (`estates/provider.py:95`) requires `key`, `hub_pop` 
 | --- | --- | --- | --- | --- |
 | `key` | string | required | Unique `[a-z][a-z0-9-]{0,19}` | identity |
 | `service` | string | `private-l3` | `private-l3` only | **rebaseline** |
-| `hub_pop` | string | required | One of this customer's own attachment PoPs; ordinal `001` there is the hub premises | **rebaseline** |
+| `hub_pop` | string | required | One of this customer's own attachment PoPs; ordinal `001` there is the hub premises, dual-homed by a second access circuit (CE `wan2`) into the PoP's other PE | **rebaseline** |
 | `sites` | array of tables | required | `2`–`len(pops)` entries, each a distinct known PoP | grow-only |
 | `site_peak_mbps` | integer | `50` | `1`–`800` directed traffic from each non-hub premises toward its hub; ≤ `1000 × (1 − reserve_fraction)` | **rebaseline** |
 | `hub_commit_mbps` | integer | `1000` | `1`–`1000`, must be a member of `wan_tiers_mbps`, and must cover `(premises − 1) × site_peak_mbps` after reserve | **rebaseline** (bandwidth renewal) |
-| `lan_endpoints` | integer | `4` | `0`–`12` wired office desks at each premises; `0` is the CE alone, handing the LAN to customer-owned equipment and managed on a loopback | grow-only; `0` to more needs a new baseline |
+| `lan_endpoints` | integer | `4` | `0`–`12` wired office desks at each premises; `0` is the CE alone: unracked on customer power in the customer's room, routing the customer's own LAN /24 (from a shared per-customer RFC1918 plan, VRF-scoped) on `port1`, managed on a carrier loopback | grow-only; `0` to more needs a new baseline |
 | `status` | string | `active` | `active` or `planned` (onboarding: every premises planned, its virtual circuit planned) | growth may move `planned` → `active` |
 
 Each `sites` entry accepts `pop` (required, a known PoP key, unique within the
@@ -303,7 +303,7 @@ every premises in the entry and to every record they own; see
 [provider customer lifecycle](modeling.md#provider-customer-lifecycle).
 Growth may move an entry forward (planned → active, active → decommissioning);
 any other change, or removing a premises, needs a new baseline.
-Combined customer and NOC attachments cannot exceed twelve per PoP. Composed site
+Combined customer and NOC attachments cannot exceed twelve per PoP; a hub premises counts twice (its two access circuits). Composed site
 identities (`ce-<customer>-<pop>-<nnn>`) must not collide. The `pop` homes those
 premises: each is placed (and named) in that PoP's service area — within 25 km
 and nearer it than any other same-metro PoP that existed when it was ordered.
