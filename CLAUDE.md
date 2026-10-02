@@ -139,9 +139,9 @@ WAN procurement accounts retain bank design lineage across acquisition/refresh;
 provider customer/NOC/transport accounts keep their separate authored policy.
 Direct technical assignments follow equipment role and actual tenant. Biomedical
 responsibility remains distinct; do not collide with its device-assignment key.
-One timeline: a device installs 7-37 days before the earliest circuit on its own
-ports (else its site's first circuit) and every serial date code is a manufacture
-week 30-180 days before that (`operations_context.timeline`, re-derived by
+One timeline: a device installs 7-37 days before its site's first circuit (the
+earliest service its equipment carries) and every serial date code is a manufacture
+week 30-180 days before that (an optic's before its own port's circuit) (`operations_context.timeline`, re-derived by
 `validate_operations`). Never date a record from `as_of` when a circuit dates it.
 Equipment journals select the first eligible device per actual rack by permanent
 U position. Keep installed component and facilities facts stable; never embed

@@ -281,10 +281,10 @@ def _context(plan, objects, kinds):
         if site.startswith("site/") and isinstance(day, str):
             service_day[site] = min(day, service_day.get(site, day))
 
-    # Device installs lead the earliest circuit cabled to one of the device's
-    # own ports (else its site's service day); every serial's date code is a
-    # manufacture 30-180 days before the install of the unit it sits in, or of
-    # the port circuit an optic serves. Re-derived from the graph alone.
+    # Every device installs 7-37 days before its site's service day; every
+    # serial's date code is a manufacture 30-180 days before the install of the
+    # unit it sits in, or before the circuit an optic's own port serves.
+    # Re-derived from the graph alone.
     circuit_day = {t["key"]: attrs(t["refs"].get("circuit")).get("install_date") for t in kinds["circuit_termination"]}
     port_day = {}
     for cable in kinds["cable"]:
@@ -292,13 +292,9 @@ def _context(plan, objects, kinds):
         for port, far in (ends, ends[::-1]):
             if isinstance(circuit_day.get(far), str) and objects.get(port, {}).get("kind") == "interface":
                 port_day[port] = min(circuit_day[far], port_day.get(port, circuit_day[far]))
-    carried = {}
-    for port, day in port_day.items():
-        device = objects[port]["refs"].get("device")
-        carried[device] = min(day, carried.get(device, day))
     installed_on = {}
     for device in kinds["device"]:
-        anchor = carried.get(device["key"]) or service_day.get(device["refs"].get("site"))
+        anchor = service_day.get(device["refs"].get("site"))
         installed_on[device["key"]] = (scheduled(device["key"], "equipment-record", anchor, 7, 31) if anchor
                                        else scheduled(device["key"], "equipment-record", recipe.get("as_of"), 100, 20))
     serial_catalog = hardware_catalog()

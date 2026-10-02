@@ -789,11 +789,11 @@ authored history; NetBox's native journal creation timestamps describe
 ingestion. No entry asserts an acceptance test or application health check.
 
 Dates follow **one timeline** (since 0.16.0), derived from the graph's circuit
-install dates: a site's service day is its first circuit; a device is installed
-7–37 days before the earliest circuit cabled to one of its own ports (a PE's
-first span, a CE's access circuit), else before its site's service day; every
-serial's date code is a manufacture week 30–180 days before that install (an
-optic's before its own port's circuit). The `Site access` note is written 40–70
+install dates: a site's service day is its first circuit (a PoP's first span, a
+premises' access circuit) — the earliest service its equipment carries. Every
+device there is installed 7–37 days before it, so a PE pair arrives together;
+every serial's date code is a manufacture week 30–180 days before that install
+(an optic serving a later circuit is made before its own port's circuit). The `Site access` note is written 40–70
 days before the service day, ahead of any equipment. `validate_operations`
 re-derives the chain and reports `operations-serial-date` and
 `operations-journal-date`.

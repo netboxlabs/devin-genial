@@ -167,23 +167,13 @@ class EstateHygieneTests(unittest.TestCase):
             if term["refs"]["termination"].startswith("site/"):
                 day = objects[term["refs"]["circuit"]]["attrs"]["install_date"]
                 first[term["refs"]["termination"]] = min(day, first.get(term["refs"]["termination"], day))
-        # A device's own earliest circuit (cabled to one of its ports).
-        carried = {}
-        for cable in self.of(plan, "cable"):
-            for near, far in (("a", "b"), ("b", "a")):
-                end = objects[cable["refs"][far]]
-                if end["kind"] == "circuit_termination":
-                    device = objects[cable["refs"][near]]["refs"].get("device")
-                    day = objects[end["refs"]["circuit"]]["attrs"]["install_date"]
-                    carried[device] = min(day, carried.get(device, day))
         checked = 0
         for note in self.of(plan, "journal_entry"):
             subject = objects[note["refs"]["assigned_object"]]
             site = subject["key"] if subject["kind"] == "site" else subject["refs"].get("site")
             when = note["attrs"]["comments"][:10]
             if note["key"].endswith("/equipment-record") and site in first:
-                # racked before the earliest service it carries, else its site's first
-                self.assertLessEqual(when, carried.get(subject["key"], first[site]))
+                self.assertLessEqual(when, first[site])  # racked before the site's first circuit
                 checked += 1
             elif note["key"].endswith("/access-plan") and site in first:
                 self.assertLess(when, first[site])  # the site is readied before service

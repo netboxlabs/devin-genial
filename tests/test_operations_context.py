@@ -266,25 +266,24 @@ class OperationsContextTests(unittest.TestCase):
                 self.assert_code(plan, "operations-journal-date")
 
     def test_one_timeline_installs_lead_service_and_manufacture_leads_install(self):
-        """Every device installs 7-37 days before the earliest circuit on its own
-        ports (else its site's), and every serial date code precedes that."""
+        """Every device installs 7-37 days before its site's first circuit (the
+        earliest service its equipment carries); every serial date code precedes that."""
         from estates.model import hardware_catalog, serial_date_code
         catalog = hardware_catalog()
         specs = {(m["manufacturer"], m["model"]): m for m in catalog["models"].values()}
         for profile in ("provider-backbone", "regional-bank"):
             plan, objects = self.plan(profile)
             self.assertEqual(validate(plan), [])
-            circuit_day = {o["key"]: objects[o["refs"]["circuit"]]["attrs"]["install_date"]
-                           for o in objects.values() if o["kind"] == "circuit_termination"}
+            first = {}
+            for term in (o for o in objects.values() if o["kind"] == "circuit_termination"):
+                day = objects[term["refs"]["circuit"]]["attrs"]["install_date"]
+                first[term["refs"]["termination"]] = min(day, first.get(term["refs"]["termination"], day))
             for note in (o for o in objects.values() if o["key"].endswith("/equipment-record")):
                 device = objects[note["refs"]["assigned_object"]]
                 installed = date.fromisoformat(note["attrs"]["comments"][:10])
-                carried = [circuit_day[c["refs"][far]] for c in objects.values() if c["kind"] == "cable"
-                           for near, far in (("a", "b"), ("b", "a"))
-                           if c["refs"][far] in circuit_day and objects[c["refs"][near]]["refs"].get("device") == device["key"]]
                 with self.subTest(profile=profile, device=device["key"]):
-                    if carried:
-                        self.assertTrue(7 <= (date.fromisoformat(min(carried)) - installed).days <= 37)
+                    if device["refs"]["site"] in first:
+                        self.assertTrue(7 <= (date.fromisoformat(first[device["refs"]["site"]]) - installed).days <= 37)
                     dtype = objects[device["refs"]["device_type"]]
                     fmt = specs[(objects[dtype["refs"]["manufacturer"]]["attrs"]["name"], dtype["attrs"]["model"])]["serial_format"]
                     year, week = serial_date_code(fmt, device["attrs"]["serial"])

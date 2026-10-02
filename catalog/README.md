@@ -280,8 +280,8 @@ and an alphanumeric OEM style for Generic and Panduit parts. Template grammar:
 `{yyww}` that year plus an ISO week. The date code is the unit's manufacture
 week on the estate's one timeline (since 0.16.0): `vendor_serial` fills a
 placeholder and `operations_context.timeline` re-dates it 30–180 days before
-the unit's install (a device 7–37 days before the earliest circuit on its own
-ports, else its site's first circuit; an optic before its own port's circuit),
+the unit's install (a device 7–37 days before its site's first circuit; an
+optic before its own port's circuit),
 stepping a detachable optic one week earlier when two would otherwise print the
 same serial. `validate_operations` re-derives the install and reports
 `operations-serial-date` when a date code does not precede it. `estates/model.py` `vendor_serial` expands a

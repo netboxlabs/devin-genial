@@ -25,12 +25,13 @@ def timeline(world, kinds, dated):
     """One timeline: service days, device installs and serial date codes.
 
     A site's service day is its first circuit's install date (a PoP's first
-    span, a premises' access circuit). A device is installed 7-37 days before
-    the earliest circuit cabled to one of its own ports, else before its
-    site's service day (as_of-relative only for a site with no circuit). Each
-    unit was manufactured 30-180 days before it was installed, so the date
-    code in its serial (the catalog's {yyww}/{yy}) precedes the install; an
-    optic or PSU follows its own port's circuit, else its host's install.
+    span, a premises' access circuit): the earliest service any of its
+    equipment carries. Every device there is installed 7-37 days before it, so
+    a redundant pair arrives together (as_of-relative only for a site with no
+    circuit). Each unit was manufactured 30-180 days before it was installed,
+    so the date code in its serial (the catalog's {yyww}/{yy}) precedes the
+    install; an optic serving a later circuit is made before that circuit
+    (its own port's install), else before its host's install.
     Returns (service_day per site, install date per device), ISO strings.
     """
     circuit_day = {term["key"]: world.obj(term["refs"]["circuit"])["attrs"]["install_date"]
@@ -45,14 +46,10 @@ def timeline(world, kinds, dated):
         for port, far in (ends, ends[::-1]):
             if far in circuit_day and world.objects.get(port, {}).get("kind") == "interface":
                 port_day[port] = min(circuit_day[far], port_day.get(port, circuit_day[far]))
-    carried = {}
-    for port, day in port_day.items():
-        device = world.obj(port)["refs"].get("device")
-        carried[device] = min(day, carried.get(device, day))
     as_of, installed_on = world.recipe["as_of"], {}
     for device in kinds["device"]:
         key, site = device["key"], device["refs"].get("site")
-        anchor = carried.get(key) or service_day.get(site)
+        anchor = service_day.get(site)
         installed_on[key] = (dated(key, "equipment-record", anchor, 7, 31) if anchor
                              else dated(key, "equipment-record", as_of, 100, 20))
 
