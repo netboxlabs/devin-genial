@@ -626,6 +626,14 @@
       "purpose": "CommScope 760254438 is FMS-K2BI-L1A1-48-SP: 'Interface, front LC/UPC', 24 LC SM duplex adapters (48 fibres), single-mode, heat-shrink fusion splice rear. The library's part number 760258664 is the -EU variant (FMS-K2BI-L1A1-48-SP-EU, also LC/UPC per its own page); the library types the fronts lc-apc, which neither page supports.",
       "response_sha256": "dfcf6ad35c9212a0e4502260a9e926df0b89294008ade6a4897d8376d2dbdd72",
       "evidence_path": "build/catalog-evidence/footprint/cs438.html"
+    },
+    "juniper-ex3400-datasheet": {
+      "url": "https://www.juniper.net/gb/en/products/switches/ex-series/ex3400-ethernet-switch-datasheet.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "EX3400 data sheet ordering table: 'EX3400-24T EX3400 24-port 10/100/1000BASE-T with 4 SFP+ and 2 QSFP+ uplink ports (optics not included)'. The EX3400 HCT product list (juniper-ex3400-optics) is platform-wide, so its EX-SFP-10GE-LR/SR rows cover the 24T's four SFP+ uplink cages exactly as the 24P's.",
+      "response_sha256": "1edcb3bb7cd9bd20dce578c5ac1d87eed2815741ab3ee5720a4dd89a3a40857f",
+      "evidence_path": "build/catalog-evidence/footprint/exds.html"
     }
   },
   "hardware_lines": {
@@ -4691,7 +4699,8 @@
         "pop-mgmt-chassis",
         "pop-mgmt-psu",
         "juniper-ex3400-ports",
-        "juniper-ex3400-24t-power"
+        "juniper-ex3400-24t-power",
+        "juniper-ex3400-datasheet"
       ],
       "description": "Pinned EX3400-24T PoP management switch (no PoE) with two installed JPSU-150-AC-AFO supplies. The four shared 1G/10G uplink cages are selected at 10G; the two rear QSFP+ ports are the platform's default Virtual Chassis ports. Airflow variants and DC power are not modeled.",
       "airflow": "front-to-rear",
@@ -5721,7 +5730,8 @@
           "juniper-ex-sfp-10ge-lr",
           "mx204-port-modes",
           "juniper-ex3400-optics",
-          "qfx5120-optics-host"
+          "qfx5120-optics-host",
+          "juniper-ex3400-datasheet"
         ],
         "compatible_interfaces": {
           "inherited-access": [
@@ -5795,6 +5805,12 @@
             "et-0/0/45",
             "et-0/0/46",
             "et-0/0/47"
+          ],
+          "pop-mgmt": [
+            "xe-0/2/0",
+            "xe-0/2/1",
+            "xe-0/2/2",
+            "xe-0/2/3"
           ]
         },
         "vendor_max_power_mw": 1000
@@ -5816,7 +5832,8 @@
           "mx204-port-modes",
           "juniper-ex3300-optics",
           "juniper-ex3400-optics",
-          "qfx5120-optics-host"
+          "qfx5120-optics-host",
+          "juniper-ex3400-datasheet"
         ],
         "compatible_interfaces": {
           "inherited-access": [
@@ -5890,6 +5907,12 @@
             "et-0/0/45",
             "et-0/0/46",
             "et-0/0/47"
+          ],
+          "pop-mgmt": [
+            "xe-0/2/0",
+            "xe-0/2/1",
+            "xe-0/2/2",
+            "xe-0/2/3"
           ]
         },
         "vendor_max_power_mw": 1000

@@ -163,6 +163,9 @@ class FootprintOpticsSelectionTests(unittest.TestCase):
             cables.append(add("cable", f"cable/{name}", {"type": kind, "length": length, "length_unit": "m"}, {"a": a, "b": b}))
 
         cable("lag", port("agg", "xe-0/0/40", "10gbase-x-sfpp"), port("pe", "xe-0/1/0", "10gbase-x-sfpp"))
+        add("device_type", "hardware/pop-mgmt")
+        add("device", "device/mgmt", {}, {"device_type": "hardware/pop-mgmt", "location": "location/cage"})
+        cable("mgmt-uplink", port("mgmt", "xe-0/2/0", "10gbase-x-sfpp"), port("pe", "xe-0/1/6", "10gbase-x-sfpp"))
         near_a, near_z = circuit("near", 5)
         far_a, far_z = circuit("far", 27)
         tenG_a, tenG_z = circuit("teng", 25)
@@ -196,6 +199,8 @@ class FootprintOpticsSelectionTests(unittest.TestCase):
         self.assertEqual(self.installed(w), {
             "agg/xe-0/0/40": "Juniper/SFPP-10GE-SR",       # in-rack LAG member: multimode SR
             "pe/xe-0/1/0": "Juniper/EX-SFP-10GE-SR",
+            "mgmt/xe-0/2/0": "Juniper/EX-SFP-10GE-SR",      # PoP mgmt uplink, in-room SR
+            "pe/xe-0/1/6": "Juniper/EX-SFP-10GE-SR",
             "agg/xe-0/0/0": "Juniper/SFP-1GE-LX",          # 1G UNI, 5 km owned access fiber
             "nid/1": "Generic/SFP-1G-LX",
             "agg/xe-0/0/1": "Juniper/SFP-1GE-LH",          # 27 km: shortest covering reach
@@ -222,9 +227,9 @@ class FootprintOpticsSelectionTests(unittest.TestCase):
         w.objects["cable/uni-far"]["refs"]["b"] = "circuit/near/A"
         with self.assertRaisesRegex(DesignError, "no reviewed optic"):
             optics.enrich(w)
-        # Without the panel's front/rear mapping the trace stops at the panel: a 10 km part.
+        # A panel whose rear is not patched onward ends the trace: no owned span, a 10 km part.
         w = self.world()
-        del w.objects["device/osp/front/1"]["refs"]["rear_port"]
+        del w.objects["cable/osp-term"]
         optics.enrich(w)
         self.assertEqual(self.installed(w)["agg/xe-0/0/3"], "Juniper/SFP-1GE-LX")
         # The library's SFP typing of the Ciena combo port would demand an optic on a copper handoff.

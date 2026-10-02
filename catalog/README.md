@@ -477,7 +477,7 @@ Arista both sell a part named `SFP-10G-LR`.
 | --- | --- | --- | ---: |
 | `cisco-10g-lr` | Cisco `SFP-10G-LR` | `access` fixed `TenGigabitEthernet1/1/1–4`, 10G | 1,000 |
 | `cisco-10g-sr` | Cisco `SFP-10G-SR` (MMF, LC, 400 m OM4) | same cages as `cisco-10g-lr` | 1,000 |
-| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
+| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` and `pop-mgmt` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
 | `juniper-10g-sr` | Juniper `EX-SFP-10GE-SR` (MMF, LC, 400 m OM4) | same cages as `juniper-10g-lr` | 1,000 |
 | `arista-10g-lr` | Arista `SFP-10G-LR` | `leaf` `Ethernet1–48`, 10G | 2,000 authored |
 | `arista-10g-sr` | Arista `SFP-10G-SR` (MMF, LC, 400 m OM4) | `leaf` `Ethernet1–48`, 10G | 1,000 |

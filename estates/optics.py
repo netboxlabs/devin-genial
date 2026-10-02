@@ -29,17 +29,21 @@ def optic_serial(catalog, part, identity):
     return vendor_serial(fmt, int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "big"))
 
 
-def owned_span_m(objects, endpoint):
-    """Metres of the operator's own fiber behind a circuit termination, else 0.
+def owned_span_m(objects, endpoint, peers=None):
+    """Metres of the operator's own fiber behind a cable end, else 0.
 
+    The end is first traced through 1:1 passive panels (fibre.far_end): an
+    aggregation UNI patched through the OSP panel reaches its access circuit.
     A third-party carrier's handoff is local: tracing stops there. Only a
     circuit the estate's own operator provides (provider/operator) carries the
     optic's light end to end — its recorded route `distance`, or, without one,
     the two terminating sites' great-circle distance times the authored route
-    factor (the same rule the provider uses for span distances).
+    factor (the same rule the provider uses for span distances). ``peers``
+    (cable end -> other end) may be precomputed by a caller tracing many ends.
     """
+    from .fibre import far_end  # lazy: fibre imports the builders that import this module
     from .provider import ROUTE_FACTOR, km  # lazy: provider imports this module
-    term = objects.get(endpoint, {})
+    term = objects.get(far_end(objects, endpoint, peers), {})
     circuit = objects.get(term.get("refs", {}).get("circuit"), {})
     if term.get("kind") != "circuit_termination" or circuit.get("refs", {}).get("provider") != "provider/operator":
         return 0
@@ -50,29 +54,6 @@ def owned_span_m(objects, endpoint):
     ends = [(objects.get(t["refs"]["site"], {}) if t.get("kind") == "location" else t).get("attrs", {}) for t in targets]
     points = [(e["latitude"], e["longitude"]) for e in ends if "latitude" in e and "longitude" in e]
     return round(km(*points) * ROUTE_FACTOR * 1000) if len(points) == 2 else 0
-
-
-_METRES = {"m": 1, "cm": .01, "ft": .3048, "in": .0254, "km": 1000}
-
-
-def far_end(objects, attached, mates, cable, start):
-    """(channel end, local metres) from `start` along `cable` through passive panels.
-
-    A fibre patched through a panel (an OSP panel's front, its 1:1 rear, the
-    next cable) is one optical channel: the optic sees whatever ends it, and
-    the local cords add to the owned span it must reach. Stops at an
-    interface, a circuit termination, or anything unmapped.
-    """
-    length, seen = 0, set()
-    while True:
-        attrs = cable["attrs"]
-        length += attrs.get("length", 0) * _METRES.get(attrs.get("length_unit"), 0)
-        end = cable["refs"]["b" if cable["refs"]["a"] == start else "a"]
-        mate = mates.get(end)
-        if mate is None or mate not in attached or end in seen:
-            return end, length
-        seen.add(end)
-        start, cable = mate, attached[mate]
 
 
 # Device types an estate keeps after their last device is replaced: the bank's
@@ -152,11 +133,7 @@ def enrich(world):
                 and len(rooms) == 1 and None not in rooms
                 and all(selections.get(cage_lookup(end, "mmf")) for end in (a, b))):
             cable["attrs"]["type"] = "mmf"
-    # Single-position panel mappings (front n <-> rear n), both directions.
-    mates = {}
-    for obj in objects.values():
-        if obj["kind"] == "front_port" and obj["refs"].get("rear_port"):
-            mates[obj["key"]], mates[obj["refs"]["rear_port"]] = obj["refs"]["rear_port"], obj["key"]
+    peers = {end: cable["refs"]["b" if cable["refs"]["a"] == end else "a"] for end, cable in attached.items()}
     occupied = []
     for interface in objects.values():
         if interface["kind"] != "interface" or interface["key"] not in attached:
@@ -169,13 +146,14 @@ def enrich(world):
         device = objects[interface["refs"]["device"]]
         alias = device["refs"]["device_type"].removeprefix("hardware/")
         rate = attrs.get("speed", cage[1])
-        end, local = far_end(objects, attached, mates, cable, key)
-        span = owned_span_m(objects, end)
-        # The shortest reviewed reach that covers the owned span plus its local
-        # cords (the check adds both); local channels (span 0) keep the
-        # catalog's short-reach part.
+        span = owned_span_m(objects, peers[key], peers)
+        # The shortest reviewed reach that covers the owned span plus the local
+        # cords the check adds to it; local channels (span 0) keep the catalog's
+        # short-reach part. ponytail: the cords are bounded by the local-channel
+        # maximum (100 m) rather than summed along the path; summing would pick
+        # a longer part only for a span within 100 m of a reach boundary.
         part_id = min((p for p in selections.get((alias, attrs["name"], rate, cable["attrs"]["type"]), ())
-                       if parts[p]["reach_m"] >= (span + local if span else 0)),
+                       if parts[p]["reach_m"] >= (span + catalog["optics"]["local_max_m"] if span else 0)),
                       key=lambda p: parts[p]["reach_m"], default=None)
         if part_id is None:
             raise DesignError(f"{key}: no reviewed optic for {models[alias]['model']} "
