@@ -44,12 +44,13 @@ loaded, and never change the canonical graph.
 | --- | --- | --- | --- |
 | `estates/geometry.py` | `netbox_physical_geometry`, `/api/plugins/physical-geometry/` | floorplans, layers, rack shapes (one per positioned rack) | `geometry`, `geometry-check`, `seed-geometry` |
 | `estates/lifecycle.py` | `netbox_asset_lifecycle`, `/api/plugins/asset-lifecycle/` | vendors, vendor accounts, courier, BOMs + scope rules (line items generated on target), purchase orders + lines, shipments + lines, installed assets, spares pools, spare items, allocations | `lifecycle`, `lifecycle-check`, `seed-lifecycle` |
+| `estates/validation.py` | `netbox_validation`, `/api/plugins/validation/` | policies + rules (parameters derived from the plan), one run per policy; results, findings and scores are engine output | `validation`, `validation-check`, `seed-validation` |
 | `estates/drift.py` | Diode ingest → Assurance deviations | observed projection of drifted records only | `drift`, `drift-check`, `drift-ingest` |
 
 Plugins present on Cloud tenants but deliberately not authored: NDX
 enrichments (vendor lifecycle data; import from the catalog, never invent),
-Validation results/findings (produced by the engine; install packs and run
-them instead), Labs Console checkpoints (platform telemetry).
+Validation results/findings/scores (engine output; the validation sidecar
+authors only policies and rules and runs them), Labs Console checkpoints (platform telemetry).
 Official API notes for each plugin: `.claude/skills/netbox-labs-skills`.
 """
 

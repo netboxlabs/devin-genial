@@ -105,8 +105,8 @@ lifecycle-check plan out:
 seed-lifecycle out target receipt='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
-# Derive plan-derived NetBox Validation policies (rules, parameters and a
-# per-rule prediction of the findings and their graph causes) from a frozen plan
+# Per-rule prediction of findings and causes rides along in the artifact.
+# Derive NetBox Validation policies whose parameters come from a frozen plan
 validation plan out:
     python3 -m estates.validation build {{quote(plan)}} --out {{quote(out)}}
 
@@ -114,8 +114,8 @@ validation plan out:
 validation-check plan out:
     python3 -m estates.validation check {{quote(out)}} --plan {{quote(plan)}}
 
-# Create the policies over REST, run them once and compare the engine's failing
-# checks with the prediction. Requires VALIDATION_WRITES=1 and the estate on main.
+# Requires VALIDATION_WRITES=1 and the estate on main; differences are recorded.
+# Create and run the validation policies, then compare findings with the prediction
 seed-validation out target receipt='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.validation seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
