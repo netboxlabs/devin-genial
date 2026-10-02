@@ -296,8 +296,14 @@ semantics.
 Rendering is exact for every emitted field, with one qualification: the loader
 additionally supplies three model defaults the raw bulk path would otherwise
 manufacture as invalid empty strings — `location.status`, `power_outlet.status`,
-and `rack.starting_unit`. REST and Diode apply these server-side. Strict readback
-compares only the plan's emitted fields, so it does not verify them.
+and `rack.starting_unit` — and the columns NetBox's own `save()` derives: a
+rack's `form_factor` and `width` copied from its rack type (`Rack.save()`; the
+plan carries them on the type alone, as 4.7 deprecates the per-rack copies, and
+a missing NOT NULL integer would otherwise insert as 0) and a device type's
+`_abs_weight` in grams (`WeightMixin`). REST and Diode apply these server-side.
+Strict readback compares only the plan's emitted fields, so it does not verify
+them. A journal entry's `created` is an emitted field: TurboBulk inserts the
+supplied timestamp and readback compares it as an instant.
 
 REST completion uses 100-row synchronous PATCH batches (NetBox's bulk PATCH is one
 atomic transaction; 100 rows is a client choice measured on the local NetBox 4.6.8

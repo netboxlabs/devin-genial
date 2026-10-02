@@ -29,7 +29,9 @@ the four automation kinds (`config_context`, `export_template`, `webhook`,
 pinned SDK, so the wire export omits them and
 declares the omission, and only the TurboBulk/REST loader delivers them
 (`estates/diode.py: LOADER_ONLY_KINDS`). A delivered record may never reference a
-loader-only one. A plugin kind's model label is its package name
+loader-only one. Likewise a delivered kind may carry an attribute its SDK
+message lacks — a journal entry's `created` — which the wire export drops and
+the manifest declares (`LOADER_ONLY_FIELDS`). A plugin kind's model label is its package name
 (`netbox_bgp.bgpsession`), not the `/api/plugins/bgp/` REST path segment.
 `attrs` contains scalar/list
 values using SDK field names. `refs` maps SDK field names to object keys (or lists
@@ -84,7 +86,7 @@ addresses, primary MACs, virtual-chassis masters and installed modules are emitt
 after their members exist. Other dependency cycles are rejected.
 
 Custom-field values use the SDK's explicit typed values, such as
-`{"selection": "tier-1"}`. A consuming object's `meta.requires` lists the canonical
+`{"selection": "essential"}`. A consuming object's `meta.requires` lists the canonical
 custom-field definitions that must reconcile first. Definitions are ordinary
 generated objects; this ordering metadata is never sent as a NetBox field.
 
@@ -479,8 +481,9 @@ selected-site assignments may change only during that explicit transition.
 Journal identity is `(assigned_object, comments)` on wire. Fixed seeded dates
 and immutable object facts produce two site notes, two circuit notes and two
 notes on the lowest existing VM ordinal per cluster/workload. Appended inventory
-does not rewrite existing notes. The dated body is authored history, not a native
-event timestamp or evidence of execution. Independent checks derive required
+does not rewrite existing notes. The dated body is authored history, not
+evidence of execution; the entry's `created` attribute is that same date at
+15:00 UTC, which TurboBulk inserts as supplied. Independent checks derive required
 contacts, assignments and bounded note forms from graph/recipe, outside the
 legacy bank operations-contract gate. Emitted metadata cannot suppress them.
 
@@ -493,12 +496,16 @@ administered address for makers without a declared OUI.
 
 v0.16 adds shared list-view hygiene to every profile (`operations._shared`
 and `operations.finalize`, run by `World.finish` after every builder):
-tenant/circuit/rack/cluster groups, rack types, per-role VM types, the site
-service-tier field, fixed-geometry IP ranges (`networking.address_ranges`),
-graph-derived tags (`naming.TAGS`), unused-taxonomy pruning, unused
-access/leaf ports disabled, a planned next compute cabinet per gridded room,
-platform SVI names, fabric MTU, interface-qualified DNS names and loopback IP
-roles. `validate_operations._shared` re-derives each independently; see
+tenant/circuit/cluster groups, rack types (racks carry no per-rack form
+factor or width; no rack groups), per-role VM types, the site service-class
+field (committed-bandwidth band), fixed-geometry IP ranges
+(`networking.address_ranges`), graph-derived tags (`naming.TAGS`), one colour
+palette across coloured taxonomy (`naming.PALETTE`), jacket colours by cable
+medium, one owner on every infrastructure record, unused-taxonomy and region
+pruning, every unused physical port disabled on every role, a planned next
+compute cabinet per gridded room, platform SVI names on modeless SVIs, Junos
+`lo0.0` loopback units, backbone MTU agreed across each link,
+interface-qualified DNS names and loopback IP roles. `validate_operations._shared` re-derives each independently; see
 [docs/modeling.md](docs/modeling.md#list-view-hygiene).
 Direct technical assignments on infrastructure roles use the device's actual
 tenant desk. Bank WAN accounts distinguish permanent procurement lineages through
@@ -630,7 +637,7 @@ termination belongs to an enabled virtual CE interface whose physical parent
 owns the real access handoff. Customer VRFs, route targets, ASNs, accounts and
 contacts retain their tenant relationships. Opaque external transit has only a
 known local IP; its far endpoint owner remains unknown. The whole /31 is reserved.
-PE primary IPs belong to in-band `lo0`; dedicated `fxp0` stays unaddressed and
+PE primary IPs belong to in-band `lo0.0` (unit 0 of `lo0`); dedicated `fxp0` stays unaddressed and
 uncabled. Management switches reach the PE data plane through actual /31 links.
 
 The shared DC builder accepts an internal `wan_attachment` callable. Provider

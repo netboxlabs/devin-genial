@@ -137,8 +137,10 @@ just generate profiles/bank-depth.toml build/bank-complete
 devenv --profile diode shell -- just sdk-check build/bank-complete/diode
 ```
 
-The placement grammar supplies United States → Great Lakes → state regions,
-site groups and IANA time zones. Building → floor → room locations place staff
+The placement grammar supplies United States → state → metro regions (a site
+hangs off its metro, `Chicago metro`; states and metros no site uses are pruned,
+and there is no pass-through level between the country and its states), site
+groups and IANA time zones. Building → floor → room locations place staff
 in 12-desk office pods, retail counters on the ground floor, and branch devices
 in their appropriate spaces. Headquarters has reception and office floors. Addresses,
 premises and dimensions are explicitly fictional. `estates/places.py` owns these
@@ -357,6 +359,10 @@ a prefix bound to a VLAN shares that segment's role (`SEGMENT_ROLES`); any
 other prefix follows its VRF (a provider customer VPN is Customer, a
 per-segment context its segment; the one VRF-less pool container is
 Allocation pools). IP ranges are DHCP pools when active and Reserved when held.
+A role that holds the estate's own VLAN segments is described by their
+purposes (a carrier's Servers role reads `Application servers; Database
+servers`, never the shared vocabulary's students or research compute); the
+others keep their stock description.
 
 The address pool is one global container under its aggregate; a global
 container parents prefixes in every VRF, so the per-VRF copies of the pool are
@@ -526,7 +532,7 @@ complete simulations:
 | IPAM and HA | Private ASN ranges and site/provider ASNs, aggregates, roles, route targets, reserved ranges, and one valid VRRPv3 gateway pair with its shared address |
 | Wireless | Site-scoped staff WLAN groups, actual radio interfaces and tagged user-VLAN access paths; a separate routed diagnostic hop |
 | Carrier and recovery services | Virtual circuits over real WAN handoffs; planned IKE/IPsec tunnel and translated VXLAN recovery segment between the DCs |
-| Operations | Contacts/owners, commercial accounts, tenant groups, A/B circuit groups, cluster groups, per-role VM types and disks, cabinet types/groups, the site service-tier field, journal entries and the site-equipment link — every profile; the bank adds its DC01 rack reservation and cable bundle |
+| Operations | Contacts/owners, commercial accounts, tenant groups, A/B circuit groups, cluster groups, per-role VM types and disks, cabinet types, the site service-class field, journal entries and the site-equipment link — every profile; the bank adds its DC01 rack reservation and cable bundle |
 | Automation | A global config context carrying this estate's own service endpoints and a role-weighted switching context; CSV export templates for devices and cables; an inert `.invalid` webhook with its disabled device-change event rule (loader-only: no Diode entity exists for these four kinds) |
 
 `report.md` gives graph-derived starting questions. `coverage.json` lists every
@@ -718,23 +724,70 @@ mutation in `tests/test_estate_hygiene.py`.
   as uninformative. NetBox's `Tag.object_types` restriction is declared in
   `naming.TAGS` and enforced offline; it is not yet written to the target (the
   TurboBulk path cannot carry that many-to-many).
-- **Taxonomy lists only what is used.** Device and rack roles nothing references
-  are dropped, as are the passive cabling types (patch panel, wall outlet) a
-  direct-patching estate never installs; every device role has its own colour
-  (`naming.ROLE_COLORS`). Other device types, platforms and makers stay a fixed
-  library so growth and scenario snapshots never delete one.
+- **Taxonomy lists only what is used.** Device and rack roles and regions
+  nothing references are dropped, as are the passive cabling types (patch
+  panel, wall outlet) a direct-patching estate never installs. Other device
+  types, platforms and makers stay a fixed library so growth and scenario
+  snapshots never delete one.
+- **One colour palette.** Device roles, rack roles, tags, module-bay types,
+  inventory-item roles and circuit/virtual-circuit types share one authored
+  palette (`naming.PALETTE`): no two coloured records in an estate repeat a hex,
+  so a role badge, a tag pill and a rack-role fill never read as the same thing.
+  A record the palette does not list takes the first unused `SPARE_COLORS`
+  entry. Cables carry their jacket colour by medium instead (`CABLE_COLORS`):
+  single-mode yellow, multimode and AOC aqua, copper blue, serial console cyan,
+  and power black on the A feed and red on the B feed (an equipment cord moved
+  between PDUs keeps its jacket, which is how the power-diversity defect looks
+  on the floor). Every RJ45 console run is typed Cat 6.
+- **One owner.** Sites, clusters, circuits, devices, racks, prefixes, IP
+  addresses and VLANs all name the estate's accountable owner (NetBox 4.5+
+  object ownership), not just the sites and circuits.
+- **Device types carry sourced physical facts.** `part_number`, `weight` /
+  `weight_unit` and `airflow` come from each model's SHA-pinned
+  devicetype-library file and nowhere else; a fact the source omits is left
+  empty (the AP's source is the -E part, so the installed -B part carries no
+  part number).
 - **Groups and types on every profile.** Tenant groups (provider customers join
   `Customers`), A/B circuit pairs keyed from the builders' `…/a` and `…/b`
-  circuits plus a provider `Backbone spans` group, rack groups by room kind,
-  rack types by height, a cluster group, one VM type per VM role, and the site
-  `Service tier` custom field (tier 1 hosts shared services, tier 2 has two
-  carriers, tier 3 one) with the site-equipment custom link.
+  circuits plus a provider `Backbone spans` group, rack types by height, a
+  cluster group, one VM type per VM role, and the site `Service class` custom
+  field with the site-equipment custom link. The service class is the band of
+  the site's summed committed circuit bandwidth (Essential ≤100 Mbps, Standard
+  ≤500 Mbps, Enhanced ≤2 Gbps, Aggregation ≤10 Gbps, Backbone above; an owned
+  fiber span counts its handoff port) — information the hub-site and
+  dual-homed tags do not already carry. Rack groups are not emitted: grouped by
+  room kind they only mirrored the site groups (data-model review HIER-6).
+- **Racks take their type.** Every rack, the network-lab cabinet included,
+  references the catalog rack type for its height and carries no per-rack
+  `form_factor` or `width` (deprecated in NetBox 4.7, removed in 5.0).
+  `Rack.save()` copies a type's physical fields onto the rack; TurboBulk skips
+  save, so the loader performs that copy at insert time
+  (`turbobulk._save_copies`), and also stores a device type's weight in grams
+  the way `WeightMixin` would. Module-bay types are classes per maker form
+  factor (`Arista AC PSU bay`, `Juniper SFP+ optic cage`); which supply a
+  chassis takes is still checked against that device type's own catalog entry,
+  never the class name.
 - **Interfaces read like the platform.** A gateway interface keyed `VlanN`
   takes the platform's routed-VLAN name (`irb.N` on Junos via the catalog's
-  `svi_format`, `VlanN` on EOS/IOS XE; `blocks.svi_name`). Like-for-like
-  optical links carry their cage rate as `speed`, and links between core roles
-  (spine, leaf, core, distribution, provider edge) and over backbone spans carry
-  jumbo MTU (9192 on Junos, 9216 elsewhere).
+  `svi_format`, `VlanN` on EOS/IOS XE; `blocks.svi_name`). A routed VLAN
+  interface carries no 802.1Q mode or untagged VLAN — NetBox clears an
+  untagged VLAN from a modeless interface — so its VLAN is the one its own
+  address's prefix is bound to; the independent checks re-derive it that way
+  (`validate_networking.routed_vlan_view`) and refuse an SVI that claims a mode.
+  A virtual interface with a parent is an 802.1Q unit and keeps its access VLAN.
+  Junos addresses the loopback on logical unit 0: the PE's `lo0` carries a
+  virtual `lo0.0` child that holds its IPv4/IPv6 loopbacks, and BGP peers from
+  it. Like-for-like optical links carry their cage rate as `speed`. Links
+  between network roles (spine, leaf, core, distribution, WAN edge, access,
+  provider edge) and over the operator's own backbone and dark-fiber spans carry
+  jumbo MTU at the smaller of the two platforms' ceilings (Junos 9192, EOS
+  9214, IOS XE 9198, otherwise 9000), so both ends agree; management, access
+  ports and customer handoffs keep the default. No LAG is emitted: no two
+  network devices in any estate share parallel same-type links.
+- **One unused-port rule.** Every physical port that nothing names — no cable,
+  address, unit, LAG, termination, VLAN or WLAN — is disabled, on every role.
+  A port in service with no modeled cable (a carrier CE hands its LAN to the
+  customer's own gear) is `mark_connected` instead.
 - **Addresses don't repeat their interface.** IP addresses carry no
   description; DNS names stay on primaries (`<device>.<domain>`), VM addresses
   and loopbacks keep their host's name, and every other device address is
@@ -784,9 +837,14 @@ note (rate, carrier and cid, info) and an `In service` note (carrier, site and
 port rate on the recorded service date, success — the provider backbone keeps
 its two-ended `Circuit handoff plan`); the first VM in each site/workload a
 `First instance placed` note naming its host (success). Facts come from the
-actual site, provider, circuit, host and module records. The dates describe
-authored history; NetBox's native journal creation timestamps describe
-ingestion. No entry asserts an acceptance test or application health check.
+actual site, provider, circuit, host and module records. Each entry's
+`created` timestamp is its own event date at 15:00 UTC, so the Journal list
+reads as history rather than as the day it was loaded: TurboBulk inserts a
+supplied `created` column as-is (it skips only auto primary keys; a missing
+nullable timestamp would stay empty). The Diode SDK's JournalEntry has no
+`created` field, so a Diode-replayed journal is stamped at ingestion
+(`diode.LOADER_ONLY_FIELDS`). No entry asserts an acceptance test or
+application health check.
 
 Dates follow **one timeline** (since 0.16.0), derived from the graph's circuit
 install dates: a site's service day is its first circuit (a PoP's first span, a
@@ -929,7 +987,7 @@ outside the operator pool (`3fff:fff:1::/64`, `3fff:fff:2::/64` for a
 2001:db8 pool). Management, NOC and customer access links stay in the private
 address pool.
 
-**Routing contexts.** The backbone core — PE `lo0`, pair and span /31s and the
+**Routing contexts.** The backbone core — PE `lo0.0`, pair and span /31s and the
 transit /31s — is the **global table** (no VRF), as `inet.0` is on Junos.
 PoP management switches, console servers, PE `fxp0`, the switch-to-PE uplinks
 and the NOC handoffs are the **Carrier Management** VRF (`<ASN>:9000`). Each
@@ -1021,7 +1079,7 @@ What the estate emits:
 Sessions come in three families, and every field is attributed from the
 finished graph rather than authored per site:
 
-- **iBGP** runs over the PEs' global-table `lo0` loopbacks, as a **route-reflector
+- **iBGP** runs over the PEs' global-table `lo0.0` loopbacks, as a **route-reflector
   pair** rather than a full mesh. The reflectors are PE A at the first PoP in
   the permanent `provider-pop-order` ledger and PE A at the first later PoP in
   a different metro, so no single metro holds both; every other PE peers with

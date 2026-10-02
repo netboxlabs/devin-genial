@@ -819,6 +819,12 @@ def _shared(plan, objects, kinds, report):
                 and not any(port["refs"].get(field) for field in ("untagged_vlan", "tagged_vlans", "wireless_lans"))):
             report("operations-unused-port", port["key"], "Unused ports are disabled on every role; this port is uncabled, "
                    "unaddressed and carries nothing, yet still enabled.")
+    cabled = {cable["refs"].get(side) for cable in kinds["cable"] for side in ("a", "b")}
+    for port in kinds["interface"]:
+        if port["attrs"].get("mark_connected") and (port["key"] in cabled or port["key"] not in named
+                                                     or port["attrs"].get("enabled") is False):
+            report("operations-unused-port", port["key"], "mark_connected stands for an uninventoried far end of a "
+                   "port in service; NetBox refuses it beside a real cable.")
 
     # Every data cable states its medium in its jacket colour. A feed's own
     # whip is black on the primary feed and red on the redundant one; an

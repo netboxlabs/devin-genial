@@ -686,6 +686,11 @@ def _ports(w):
             # cable, address or VLAN brings the port back into service.
             attrs["enabled"] = False
             continue
+        if obj["key"] not in cabled and attrs.get("enabled") and not str(attrs.get("type")).startswith("ieee802.11"):
+            # In service with no modeled cable: the far end is equipment this
+            # estate does not inventory (a carrier CE hands its LAN to the
+            # customer's own gear), which NetBox records as mark_connected.
+            attrs["mark_connected"] = True
         peer = objects.get(cabled.get(obj["key"]), {})
         mtu = None
         if peer.get("kind") == "interface":
