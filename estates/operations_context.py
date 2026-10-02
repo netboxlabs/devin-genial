@@ -112,6 +112,16 @@ COLOCATION = {"Chicago": ("Windward Interconnect", "windward-interconnect.exampl
               "Milwaukee": ("Kinnickinnic Colocation", "kinnickinnic-colo.example")}
 
 
+def journal_created(day):
+    """A journal entry's ``created`` timestamp: its event day, 15:00 UTC.
+
+    Mid-morning across the US time zones the estates use, so no zone renders
+    the entry on the previous calendar day. Rendered the way NetBox's REST
+    serializer returns it, so strict readback compares it exactly.
+    """
+    return f"{day}T15:00:00Z"
+
+
 def customer_domain(tenant):
     """A provider customer's own mail domain: tenant/cust-acme-bank -> acme-bank.example."""
     return f"{tenant.removeprefix('tenant/cust-')}.example"
@@ -216,7 +226,11 @@ def enrich(world):
     service_day, installed_on = timeline(world, kinds, dated)
 
     def journal(target, event, when, title, body, kind="info"):
-        add("journal_entry", f"journal/{target}/{event}", {"kind": kind, "comments": f"{when} — {title}\n{body}"}, {"assigned_object": target})
+        # ``created`` is the event's own date (mid-morning US time), not the
+        # load: TurboBulk inserts a supplied value as-is, and a journal whose
+        # every entry reads the day it was loaded tells no history.
+        add("journal_entry", f"journal/{target}/{event}", {"kind": kind, "comments": f"{when} — {title}\n{body}",
+                                                           "created": journal_created(when)}, {"assigned_object": target})
 
     as_of = world.recipe["as_of"]
     for site in kinds["site"]:

@@ -511,7 +511,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         tenant = f"tenant/cust-{customer['key']}" if customer else "tenant"
         category = "customer" if customer else "dc" if sid == "dc-01" else "pop"
         city, state_code, state, zone = METROS[site_metros[sid]]
-        region = f"region/{recipe['namespace']}/us/{state_code.lower()}"
+        region = f"region/{recipe['namespace']}/us/{state_code.lower()}/{city.lower()}"
         group = f"site-group/{recipe['namespace']}/{category}"
         address_lines = str(attrs(site).get("physical_address")).split("\n")
         locality = address_lines[1].partition(", ")[0] if len(address_lines) == 3 else None
@@ -533,7 +533,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if (kind(site) != "site" or attrs(site).get("status") != "active" or refs(site).get("tenant") != tenant or
                 refs(site).get("region") != region or refs(site).get("group") != group or attrs(site).get("time_zone") != zone or
                 not good_address or kind(region) != "region" or kind(group) != "site_group" or
-                refs(region).get("parent") != f"region/{recipe['namespace']}/us/great-lakes"):
+                refs(region).get("parent") != f"region/{recipe['namespace']}/us/{state_code.lower()}"):
             report("provider-site-context", site, "Site ownership, functional group, address, metro/state and time zone must match the actual requested facility.")
         room = f"location/{sid}"
         # Single-level premises: rooms hang from the site; a PoP's cage from
@@ -615,30 +615,37 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if refs(pe_a).get("rack") == refs(pe_b).get("rack"):
             report("provider-router-racks", site, "The two real provider routers must occupy different rack lanes.")
         for router in (pe_a, pe_b):
-            expected_ports = {p["name"] for p in catalog.get("provider-edge", {}).get("interfaces", [])} | {"lo0"}
+            expected_ports = {p["name"] for p in catalog.get("provider-edge", {}).get("interfaces", [])} | {"lo0", "lo0.0"}
             actual_ports = {attrs(port).get("name") for port in child("device", router, "interface")}
             if actual_ports != expected_ports:
                 report("provider-port-inventory", router, "PE interfaces must match the pinned chassis and the one in-band loopback.")
+            def in_use(port):
+                # Unused ports are shut on every role (operations finalize).
+                return bool(peers.get(port) or child("assigned_object", port, "ip_address")
+                            or child("parent", port, "interface"))
             for n in range(4):
                 port = f"{router}/if/et-0/0/{n}"
-                if (attrs(port).get("type") != "100gbase-x-qsfp28" or attrs(port).get("enabled") is not (n < 3) or
+                if (attrs(port).get("type") != "100gbase-x-qsfp28" or attrs(port).get("enabled") is not (n < 3 and in_use(port)) or
                         (n < 3 and attrs(port).get("speed") != 100000000) or
                         (n == 3 and (peers.get(port) or child("assigned_object", port, "ip_address")))):
                     report("provider-port-mode", port, "The installed MX204 mode exposes three active 100G cages and leaves the fourth unavailable.")
             for n in range(8):
                 port = f"{router}/if/xe-0/1/{n}"
                 speed = 1000000 if n < 6 else 10000000
-                if attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not True or attrs(port).get("speed") != speed:
-                    report("provider-port-mode", port, "The PE preserves 10G physical port types with explicit 1G service and 10G infrastructure operating speeds.")
-            fxp0, lo = f"{router}/if/fxp0", f"{router}/if/lo0"
+                if attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not in_use(port) or attrs(port).get("speed") != speed:
+                    report("provider-port-mode", port, "The PE preserves 10G physical port types with explicit 1G service and 10G infrastructure operating speeds; unused ports are shut.")
+            # Junos addresses the loopback on logical unit 0: lo0.0, a child of lo0.
+            fxp0, lo, unit = f"{router}/if/fxp0", f"{router}/if/lo0", f"{router}/if/lo0.0"
             if attrs(lo).get("description") != "Backbone router identity loopback":
                 report("provider-scope-text", lo, "The loopback descriptor must state its role as the router's backbone identity.")
             loopnet = ip_network((int(PUBLIC_POOLS["loopbacks"].network_address) + loop_slots[router] + 1, 32))
             matching_prefixes = prefixes_by_vrf_network[(CORE, str(loopnet))]
             if (attrs(lo).get("type") != "virtual" or attrs(lo).get("enabled") is not True or refs(lo).get("device") != router or
-                    not address(lo, loopnet, CORE, 0, "tenant") or not primary(router, lo) or len(matching_prefixes) != 1 or
+                    attrs(unit).get("name") != "lo0.0" or attrs(unit).get("type") != "virtual" or refs(unit).get("parent") != lo or
+                    refs(unit).get("device") != router or child("assigned_object", lo, "ip_address") or
+                    not address(unit, loopnet, CORE, 0, "tenant") or not primary(router, unit) or len(matching_prefixes) != 1 or
                     attrs(matching_prefixes[0]).get("status") != "active" or int(loopnet.network_address) % 256 in (0, 255)):
-                report("provider-loopback", router, "Each PE needs its own active reserved /32 prefix and primary lo0 address in the global "
+                report("provider-loopback", router, "Each PE needs its own active reserved /32 prefix and primary lo0.0 address in the global "
                        "table, never the network or broadcast address of a /24.")
             supplies = {f"{router}/power/PEM {n}" for n in range(2)}
             if set(child("device", router, "power_port")) != supplies:
@@ -1140,7 +1147,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                           f"{reflectors[1].removeprefix('device/')}{tail}"] = peering(
             reflectors[0], f"{name_of(reflectors[1])} iBGP{label}", "asn/operator", "ibgp-core",
             "Internal peering between the two backbone route reflectors",
-            address_of(f"{reflectors[0]}/if/lo0", family), remote_address=address_of(f"{reflectors[1]}/if/lo0", family))
+            address_of(f"{reflectors[0]}/if/lo0.0", family), remote_address=address_of(f"{reflectors[1]}/if/lo0.0", family))
         for client in clients:
             for reflector in reflectors:
                 expected_sessions[f"bgp-session/ibgp/{client.removeprefix('device/')}/"
@@ -1148,7 +1155,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     client, f"{name_of(reflector)} iBGP{label}", "asn/operator", "ibgp-core",
                     "Route-reflector client peering to the backbone reflector at "
                     f"{name_of(refs(reflector).get('site'))}",
-                    address_of(f"{client}/if/lo0", family), remote_address=address_of(f"{reflector}/if/lo0", family))
+                    address_of(f"{client}/if/lo0.0", family), remote_address=address_of(f"{reflector}/if/lo0.0", family))
         for side, (router, port, provider, circuit_key) in sorted(transit_peerings.items()):
             local = address_of(port, family)
             network = ip_interface(attrs(local)["address"]).network if local else None

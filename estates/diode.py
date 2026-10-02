@@ -132,6 +132,15 @@ LOADER_ONLY_KINDS = {"config_context", "export_template", "webhook", "event_rule
 LOADER_ONLY_REASON = (
     "No entity exists for these models in Diode SDK "
     f"{SDK_VERSION}; only the TurboBulk/REST loader (just load) delivers them.")
+# Attributes a delivered entity has no SDK field for: the pinned JournalEntry
+# message carries comments, kind and tags but no ``created`` timestamp, so a
+# Diode-replayed journal is stamped at ingestion. The loader inserts it.
+LOADER_ONLY_FIELDS = {"journal_entry": {"created"}}
+
+
+def _sdk_attrs(obj):
+    omitted = LOADER_ONLY_FIELDS.get(obj["kind"], set())
+    return {name: value for name, value in obj["attrs"].items() if name not in omitted}
 
 _GENERIC_REFS = {
     ("ip_address", "assigned_object"): {"interface", "vm_interface", "fhrp_group"},
@@ -260,7 +269,7 @@ def deliverable(objects):
 
 def deliverable_plan(plan):
     """The plan restricted to records a Diode package delivers."""
-    return {**plan, "objects": [obj for obj in plan["objects"]
+    return {**plan, "objects": [{**obj, "attrs": _sdk_attrs(obj)} for obj in plan["objects"]
                                 if obj["kind"] not in LOADER_ONLY_KINDS]}
 
 
@@ -269,7 +278,8 @@ def loader_only_records(plan):
     counts = Counter(obj["kind"] for obj in plan["objects"]
                      if obj["kind"] in LOADER_ONLY_KINDS)
     return {"total": sum(counts.values()), "counts": dict(sorted(counts.items())),
-            "kinds": sorted(LOADER_ONLY_KINDS), "reason": LOADER_ONLY_REASON}
+            "kinds": sorted(LOADER_ONLY_KINDS), "reason": LOADER_ONLY_REASON,
+            "fields": {kind: sorted(fields) for kind, fields in sorted(LOADER_ONLY_FIELDS.items())}}
 
 
 class _References:
@@ -329,7 +339,7 @@ class _References:
             data = dict(self.thin(key))
         else:
             data = {name: _timestamp(value) if name in _DATE_FIELDS else value
-                    for name, value in obj["attrs"].items()}
+                    for name, value in _sdk_attrs(obj).items()}
         if obj["kind"] == "contact_group" and "parent" not in obj["refs"]:
             # Plugin 1.17's root ContactGroup has no parent/name matcher.
             # Explicit slug suppresses AutoSlugMatcher and repeated ingestion

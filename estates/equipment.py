@@ -77,8 +77,9 @@ def enrich_site(site, *, demonstrations=True):
             server_port = f"{servers[block]}/console_server_port/{server_ports[position]['name']}"
             for end in (port, server_port):
                 w.obj(end)["attrs"]["speed"] = 115200
+            # An RJ45 serial console runs over ordinary Cat 6 patch cord
+            # (operations.finalize gives it the console jacket colour).
             cable = site.cable(port, server_port)
-            w.obj(cable)["attrs"].pop("type")
             w.obj(cable)["attrs"]["description"] = "RJ45 asynchronous serial console; separate from Ethernet management"
     site.contract["assumptions"].append(
         "Console servers provide serial access to primary network equipment in the same room; spare USB and later management-switch console ports remain uncabled.")
@@ -141,6 +142,11 @@ def _laboratory(site):
         "One fictional analytics blade demonstrates enclosure power, device bays, replaceable cooling inventory and a rated coolant loop. The 400 W chassis allowance includes its blade; cooling capacities are planning ratings, not telemetry.")
 
 
+# Every configured supply in the catalog is an AC PSU; the bay class names that
+# form factor per maker. Restated by validate() below.
+PSU_BAY_CLASS = "ac-psu"
+
+
 def enrich(w):
     """Install the catalog's existing PSU configurations, including late devices."""
     # ModuleType identity is vendor/model globally. Keep these shared descriptive
@@ -155,12 +161,17 @@ def enrich(w):
         spec = w.catalog["models"][device["meta"]["hardware"]]
         for config in spec.get("configured_modules", []):
             manufacturer = f"manufacturer/{spec['manufacturer']}"
-            slug = config["model"].lower()
             module_type = f"module-type/{spec['manufacturer']}/{config['model']}"
-            bay_type = f"module-bay-type/{spec['manufacturer']}/{config['model']}"
-            if module_type not in w.objects:
-                w.add("module_bay_type", bay_type, {"name": f"{config['model']} PSU bay", "slug": f"{slug}-psu", "color": "c62828"},
+            # One bay class per maker ("Arista AC PSU bay"), not one per supply
+            # model: the class is the form factor the chassis takes. Which supply
+            # fits a chassis is still its own catalog entry (validate below).
+            bay_type = f"module-bay-type/{spec['manufacturer']}/{PSU_BAY_CLASS}"
+            if bay_type not in w.objects:
+                maker = spec["manufacturer"].lower().replace(" ", "-")
+                w.add("module_bay_type", bay_type, {"name": f"{spec['manufacturer']} {naming.BAY_CLASSES[PSU_BAY_CLASS]}",
+                      "slug": f"{maker}-{PSU_BAY_CLASS}", "color": naming.PALETTE.get(bay_type, "")},
                       {"manufacturer": manufacturer})
+            if module_type not in w.objects:
                 source_ids = [s for s in spec["source_ids"] if s.endswith("-psu")]
                 w.add("module_type", module_type, {"model": config["model"],
                       "attributes": json.dumps({"source": w.catalog["sources"][source_ids[0]]["url"]}, sort_keys=True)},
@@ -237,7 +248,7 @@ def validate(plan, catalog=None):
                 continue
             bay, module, port = bays[0], modules[0], power[0]
             module_type = refs(module).get("module_type")
-            bay_type = f"module-bay-type/{model['manufacturer']}/{config['model']}"
+            bay_type = f"module-bay-type/{model['manufacturer']}/ac-psu"
             if (refs(module).get("device") != device or refs(port).get("module") != module or
                     objects.get(module_type, {}).get("kind") != "module_type" or
                     attrs(module_type).get("model") != config["model"] or
@@ -246,7 +257,7 @@ def validate(plan, catalog=None):
                     attrs(module).get("status") != "active" or attrs(bay).get("enabled") is not True or
                     attrs(bay).get("position") != config["position"] or
                     refs(bay).get("module_bay_types") != [bay_type] or
-                    refs(module_type).get("module_bay_types") != [bay_type] or
+                    bay_type not in (refs(module_type).get("module_bay_types") or []) or
                     objects.get(bay_type, {}).get("kind") != "module_bay_type" or
                     objects.get(refs(bay_type).get("manufacturer"), {}).get("kind") != "manufacturer" or
                     attrs(refs(bay_type).get("manufacturer")).get("name") != model["manufacturer"]):

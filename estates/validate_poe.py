@@ -256,7 +256,9 @@ def analyze(plan, catalog):
                 bay = bays[0] if len(bays) == 1 else None
                 module = modules[0] if len(modules) == 1 else None
                 module_type = refs(module).get("module_type")
-                bay_type = f"module-bay-type/{model['manufacturer']}/{config['model']}"
+                # The bay class is the maker's AC PSU form factor; fit is the
+                # module type's own model against this chassis's catalog entry.
+                bay_type = f"module-bay-type/{model['manufacturer']}/ac-psu"
                 valid = (valid and config["model"] == policy["supply_model"] and bay is not None and module is not None and
                          attrs(bay).get("enabled") is True and attrs(bay).get("position") == config["position"] and
                          refs(module).get("device") == device and attrs(module).get("status") == "active" and
@@ -264,7 +266,7 @@ def analyze(plan, catalog):
                          attrs(module_type).get("model") == policy["supply_model"] and
                          kind(refs(module_type).get("manufacturer")) == "manufacturer" and
                          attrs(refs(module_type).get("manufacturer")).get("name") == model["manufacturer"] and
-                         refs(bay).get("module_bay_types") == [bay_type] and refs(module_type).get("module_bay_types") == [bay_type] and
+                         refs(bay).get("module_bay_types") == [bay_type] and bay_type in (refs(module_type).get("module_bay_types") or []) and
                          kind(bay_type) == "module_bay_type" and kind(refs(bay_type).get("manufacturer")) == "manufacturer" and
                          attrs(refs(bay_type).get("manufacturer")).get("name") == model["manufacturer"])
             else:

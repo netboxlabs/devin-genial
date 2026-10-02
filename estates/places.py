@@ -928,18 +928,24 @@ def _display_site(site, node, row):
     return anchor[1], street_address(site.id, anchor, latitude, longitude)
 
 
+def metro_region(ns, state_code, city):
+    """The region key a site in ``city`` hangs off: country/state/metro."""
+    return f"region/{ns}/us/{state_code.lower()}/{city.lower()}"
+
+
 def foundation(w, *, site_kinds=None):
     """Publish namespaced shared geography before any site references it."""
     ns = w.recipe["namespace"]
+    # Country -> state -> metro; sites hang off their metro. The old "Great
+    # Lakes" level was the country's only child, a pass-through (HIER-5).
+    # operations.finalize prunes the states and metros no site uses.
     root = f"region/{ns}/us"
-    lakes = f"{root}/great-lakes"
-    for key, name, slug, parent in ((root, "United States", "us", None),
-                                    (lakes, "Great Lakes", "great-lakes", root)):
-        w.add("region", key, {"name": name, "slug": f"{ns}-{slug}"},
-              {"parent": parent} if parent else {})
-    for _, code, state, _, _, _ in METROS:
+    w.add("region", root, {"name": "United States", "slug": f"{ns}-us"})
+    for city, code, state, _, _, _ in METROS:
         w.add("region", f"{root}/{code.lower()}",
-              {"name": state, "slug": f"{ns}-{code.lower()}"}, {"parent": lakes})
+              {"name": state, "slug": f"{ns}-{code.lower()}"}, {"parent": root})
+        w.add("region", metro_region(ns, code, city),
+              {"name": f"{city} metro", "slug": f"{ns}-{city.lower()}-metro"}, {"parent": f"{root}/{code.lower()}"})
     for kind, name in GROUPS.items():
         if site_kinds is None and kind in {"school", "hospital", "clinic", "pop", "customer",
                                            "store", "distribution", "academic", "residence", "library",
@@ -1065,7 +1071,7 @@ def locate(site):
     locality, street = _display_site(site, node, row)
     node["attrs"].update(time_zone=zone, physical_address=(
         f"{street or _legacy_street(site)}\n{locality}, {state}\nUnited States"))
-    node["refs"].update(region=f"region/{w.recipe['namespace']}/us/{state_code.lower()}",
+    node["refs"].update(region=metro_region(w.recipe['namespace'], state_code, city),
                         group=f"site-group/{w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = {"country": "US", "state": state_code, "city": city, "synthetic": True}
     building, parent, name = None, None, "Data hall" if kind == "dc" else "MDF"

@@ -125,7 +125,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         region = refs(site).get("region")
         if (not state or geography.get("country") != "US" or geography.get("state") != state or
                 geography.get("synthetic") is not True or attrs(site).get("time_zone") != zone or
-                region != f"region/{recipe.get('namespace')}/us/{str(state).lower()}" or
+                region != f"region/{recipe.get('namespace')}/us/{str(state).lower()}/{city.lower()}" or
                 kind(region) != "region" or kind(refs(region).get("parent")) != "region"):
             report("school-geography", site, "City, state, region and time zone must describe one coherent authored district location.")
         locations.add((city, state, zone, region))

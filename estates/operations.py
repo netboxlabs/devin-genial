@@ -40,15 +40,31 @@ TENANT_GROUPS = {
     "manufacturing": ("estate", "Manufacturer", "The manufacturer that owns and runs this network"),
     "utility": ("estate", "Electric utility", "The utility that owns and runs this network"),
 }
-# Site service tiers, chosen from the finished graph (``_site_facts``).
-TIERS = ("tier-1:Tier 1 (hub)", "tier-2:Tier 2 (dual-homed)", "tier-3:Tier 3 (single-homed)")
-# Device roles whose switches the "Switch platform baseline" context governs
-# (estates/automation.py SWITCH_ROLES): unused ports there are shut.
-SWITCH_ROLES = {"role/access", "role/leaf"}
-# Roles whose inter-device links are backbone/fabric links and carry jumbo MTU.
-CORE_ROLES = {"role/spine", "role/leaf", "role/core", "role/provider-edge", "role/distribution"}
-JUMBO_MTU = {"juniper-junos": 9192}
-JUMBO_MTU_DEFAULT = 9216
+# Site service classes: (choice key, label, ceiling in Mbps of the summed
+# committed rate of the site's active circuits). Read from the finished graph.
+SERVICE_CLASSES = (("essential", "Essential (up to 100 Mbps)", 100),
+                   ("standard", "Standard (up to 500 Mbps)", 500),
+                   ("enhanced", "Enhanced (up to 2 Gbps)", 2000),
+                   ("aggregation", "Aggregation (up to 10 Gbps)", 10000),
+                   ("backbone", "Backbone (above 10 Gbps)", None))
+
+
+def service_class_field(ns):
+    return f"{ns.replace('-', '_')}_service_class"
+
+
+# Roles whose links to one another are backbone, fabric or campus-uplink links
+# and carry jumbo MTU. The management switch stays at the 1500-byte default: it
+# is an out-of-band access network, not a transit path.
+CORE_ROLES = {"role/spine", "role/leaf", "role/core", "role/provider-edge", "role/distribution",
+              "role/wan-edge", "role/access", "role/stack"}
+# Circuit types that are the operator's own backbone between routers.
+CORE_CIRCUITS = {"circuit-type/backbone", "circuit-type/dark-fiber"}
+# Largest interface MTU each platform accepts; a link runs at the smaller of its
+# two ends so both sides agree. ponytail: a platform not listed takes the
+# 9000-byte jumbo every jumbo-capable NOS accepts; add its real ceiling here.
+JUMBO_MTU = {"juniper-junos": 9192, "arista-eos": 9214, "cisco-ios-xe": 9198}
+JUMBO_MTU_DEFAULT = 9000
 # Native interface type -> line rate in kbps, for cabled ports whose rate is
 # set by the hardware rather than negotiated down (copper keeps autoneg).
 TYPE_SPEED = {"1000base-x-sfp": 1000000, "10gbase-x-sfpp": 10000000, "25gbase-x-sfp28": 25000000,
@@ -57,7 +73,7 @@ TYPE_SPEED = {"1000base-x-sfp": 1000000, "10gbase-x-sfpp": 10000000, "25gbase-x-
 # Device types, platforms and makers stay a fixed library (growth, refresh and
 # acquisition snapshots must not delete one); only passive cabling types, which
 # the recipe's frozen patching choice alone decides, are dropped when unused.
-PRUNABLE = ("device_role", "rack_role")
+PRUNABLE = ("device_role", "rack_role", "region")
 
 
 def _owner(w, name):
@@ -119,6 +135,9 @@ def _shared(w, owner):
     def add(kind, key, attrs, refs=None):
         return w.add(kind, key, attrs, refs, {"operations": True})
 
+    # Before anything below (journals, BGP) reads which interface a loopback
+    # address sits on.
+    _loopback_units(w)
     kinds = defaultdict(list)
     for obj in list(w.objects.values()):
         kinds[obj["kind"]].append(obj)
@@ -192,45 +211,26 @@ def _shared(w, owner):
         add("virtual_disk", f"virtual-disk/{vm['key']}/disk0", {"name": "disk0", "size": vm["attrs"]["disk"],
             "description": "Primary VM volume"}, {"virtual_machine": vm["key"], "owner": owner})
 
-    # Rack groups by the kind of room the cabinet stands in; rack types by height.
-    kind_of = {contract["site"]: contract["kind"] for contract in w.contracts}
-    labels = {"dc": ("data-center", "Data center cabinets"), "pop": ("pop", "PoP cabinets")}
-    rack_types = {}
-    for rack in sorted(kinds["rack"], key=lambda o: o["key"]):
-        slug, label = labels.get(kind_of.get(rack["refs"]["site"]), ("closet", "Wiring closet cabinets"))
-        group = f"rack-group/{slug}"
-        if group not in w.objects:
-            add("rack_group", group, {"name": label, "slug": f"{ns}-{slug}-cabinets"}, {"owner": owner})
-        height = rack["attrs"]["u_height"]
-        if height not in RACK_TYPES:
-            raise DesignError(f"No catalog rack type for a {height}U cabinet; add one before changing rack height")
-        if height not in rack_types:
-            # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
-            # cabinet grid (blocks.CABINET_WIDTH_M) is authored around. The pinned
-            # library has no 24U SX type, so catalog/README.md cites APC's page.
-            maker, model, form, description = RACK_TYPES[height]
-            if f"manufacturer/{maker}" not in w.objects:
-                add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
-            rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": model,
-                "slug": f"{ns}-{maker.lower()}-{model.lower()}", "u_height": height, "width": 19, "form_factor": form,
-                "description": description}, {"manufacturer": f"manufacturer/{maker}", "owner": owner})
-        rack["refs"].update(rack_type=rack_types[height], group=group)
+    # Rack types (by cabinet height) are attached in finalize, once every
+    # builder — the network lab and the planned cabinets included — has racked.
+    # Rack groups were dropped in 0.16: grouped by room kind they only mirrored
+    # the site groups (data-model review HIER-6), and a flat cross-location
+    # grouping this estate has no real use for would be noise.
 
-    # A site service tier read from the graph, and a shortcut to its equipment.
-    hubs, dual = _site_facts(w)
-    choices = add("custom_field_choice_set", "custom-field-choices/operations-tier", {"name": main_scoped_name(w.recipe, "Operations tiers"),
-                  "extra_choices": list(TIERS), "order_alphabetically": False}, {"owner": owner})
+    # A site service class read from the graph — the committed bandwidth the
+    # site actually buys — and a shortcut to its equipment. Hub and dual-homed
+    # status are tags (finalize ``_tags``), so the field carries what they don't.
+    choices = add("custom_field_choice_set", "custom-field-choices/service-class",
+                  {"name": main_scoped_name(w.recipe, "Service classes"),
+                   "extra_choices": [f"{key}:{label}" for key, label, _ in SERVICE_CLASSES],
+                   "order_alphabetically": False}, {"owner": owner})
     # Custom-field names are matched EXACTLY by estates/branch.py's retirement
     # (CUSTOM_FIELD_NAMES): adding a field here means extending that tuple too.
-    field_name = f"{ns.replace('-', '_')}_operations_tier"
-    field = add("custom_field", "custom-field/operations-tier", {"name": field_name, "label": "Service tier", "type": "select",
+    field = add("custom_field", "custom-field/service-class", {"name": service_class_field(ns),
+                "label": "Service class", "type": "select",
                 "object_types": ["dcim.site"], "required": False, "ui_visible": "always", "ui_editable": "yes",
-                "description": "Tier 1 hosts shared services; tier 2 has two carriers; tier 3 has one"},
+                "description": "Committed access bandwidth: the summed contracted rate of the site's active circuits"},
                 {"choice_set": choices, "owner": owner})
-    for site in kinds["site"]:
-        tier = "tier-1" if site["key"] in hubs else "tier-2" if site["key"] in dual else "tier-3"
-        site["attrs"].setdefault("custom_fields", {})[field_name] = {"selection": tier}
-        site["meta"].setdefault("requires", []).append(field)
     add("custom_link", "custom-link/site-equipment", {"name": main_scoped_name(w.recipe, "Site equipment"), "object_types": ["dcim.site"],
         "enabled": True, "link_text": "{% if object.slug.startswith('" + ns + "-') %}Site equipment{% endif %}",
         "link_url": "/dcim/devices/?site_id={{ object.pk }}", "button_class": "default", "new_window": False}, {"owner": owner})
@@ -326,10 +326,197 @@ def supporting_records(world):
 def finalize(w):
     """Runs from World.finish(), after every builder (BGP, lab) has finished."""
     _planned_cabinets(w)
+    _racks(w)
+    _service_classes(w)
     _tags(w)
+    _svis(w)
     _ports(w)
     _addresses(w)
+    _cables(w)
+    _owners(w)
     _prune(w)
+    _ipam_role_text(w)
+    _colours(w)
+
+
+def _racks(w):
+    """Every rack takes the catalog rack type for its height, and only that.
+
+    NetBox 4.7 deprecates the per-rack ``form_factor``/``width`` (5.0 removes
+    them and makes ``rack_type`` mandatory), so the plan carries them on the
+    type alone. ``Rack.save()`` copies a type's physical fields onto the rack;
+    TurboBulk bypasses save, so the loader performs that same copy at insert
+    time (estates/turbobulk.py ``_render``). ``u_height`` stays on the rack
+    because every placement check reads it, and it always equals the type's.
+    """
+    owner = "owner/operations" if "owner/operations" in w.objects else None
+    for rack in sorted((o for o in w.objects.values() if o["kind"] == "rack"), key=lambda o: o["key"]):
+        height = rack["attrs"]["u_height"]
+        if height not in RACK_TYPES:
+            raise DesignError(f"No catalog rack type for a {height}U cabinet; add one before changing rack height")
+        key = f"rack-type/{height}u"
+        if key not in w.objects:
+            # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
+            # cabinet grid (blocks.CABINET_WIDTH_M) is authored around. The pinned
+            # library has no 24U SX type, so catalog/README.md cites APC's page.
+            maker, model, form, description = RACK_TYPES[height]
+            if f"manufacturer/{maker}" not in w.objects:
+                w.add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
+            w.add("rack_type", key, {"model": model, "slug": f"{w.recipe['namespace']}-{maker.lower()}-{model.lower()}",
+                  "u_height": height, "width": 19, "form_factor": form, "description": description},
+                  {"manufacturer": f"manufacturer/{maker}", **({"owner": owner} if owner else {})},
+                  {"operations": True})
+        rack["refs"]["rack_type"] = key
+        rack["refs"].pop("group", None)
+        for field in ("width", "form_factor"):
+            rack["attrs"].pop(field, None)
+
+
+def _service_classes(w):
+    """Each site's service class: its summed committed rate, from the graph."""
+    field = w.objects.get("custom-field/service-class")
+    if not field:
+        return
+    rate = defaultdict(int)
+    for term in w.objects.values():
+        if term["kind"] != "circuit_termination" or not str(term["refs"].get("termination", "")).startswith("site/"):
+            continue
+        circuit = w.objects[term["refs"]["circuit"]]
+        if circuit["attrs"].get("status") == "active":
+            # Owned fiber buys no commit rate; its handoff port is the capacity.
+            rate[term["refs"]["termination"]] += circuit["attrs"].get("commit_rate") or term["attrs"].get("port_speed") or 0
+    for site in (o for o in w.objects.values() if o["kind"] == "site"):
+        mbps = rate[site["key"]] / 1000
+        choice = next(key for key, _, ceiling in SERVICE_CLASSES if ceiling is None or mbps <= ceiling)
+        site["attrs"].setdefault("custom_fields", {})[field["attrs"]["name"]] = {"selection": choice}
+        requires = site["meta"].setdefault("requires", [])
+        if field["key"] not in requires:
+            requires.append(field["key"])
+
+
+def _svis(w):
+    """A routed VLAN interface carries no 802.1Q mode.
+
+    NetBox clears ``untagged_vlan`` from any interface without a mode on save
+    (dcim Interface.save) and rejects the pair in clean(), so an SVI keyed
+    ``mode: access`` was a switchport in disguise. Builders still read the VLAN
+    while they work; the finished SVI states it by name and address alone. A
+    virtual interface with a ``parent`` is an 802.1Q subinterface and keeps
+    its access VLAN — that is the only way NetBox records a unit's tag.
+    """
+    for obj in w.objects.values():
+        if (obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual"
+                and not obj["refs"].get("parent") and obj["attrs"].get("mode") == "access"):
+            obj["attrs"].pop("mode")
+            obj["refs"].pop("untagged_vlan", None)
+
+
+def _loopback_units(w):
+    """Junos addresses a loopback on logical unit 0, never on the bare ``lo0``.
+
+    The physical-style ``lo0`` stays; a virtual ``lo0.0`` child carries its
+    addresses. Address keys are identities (BGP sessions and primaries name
+    them), so only the assignment moves.
+    """
+    units = {}
+    for ip in [o for o in w.objects.values() if o["kind"] == "ip_address"]:
+        port = w.objects.get(ip["refs"].get("assigned_object"), {})
+        if port.get("kind") != "interface" or port["attrs"].get("name") != "lo0":
+            continue
+        device = w.objects[port["refs"]["device"]]
+        if device["refs"].get("platform") != "platform/juniper-junos":
+            continue
+        unit = units.get(port["key"])
+        if unit is None:
+            unit = units[port["key"]] = w.add("interface", f"{port['key']}.0",
+                {"name": "lo0.0", "type": "virtual", "enabled": True,
+                 "description": port["attrs"].get("description", "Router loopback")},
+                {"device": device["key"], "parent": port["key"],
+                 **({"vrf": port["refs"]["vrf"]} if port["refs"].get("vrf") else {})})
+        ip["refs"]["assigned_object"] = unit
+    for key in units:
+        w.objects[key]["refs"].pop("vrf", None)  # the routing context is the unit's
+
+
+def _cables(w):
+    """Every data cable carries a medium and its jacket colour.
+
+    A serial console run is ordinary Cat 6 in the console colour; a power cord
+    takes black on the A feed and red on the B feed. A cable whose medium the
+    pinned sources leave open (catalog stacking ports, a lab veth) stays bare.
+    A PDU's outlets follow the feed its own inlet is cabled to.
+    """
+    cables = [o for o in w.objects.values() if o["kind"] == "cable"]
+    side_of = {}  # PDU inlet -> "a"/"b", read from the feed cabled to it
+    for cable in cables:
+        ends = [w.objects[cable["refs"][side]] for side in ("a", "b")]
+        for feed, inlet in (ends, ends[::-1]):
+            if feed["kind"] == "power_feed":
+                side_of[inlet["key"]] = "b" if feed["attrs"].get("type") == "redundant" else "a"
+    for cable in cables:
+        ends = [w.objects[cable["refs"][side]] for side in ("a", "b")]
+        attrs = cable["attrs"]
+        if {end["kind"] for end in ends} == {"console_port", "console_server_port"}:
+            attrs["type"] = "cat6"
+            attrs["color"] = naming.CABLE_COLORS["console"]
+        elif attrs.get("type") == "power":
+            side = next((side_of[end["key"]] for end in ends if end["key"] in side_of),
+                        next((side_of.get(end["refs"].get("power_port"), "a")
+                              for end in ends if end["kind"] == "power_outlet"), "a"))
+            attrs["color"] = naming.CABLE_COLORS["power-" + side]
+        elif attrs.get("type") in naming.CABLE_COLORS:
+            attrs["color"] = naming.CABLE_COLORS[attrs["type"]]
+
+
+# Kinds an estate's accountable infrastructure team owns, besides the taxonomy
+# and the groups that already name it.
+OWNED_KINDS = ("site", "cluster", "circuit", "device", "rack", "prefix", "ip_address", "vlan")
+
+
+def _owners(w):
+    """One accountable team owns the estate's infrastructure records."""
+    owner = "owner/operations"
+    if owner not in w.objects:
+        return
+    for obj in w.objects.values():
+        if obj["kind"] in OWNED_KINDS and not obj["meta"].get("external"):
+            obj["refs"]["owner"] = owner
+
+
+def _ipam_role_text(w):
+    """Describe each IPAM role by the segments this estate actually files under it.
+
+    The shared role vocabulary spans every profile, so its stock text named
+    students and research compute even in a carrier backbone. A role that
+    holds the estate's own segments lists their purposes instead.
+    """
+    segments = defaultdict(set)
+    for obj in w.objects.values():
+        if obj["kind"] == "vlan":
+            segment = obj["key"].rsplit("/", 1)[-1]
+            role = naming.SEGMENT_ROLES.get(segment)
+            if role and f"ip-role/{role}" in w.objects:
+                segments[role].add(naming.segment_purpose(segment))
+    for role, purposes in segments.items():
+        obj = w.objects[f"ip-role/{role}"]
+        if obj["kind"] != "role" or len(purposes) < 1:
+            continue
+        text = "; ".join(sorted(purposes))
+        if len(text) <= 200:
+            obj["attrs"]["description"] = text
+
+
+def _colours(w):
+    """One palette across every coloured taxonomy family, so no two read alike."""
+    coloured = sorted((o for o in w.objects.values() if o["kind"] in naming.COLOURED_KINDS and "color" in o["attrs"]),
+                      key=lambda o: (o["key"] not in naming.PALETTE, o["key"]))
+    used = set()
+    for obj in coloured:
+        colour = naming.PALETTE.get(obj["key"])
+        if colour is None or colour in used:
+            colour = next(c for c in naming.SPARE_COLORS + tuple(naming.PALETTE.values()) if c not in used)
+        obj["attrs"]["color"] = colour
+        used.add(colour)
 
 
 def _planned_cabinets(w):
@@ -460,39 +647,61 @@ def _tags(w):
             objects[key]["refs"]["tags"] = [f"tag/{slug}" for slug in naming.TAGS if slug in slugs]
 
 
+def unused_ports(objects):
+    """Physical ports nothing uses: uncabled, unaddressed, no unit, VLAN or WLAN.
+
+    One rule for every role. A port counts as used when any record other than
+    its own MAC or a journal names it (a cable end, an address, a child unit
+    or LAG member, a virtual-circuit, tunnel or L2VPN termination), or when it
+    carries VLAN or WLAN membership itself.
+    """
+    named = {target for obj in objects.values() if obj["kind"] not in {"mac_address", "journal_entry"}
+             for value in obj["refs"].values()
+             for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
+    return {key for key, obj in objects.items()
+            if obj["kind"] == "interface" and obj["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
+            and key not in named
+            and not any(obj["refs"].get(field) for field in ("untagged_vlan", "tagged_vlans", "wireless_lans"))}
+
+
 def _ports(w):
-    """Shut unused switch ports, and set fabric MTU and fixed optical rates."""
+    """Shut unused ports, and set backbone MTU and fixed optical rates."""
     objects = w.objects
     cabled = {}
     for obj in objects.values():
         if obj["kind"] == "cable":
             cabled[obj["refs"]["a"]], cabled[obj["refs"]["b"]] = obj["refs"]["b"], obj["refs"]["a"]
+    unused = unused_ports(objects)
+
+    def platform_mtu(device):
+        return JUMBO_MTU.get((device["refs"].get("platform") or "").removeprefix("platform/"), JUMBO_MTU_DEFAULT)
+
     for obj in objects.values():
         if obj["kind"] != "interface" or not obj["meta"].get("hardware_port"):
             continue
         device = objects[obj["refs"]["device"]]
         attrs = obj["attrs"]
-        peer = objects.get(cabled.get(obj["key"]), {})
-        if obj["key"] not in cabled:
-            # The switch baseline context says unused ports are disabled; the
-            # inventory now agrees. A later cable re-enables the port.
-            if (device["refs"].get("role") in SWITCH_ROLES and not attrs.get("mgmt_only")
-                    and not str(attrs.get("type", "")).startswith("ieee802.11")):
-                attrs["enabled"] = False
+        if obj["key"] in unused:
+            # Unused ports are administratively down on every role; a later
+            # cable, address or VLAN brings the port back into service.
+            attrs["enabled"] = False
             continue
+        peer = objects.get(cabled.get(obj["key"]), {})
+        mtu = None
         if peer.get("kind") == "interface":
             # Only a like-for-like optical link is fixed at the cage rate.
             if attrs.get("type") in TYPE_SPEED and peer["attrs"].get("type") == attrs["type"] and "speed" not in attrs:
                 attrs["speed"] = TYPE_SPEED[attrs["type"]]
-            core = objects[peer["refs"]["device"]]["refs"].get("role") in CORE_ROLES
-        else:
-            # A leased backbone span between two routers is a core link too.
-            circuit = objects.get(peer.get("refs", {}).get("circuit"), {})
-            core = peer.get("kind") == "circuit_termination" and circuit.get("refs", {}).get("type") == "circuit-type/backbone"
-        if (core and device["refs"].get("role") in CORE_ROLES
-                and attrs.get("type") in TYPE_SPEED and not attrs.get("mgmt_only")):
-            platform = (device["refs"].get("platform") or "").removeprefix("platform/")
-            attrs["mtu"] = JUMBO_MTU.get(platform, JUMBO_MTU_DEFAULT)
+            far = objects[peer["refs"]["device"]]
+            if far["refs"].get("role") in CORE_ROLES and not peer["attrs"].get("mgmt_only"):
+                # Both ends agree on the smaller of their platforms' ceilings.
+                mtu = min(platform_mtu(device), platform_mtu(far))
+        elif peer.get("kind") == "circuit_termination":
+            # The operator's own spans between routers are backbone links too.
+            if objects[peer["refs"]["circuit"]]["refs"].get("type") in CORE_CIRCUITS:
+                mtu = platform_mtu(device)
+        if mtu and device["refs"].get("role") in CORE_ROLES and not attrs.get("mgmt_only"):
+            attrs["mtu"] = mtu
 
 
 def _addresses(w):

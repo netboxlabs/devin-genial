@@ -631,17 +631,20 @@ def _context(plan, objects, kinds):
                     r"Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary\.")
         comments = obj["attrs"].get("comments", "")
         match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
-        if obj["refs"] != {"assigned_object": target} or obj["attrs"].get("kind") != expected_kind or set(obj["attrs"]) != {"kind", "comments"}:
+        if (obj["refs"] != {"assigned_object": target} or obj["attrs"].get("kind") != expected_kind
+                or set(obj["attrs"]) != {"kind", "comments", "created"}):
             fail("operations-journal", key, "Journal must retain its actual subject, its event's kind (completed events success, "
                  "open spares warning, otherwise info) and no account binding.")
         if not match or match.groups()[1:] != facts:
             fail("operations-journal-facts", key, "Journal claims must match the subject's actual address, contact, circuit, resource or listener facts.")
         try:
             recorded = date.fromisoformat(match.group(1)) if match else None
-            if recorded is None or match.group(1) != when or recorded > date.fromisoformat(recipe["as_of"]):
+            if (recorded is None or match.group(1) != when or recorded > date.fromisoformat(recipe["as_of"])
+                    or obj["attrs"].get("created") != f"{when}T15:00:00Z"):
                 raise ValueError
         except (KeyError, TypeError, ValueError):
-            fail("operations-journal-date", key, "Authored event date must match its stable seeded chronology and not exceed as_of.")
+            fail("operations-journal-date", key, "Authored event date must match its stable seeded chronology, not exceed "
+                 "as_of, and be the entry's own created timestamp (15:00 UTC that day).")
     for key in notes:
         if objects.get(key, {}).get("kind") != "journal_entry":
             fail("operations-journal", key, "Required bounded lifecycle event is missing.")
@@ -661,8 +664,17 @@ _TAG_KINDS = {"hub-site": {"site"}, "dual-homed": {"site"}, "acquired": {"site",
               "pci-scope": {"device", "vlan", "prefix"}, "clinical": {"device", "vlan", "prefix"},
               "ot-zone": {"device", "vlan", "prefix"},
               "multi-site": {"virtual_machine"}}
-_SWITCH_ROLES = {"role/access", "role/leaf"}
-_TAXONOMY = ("device_role", "rack_role")
+_TAXONOMY = ("device_role", "rack_role", "region")
+# Restated service-class bands: (choice key, ceiling in Mbps; None = above).
+_SERVICE_CLASSES = (("essential", 100), ("standard", 500), ("enhanced", 2000),
+                    ("aggregation", 10000), ("backbone", None))
+# Kinds whose colour is a taxonomy colour; every one in an estate is distinct.
+_COLOURED = ("device_role", "rack_role", "tag", "inventory_item_role", "module_bay_type",
+             "virtual_circuit_type", "circuit_type")
+# Restated jacket colours by cable medium (and power by feed side).
+_CABLE_COLOURS = {"smf": "ffeb3b", "mmf": "00bcd4", "aoc": "00bcd4", "cat6": "2196f3"}
+_CONSOLE_COLOUR, _POWER_COLOURS = "00e5ff", {"primary": "212121", "redundant": "d50000"}
+_OWNED = ("site", "cluster", "circuit", "device", "rack", "prefix", "ip_address", "vlan")
 
 
 def _shared(plan, objects, kinds, report):
@@ -673,7 +685,7 @@ def _shared(plan, objects, kinds, report):
         return objects.get(obj.get("refs", {}).get(field), {})
 
     for kind, field, target in (("tenant", "group", "tenant_group"), ("cluster", "group", "cluster_group"),
-                                ("rack", "group", "rack_group"), ("owner", "group", "owner_group")):
+                                ("owner", "group", "owner_group")):
         for obj in kinds[kind]:
             if related(obj, field).get("kind") != target:
                 report("operations-group", obj["key"], f"{kind} must reference its {target}.")
@@ -713,35 +725,38 @@ def _shared(plan, objects, kinds, report):
         if template.get("kind") != "virtual_machine_type" or template.get("refs", {}).get("default_platform") != vm["refs"].get("platform"):
             report("operations-vm-type", vm["key"], "VM type and VM must use the same modeled service platform.")
     for rack in kinds["rack"]:
+        # 4.7 deprecates per-rack form factor and width: they live on the type.
         template = related(rack, "rack_type")
-        if template.get("kind") != "rack_type" or any(template.get("attrs", {}).get(field) != rack["attrs"].get(field)
-                                                      for field in ("u_height", "width", "form_factor")):
-            report("operations-rack-type", rack["key"], "Rack type must match the actual cabinet height, width and form factor.")
+        if (template.get("kind") != "rack_type" or template.get("attrs", {}).get("u_height") != rack["attrs"].get("u_height")
+                or {"width", "form_factor"} & rack["attrs"].keys() or "group" in rack["refs"]):
+            report("operations-rack-type", rack["key"], "Every rack takes a rack type of its actual height and carries no "
+                   "per-rack form factor, width or mirror rack group.")
 
-    # Service tier: re-derived from the graph (hosted cluster or private-WAN
-    # hub; else active circuits from two providers; else one).
-    hubs, carriers = set(), defaultdict(set)
-    for obj in kinds["cluster"]:
-        hubs.add(obj["refs"].get("scope_site"))
-    for obj in kinds["virtual_circuit_termination"]:
-        if obj["attrs"].get("role") == "hub":
-            hubs.add(related(related(obj, "interface"), "device").get("refs", {}).get("site"))
+    # Service class: re-derived from the graph — the summed committed rate of
+    # the site's active circuits (a circuit with no commit rate counts its
+    # handoff port), banded by the restated _SERVICE_CLASSES ceilings.
+    rate = defaultdict(int)
     for term in kinds["circuit_termination"]:
         circuit = related(term, "circuit")
         if str(term["refs"].get("termination", "")).startswith("site/") and circuit.get("attrs", {}).get("status") == "active":
-            carriers[term["refs"]["termination"]].add(circuit.get("refs", {}).get("provider"))
+            value = circuit["attrs"].get("commit_rate") or term["attrs"].get("port_speed") or 0
+            rate[term["refs"]["termination"]] += value if type(value) is int else 0
     for field in kinds["custom_field"]:
         choices = related(field, "choice_set")
         values = {choice.split(":", 1)[0] for choice in choices.get("attrs", {}).get("extra_choices", [])}
         consumers = [obj for obj in kinds["site"] if field["attrs"].get("name") in obj["attrs"].get("custom_fields", {})]
-        if choices.get("kind") != "custom_field_choice_set" or not consumers or "dcim.site" not in field["attrs"].get("object_types", []):
-            report("operations-custom-field", field["key"], "Operations field must have real choices and a compatible site consumer.")
+        if (choices.get("kind") != "custom_field_choice_set" or not consumers or "dcim.site" not in field["attrs"].get("object_types", [])
+                or values != {key for key, _ in _SERVICE_CLASSES}
+                or field["attrs"].get("label") != "Service class"
+                or not str(choices.get("attrs", {}).get("name", "")).endswith("Service classes")):
+            report("operations-custom-field", field["key"], "The service-class field needs its labelled choice set and a site consumer.")
         for obj in consumers:
             selected = obj["attrs"]["custom_fields"][field["attrs"]["name"]].get("selection")
-            tier = ("tier-1" if obj["key"] in hubs else "tier-2" if len(carriers[obj["key"]]) >= 2 else "tier-3")
-            if selected not in values or selected != tier:
-                report("operations-custom-field", obj["key"], "Service tier must be the declared choice the site's actual "
-                       "hub role and carrier count imply.")
+            mbps = rate[obj["key"]] / 1000
+            expected = next(key for key, ceiling in _SERVICE_CLASSES if ceiling is None or mbps <= ceiling)
+            if selected != expected:
+                report("operations-custom-field", obj["key"], "Service class must be the band the site's actual "
+                       "committed circuit bandwidth falls in.")
     for link in kinds["custom_link"]:
         if link["attrs"].get("object_types") != ["dcim.site"] or link["attrs"].get("link_url") != "/dcim/devices/?site_id={{ object.pk }}":
             report("operations-custom-link", link["key"], "Site equipment shortcut must stay on the target's own device inventory.")
@@ -781,22 +796,58 @@ def _shared(plan, objects, kinds, report):
             maker = objects.get(obj["refs"].get("manufacturer"), {}).get("attrs", {}).get("name")
             if kind != "device_type" or (maker, obj["attrs"].get("model")) in passive:
                 report("operations-taxonomy", obj["key"], f"Unreferenced {kind} must not be emitted.")
+    # One palette across every coloured taxonomy family: no role, tag, rack
+    # role, bay type or circuit type may share a colour with any other.
     colours = defaultdict(list)
-    for role in kinds["device_role"]:
-        colours[role["attrs"].get("color")].append(role["key"])
-    for colour, roles in colours.items():
-        if len(roles) > 1:
-            report("operations-taxonomy", roles[1], f"Device roles {', '.join(roles)} share colour {colour}.")
+    for kind in _COLOURED:
+        for obj in kinds[kind]:
+            if "color" in obj["attrs"]:
+                colours[str(obj["attrs"]["color"]).lower()].append(obj["key"])
+    for colour, keys in colours.items():
+        if len(keys) > 1:
+            report("operations-taxonomy", sorted(keys)[1], f"{', '.join(sorted(keys))} share colour {colour}.")
 
-    # The switch baseline context disables unused ports: an uncabled data port
-    # on a governed switch must be shut.
-    cabled = {cable["refs"].get(side) for cable in kinds["cable"] for side in ("a", "b")}
-    governed = {obj["key"] for obj in kinds["device"] if obj["refs"].get("role") in _SWITCH_ROLES}
+    # Unused ports are shut on every role: a physical port nothing names (no
+    # cable, address, unit, LAG member or termination) and carrying no VLAN or
+    # WLAN must be administratively down.
+    named = {target for obj in objects.values() if obj["kind"] not in {"mac_address", "journal_entry"}
+             for value in obj["refs"].values()
+             for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
     for port in kinds["interface"]:
-        if (port["refs"].get("device") in governed and port["key"] not in cabled and port["attrs"].get("enabled") is not False
+        if (port["key"] not in named and port["attrs"].get("enabled") is not False
                 and port["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
-                and not str(port["attrs"].get("type")).startswith("ieee802.11") and not port["attrs"].get("mgmt_only")):
-            report("operations-unused-port", port["key"], "The switch baseline disables unused ports; this uncabled port is still enabled.")
+                and not any(port["refs"].get(field) for field in ("untagged_vlan", "tagged_vlans", "wireless_lans"))):
+            report("operations-unused-port", port["key"], "Unused ports are disabled on every role; this port is uncabled, "
+                   "unaddressed and carries nothing, yet still enabled.")
+
+    # Every data cable states its medium in its jacket colour; power cords by feed.
+    feed_of = {}
+    for cable in kinds["cable"]:
+        for end, far in (("a", "b"), ("b", "a")):
+            feed = objects.get(cable["refs"].get(end), {})
+            if feed.get("kind") == "power_feed":
+                feed_of[cable["refs"].get(far)] = feed["attrs"].get("type")
+    for cable in kinds["cable"]:
+        ends = [objects.get(cable["refs"].get(side), {}) for side in ("a", "b")]
+        cable_type, colour = cable["attrs"].get("type"), cable["attrs"].get("color")
+        if {end.get("kind") for end in ends} == {"console_port", "console_server_port"}:
+            expected = _CONSOLE_COLOUR if cable_type == "cat6" else "missing type"
+        elif cable_type == "power":
+            side = next((feed_of[end["key"]] for end in ends if end.get("key") in feed_of),
+                        next((feed_of.get(end["refs"].get("power_port"), "primary") for end in ends
+                              if end.get("kind") == "power_outlet"), "primary"))
+            expected = _POWER_COLOURS.get(side)
+        else:
+            expected = _CABLE_COLOURS.get(cable_type)
+        if expected is not None and colour != expected:
+            report("operations-cable-colour", cable["key"], "A cable's jacket colour must follow its medium "
+                   "(and a power cord its feed side); a console run is typed twisted pair.")
+
+    # One accountable team owns the estate's infrastructure records.
+    for kind in _OWNED:
+        for obj in kinds[kind]:
+            if not obj.get("meta", {}).get("external") and objects.get(obj["refs"].get("owner"), {}).get("kind") != "owner":
+                report("operations-owner", obj["key"], f"Every {kind} needs the estate's accountable owner.")
 
 
 def validate(plan):
@@ -819,7 +870,7 @@ def validate(plan):
         return objects.get(obj.get("refs", {}).get(field), {})
 
     expected = {"circuit_group", "circuit_group_assignment", "cluster_group", "contact", "contact_group", "contact_role",
-                "contact_assignment", "provider_account", "rack_type", "rack_group", "tenant_group", "virtual_disk",
+                "contact_assignment", "provider_account", "rack_type", "tenant_group", "virtual_disk",
                 "virtual_machine_type", "custom_field", "custom_field_choice_set", "journal_entry", "custom_link",
                 "owner", "owner_group", "cable_bundle",
                 "config_context", "export_template", "webhook", "event_rule"}

@@ -7,6 +7,7 @@ Physical traces cross cables and single-position passive port mappings only.
 from collections import Counter, defaultdict
 from datetime import date
 from decimal import Decimal
+import ipaddress
 from ipaddress import ip_interface, ip_network
 import json
 import math
@@ -90,6 +91,66 @@ def _speed(port_type):
     return None
 
 
+def _is_svi(obj):
+    return (obj.get("kind") == "interface" and obj.get("attrs", {}).get("type") == "virtual"
+            and not obj.get("refs", {}).get("parent"))
+
+
+def _svi_findings(plan):
+    """A routed VLAN interface carries no 802.1Q mode or access VLAN.
+
+    NetBox's Interface.clean() rejects an untagged VLAN without a mode and
+    save() clears it, so ``mode: access`` on an SVI is a switchport claim.
+    """
+    objects = plan.get("objects") if isinstance(plan, dict) else None
+    return [{"code": "interface-svi-mode", "object": obj["key"],
+             "message": "A routed VLAN interface carries no 802.1Q mode or untagged VLAN; its VLAN is the one "
+                        "its own address's prefix is bound to."}
+            for obj in (objects if isinstance(objects, list) else [])
+            if isinstance(obj, dict) and isinstance(obj.get("attrs"), dict) and isinstance(obj.get("refs"), dict)
+            and _is_svi(obj) and (obj["attrs"].get("mode") or obj["refs"].get("untagged_vlan"))]
+
+
+def routed_vlan_view(plan):
+    """The plan as the checks read it: each SVI joined to the VLAN it routes.
+
+    An SVI names no VLAN field in NetBox, so the checks re-derive it from the
+    graph: the VLAN bound to the most specific prefix, in the address's own
+    VRF, that holds one of the SVI's addresses. The result is a copy carrying
+    that VLAN as ``untagged_vlan`` on those interfaces only; the plan itself is
+    never mutated, and an SVI with no such address gains nothing.
+    """
+    objects = plan.get("objects") if isinstance(plan, dict) else None
+    if not isinstance(objects, list) or not all(
+            isinstance(o, dict) and isinstance(o.get("refs"), dict) and isinstance(o.get("attrs"), dict) for o in objects):
+        return plan
+    index = {o.get("key"): o for o in objects}
+    bound = defaultdict(list)
+    for obj in objects:
+        if obj.get("kind") == "prefix" and isinstance(obj["refs"].get("vlan"), str):
+            try:
+                bound[obj["refs"].get("vrf")].append((ipaddress.ip_network(obj["attrs"].get("prefix")), obj["refs"]["vlan"]))
+            except (TypeError, ValueError):
+                continue
+    routed = {}
+    for obj in objects:
+        port = index.get(obj["refs"].get("assigned_object")) if obj.get("kind") == "ip_address" else None
+        if not port or not _is_svi(port) or port["refs"].get("untagged_vlan") or port["key"] in routed:
+            continue
+        try:
+            host = ipaddress.ip_interface(obj["attrs"].get("address")).ip
+        except (TypeError, ValueError):
+            continue
+        matches = [(net.prefixlen, vlan) for net, vlan in bound[obj["refs"].get("vrf")]
+                   if net.version == host.version and host in net]
+        if matches:
+            routed[port["key"]] = max(matches)[1]
+    if not routed:
+        return plan
+    return {**plan, "objects": [{**o, "refs": {**o["refs"], "untagged_vlan": routed[o["key"]]}} if o.get("key") in routed
+                                else o for o in objects]}
+
+
 def validate(plan):
     """Return stable ``{code, object, message}`` findings; never mutate the plan."""
     lab, original = [], plan
@@ -101,6 +162,8 @@ def validate(plan):
         # slice; every other check then sees the estate without it.
         from .validate_provider import discovery_lab
         lab, plan = discovery_lab(plan, {"models": _catalog()})
+    lab = lab + _svi_findings(plan)
+    plan = routed_vlan_view(plan)
     # Records carry operational text only; limitations live in the docs and report.
     objects = original.get("objects") if isinstance(original, dict) else None
     for obj in objects if isinstance(objects, list) else []:
@@ -470,7 +533,9 @@ def _validate(plan):
             report("cable-media", cable, "Power cables must join a power port to an outlet or feed.")
         cable_type = attrs(cable).get("type", "")
         cable_medium = "copper" if cable_type.startswith("cat") else "fiber" if cable_type.startswith(("smf", "mmf", "dac", "aoc")) else None
-        if cable_medium and any(m and m != cable_medium for m in (ma, mb)):
+        # An RJ45 serial console runs over ordinary twisted-pair patch cord.
+        rj45_console = ma == mb == "console" and attrs(a).get("type") == attrs(b).get("type") == "rj-45"
+        if cable_medium and any(m and m != cable_medium for m in (ma, mb)) and not (cable_medium == "copper" and rj45_console):
             report("cable-media", cable, f"Cable type {cable_type} is incompatible with its terminations.")
         sa = attrs(a).get("speed") or attrs(a).get("port_speed") or _speed(attrs(a).get("type", ""))
         sb = attrs(b).get("speed") or attrs(b).get("port_speed") or _speed(attrs(b).get("type", ""))
@@ -682,7 +747,9 @@ def _validate(plan):
             report("interface-relation", interface, "Only virtual interfaces can declare a parent in this blueprint.")
         vlans = list(rel.get("tagged_vlans", []))
         if rel.get("untagged_vlan"):
-            if not attrs(interface).get("mode"):
+            # An SVI's VLAN is derived (routed_vlan_view), never a mode field;
+            # a raw SVI that names one fails interface-svi-mode instead.
+            if not attrs(interface).get("mode") and not _is_svi(objects[interface]):
                 report("vlan-mode", interface, "An untagged VLAN needs explicit interface mode; NetBox clears it when mode is blank.")
             vlans.append(rel["untagged_vlan"])
         if rel.get("tagged_vlans") and attrs(interface).get("mode") not in {"tagged", "tagged-all"}:
