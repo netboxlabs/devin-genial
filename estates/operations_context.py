@@ -234,8 +234,8 @@ NOTICE_JOURNALING = history.NOTICES_BEGIN
 NOTICE_TYPES = frozenset({"circuit-type/backbone", "circuit-type/transit", "circuit-type/noc-access",
                           "circuit-type/cellular-oob", "circuit-type/ix-port"})
 NOTICE_ONE_IN, CIR_ONE_IN, CIR_MIN_YEARS = 3, 2, 5
-#: [A] Leased service terms in months; cellular data plans renew yearly.
-TERM_MONTHS = {"circuit-type/cellular-oob": 12}
+#: [A] Leased service term in months, every third-party service alike.
+TERM_MONTHS = 36
 
 
 def _add_months(day, months):
@@ -324,7 +324,7 @@ def _carrier_paperwork(world, circuit, dated, change, journal):
         # Leased service renews on its term: one renewal per full term in
         # service, on the install anniversary. The record keeps its rate.
         provider = world.obj(refs["provider"])["attrs"]["name"]
-        months = TERM_MONTHS.get(refs["type"], 36)
+        months = TERM_MONTHS
         for n in range(1, 64):
             when = _add_months(installed, n * months)
             if when >= as_of:
