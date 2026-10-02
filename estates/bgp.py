@@ -68,6 +68,11 @@ GROUPS = (
      "Customer edge peerings on private-L3 access circuits",
      ("customer-in",), ("customer-out",), False),
 )
+# Exchange route servers (v0.18): sessions only, in their own peer group with
+# no policies; the closed kind set gains nothing.
+IX_GROUP = ("ix-route-servers", "IX route servers",
+            "Route-server peerings on internet exchange peering LANs")
+IX_ROUTE_SERVERS = 2
 PE_ROLE = "role/provider-edge"
 CE_ROLE = "role/customer-edge"
 # Junos addresses the loopback on logical unit 0 (operations._loopback_units).
@@ -254,6 +259,35 @@ def enrich(world):
                         asns[0], "transit",
                         f"External transit peering over {cid}",
                         remote_prefix=link, remote_label=f"{upstream['attrs']['name']} transit{label(family)}")
+
+    # --- Exchange route servers: two sessions per in-service IX port, over
+    # the IPv6-only peering LAN, to route servers that share the exchange's
+    # single AS. No IPv4 twin (the LAN has none) and none without ipv6_pool.
+    # The withdrawn port of a relocated exchange keeps no session.
+    exchange = sorted(key for key, entry in objects.items() if entry["kind"] == "circuit"
+                      and entry["meta"].get("ix") and entry["attrs"]["status"] == "active")
+    if 6 in families and exchange:
+        add("bgp_peer_group", f"bgp-peer-group/{IX_GROUP[0]}", {"name": IX_GROUP[1], "description": IX_GROUP[2]},
+            {"local_as": operator_asn})
+    for circuit in exchange if 6 in families else ():
+        entry = obj(circuit)
+        metro, cid = entry["meta"]["ix"], entry["attrs"]["cid"]
+        ends = [trace(term) for term in terminations[circuit].values() if trace(term)]
+        if len(ends) != 1:
+            raise DesignError(f"{circuit}: an exchange port needs exactly one local handoff")
+        port = ends[0]
+        exchange_provider = obj(entry["refs"]["provider"])
+        asns = exchange_provider["refs"].get("asns") or []
+        if len(asns) != 1:
+            raise DesignError(f"{circuit}: the exchange has no single routing identity")
+        local_address = address(port, f"the {cid} exchange port", 6)
+        for n in range(1, IX_ROUTE_SERVERS + 1):
+            server = f"ix/{metro}/rs-{n}"
+            if server not in objects:
+                raise DesignError(f"{circuit}: route server {n} has no address on the peering LAN")
+            session(f"bgp-session/ix/{metro}/rs-{n}", obj(port)["refs"]["device"], local_address, asns[0], IX_GROUP[0],
+                    f"Route-server peering on the {exchange_provider['attrs']['name']} peering LAN over {cid}",
+                    remote_address=server, remote_label=f"{obj(server)['attrs']['description']} IPv6")
 
     # --- Customer eBGP: one session per private-L3 attachment, all from the
     # finished graph. The CE's VPN subinterface names its access port; that

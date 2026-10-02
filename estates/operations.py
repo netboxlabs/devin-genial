@@ -38,7 +38,8 @@ TENANT_GROUPS = {
     "enterprise-data-center": ("estate", "Enterprise", "The company that owns and runs these data centers"),
     "school-district": ("estate", "School district", "The district that owns and runs this network"),
     "hospital-clinics": ("estate", "Health system", "The health system that owns and runs this network"),
-    "provider-backbone": ("operator", "Network operator", "The carrier that owns and runs the backbone"),
+    # "Carrier" sorts first in the tenant-group list (v0.18 P0-7, F3).
+    "provider-backbone": ("operator", "Carrier", "The carrier that owns and runs the backbone"),
     "retail-chain": ("estate", "Retail company", "The retailer that owns and runs this network"),
     "university-campus": ("estate", "University", "The university that owns and runs this campus network"),
     "msp": ("operator", "Service provider", "The managed service provider that operates customer networks"),
@@ -73,7 +74,10 @@ JUMBO_MTU_DEFAULT = 9000
 # Native interface type -> line rate in kbps, for cabled ports whose rate is
 # set by the hardware rather than negotiated down (copper keeps autoneg).
 TYPE_SPEED = {"1000base-x-sfp": 1000000, "10gbase-x-sfpp": 10000000, "25gbase-x-sfp28": 25000000,
-              "40gbase-x-qsfpp": 40000000, "100gbase-x-qsfp28": 100000000}
+              "40gbase-x-qsfpp": 40000000, "100gbase-x-qsfp28": 100000000,
+              # MX304 LMIC cages are QSFP-DD (ports carry an explicit 100G
+              # speed); the MX80 relic's 10G ports are XFP.
+              "400gbase-x-qsfpdd": 400000000, "10gbase-x-xfp": 10000000}
 # Taxonomy kinds that exist only to be referenced; unreferenced rows are dropped.
 # Hardware types follow the installed estate, not the whole catalog: a device
 # type no device uses (a spare console-server size, the generic endpoint in a
@@ -695,6 +699,10 @@ def _tags(w):
     for key, obj in objects.items():
         if obj["kind"] in ("device", "circuit") and obj["meta"].get("managed_service"):
             applied[key].add("managed-service")
+        # A device installed before the provider's NS-2 naming standard that
+        # still exists keeps its old name (estates/timeline.py, fibre.py).
+        if obj["kind"] == "device" and obj["meta"].get("legacy_naming"):
+            applied[key].add("legacy-naming")
     vrf_role = {}
     for key, role in roles.items():
         if role in zone_tags:
