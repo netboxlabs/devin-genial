@@ -1057,7 +1057,7 @@ def _generate(recipe,previous=None):
             here,there=(w.obj(k)["attrs"] for k in ("site/dc-01",f"site/pop-{target}"))
             distance=round(km((here["latitude"],here["longitude"]),(there["latitude"],there["longitude"]))*ROUTE_FACTOR,1) if "latitude" in here and "latitude" in there else None
             _circuit(w,circuit,f"provider/{carrier}",f"provider-account/provider/{carrier}","access",site,port,pop,peer,1000,
-                     cid=CARRIERS[carrier][2].format(carrier_number(ns,carrier,NOC_ORDINAL+"ab".index(side))),installed=installed,
+                     cid=CARRIERS[carrier][2].replace("WAV","EPL").format(carrier_number(ns,carrier,NOC_ORDINAL+"ab".index(side))),installed=installed,
                      description=f"1G Ethernet private line, NOC to {pop.display}",distance_km=distance)
         _routed_pair(w,circuit,port,peer,MANAGEMENT_VRF)
     datacenter.build(dc,workloads=workloads(recipe),wan_peak_mbps=recipe["noc_peak_mbps"],wan_attachment=noc,include_equipment=False,

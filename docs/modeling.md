@@ -876,7 +876,7 @@ region on a 10 km optic. Both handoff /31s sit in Carrier Management.
 transport; Corvane Global IP and Halyard Internet sell transit. None shares a
 first word with another carrier or a customer, and each support desk answers
 from the carrier's own `.example` domain. Third-party circuit IDs follow each
-carrier's order shape (`RLW-WAV-104882`, `IWT/WAV/214682`, `CVN-IPT-2524750`,
+carrier's order shape (`RLW-WAV-104882`, `IWT/WAV/214682`, private lines `IWT/EPL/365642`, `CVN-IPT-2524750`,
 `HAL-DIA-813166`, `BWB-31840274`), seeded by the namespace; the operator's own services use its
 initials (`ILF-DF-0001`, `ILF-PL3-00315`, `ILF-NOC-0001`, `ILF-VPN-0001`).
 Carrier accounts carry ten-digit numbers; customer accounts read `ILF-C00001`.
