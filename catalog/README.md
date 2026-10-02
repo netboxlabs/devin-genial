@@ -80,6 +80,37 @@ JSON. Populating both bays is a design choice, not a claim that every sold
 chassis includes two supplies. Electrical load, PoE budgets, and cord connector
 selection are not certified by this inventory.
 
+## Regional-carrier footprint aliases (catalog 0.14, generator 0.17)
+
+Stable aliases the provider footprint builders read. Every entry is pinned to
+the library commit above unless marked; port names are the exact catalog
+names. Deviations and evidence are in
+[Regional-carrier footprint models](#regional-carrier-footprint-models).
+
+| Alias | Model | Ports the builders use |
+| --- | --- | --- |
+| `aggregation` | Juniper ACX5448-M, 1U | `xe-0/0/0`–`43` 10G SFP+ (1G UNIs keep the `xe-` name with `speed` 1000000); `uni_ports` = `xe-0/0/0`–`39`; `lag_ports` = `xe-0/0/40`–`43`; `et-0/1/0`–`5` 100G unused; `em0` mgmt; RJ45 `console0`; fixed C14 `power0`/`power1` |
+| `nid` | Ciena 3903 AC, 1U | `nni_port` `1` (1G SFP); `spare_port` `2` (1G SFP); `uni_port` `3` typed `1000base-t` (declared deviation); virtual `Management`; RJ45 `CONSOLE`; C14 `PSA`/`PSB` |
+| `nid-10g` | RAD ETX-2i-10G, 1U | `nni_port` `ETH-1/1` (10G SFP+); `ETH-1/2`–`4` 10G SFP+; `ETH-1/5`–`8` 1G SFP; `uni_port` `ETH-1/9` (1000BASE-T), `ETH-1/10`–`12` 1000BASE-T; `MNG-ETH` mgmt; USB `control`; C14 `power` |
+| `ce-small` | Juniper SRX300, 1U | `wan_ports` [`ge-0/0/0`]; `lan_ports` `ge-0/0/1`–`5`; `ge-0/0/6`/`7` 1G SFP spare; RJ45 `Console`; C14 `PSU0` |
+| `edge` (existing) | Fortinet FortiGate 100F | gains `wan_ports` [`wan1`, `wan2`] and `lan_ports` `port1`–`port12` |
+| `pop-mgmt` | Juniper EX3400-24T, 1U, no PoE | `access_ports` `ge-0/0/0`–`23`; `uplink_ports` `xe-0/2/0`–`3`; `stack_ports` `et-0/1/0`/`1`; `me0` mgmt; two JPSU-150-AC-AFO → C14 `Power Supply 0`/`1` |
+| `oob-server` | Opengear OM2216-L, 1U | `eth0` mgmt (cabled), `eth1` spare, `Cellular Interface (LTE)` type `lte` (uncableable); `Port 1`–`16` RJ45 console-server ports; C14 `PS1`/`PS2` |
+| `pdu-switched` | APC AP8941 Switched Rack PDU 2G, 0U, 208 V 30 A | NEMA L6-30P `Power Port 1`; `Power Outlet 1`–`24` (C13, C19 at 8/16/24); `Network` 100BASE-TX mgmt; RJ12 `Serial` |
+| `osp-panel` | CommScope FMS-K2BI-L1A1-48-SP, 1U | front `Port 1`–`48` (`lc`, declared deviation from `lc-apc`) ↔ rear `Port 1`–`48` (`splice`), 1:1 |
+| `demarc-panel` | Generic LC-24-port Fiber Patch Panel, 1U | front `Port 1`–`24` `lc` ↔ rear `Port 1`–`24` `lc`, 1:1 |
+| `cable-manager-1u` / `cable-manager-2u` | Generic Cable Management Panel 1U / 2U | no ports; counts toward utilization |
+| `blanking-1u` / `blanking-2u` | Generic Blanking Panel 1U / 2U | no ports; `exclude_from_utilization: true` |
+
+Panel models carry `front_ports` / `rear_ports` lists and the mapping is
+position 1:1 (front `Port n` ↔ rear `Port n`). Passive models carry
+`is_powered: false`. Rack types live in the new top-level `rack_types` map:
+
+| Rack-type alias | Model |
+| --- | --- |
+| `pop-cabinet` | APC AR3100 NetShelter SX 42U, 600 × 1070 mm, `4-post-cabinet` |
+| `mpoe-cabinet` | KOSCAB kos-shts-9u55x45x50ds 9U wall cabinet, `wall-cabinet` |
+
 ## Selectable vendor lines
 
 `hardware_lines` declares the three role families whose model the recipe may
