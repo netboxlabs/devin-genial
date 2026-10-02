@@ -154,7 +154,7 @@ class AcquisitionRefreshTests(unittest.TestCase):
                                                       "refs": {}, "meta": {}})
                             result["objects"].sort(key=lambda obj: obj["key"])
                         else:
-                            result["objects"] = [obj for obj in result["objects"] if obj["key"] != "hardware/console-server-48"]
+                            result["objects"] = [obj for obj in result["objects"] if obj["key"] != "hardware/inherited-access"]
                         self.assertEqual(validate(result), [], "Mutation must pass standalone validation")
                     return result
 

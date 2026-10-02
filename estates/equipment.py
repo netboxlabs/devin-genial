@@ -151,10 +151,12 @@ def enrich(w):
     """Install the catalog's existing PSU configurations, including late devices."""
     # ModuleType identity is vendor/model globally. Keep these shared descriptive
     # definitions namespace-independent; installed bays/modules are device-scoped.
-    profile = "module-profile/installed-psu"
-    w.add("module_type_profile", profile, {"name": "Installed power supply",
-          "description": "Field-replaceable power supply module",
-          "schema": json.dumps({"type": "object", "properties": {"source": {"type": "string"}}, "required": ["source"]}, sort_keys=True)})
+    # No profile: the catalog pins only each supply's model, and a profile whose
+    # one attribute was a source URL read as provenance, not a spec sheet (that
+    # stays in catalog/hardware.json). NetBox's builtin "Power supply" profile
+    # wants voltage/wattage the catalog does not pin, and the loader cannot yet
+    # reference a pre-existing builtin row (ALLOWLISTED_KINDS excuses one only
+    # when disjoint from the plan).
     for device in list(w.objects.values()):
         if device["kind"] != "device":
             continue
@@ -172,10 +174,8 @@ def enrich(w):
                       "slug": f"{maker}-{PSU_BAY_CLASS}", "color": naming.PALETTE.get(bay_type, "")},
                       {"manufacturer": manufacturer})
             if module_type not in w.objects:
-                source_ids = [s for s in spec["source_ids"] if s.endswith("-psu")]
-                w.add("module_type", module_type, {"model": config["model"],
-                      "attributes": json.dumps({"source": w.catalog["sources"][source_ids[0]]["url"]}, sort_keys=True)},
-                      {"manufacturer": manufacturer, "profile": profile, "module_bay_types": [bay_type]})
+                w.add("module_type", module_type, {"model": config["model"]},
+                      {"manufacturer": manufacturer, "module_bay_types": [bay_type]})
             key = device["key"]
             bay = w.add("module_bay", f"{key}/module-bay/{config['bay']}",
                         {"name": config["bay"], "position": config["position"], "enabled": True},

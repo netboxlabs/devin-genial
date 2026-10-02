@@ -164,6 +164,9 @@ def _automation(objects, kinds, ns, fail, solo=False):
                 or any(objects.get(role, {}).get("kind") != "device_role" for role in roles)):
             fail("automation-context", scoped["key"],
                  "The role-scoped context must reference existing device roles.")
+        elif idle := sorted(set(roles) - {obj["refs"].get("role") for obj in listed("device")}):
+            fail("automation-context", scoped["key"],
+                 f"The role-scoped context targets roles no device holds: {', '.join(idle)}.")
         if not isinstance(scoped["attrs"].get("data"), dict) or not scoped["attrs"]["data"]:
             fail("automation-context", scoped["key"], "A config context must carry data.")
 

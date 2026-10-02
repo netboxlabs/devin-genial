@@ -17,6 +17,7 @@ from .model import DesignError
 from .naming import main_scoped_name
 from .networking import _physical_peers, address_ranges, ipam_roles
 from .operations_context import enrich as operational_context
+from .optics import RETAINED
 
 # Real enclosure per emitted cabinet height (catalog/README.md, rack type).
 RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
@@ -70,10 +71,13 @@ JUMBO_MTU_DEFAULT = 9000
 TYPE_SPEED = {"1000base-x-sfp": 1000000, "10gbase-x-sfpp": 10000000, "25gbase-x-sfp28": 25000000,
               "40gbase-x-qsfpp": 40000000, "100gbase-x-qsfp28": 100000000}
 # Taxonomy kinds that exist only to be referenced; unreferenced rows are dropped.
-# Device types, platforms and makers stay a fixed library (growth, refresh and
-# acquisition snapshots must not delete one); only passive cabling types, which
-# the recipe's frozen patching choice alone decides, are dropped when unused.
-PRUNABLE = ("device_role", "rack_role", "region")
+# Hardware types follow the installed estate, not the whole catalog: a device
+# type no device uses (a spare console-server size, the generic endpoint in a
+# carrier that inventories no customer desks) or a module type nothing installs
+# is shelf clutter. Pruning runs on the generated plan only; refresh and
+# acquisition snapshots edit a finished plan and keep the types they retire.
+PRUNABLE = ("device_role", "rack_role", "region", "device_type", "module_type",
+            "module_bay_type", "module_type_profile", "manufacturer")
 
 
 def _owner(w, name):
@@ -744,20 +748,20 @@ def _addresses(w):
 
 
 def _prune(w):
-    """Drop taxonomy nothing references, so lists show only what the estate uses."""
-    # A maker stays while anything references it now, so only the maker of a
-    # dropped passive type can fall away with it.
-    kept_makers = {target for obj in w.objects.values() if obj["kind"] != "device_type"
-                   or not w.catalog["models"][obj["key"].removeprefix("hardware/")].get("front_ports")
-                   for value in obj["refs"].values()
-                   for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
+    """Drop taxonomy nothing references, so lists show only what the estate uses.
+
+    Runs to a fixed point: a dropped device or module type can leave its maker,
+    bay type or profile unreferenced in turn. Growth that later installs a
+    pruned type simply creates it again. RETAINED lineage types and the part
+    definitions they can carry stay, so an access refresh deletes no type.
+    """
+    retained = {f"hardware/{alias}" for alias in RETAINED} | {
+        f"module-type/{part['manufacturer']}/{part['model']}" for part in w.catalog["optics"]["parts"].values()
+        if set(part["compatible_interfaces"]) & RETAINED}
     while True:
-        referenced = {target for obj in w.objects.values() for value in obj["refs"].values()
-                      for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
-        unused = [key for key, obj in w.objects.items() if key not in referenced and (
-            obj["kind"] in PRUNABLE or obj["kind"] == "device_type"
-            and w.catalog["models"][key.removeprefix("hardware/")].get("front_ports")
-            or obj["kind"] == "manufacturer" and key not in kept_makers)]
+        referenced = retained | {target for obj in w.objects.values() for value in obj["refs"].values()
+                                 for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
+        unused = [key for key, obj in w.objects.items() if key not in referenced and obj["kind"] in PRUNABLE]
         if not unused:
             return
         for key in unused:

@@ -34,10 +34,13 @@ from .naming import main_scoped_name
 # addresses, so a dual-stack estate lists both families of the same two hosts
 # rather than one host twice.
 HOSTS_PER_WORKLOAD = 2
-# Scope for the role-weighted context, in preference order. Every profile
-# builds at least one of them; a profile without access switches (the
-# enterprise data center) still has fabric leaves.
-SWITCH_ROLES = ("role/access", "role/leaf")
+# Scope for the role-weighted context: every switching role, in preference
+# order, that at least one device in the estate actually holds. A role with no
+# devices is never targeted (a provider estate has management switches, not
+# access switches). The same set marks the switch side of an access link
+# (operations._host_ports): only these devices' ports carry an 802.1Q mode.
+SWITCH_ROLES = ("role/access", "role/management", "role/distribution", "role/stack",
+                "role/leaf", "role/spine")
 WEBHOOK_URL = "https://hooks.internal.invalid/netops"
 EVENT_TYPES = ["object_created", "object_updated"]
 
@@ -113,9 +116,10 @@ def enrich(world):
          "description": "Service endpoints and DNS resolvers for automation tooling",
          "data": _context_data(ns, endpoints)})
 
-    roles = [role for role in SWITCH_ROLES if role in world.objects]
+    held = {obj["refs"].get("role") for obj in world.objects.values() if obj["kind"] == "device"}
+    roles = [role for role in SWITCH_ROLES if role in held and role in world.objects]
     if not roles:
-        raise DesignError("Automation context needs an access or leaf switching role in the estate")
+        raise DesignError("Automation context needs a switching role some device in the estate holds")
     add("config_context", "config-context/switching",
         {"name": "Switch platform baseline", "weight": 1000, "is_active": True,
          "description": "Switch logging, edge-port and management defaults for config templates",

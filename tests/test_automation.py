@@ -343,7 +343,8 @@ class AutomationTransportTests(unittest.TestCase):
 
     def test_rest_create_posts_the_automation_rows_and_resolves_their_ids(self):
         objects = _index(self.plan)
-        ids = {"owner/operations": 3, "role/access": 4, "role/leaf": 5}
+        roles = objects["config-context/switching"]["refs"]["roles"]
+        ids = {"owner/operations": 3} | {role: 4 + n for n, role in enumerate(roles)}
 
         class Client:
             def __init__(self):
@@ -372,7 +373,7 @@ class AutomationTransportTests(unittest.TestCase):
         posted = dict(target.posts)
         self.assertEqual(len(target.posts), 3)
         self.assertEqual(posted["/api/extras/webhooks/"]["payload_url"], WEBHOOK_URL)
-        self.assertEqual(posted["/api/extras/config-contexts/"]["roles"], [4, 5])
+        self.assertEqual(posted["/api/extras/config-contexts/"]["roles"], list(range(4, 4 + len(roles))))
         rule = posted["/api/extras/event-rules/"]
         self.assertEqual(rule["action_object_type"], "extras.webhook")
         self.assertEqual(rule["action_object_id"], ids["webhook/netops"])

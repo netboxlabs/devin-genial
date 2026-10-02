@@ -45,7 +45,7 @@ class ProviderIntegrationTests(unittest.TestCase):
         world.add("device_role", "role/access", {"name": "Access", "slug": "access"})
         # Export templates must target object types the estate populates.
         # One accountable team owns sites, circuits and devices (operations._owners).
-        world.add("device", "device/pop-a", {"name": "pop-a-edge-01"}, {"owner": "owner/operations"})
+        world.add("device", "device/pop-a", {"name": "pop-a-edge-01"}, {"owner": "owner/operations", "role": "role/access", "tenant": "tenant"})
         world.add("cable", "cable/pop-a", {"label": "POP-A-1", "type": "cat6", "color": "2196f3"})
         # Every estate tenant belongs to a tenant group (operations._shared).
         world.add("tenant_group", "tenant-group/operator", {"name": "Network operator"})

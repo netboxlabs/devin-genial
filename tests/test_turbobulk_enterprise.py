@@ -126,7 +126,7 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         for obj in self.objects.values():
             if obj["kind"] not in REST_CREATE_KINDS and obj["kind"] != "cable":
                 _render(obj, self.objects, ids, content_types)
-        module_type = next(obj for obj in self.objects.values() if obj["kind"] == "module_type")
+        module_type = next(obj for obj in self.objects.values() if obj["kind"] == "module_type" and obj["attrs"].get("attributes"))
         self.assertIn("attribute_data", _rendered_columns(module_type))
         self.assertNotIn("attributes", _rendered_columns(module_type))
 

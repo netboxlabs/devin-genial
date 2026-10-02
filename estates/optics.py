@@ -52,6 +52,11 @@ def owned_span_m(objects, endpoint):
     return round(km(*points) * ROUTE_FACTOR * 1000) if len(points) == 2 else 0
 
 
+# Device types an estate keeps after their last device is replaced: the bank's
+# acquired-branch line survives an access refresh (types are never deleted by
+# a refresh), and so does the definition of each part that line can carry.
+RETAINED = frozenset({"inherited-access"})
+
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
           "25gbase-x-sfp28": ("sfp28", 25000000),
@@ -112,19 +117,17 @@ def enrich(world):
                               "; use a supported link design or extend the source-backed catalog")
         occupied.append((interface, device, cable, part_id, cage, span))
 
-    # Keep the available parts catalog across replacement of the final chassis
-    # using a part. Installed modules still follow only occupied cages; shared
-    # type definitions follow the profile's fixed hardware-type library.
+    # Bay-type fit follows the device types the finished estate keeps: those a
+    # device uses, plus RETAINED lineage types (operations._prune keeps the
+    # same set), so a cage form factor no kept type carries is not published.
+    held = {obj["refs"].get("device_type") for obj in objects.values() if obj["kind"] == "device"}
+    library = {alias for alias in models if f"hardware/{alias}" in objects
+               and (f"hardware/{alias}" in held or alias in RETAINED)}
+    installed_parts = {entry[3] for entry in occupied}
     for part_id in sorted(key for key, part in parts.items()
-                          if any(f"hardware/{alias}" in objects for alias in part["compatible_interfaces"])):
+                          if key in installed_parts or set(part["compatible_interfaces"]) & RETAINED & library):
         part = parts[part_id]
-        # Definitions follow the estate's fixed device-type library, never cage
-        # occupancy: the type set is frozen under growth, so shared ModuleType
-        # records stay stable, while a cage form factor no present device type
-        # carries (e.g. a Juniper SFP28 cage in an all-Cisco estate) is not
-        # published at all.
-        part_bays = sorted({bay_type for bay_type, alias in part_bay_types[part_id]
-                            if f"hardware/{alias}" in objects})
+        part_bays = sorted({bay_type for bay_type, alias in part_bay_types[part_id] if alias in library})
         for bay_type in part_bays:
             if bay_type not in objects:
                 manufacturer, factor = bay_types[bay_type]
