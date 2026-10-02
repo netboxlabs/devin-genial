@@ -73,7 +73,7 @@ class ShowcaseText(unittest.TestCase):
 
     def test_rates_roles_and_segments_use_operator_wording(self):
         circuits = {o["attrs"]["description"] for o in self.of(self.provider, "circuit")}
-        self.assertTrue([d for d in circuits if re.fullmatch(r"10 Gbps Ethernet transport, .+ to .+, on a 100G handoff", d)])
+        self.assertTrue([d for d in circuits if re.fullmatch(r"100G wavelength, .+ to .+, handed off on the 100G port", d)])
         self.assertFalse([d for d in circuits if "000 Mbps" in d])
         self.assertTrue(all(o["attrs"]["description"].endswith("private WAN on a 1G handoff; carrier " + o["key"].split("/")[2].upper())
                             for o in self.of(self.bank, "circuit")))
@@ -98,6 +98,23 @@ class ShowcaseText(unittest.TestCase):
             for contact in self.of(plan, "contact"):
                 self.assertRegex(contact["attrs"]["phone"], r"^\+1 (312|313|216|414)-555-01\d\d$")
                 self.assertTrue(contact["attrs"]["email"].endswith(".example"))
+        # A customer's desks answer from its own domain; a PoP cage's facilities
+        # desk is its carrier hotel's remote hands, not carrier staff.
+        customer = self.objects["contact/operations/tenant/cust-harbor-logistics"]["attrs"]
+        self.assertEqual(customer["email"], "noc@harbor-logistics.example")
+        premises = self.objects["contact/site/ce-harbor-logistics-chicago-west-001"]["attrs"]["email"]
+        self.assertTrue(premises.startswith("facilities.") and premises.endswith("@harbor-logistics.example"), premises)
+        hands = self.objects["contact/site/pop-chicago-west"]["attrs"]
+        self.assertEqual((hands["name"], hands["email"]), ("Windward Interconnect remote hands at Chicago West Exchange",
+                                                           "remote-hands@windward-interconnect.example"))
+        for key, value in (("contact/operations/tenant/cust-harbor-logistics", "cust-harbor-logistics.noc@lakes-fiber.example"),
+                           ("contact/site/pop-chicago-west", "pop-chicago-west.facilities@lakes-fiber.example")):
+            before = self.objects[key]["attrs"]["email"]
+            self.objects[key]["attrs"]["email"] = value
+            try:
+                self.assertIn("operations-contact", {f["code"] for f in validate(self.provider)})
+            finally:
+                self.objects[key]["attrs"]["email"] = before
         chicago = self.objects["contact/site/pop-chicago-west"]["attrs"]["phone"]
         self.assertTrue(chicago.startswith("+1 312-"))
         self.objects["contact/site/pop-chicago-west"]["attrs"]["phone"] = "+1 313-555-0100"

@@ -35,29 +35,59 @@ CAPACITY_SCOPE = ("Directed customer spoke-to-hub offered load under normal oper
                   "not a traffic-capacity or single-homed customer-availability guarantee.")
 # Third-party carriers: fictional names that collide with no customer, each with
 # its own support domain and the circuit-ID shape it prints on an order.
-CARRIERS = {"transport-a": ("Ridgeline Lightwave", "ridgeline-lightwave.example", "RLW-EPL-{:06d}", 6),
-            "transport-b": ("Ironwood Fiber", "ironwood-fiber.example", "IWT/EPL/{:06d}", 6),
+CARRIERS = {"transport-a": ("Ridgeline Lightwave", "ridgeline-lightwave.example", "RLW-WAV-{:06d}", 6),
+            "transport-b": ("Ironwood Fiber", "ironwood-fiber.example", "IWT/WAV/{:06d}", 6),
             "transit-a": ("Corvane Global IP", "corvane.example", "CVN-IPT-{:07d}", 7),
-            "transit-b": ("Halyard Internet", "halyard-internet.example", "HAL-DIA-{:06d}", 6)}
+            "transit-b": ("Halyard Internet", "halyard-internet.example", "HAL-DIA-{:06d}", 6),
+            "oob": ("Brightwire Business Broadband", "brightwire.example", "BWB-{:08d}", 8)}
 # RFC 5398 documentation AS numbers for the operator and its two upstreams,
 # held under an RIR displayed as ARIN. Customer VPN ASNs stay in the private
 # 32-bit asn_base block, which keeps them namespace-separated on one target.
 DOCUMENTATION_ASNS = (64496, 64511)
 # Carrier-owned address space comes from RFC 5737 documentation IPv4; internal,
 # management and customer VPN space stays in the private address_pool.
-PUBLIC_POOLS = {"loopbacks": "192.0.2.0/25", "transit": "192.0.2.128/26",
-                "pair": "198.51.100.0/25", "backbone": "203.0.113.0/24"}
-PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+# Loopbacks take host .1 onward of their /24, never the network address.
+PUBLIC_POOLS = {"loopbacks": "192.0.2.0/24", "pair": "198.51.100.0/25", "backbone": "203.0.113.0/24"}
+PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/25", "203.0.113.0/24")
+# Each upstream numbers its transit /31 from its own space: these blocks are
+# recorded as the upstream's assignment, outside every operator aggregate.
+UPSTREAM_POOLS = {"transit-a": "198.51.100.224/28", "transit-b": "198.51.100.240/28"}
 PUBLIC_LINK_SCOPES = {"pair": "provider-pair-links", "backbone": "provider-span-links", "transit": "provider-transit-links"}
-# Leased inter-metro transport is Ethernet private line on a 100G handoff,
-# committed at 10G unless the declared flows need the full port.
-TRANSPORT_TIERS_MBPS = (10000, 100000)
+# The out-of-band broadband ISP hands each PoP console server a /30 from RFC
+# 6598 shared address space; it lives in its own routing context, never the core.
+OOB_POOL = "100.64.0.0/24"
+# Host ordinals on the PoP management /26: switch SVI 1, console NET1 3, PE fxp0 4/5.
+FXP0_HOSTS = (4, 5)
+LOOPBACK_CAPACITY = 254
+
+
+def loopback_network(slot):
+    """PE loopback /32 for a permanent slot: host .1 onward, never .0 or .255."""
+    return ipaddress.ip_network((int(ipaddress.ip_network(PUBLIC_POOLS["loopbacks"]).network_address)+slot+1,32))
+
+
+def oob_network(slot):
+    """The out-of-band ISP's /30 handoff for one PoP's console server."""
+    return ipaddress.ip_network((int(ipaddress.ip_network(OOB_POOL).network_address)+4*slot,30))
+# The backbone core (PE loopbacks, PoP pair and span /31s, transit /31s) is the
+# global table, as on Junos inet.0. Management of PoPs, the NOC and every CE is
+# the Carrier Management VRF; customer VRFs reach it through a hub-and-spoke
+# management extranet: they export SPOKE and import HUB.
+CORE_VRF = None
+MANAGEMENT_VRF = "vrf/provider"
+OOB_VRF = "vrf/oob"
+MANAGEMENT_HUB_RT, MANAGEMENT_SPOKE_RT = 9000, 9001
+# Leased inter-metro transport is a 100G wavelength handed off on the 100G
+# port it lands on: the port-based service matches the port it terminates on.
+TRANSPORT_TIERS_MBPS = (100000,)
 # Authored span route length: great-circle distance times a fibre route factor.
 ROUTE_FACTOR = 1.3
 # One timeline: PoPs launch in backbone order, spans come up before a PoP
 # serves customers, and customers onboard in their permanent slot order.
 LAUNCH_EPOCH_DAYS, LAUNCH_STEP_DAYS, LAUNCH_CAP_DAYS = 2555, 45, 1825
-PREMISES_KM = (2, 25)
+# A premises lies in its serving PoP's service area: no farther than this from
+# it, and no nearer any other same-metro PoP that existed when it was ordered.
+PREMISES_KM = 25
 
 
 def _key(value,label):
@@ -277,6 +307,9 @@ def generate(recipe,previous=None):
             counts = {e["pop"]:e["count"] for e in after["sites"]}
             if after["lan_endpoints"] < before["lan_endpoints"] or any(counts.get(e["pop"],0) < e["count"] for e in before["sites"]):
                 raise DesignError("Reducing customer premises or LAN endpoint demand requires a new baseline")
+            if before["lan_endpoints"] == 0 < after["lan_endpoints"]:
+                raise DesignError(f"Customer {before['key']}: adding a managed LAN to CE-only premises moves CE management "
+                                  "from its loopback to a switched segment and requires a new baseline")
     return _generate(recipe,previous)
 
 
@@ -292,10 +325,16 @@ def _registry(w):
     for prefix in PUBLIC_AGGREGATES:
         w.add("aggregate",f"aggregate/public/{prefix}",dict(prefix=prefix,description=f"{r['name']} backbone allocation"),
               {"rir":"rir/arin","tenant":"tenant"})
-    for purpose,description in (("loopbacks","Backbone router loopbacks"),("transit","Upstream transit handoffs"),
+    for purpose,description in (("loopbacks","Backbone router loopbacks"),
                                 ("pair","PoP router pair links"),("backbone","Inter-PoP span links")):
         w.add("prefix",f"prefix/public/{purpose}",dict(prefix=PUBLIC_POOLS[purpose],status="container",description=description),
-              {"vrf":"vrf/provider","tenant":"tenant"})
+              {"tenant":"tenant"})
+    for label,block in UPSTREAM_POOLS.items():
+        # The upstream's own assignment: no operator tenant, no aggregate.
+        w.add("prefix",f"prefix/upstream/{label}",dict(prefix=block,status="container",
+              description=f"{CARRIERS[label][0]} transit interconnect assignment"),{})
+    w.add("prefix","prefix/oob/pool",dict(prefix=OOB_POOL,status="container",
+          description=f"{CARRIERS['oob'][0]} shared-address out-of-band handoffs"),{"vrf":OOB_VRF})
     # NetBox's ASN model has no name: the visualization layer labels an AS node
     # from its description, so it must name the party that holds the AS.
     provider_names = (("operator",r["name"]),*((label,row[0]) for label,row in CARRIERS.items()))
@@ -303,7 +342,7 @@ def _registry(w):
     for key,number in documentation_asns(ns).items():
         w.add("asn",f"asn/{key}",dict(asn=number,description=f"{held_by[key]} routing identity"),{"rir":"rir/arin"})
     for label,name in provider_names:
-        refs = {"asns":[f"asn/{'operator' if label == 'operator' else label}"]} if not label.startswith("transport-") else {}
+        refs = {"asns":[f"asn/{label}"]} if label == "operator" or label.startswith("transit-") else {}
         display = name
         # Retain ordinary branding; reserve thirteen characters for support-desk
         # names. A digest preserves identity when the full display exceeds87.
@@ -318,18 +357,34 @@ def _registry(w):
         if label.startswith("transit-"):
             w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=f"{name} network",
                   description=f"{name} IP transit network"),{"provider":f"provider/{label}"})
+        if label == "oob":
+            w.add("provider_network","provider-network/oob",dict(name=f"{name} network",
+                  description=f"{name} access network for out-of-band console reachability"),{"provider":"provider/oob"})
         if label != "operator":
-            _account(w,f"provider-account/provider/{label}",f"provider/{label}",
-                     f"{name} transport" if label.startswith("transport-") else f"{name} transit",
-                     str(10**9 + _hash(ns,label,"account") % (9*10**9)),
-                     "Ethernet transport between metros" if label.startswith("transport-") else "IP transit at the core PoPs")
+            service = ("transport","Wavelength transport between metros and NOC private lines") if label.startswith("transport-") else (
+                ("out-of-band","Business broadband for PoP out-of-band console access") if label == "oob" else
+                ("transit","IP transit at the core PoPs"))
+            _account(w,f"provider-account/provider/{label}",f"provider/{label}",f"{name} {service[0]}",
+                     str(10**9 + _hash(ns,label,"account") % (9*10**9)),service[1])
     w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs"),{"provider":"provider/operator"})
     _account(w,"provider-account/operator/noc","provider/operator","NOC access",f"{code}-INT-0001","NOC access circuits")
     _account(w,"provider-account/operator/fiber","provider/operator","Backbone fiber",f"{code}-INT-0002","Owned metro fiber between PoPs")
-    for name in ("backbone","dark-fiber","access","transit"):
+    for name in ("backbone","dark-fiber","access","transit","out-of-band"):
         w.add("circuit_type",f"circuit-type/{name}",dict(name=titleize(name),slug=f"{ns}-{name}"))
     w.add("virtual_circuit_type","virtual-circuit-type/private-l3",dict(name="Private L3",slug=f"{ns}-private-l3",color="e65100"))
     operator_asn = documentation_asns(ns)["operator"]
+    # Management extranet: Carrier Management exports HUB and imports SPOKE;
+    # every customer VRF exports SPOKE and imports HUB, so the NOC reaches CE
+    # management without customers reaching each other.
+    hub = w.add("route_target","route-target/management/hub",dict(name=f"{operator_asn}:{MANAGEMENT_HUB_RT}",
+                description="Carrier management hub: exported by Carrier Management, imported by every customer VRF"),{"tenant":"tenant"})
+    spoke = w.add("route_target","route-target/management/spoke",dict(name=f"{operator_asn}:{MANAGEMENT_SPOKE_RT}",
+                  description="CE management spoke: exported by every customer VRF, imported by Carrier Management"),{"tenant":"tenant"})
+    w.obj(MANAGEMENT_VRF)["attrs"].update(name="Carrier Management",rd=f"{operator_asn}:{MANAGEMENT_HUB_RT}",
+        description="PoP, NOC and CE management; the backbone core is the global table")
+    w.obj(MANAGEMENT_VRF)["refs"].update(import_targets=[hub,spoke],export_targets=[hub])
+    w.add("vrf",OOB_VRF,dict(name="Out-of-Band Broadband",enforce_unique=True,
+          description="Console-server handoffs on the out-of-band ISP, outside the carrier routing domain"),{"tenant":"tenant"})
     for c in r["customers"]:
         key = c["key"]; slot = w.reserve("provider-customers",key,256)
         customer = titleize(key)
@@ -340,7 +395,7 @@ def _registry(w):
         value = f"{operator_asn}:{1001+slot}"
         target = w.add("route_target",f"route-target/customer/{key}",dict(name=value,description=f"{customer} private L3 VPN import/export"),{"tenant":tenant})
         vrf = w.add("vrf",f"vrf/customer/{key}",dict(name=f"{customer} Private L3",rd=value,enforce_unique=True),
-                    dict(tenant=tenant,import_targets=[target],export_targets=[target]))
+                    dict(tenant=tenant,import_targets=[target,hub],export_targets=[target,spoke]))
         account = _account(w,f"provider-account/customer/{key}","provider/operator",customer,f"{code}-C{slot+1:05d}",
                            f"Private L3 VPN billing for {customer}")
         w.add("virtual_circuit",f"virtual-circuit/customer/{key}",dict(cid=f"{code}-VPN-{slot+1:04d}",status="active",
@@ -379,21 +434,31 @@ def _site_network(site,role,prefixlen,offset,vid):
     site.nets[role] = vlan,net
 
 
+def _scoped(vrf,**refs):
+    """References with the routing context; the global table carries no VRF."""
+    return refs if vrf is None else dict(refs,vrf=vrf)
+
+
 def _ip(w,port,net,host,vrf,tenant,primary=False):
     owner = w.obj(port)["refs"]["device"]
     key = w.add("ip_address",f"ip/{port}",dict(address=f"{net[host]}/{net.prefixlen}",status="active",
           description=f"{w.obj(owner)['attrs']['name']} {w.obj(port)['attrs']['name']}",
           dns_name=f"{w.obj(owner)['attrs']['name']}.{w.recipe['namespace']}.example"),
-          dict(assigned_object=port,vrf=vrf,tenant=tenant))
-    w.obj(port)["refs"]["vrf"] = vrf
+          _scoped(vrf,assigned_object=port,tenant=tenant))
+    if vrf is not None:
+        w.obj(port)["refs"]["vrf"] = vrf
     if primary: w.obj(owner)["refs"]["primary_ip4"] = key
     return key
 
 
 def _link_prefix(w,key,vrf,tenant):
     family = "pair" if key.startswith("pair/") else key.split("/")[1] if key.startswith("circuit/") else None
-    if family in PUBLIC_LINK_SCOPES:
-        # Backbone, PoP-pair and transit /31s are carrier-owned public space.
+    if family == "transit":
+        # The upstream assigns the transit /31 from its own block.
+        w.reserve(PUBLIC_LINK_SCOPES[family],key,2)
+        net = ipaddress.ip_network((int(ipaddress.ip_network(UPSTREAM_POOLS[f"transit-{key[-1]}"]).network_address),31))
+    elif family in PUBLIC_LINK_SCOPES:
+        # Backbone and PoP-pair /31s are carrier-owned public space.
         pool = ipaddress.ip_network(PUBLIC_POOLS[family])
         slot = w.reserve(PUBLIC_LINK_SCOPES[family],key,pool.num_addresses//2)
         net = ipaddress.ip_network((int(pool.network_address)+2*slot,31))
@@ -405,8 +470,9 @@ def _link_prefix(w,key,vrf,tenant):
     # ponytail: clipped at the native 200; only 100-character site_names overrides reach it.
     attrs = dict(prefix=str(net),status="active",description=_link_description(w,key)[:200])
     if key.startswith("circuit/transit/"):
-        attrs["comments"] = "The far end belongs to the upstream carrier."
-    w.add("prefix",f"prefix/link/{key}",attrs,dict(vrf=vrf,tenant=tenant))
+        attrs["comments"] = (f"Assigned by {CARRIERS[f'transit-{key[-1]}'][0]} from its own address space; "
+                             "the far end belongs to the upstream carrier.")
+    w.add("prefix",f"prefix/link/{key}",attrs,_scoped(vrf,tenant=tenant))
     return net
 
 
@@ -430,7 +496,7 @@ def _link_description(w,key):
     return f"Access link {display(a)} to {display(z)}"
 
 
-def _routed_pair(w,key,a,b,vrf="vrf/provider",tenant="tenant"):
+def _routed_pair(w,key,a,b,vrf=CORE_VRF,tenant="tenant"):
     net = _link_prefix(w,key,vrf,tenant)
     _ip(w,a,net,0,vrf,tenant); _ip(w,b,net,1,vrf,tenant)
 
@@ -477,7 +543,7 @@ def _console_management(site,switch):
 
 
 def _pop(w,item):
-    site = Site(w,f"pop-{item['key']}","pop","Provider routing, local management and carrier handoffs",routing_domain="vrf/provider")
+    site = Site(w,f"pop-{item['key']}","pop","Provider routing, local management and carrier handoffs",routing_domain=MANAGEMENT_VRF)
     # Hostname stem: the PoP key itself (chicago-cermak-pe-a), not the
     # hyphen-stripped site id (popchicagocermak-pe-a). resolve() keeps PoP keys
     # disjoint from the NOC and customer premises stems.
@@ -495,28 +561,36 @@ def _pop(w,item):
         for n in range(8):
             w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["speed"] = 1000000 if n<6 else 10000000
         loop = w.add("interface",f"{device}/if/lo0",dict(name="lo0",type="virtual",enabled=True,
-                     description="In-band management loopback"),dict(device=device,vrf="vrf/provider"))
-        pool = ipaddress.ip_network(PUBLIC_POOLS["loopbacks"])
-        slot = w.reserve("provider-loopbacks",device,pool.num_addresses)
-        net = ipaddress.ip_network((int(pool.network_address)+slot,32))
-        w.add("prefix",f"prefix/loopback/{device}",dict(prefix=str(net),status="active",description=f"{w.obj(device)['attrs']['name']} inband management loopback"),dict(vrf="vrf/provider",tenant="tenant"))
-        _ip(w,loop,net,0,"vrf/provider","tenant",True)
+                     description="Backbone router identity loopback"),dict(device=device))
+        net = loopback_network(w.reserve("provider-loopbacks",device,LOOPBACK_CAPACITY))
+        w.add("prefix",f"prefix/loopback/{device}",dict(prefix=str(net),status="active",description=f"{w.obj(device)['attrs']['name']} router loopback"),dict(tenant="tenant"))
+        _ip(w,loop,net,0,CORE_VRF,"tenant",True)
     a,b = [site.interface(d,"et-0/0/0") for d in routers]
     site.cable(a,b,"smf"); _routed_pair(w,f"pair/{site.id}",a,b)
     site.contract["required_connections"].append(dict(a=a,b=b))
     switch = site.device("access","mgmt-01","management")
     vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=1,primary=True,device=switch)
+    vlan,_ = site.network("management")
+    access_ports = w.hardware("access")["access_ports"]
     for i,router in enumerate(routers):
         a = site.interface(switch,w.hardware("access")["uplink_ports"][i]); b = site.interface(router,"xe-0/1/6")
         w.obj(a)["attrs"]["speed"] = 10000000
-        site.cable(a,b,"smf"); _routed_pair(w,f"management/{site.id}/{'ab'[i]}",a,b)
+        site.cable(a,b,"smf"); _routed_pair(w,f"management/{site.id}/{'ab'[i]}",a,b,MANAGEMENT_VRF)
         site.contract["required_connections"].append(dict(a=a,b=b))
+        # Dedicated out-of-band management: fxp0 on the PoP management LAN.
+        fxp0,peer = site.interface(router,"fxp0"),site.interface(switch,access_ports[i])
+        site.cable(fxp0,peer)
+        for port in (fxp0,peer):
+            w.obj(port)["attrs"]["mode"] = "access"; w.obj(port)["refs"]["untagged_vlan"] = vlan
+        site.address(fxp0,"management",host=FXP0_HOSTS[i],device=router)
+        site.contract["required_connections"].append(dict(a=fxp0,b=peer))
     _console_management(site,switch)
     site.contract.update(required_device_roles={"role/provider-edge":2,"role/management":1},
-                         demand=dict(provider_routers=2,direct_attachment_capacity=12),management_mode="in-band")
+                         demand=dict(provider_routers=2,direct_attachment_capacity=12),management_mode="out-of-band and in-band")
     site.contract["assumptions"].extend([
         "Two MX204 chassis occupy separate racks. Exactly three 100G ports per chassis are enabled in the reviewed port-level mode; one is local peer and two are finite transport attachments.",
-        "PE lo0 is inband management. fxp0 is present, unaddressed and uncabled. Management-switch SVI and console share a /26 reached through two real routed data-plane /31 uplinks; no independent out-of-band network is modeled.",
+        "PE lo0 is the router identity in the global table. fxp0 is cabled to the PoP management switch and addressed in the Carrier Management /26; "
+        "the switch reaches the PEs over two routed /31 uplinks in the same VRF, and the console server has an independent broadband out-of-band circuit.",
         "Installed PSU inventory comes from pinned sources; 320 W chassis planning allowance is synthetic, separate from a PSU output rating."])
     site.power()
     return site,routers
@@ -665,8 +739,8 @@ def _launch(w,spans):
         raise DesignError("as_of is too early for the authored provider build-out history") from exc
 
 
-def _transport_text(rate_mbps,ends):
-    return f"{bandwidth(rate_mbps)} Ethernet transport, {ends}, on a 100G handoff"
+def _transport_text(ends):
+    return f"100G wavelength, {ends}, handed off on the 100G port"
 
 
 def _topology(w,pop_sites,points,spans,launch):
@@ -674,7 +748,7 @@ def _topology(w,pop_sites,points,spans,launch):
     metro = {p["key"]:p["metro"] for p in w.recipe["pops"]}
     launched = w.reservations["provider-pop-launch"]
     carriers = span_carriers(spans,metro)
-    graph,leased = [],{}
+    graph = []
     for site,routers in pop_sites.values(): graph.append((f"pair/{site.id}",routers[0],routers[1],100000))
     for ordinal,(key,a,b) in enumerate(spans):
         devices = [f"device/pop-{pop}/pe-{side}" for pop,side in (a,b)]
@@ -690,32 +764,12 @@ def _topology(w,pop_sites,points,spans,launch):
                      cid=f"{code}-DF-{ordinal+1:04d}",installed=installed,description=f"Owned dark fiber, {ends}, lit at 100G",distance_km=distance)
             rate = 100000
         else:
-            rate = TRANSPORT_TIERS_MBPS[key in w.reservations.get("provider-span-upgrades",{})]
+            rate = TRANSPORT_TIERS_MBPS[0]
             _circuit(w,key,f"provider/{carrier}",f"provider-account/provider/{carrier}","backbone",sites[0],ports[0],sites[1],ports[1],rate,
                      handoff_mbps=100000,cid=CARRIERS[carrier][2].format(carrier_number(ns,carrier,ordinal)),installed=installed,
-                     description=_transport_text(rate,ends),distance_km=distance)
-            leased[key] = ends
+                     description=_transport_text(ends),distance_km=distance)
         _routed_pair(w,key,*ports); graph.append((key,*devices,rate))
-    return graph,leased
-
-
-def _size_transport(w,graph,leased,attachments):
-    """Commit each leased span at 10G unless declared flows need the 100G port.
-
-    A span once upgraded stays upgraded (provider-span-upgrades ledger), so
-    growth can raise a commitment but never lowers one.
-    """
-    probe = [(edge,a,b,TRANSPORT_TIERS_MBPS[-1] if edge in leased else rate) for edge,a,b,rate in graph]
-    worst = _capacity(probe,attachments,w.recipe["reserve_fraction"])["worst_load_mbps"]
-    usable = 1-Decimal(str(w.recipe["reserve_fraction"]))
-    for key in leased:
-        if Decimal(worst.get(key,0)) > TRANSPORT_TIERS_MBPS[0]*usable:
-            w.reserve("provider-span-upgrades",key,256)
-    upgrades = w.reservations.get("provider-span-upgrades",{})
-    for key,ends in leased.items():
-        rate = TRANSPORT_TIERS_MBPS[key in upgrades]
-        w.obj(key)["attrs"].update(commit_rate=rate*1000,description=_transport_text(rate,ends))
-    return [(edge,a,b,TRANSPORT_TIERS_MBPS[edge in upgrades] if edge in leased else rate) for edge,a,b,rate in graph]
+    return graph
 
 
 def _onboarding(w,ready):
@@ -735,12 +789,26 @@ def _onboarding(w,ready):
     return dates
 
 
-def _premises_places(w,entries,points):
-    """Spread premises across the metro, 2-25 km from their serving PoP.
+def serving_pops(w,sid,pop):
+    """Same-metro PoPs that existed when this premises was ordered.
 
-    Each premises takes an authored places anchor chosen by a hash of its site
-    id; a customer reuses an anchor only once every eligible one is taken, in
-    allocation-slot order, so growth never moves or renames an existing site.
+    Site allocation slots are one append-only sequence, and new PoPs are
+    allocated before new premises, so an earlier slot means an earlier PoP.
+    A PoP added later never pulls an existing premises out of its area.
+    """
+    metro = w.provider_metros[f"pop-{pop}"]
+    return [p["key"] for p in w.recipe["pops"] if p["metro"] == metro and
+            w.allocations[f"pop-{p['key']}"] < w.allocations[sid]]
+
+
+def _premises_places(w,entries,points):
+    """Place each premises in its serving PoP's service area.
+
+    The recipe homes a premises on a PoP, so placement follows that PoP: an
+    authored places anchor no more than PREMISES_KM from it and nearer it than
+    any other same-metro PoP of the premises' time. Among those, a hash of the
+    site id picks; a customer reuses an anchor only once every eligible one is
+    taken, in allocation-slot order, so growth never moves or renames a site.
     Returns sid -> (display name, latitude, longitude, anchor).
     """
     overrides,result = w.recipe.get("site_names",{}),{}
@@ -756,14 +824,48 @@ def _premises_places(w,entries,points):
             jitter = sha256(f"geo/{sid}".encode()).digest()
             point = lambda a:(round(a[2]+(jitter[0]/255-0.5)*2*places.JITTER_LAT,6),
                               round(a[3]+(jitter[1]/255-0.5)*2*places.JITTER_LON,6))
-            eligible = [a for a in places.ANCHORS[city] if len(a) == 4 and PREMISES_KM[0] <= km(points[pop],point(a)) <= PREMISES_KM[1]]
+            rivals = [q for q in serving_pops(w,sid,pop) if q != pop]
+            eligible = [a for a in places.ANCHORS[city] if len(a) == 4 and km(points[pop],point(a)) <= PREMISES_KM and
+                        all(km(points[pop],point(a)) < km(points[q],point(a)) for q in rivals)]
             if not eligible:
-                raise DesignError(f"{sid}: no authored {city} anchor lies {PREMISES_KM[0]}-{PREMISES_KM[1]} km from its PoP")
+                raise DesignError(f"{sid}: no authored {city} anchor lies in the service area of PoP {pop} "
+                                  f"(within {PREMISES_KM} km and nearer it than any other {city} PoP)")
             anchor = min(eligible,key=lambda a:(taken[a[0][0]],_hash("premises",sid,a[0][0])))
             taken[anchor[0][0]] += 1
             label = anchor[0][0] + (f" {taken[anchor[0][0]]}" if taken[anchor[0][0]] > 1 else "")
             result[sid] = (f"{titleize(c['key'])} {label}",*point(anchor),anchor)
     return result
+
+
+def noc_carrier(side):
+    """A NOC handoff into another metro leases a private line: A from transport A, B from B."""
+    return f"transport-{side}"
+
+
+# Carrier order-number ordinals for NOC private lines, clear of span ordinals.
+NOC_ORDINAL = 4096
+
+
+def _oob(w,site,pop,launched):
+    """Independent console reachability: broadband from a third ISP on NET2."""
+    console = f"device/{site.id}/console-01"
+    net2 = [p["name"] for p in w.hardware("console-server")["interfaces"] if p.get("mgmt_only")][1]
+    port = site.interface(console,net2)
+    circuit = f"circuit/oob/{pop}"
+    _circuit(w,circuit,"provider/oob","provider-account/provider/oob","out-of-band",site,port,"provider-network/oob",None,None,
+             handoff_mbps=1000,cid=CARRIERS["oob"][2].format(carrier_number(w.recipe["namespace"],"oob",w.reservations["provider-pop-order"][pop])),
+             installed=launched-timedelta(days=w.choose(circuit,"oob-install",range(20,41))),
+             description=f"Business broadband for out-of-band console access at {site.display}; best effort, no committed rate")
+    net = oob_network(w.reserve("provider-oob-links",pop,64))
+    w.add("prefix",f"prefix/link/oob/{pop}",dict(prefix=str(net),status="active",
+          description=f"{CARRIERS['oob'][0]} handoff to the {site.display} console server",
+          comments="Assigned by the out-of-band ISP; its gateway address is not inventoried."),dict(vrf=OOB_VRF,tenant="tenant"))
+    _ip(w,port,net,2,OOB_VRF,"tenant")
+
+
+def ce_loopback(block):
+    """A CE-only premises' management /32: host .1 of its site /24."""
+    return ipaddress.ip_network((int(block.network_address)+1,32))
 
 
 def _service_port(w,pop_sites,pop,target):
@@ -785,18 +887,38 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     w.obj(site.key)["meta"]["in_service"] = installed.isoformat()
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
-    _site_network(site,"management",26,0,10); _site_network(site,"clients",25,128,20)
-    # A premises with no LAN seats is a CPE and its managed switch: no office pod.
-    room = places.provider_office(site) if c["lan_endpoints"] else None
+    managed_lan = c["lan_endpoints"] > 0
+    _site_network(site,"clients",25,128,20)
     edge = site.device("edge","edge-01","customer-edge")
-    switch = site.device("access","access-01","access")
-    access_ports = w.hardware("access")["access_ports"]
-    a,b = site.interface(edge,"port1"),site.interface(switch,access_ports[-1])
-    site.cable(a,b); trunk(site,(a,b),("management","clients")); site.contract["required_connections"].append(dict(a=a,b=b))
-    for role,name in (("management","Management"),("clients","Clients")):
-        vi = site.virtual_interface(edge,name,role); w.obj(vi)["refs"]["parent"] = a
-        site.address(vi,role,host=1,primary=role=="management",device=edge)
-    vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=2,primary=True,device=switch)
+    a = site.interface(edge,"port1")
+    switch = None
+    if managed_lan:
+        # Seats on a carrier-managed LAN: the CE trunks management and clients
+        # to a same-room access switch, which serves the office pod.
+        _site_network(site,"management",26,0,10)
+        room = places.provider_office(site)
+        switch = site.device("access","access-01","access")
+        access_ports = w.hardware("access")["access_ports"]
+        b = site.interface(switch,access_ports[-1])
+        site.cable(a,b); trunk(site,(a,b),("management","clients")); site.contract["required_connections"].append(dict(a=a,b=b))
+        for role,name in (("management","Management"),("clients","Clients")):
+            vi = site.virtual_interface(edge,name,role); w.obj(vi)["refs"]["parent"] = a
+            site.address(vi,role,host=1,primary=role=="management",device=edge)
+        vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=2,primary=True,device=switch)
+    else:
+        # CE only: port1 hands the customer LAN to customer-owned equipment
+        # (not inventoried) and the CE is managed on its own loopback.
+        vlan,_ = site.network("clients")
+        w.obj(a)["attrs"]["mode"] = "access"; w.obj(a)["refs"]["untagged_vlan"] = vlan
+        w.obj(a)["attrs"]["description"] = "Customer LAN handoff to customer-owned equipment"
+        vi = site.virtual_interface(edge,"Clients","clients"); w.obj(vi)["refs"]["parent"] = a
+        site.address(vi,"clients",host=1,device=edge)
+        net = ce_loopback(w.site_network(sid))
+        w.add("prefix",f"prefix/{sid}/management",dict(prefix=str(net),status="active",description=f"CE management loopback at {site.display}"),
+              dict(vrf=vrf,tenant=tenant,scope_site=site.key))
+        loop = w.add("interface",f"{edge}/if/Management",dict(name="Management",type="virtual",enabled=True,
+                     description="CE management loopback, exported to Carrier Management"),dict(device=edge))
+        _ip(w,loop,net,0,vrf,tenant,True)
     panel = site.device("patch-panel","patch-01","patch-panel") if w.recipe["patching"] == "panels" else None
     for i in range(c["lan_endpoints"]):
         device = site.device("endpoint",f"pc-{i+1:03}","workstation",racked=False,
@@ -820,11 +942,16 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
              dict(device=edge,parent=port,vrf=vrf))
     w.add("virtual_circuit_termination",f"virtual-circuit-termination/{sid}",dict(role="peer",description=f"{site.display} {'hub' if hub else 'spoke'}"),
           dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
-    site.contract.update(required_device_roles={"role/customer-edge":1,"role/access":1},endpoint_count=c["lan_endpoints"],
+    site.contract.update(required_device_roles={"role/customer-edge":1,**({"role/access":1} if managed_lan else {})},endpoint_count=c["lan_endpoints"],
                          demand=dict(lan_endpoints=c["lan_endpoints"],peak_mbps=c["site_peak_mbps"],hub=hub,commit_mbps=rate),access_hardware=w.hardware_alias("access"))
     site.contract["assumptions"].extend(["The private-L3 customer has one physical access circuit and one CE. A CE, access-link or serving-PE failure can isolate this premises.",
-        "Twelve fixed office positions and a same-room access switch preserve existing endpoint cables and addresses during growth. Customer LAN is wired; no wireless service is modeled."])
-    _console_management(site,switch); site.power()
+        "Twelve fixed office positions and a same-room access switch preserve existing endpoint cables and addresses during growth. Customer LAN is wired; no wireless service is modeled."
+        if managed_lan else "The CE hands the customer LAN to customer-owned equipment that is not inventoried; the carrier manages only the CE."])
+    if managed_lan:
+        _console_management(site,switch)
+    else:
+        equipment.enrich_site(site,demonstrations=False)
+    site.power()
     return dict(site=site.key,customer=key,router=w.obj(pe_port)["refs"]["device"],hub=hub,peak_mbps=c["site_peak_mbps"])
 
 
@@ -891,7 +1018,7 @@ def _generate(recipe,previous=None):
     points=_points(w)
     spans=_plan_spans(w,points)
     launch=_launch(w,spans)
-    graph,leased=_topology(w,pop_sites,points,spans,launch)
+    graph=_topology(w,pop_sites,points,spans,launch)
     # A PoP serves customers from its launch, once its first span is in service.
     first_span={}
     for key,a,b in spans:
@@ -906,7 +1033,10 @@ def _generate(recipe,previous=None):
         circuit=f"circuit/transit/{side}"; label=f"transit-{side}"
         _circuit(w,circuit,f"provider/{label}",f"provider-account/provider/{label}","transit",site,port,f"provider-network/transit/{side}",None,10000,
                  cid=CARRIERS[label][2].format(carrier_number(ns,label,0)),installed=launch[pop]-timedelta(days=w.choose(circuit,"transit-install",range(5,21))))
-        net=_link_prefix(w,circuit,"vrf/provider","tenant"); _ip(w,port,net,0,"vrf/provider","tenant")
+        # The upstream holds the even address of its /31; the operator takes the odd one.
+        net=_link_prefix(w,circuit,CORE_VRF,"tenant"); _ip(w,port,net,1,CORE_VRF,"tenant")
+    for p in ordered:
+        _oob(w,pop_sites[p["key"]][0],p["key"],launch[p["key"]])
     for side in ("a","b"):
         _service_port(w,pop_sites,recipe[f"noc_pop_{side}"],f"noc/{side}")
     dc=Site(w,"dc-01","dc","Provider NOC services, inventory and monitoring")
@@ -916,9 +1046,20 @@ def _generate(recipe,previous=None):
         pop,peer=_service_port(w,pop_sites,recipe[f"noc_pop_{side}"],f"noc/{side}")
         port=site.interface(edge,"wan1"); circuit=f"circuit/noc/{side}"
         installed=ready[recipe[f"noc_pop_{side}"]]+timedelta(days=w.choose(circuit,"noc-install",range(5,31)))
-        _circuit(w,circuit,"provider/operator","provider-account/operator/noc","access",site,port,pop,peer,1000,
-                 cid=f"{code}-NOC-{'ab'.index(side)+1:04d}",installed=installed)
-        _routed_pair(w,circuit,port,peer)
+        target=recipe[f"noc_pop_{side}"]
+        if metros[target]==w.provider_metros["dc-01"]:
+            _circuit(w,circuit,"provider/operator","provider-account/operator/noc","access",site,port,pop,peer,1000,
+                     cid=f"{code}-NOC-{'ab'.index(side)+1:04d}",installed=installed)
+        else:
+            # Another metro: a leased port-based 1G private line, not an operator
+            # access tail stretched across the region on a 10 km optic.
+            carrier=noc_carrier(side)
+            here,there=(w.obj(k)["attrs"] for k in ("site/dc-01",f"site/pop-{target}"))
+            distance=round(km((here["latitude"],here["longitude"]),(there["latitude"],there["longitude"]))*ROUTE_FACTOR,1) if "latitude" in here and "latitude" in there else None
+            _circuit(w,circuit,f"provider/{carrier}",f"provider-account/provider/{carrier}","access",site,port,pop,peer,1000,
+                     cid=CARRIERS[carrier][2].replace("WAV","EPL").format(carrier_number(ns,carrier,NOC_ORDINAL+"ab".index(side))),installed=installed,
+                     description=f"1G Ethernet private line, NOC to {pop.display}",distance_km=distance)
+        _routed_pair(w,circuit,port,peer,MANAGEMENT_VRF)
     datacenter.build(dc,workloads=workloads(recipe),wan_peak_mbps=recipe["noc_peak_mbps"],wan_attachment=noc,include_equipment=False,
         assumptions=[CAPACITY_SCOPE,"NOC service groups are authored: identity/provisioning per128 customer premises, DNS/monitoring per16 PoPs, minimum one group each; every group has two rack-separated replicas. These are synthetic inventory budgets, not measured throughput."])
     w.obj(dc.key)["meta"]["in_service"]=min(w.obj(f"circuit/noc/{s}")["attrs"]["install_date"] for s in "ab")
@@ -930,10 +1071,9 @@ def _generate(recipe,previous=None):
         return min(day,as_of-timedelta(days=1))
     placed=_premises_places(w,entries,points)
     attachments=[_customer(w,sid,c,pop,n,pop_sites,placed,installed(sid,c,pop,n)) for sid,c,pop,n in entries]
-    graph=_size_transport(w,graph,leased,attachments)
     dc.contract["provider"]=dict(pop_count=len(pop_sites),customer_count=len(recipe["customers"]),customer_premises=len(entries),
         transport_spans=len(spans),capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
-        management_mode="in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
+        management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
     equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w); operations.supporting_records(w)
     bgp.enrich(w)
     discovery_lab.add_discovery_lab(w)

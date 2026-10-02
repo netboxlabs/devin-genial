@@ -32,7 +32,7 @@ class ProviderReportTests(unittest.TestCase):
         before = canonical(self.plan)
         text = markdown(self.plan)
         self.assertEqual(before, canonical(self.plan))
-        for phrase in ("Provider service walkthrough", "single-homed", "lo0 in-band", "fxp0",
+        for phrase in ("Provider service walkthrough", "single-homed", "Carrier Management VRF", "out-of-band circuit", "fxp0",
                        "spoke-to-hub", "exclude NOC, transit and background",
                        # The estate emits BGP records, so the walkthrough points at
                        # them and the scope note denies execution rather than existence.

@@ -349,7 +349,8 @@ carries them. See [BGP inventory](modeling.md#provider-bgp-inventory) and
 [loading](loading.md#netbox_bgp-a-plugin-the-target-must-already-have).
 
 The report follows actual A/Z handoffs, service membership and support contacts.
-PE management is in-band. Backbone connectivity and scoped spoke-to-hub traffic
+PE management is the Carrier Management VRF, with `fxp0` and an independent
+broadband out-of-band path for each PoP console server. Backbone connectivity and scoped spoke-to-hub traffic
 checks do not establish customer access redundancy, routing convergence, or
 total backbone capacity. Wireless is outside this initial wired composition.
 The [hospital/provider coverage review](../COVERAGE.md) distinguishes included, partial,

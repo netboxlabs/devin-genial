@@ -41,14 +41,27 @@ SPAN_KEY = re.compile(r"circuit/backbone/([a-z][a-z0-9-]{0,19})-([ab])/([a-z][a-
 METRO_POINTS = {"chicago": (41.8781, -87.6298), "detroit": (42.3314, -83.0458),
                 "cleveland": (41.4993, -81.6944), "milwaukee": (43.0389, -87.9065)}
 # Carrier-owned public space (RFC 5737) and AS numbers (RFC 5398), restated.
-PUBLIC_POOLS = {"loopbacks": ip_network("192.0.2.0/25"), "transit": ip_network("192.0.2.128/26"),
-                "pair": ip_network("198.51.100.0/25"), "backbone": ip_network("203.0.113.0/24")}
-PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+PUBLIC_POOLS = {"loopbacks": ip_network("192.0.2.0/24"), "pair": ip_network("198.51.100.0/25"),
+                "backbone": ip_network("203.0.113.0/24")}
+PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/25", "203.0.113.0/24")
+# Each upstream's own transit assignment: outside every operator aggregate.
+UPSTREAM_POOLS = {"a": ip_network("198.51.100.224/28"), "b": ip_network("198.51.100.240/28")}
+# The out-of-band ISP's RFC 6598 /30 per PoP console server, IPv4 only.
+OOB_POOL = ip_network("100.64.0.0/24")
 DOCUMENTATION_ASNS = range(64496, 64512)
 ROUTE_FACTOR = 1.3
-PREMISES_KM = (2, 25)
-LEASED_COMMITS = (10000000, 100000000)
-CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b")
+# A premises sits in its serving PoP's area: within this distance, and nearer
+# it than any other same-metro PoP allocated before the premises.
+PREMISES_KM = 25
+# Leased inter-metro spans are 100G wavelengths on the 100G port they land on.
+LEASED_COMMIT = 100000000
+CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b", "oob")
+# Routing contexts, restated: the core is the global table (no VRF);
+# PoP/NOC/CE management is the Carrier Management VRF with a hub-and-spoke
+# management extranet to every customer VRF.
+CORE, MANAGEMENT, OOB = None, "vrf/provider", "vrf/oob"
+HUB_RT, SPOKE_RT = 9000, 9001
+FXP0_HOSTS = (4, 5)
 BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
 BGP_FIELDS = {"bgp_routing_policy": {"name", "weight", "description"},
               "bgp_peer_group": {"name", "description"},
@@ -331,12 +344,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 address_value = ip_interface(attrs(key)["address"])
                 if address_value.version == 4:
                     ipv4_addresses[key] = address_value
-                if isinstance(refs(key).get("vrf"), str):
-                    ips_by_vrf_address[(refs(key)["vrf"], address_value.version, int(address_value.ip))].add(key)
+                if isinstance(refs(key).get("vrf"), (str, type(None))):
+                    ips_by_vrf_address[(refs(key).get("vrf"), address_value.version, int(address_value.ip))].add(key)
             except ValueError:
                 pass  # The shared format check reports malformed addresses.
-        if obj["kind"] == "prefix" and isinstance(refs(key).get("vrf"), str) and isinstance(attrs(key).get("prefix"), str):
-            prefixes_by_vrf_network[(refs(key)["vrf"], attrs(key)["prefix"])].append(key)
+        if obj["kind"] == "prefix" and isinstance(refs(key).get("vrf"), (str, type(None))) and isinstance(attrs(key).get("prefix"), str):
+            prefixes_by_vrf_network[(refs(key).get("vrf"), attrs(key)["prefix"])].append(key)
         if obj["kind"] == "cable":
             for end in (refs(key).get("a"), refs(key).get("b")):
                 owner = refs(end).get("device")
@@ -376,9 +389,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         launch = _ledger(reservations, "provider-pop-launch", pops, 64)
         if set(launch.values()) != set(range(len(pops))):
             raise ValueError("PoP launch order must retain one contiguous permanent ordinal per requested PoP.")
-        upgrades = reservations.get("provider-span-upgrades", {})
-        if not isinstance(upgrades, dict) or not set(upgrades) <= set(spans):
-            raise ValueError("provider-span-upgrades may only name ledgered backbone spans.")
+        if "provider-span-upgrades" in reservations:
+            raise ValueError("Leased spans are 100G wavelengths; the retired provider-span-upgrades ledger must be absent.")
     except ValueError as exc:
         report("provider-allocation", "plan", str(exc))
         return findings
@@ -429,25 +441,31 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         public = {"pair": ("provider-pair-links", {f"pair/pop-{pop}" for pop in pops}),
                   "backbone": ("provider-span-links", set(spans)),
                   "transit": ("provider-transit-links", {f"circuit/transit/{s}" for s in ("a", "b")})}
-        public_slots = {family: _ledger(reservations, scope, keys, PUBLIC_POOLS[family].num_addresses // 2)
+        public_slots = {family: _ledger(reservations, scope, keys, 2 if family == "transit" else PUBLIC_POOLS[family].num_addresses // 2)
                         for family, (scope, keys) in public.items()}
-        loop_slots = _ledger(reservations, "provider-loopbacks", routers, PUBLIC_POOLS["loopbacks"].num_addresses)
+        # Loopbacks take host .1 onward of their /24: never .0, never .255.
+        loop_slots = _ledger(reservations, "provider-loopbacks", routers, PUBLIC_POOLS["loopbacks"].num_addresses - 2)
+        oob_slots = _ledger(reservations, "provider-oob-links", pops, OOB_POOL.num_addresses // 4)
     except ValueError as exc:
         report("provider-allocation", "plan", str(exc))
         return findings
     infra = int(pool.broadcast_address) - 65535
     link_network = {key: ip_network((infra + 2 * slot, 31)) for key, slot in link_slots.items()}
     for family, slots in public_slots.items():
+        if family == "transit":
+            # Each upstream numbers its /31 from its own assignment.
+            link_network.update({key: ip_network((int(UPSTREAM_POOLS[key[-1]].network_address), 31)) for key in slots})
+            continue
         base = int(PUBLIC_POOLS[family].network_address)
         link_network.update({key: ip_network((base + 2 * slot, 31)) for key, slot in slots.items()})
 
-    def routed(link, endpoints, vrf, tenant="tenant"):
+    def routed(link, endpoints, vrf, tenant="tenant", hosts=(0, 1)):
         network = link_network[link]
         prefix = f"prefix/link/{link}"
         good = (kind(prefix) == "prefix" and attrs(prefix).get("prefix") == str(network) and
                 attrs(prefix).get("status") == "active" and refs(prefix).get("vrf") == vrf and refs(prefix).get("tenant") == tenant)
-        for index, port in enumerate(endpoints):
-            good &= address(port, network, vrf, index, tenant) and not vlans(port)
+        for host, port in zip(hosts, endpoints):
+            good &= address(port, network, vrf, host, tenant) and not vlans(port)
         # An opaque transit peer has no native remote address owner.
         actual = ips_by_vrf_address[(vrf, 4, int(network[0]))] | ips_by_vrf_address[(vrf, 4, int(network[1]))]
         expected = {key for port in endpoints for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses}
@@ -542,8 +560,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         devices = child("site", site, "device")
         expected = {} if customer else {f"device/{sid}/console-01": ("console-server", "console-server")}
         if customer:
-            expected.update({f"device/{sid}/edge-01": ("customer-edge", "edge"),
-                             f"device/{sid}/access-01": ("access", access_alias)})
+            expected[f"device/{sid}/edge-01"] = ("customer-edge", "edge")
+            if customer["lan_endpoints"]:
+                expected[f"device/{sid}/access-01"] = ("access", access_alias)
             expected.update({f"device/{sid}/pc-{n:03}": ("workstation", "endpoint") for n in range(1, customer["lan_endpoints"] + 1)})
         else:
             expected.update({f"device/{sid}/pe-{side}": ("provider-edge", "provider-edge") for side in ("a", "b")})
@@ -612,16 +631,15 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 if attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not True or attrs(port).get("speed") != speed:
                     report("provider-port-mode", port, "The PE preserves 10G physical port types with explicit 1G service and 10G infrastructure operating speeds.")
             fxp0, lo = f"{router}/if/fxp0", f"{router}/if/lo0"
-            if attrs(lo).get("description") != "In-band management loopback":
-                report("provider-scope-text", lo, "The management descriptor must explicitly retain in-band dependency and the unaddressed dedicated port.")
-            if peers.get(fxp0) or child("assigned_object", fxp0, "ip_address") or refs(fxp0).get("vrf") or vlans(fxp0):
-                report("provider-management-mode", fxp0, "Dedicated fxp0 remains unaddressed and uncabled; management is explicitly in-band via lo0.")
-            loopnet = ip_network((int(PUBLIC_POOLS["loopbacks"].network_address) + loop_slots[router], 32))
-            matching_prefixes = prefixes_by_vrf_network[("vrf/provider", str(loopnet))]
+            if attrs(lo).get("description") != "Backbone router identity loopback":
+                report("provider-scope-text", lo, "The loopback descriptor must state its role as the router's backbone identity.")
+            loopnet = ip_network((int(PUBLIC_POOLS["loopbacks"].network_address) + loop_slots[router] + 1, 32))
+            matching_prefixes = prefixes_by_vrf_network[(CORE, str(loopnet))]
             if (attrs(lo).get("type") != "virtual" or attrs(lo).get("enabled") is not True or refs(lo).get("device") != router or
-                    not address(lo, loopnet, "vrf/provider", 0, "tenant") or not primary(router, lo) or len(matching_prefixes) != 1 or
-                    attrs(matching_prefixes[0]).get("status") != "active"):
-                report("provider-loopback", router, "Each PE needs its own active reserved /32 prefix and primary lo0 address in the provider routing domain.")
+                    not address(lo, loopnet, CORE, 0, "tenant") or not primary(router, lo) or len(matching_prefixes) != 1 or
+                    attrs(matching_prefixes[0]).get("status") != "active" or int(loopnet.network_address) % 256 in (0, 255)):
+                report("provider-loopback", router, "Each PE needs its own active reserved /32 prefix and primary lo0 address in the global "
+                       "table, never the network or broadcast address of a /24.")
             supplies = {f"{router}/power/PEM {n}" for n in range(2)}
             if set(child("device", router, "power_port")) != supplies:
                 report("provider-psu-inventory", router, "Each MX204 must retain both real populated PEM 0 and PEM 1 supply inlets.")
@@ -656,14 +674,14 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 report("provider-power-diversity", router, "The PE's populated supplies require two distinct real PDUs and upstream panels.")
         pair = f"pair/{sid}"
         a, b = f"{pe_a}/if/et-0/0/0", f"{pe_b}/if/et-0/0/0"
-        routed(pair, (a, b), "vrf/provider")
+        routed(pair, (a, b), CORE)
         if physical(a, b, 100000000):
             edge(pair, pe_a, pe_b, 100000000)
         else:
             report("provider-pair-path", site, "A connected routed 100G local pair cable must join the two actual PE data ports.")
         for side, router, number in (("a", pe_a, 1), ("b", pe_b, 2)):
             a, b = f"device/{sid}/mgmt-01/if/{access_uplinks[number-1]}", f"{router}/if/xe-0/1/6"
-            routed(f"management/{sid}/{side}", (a, b), "vrf/provider")
+            routed(f"management/{sid}/{side}", (a, b), MANAGEMENT)
             if not physical(a, b, 10000000):
                 report("provider-management-uplink", site, "PoP management requires two real routed 10G switch uplinks to the separate PE data ports.")
 
@@ -676,8 +694,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         owned = provider == "provider/operator"
         # Owned fiber is lit at the 100G port and purchases nothing; leased
         # transport commits 10G unless the upgrade ledger names it.
-        commit = None if owned else LEASED_COMMITS[key in upgrades]
-        routed(key, (port_a, port_b), "vrf/provider")
+        commit = None if owned else LEASED_COMMIT
+        routed(key, (port_a, port_b), CORE)
         if circuit(key, port_a, port_b, refs(a).get("site"), refs(b).get("site"), provider, 100000000, commit,
                    account="provider-account/operator/fiber" if owned else f"provider-account/{provider}"):
             edge(key, a, b, 100000000 if owned else commit)
@@ -715,12 +733,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 not address(port, network, vrf, 3, tenant) or not primary(device, port)):
             report("provider-console-management", device, "The local console server needs its active management address and actual VLAN channel into the routed site switch.")
 
-    used_pe_ports = {router: {f"{router}/if/et-0/0/0", f"{router}/if/xe-0/1/6"} for router in routers}
+    used_pe_ports = {router: {f"{router}/if/et-0/0/0", f"{router}/if/xe-0/1/6", f"{router}/if/fxp0"} for router in routers}
     for key, ends in spans.items():
         for router in ends:
             used_pe_ports[router].add(f"{router}/if/et-0/0/{1 + transport_ports[router][key]}")
+    console_net2 = [p["name"] for p in catalog.get("console-server", {}).get("interfaces", []) if p.get("mgmt_only")][1:2]
     for pop in pops:
-        sid, vrf = f"pop-{pop}", "vrf/provider"
+        sid, vrf = f"pop-{pop}", MANAGEMENT
         network, vlan = local_network(sid, "management", vrf, "tenant")
         switch = f"device/{sid}/mgmt-01"
         port = f"{switch}/if/Vlan10"
@@ -730,6 +749,24 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         dedicated = f"{switch}/if/{access_mgmt}"
         if peers.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
             report("provider-management-mode", dedicated, "The routed management switch must not duplicate its SVI subnet on the dedicated management port.")
+        # Out-of-band: each PE's dedicated fxp0 on the management LAN, on its own switch port.
+        for index, side in enumerate(("a", "b")):
+            fxp0, peer = f"device/{sid}/pe-{side}/if/fxp0", f"{switch}/if/{access_ports[index]}"
+            if (not physical(fxp0, peer) or vlans(fxp0) != {vlan} or vlans(peer) != {vlan} or
+                    attrs(peer).get("mode") != "access" or not address(fxp0, network, vrf, FXP0_HOSTS[index], "tenant")):
+                report("provider-management-mode", fxp0, "Each PE's dedicated fxp0 needs its own cabled management-switch port and "
+                       "Carrier Management address on the PoP management LAN.")
+        # Independent console reachability: broadband from a third ISP on NET2.
+        key, console = f"circuit/oob/{pop}", f"device/{sid}/console-01"
+        net2 = f"{console}/if/{console_net2[0]}" if console_net2 else None
+        oob = ip_network((int(OOB_POOL.network_address) + 4 * oob_slots[pop], 30))
+        prefix = f"prefix/link/oob/{pop}"
+        if (not circuit(key, net2, None, f"site/{sid}", "provider-network/oob", "provider/oob", 1000000, None,
+                        account="provider-account/provider/oob") or refs(key).get("type") != "circuit-type/out-of-band" or
+                attrs(prefix).get("prefix") != str(oob) or refs(prefix).get("vrf") != OOB or attrs(prefix).get("status") != "active" or
+                not address(net2, oob, OOB, 2, "tenant") or primary(console, net2)):
+            report("provider-oob", key, "Each PoP console server needs its independent best-effort broadband circuit on its second "
+                   "management port, addressed from its reserved /30 in the out-of-band context, never the core or management VRF.")
 
     def service_port(pop, target):
         slot = service_ports[pop][target]
@@ -752,15 +789,33 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         routed(key, (cpe_wan, port), vrf, tenant)
         circuit(key, cpe_wan, port, f"site/{sid}", f"site/pop-{pop}", "provider/operator", 1000000, rate * 1000,
                 tenant, f"provider-account/customer/{customer['key']}")
-        management, management_vlan = local_network(sid, "management", vrf, tenant)
         clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
-        lan, upstream = f"{cpe}/if/port1", f"{switch}/if/{access_ports[-1]}"
-        if (not physical(lan, upstream) or any(vlans(p) != {management_vlan, clients_vlan} or attrs(p).get("mode") != "tagged" for p in (lan, upstream)) or
-                not svi(f"{cpe}/if/Management", management, management_vlan, vrf, 1, tenant, lan) or
-                not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
-                not primary(cpe, f"{cpe}/if/Management") or not svi(f"{switch}/if/Vlan10", management, management_vlan, vrf, 2, tenant) or
-                not primary(switch, f"{switch}/if/Vlan10")):
-            report("provider-customer-gateway", cpe, "Customer LAN requires the real CPE/switch trunk, separate addressed local management/client gateways and the switch management SVI.")
+        lan = f"{cpe}/if/port1"
+        if customer["lan_endpoints"]:
+            management, management_vlan = local_network(sid, "management", vrf, tenant)
+            upstream = f"{switch}/if/{access_ports[-1]}"
+            if (not physical(lan, upstream) or any(vlans(p) != {management_vlan, clients_vlan} or attrs(p).get("mode") != "tagged" for p in (lan, upstream)) or
+                    not svi(f"{cpe}/if/Management", management, management_vlan, vrf, 1, tenant, lan) or
+                    not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
+                    not primary(cpe, f"{cpe}/if/Management") or not svi(f"{switch}/if/Vlan10", management, management_vlan, vrf, 2, tenant) or
+                    not primary(switch, f"{switch}/if/Vlan10")):
+                report("provider-customer-gateway", cpe, "Customer LAN requires the real CPE/switch trunk, separate addressed local management/client gateways and the switch management SVI.")
+        else:
+            # CE only: port1 hands the customer LAN to customer-owned gear and
+            # the CE is managed on its own /32 loopback in the customer VRF.
+            loop = f"{cpe}/if/Management"
+            block = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
+            management = ip_network((int(block.network_address) + 1, 32))
+            prefix = f"prefix/{sid}/management"
+            if (peers.get(lan) or vlans(lan) != {clients_vlan} or attrs(lan).get("mode") != "access" or
+                    not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
+                    kind(loop) != "interface" or attrs(loop).get("type") != "virtual" or refs(loop).get("parent") or vlans(loop) or
+                    not address(loop, management, vrf, 0, tenant) or not primary(cpe, loop) or
+                    attrs(prefix).get("prefix") != str(management) or refs(prefix).get("vrf") != vrf or
+                    refs(prefix).get("vlan") or refs(prefix).get("scope_site") != f"site/{sid}" or
+                    kind(f"vlan/{sid}/management") or prefixes_by_vrf_network.get((vrf, str(ip_network((int(block.network_address), 26))))) ):
+                report("provider-customer-gateway", cpe, "A CE-only premises hands its customer LAN off untagged on port1 and is managed "
+                       "on its own /32 loopback; no management VLAN or switched segment exists without a managed LAN.")
         if objects.get(f"device/{sid}/console-01"):
             report("provider-device-inventory", sid, "A single-CE premises carries no console server.")
         for dedicated in (f"{cpe}/if/mgmt", f"{switch}/if/{access_mgmt}"):
@@ -792,7 +847,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             elif len(members) != 2:
                 report("provider-customer-patching", device, "Direct customer access requires exactly one real cable channel.")
         used_copper = {f"{switch}/if/{access_ports[n-1]}" for n in range(1, customer["lan_endpoints"] + 1)} | {
-            f"{switch}/if/{access_ports[-1]}"}
+            f"{switch}/if/{access_ports[-1]}"} if customer["lan_endpoints"] else set()
         actual_copper = {p for p in child("device", switch, "interface") if attrs(p).get("type") == "1000base-t" and peers.get(p)}
         if actual_copper != used_copper or Decimal(len(used_copper)) > len(access_ports) * usable:
             report("provider-customer-port-capacity", switch, "Actual customer access attachments must use the finite fixed ports and retain declared copper-port reserve.")
@@ -807,9 +862,15 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         port = f"{device}/if/wan1"
         noc_edges.add(device)
         key = f"circuit/noc/{side}"
-        routed(key, (port, pe), "vrf/provider")
-        if (not circuit(key, port, pe, "site/dc-01", f"site/pop-{pop}", "provider/operator", 1000000, 1000000,
-                        account="provider-account/operator/noc") or refs(device).get("role") != "role/wan-edge" or
+        routed(key, (port, pe), MANAGEMENT)
+        # Inside the NOC's own metro the operator runs the access tail; into
+        # another metro it leases a 1G private line from a transport carrier.
+        local = pops[pop]["metro"] == pops[recipe["noc_pop_a"]]["metro"]
+        provider = "provider/operator" if local else f"provider/transport-{side}"
+        if (not circuit(key, port, pe, "site/dc-01", f"site/pop-{pop}", provider, 1000000, 1000000,
+                        account="provider-account/operator/noc" if local else f"provider-account/{provider}") or
+                (not local and not attrs(key).get("description", "").startswith("1G Ethernet private line")) or
+                refs(device).get("role") != "role/wan-edge" or
                 refs(device).get("device_type") != "hardware/edge" or refs(device).get("site") != "site/dc-01" or
                 attrs(device).get("status") != "active" or attrs(port).get("type") != "1000base-t" or router not in adjacency):
             report("provider-noc-wan", key, "The NOC needs each distinct real active 1G edge/circuit path to its selected PoP and independently owned provider /31.")
@@ -822,10 +883,17 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         used_pe_ports[router].add(port)
         key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
         transit_peerings[side] = (router, port, provider, key)
-        routed(key, (port,), "vrf/provider")
+        # The upstream holds the even address of the /31 it assigned.
+        routed(key, (port,), CORE, hosts=(1,))
         circuit(key, port, None, f"site/pop-{pop}", f"provider-network/transit/{side}", provider, 10000000, 10000000,
                 account=f"provider-account/{provider}")
-    if by_kind["circuit"] != set(spans) | {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")} | {f"circuit/transit/{s}" for s in ("a", "b")}:
+        container = f"prefix/upstream/transit-{side}"
+        if (attrs(container).get("prefix") != str(UPSTREAM_POOLS[side]) or "tenant" in refs(container) or
+                any(link_network[key].subnet_of(ip_network(a)) for a in PUBLIC_AGGREGATES)):
+            report("provider-public-space", key, "A transit /31 is numbered from its upstream's own recorded assignment, "
+                   "which carries no operator tenancy and sits outside every operator aggregate.")
+    if by_kind["circuit"] != (set(spans) | {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")} |
+                              {f"circuit/transit/{s}" for s in ("a", "b")} | {f"circuit/oob/{pop}" for pop in pops}):
         report("provider-circuit-inventory", "plan", "Physical circuit inventory must exactly cover requested backbone, customer, NOC and external transit attachments.")
     for router, required in used_pe_ports.items():
         actual = {p for p in child("device", router, "interface") if peers.get(p)}
@@ -836,6 +904,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     public_asns = ("asn/operator", "asn/transit-a", "asn/transit-b")
     expected_asns = {f"asn/customer/{key}": base + 256 + slot for key, slot in customer_slots.items()}
     expected_providers = {"provider/operator", *(f"provider/{label}" for label in CARRIER_NAMES)}
+    if kind("provider-network/oob") != "provider_network" or refs("provider-network/oob").get("provider") != "provider/oob":
+        report("provider-oob", "provider-network/oob", "The out-of-band ISP needs its own provider network as the far end of every console circuit.")
     if by_kind["provider"] != expected_providers or by_kind["asn"] != set(expected_asns) | set(public_asns):
         report("provider-routing-registry", "plan", "Provider and ASN inventories must match actual operator, transport, upstream and customer identities.")
     if (kind("rir/private") != "rir" or attrs("rir/private").get("is_private") is not True or
@@ -875,12 +945,22 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         asn = f"asn/customer/{premises[sid][0]['key']}" if sid in premises else "asn/operator"
         if refs(site).get("asns") != [asn]:
             report("provider-asn-consumer", site, "Site routing ownership must reference its actual customer or operator ASN.")
-    if (kind("vrf/provider") != "vrf" or refs("vrf/provider").get("tenant") != "tenant" or
-            attrs("vrf/provider").get("enforce_unique") is not True or kind("provider-network/operator") != "provider_network" or
+    hub_rt, spoke_rt = "route-target/management/hub", "route-target/management/spoke"
+    if (kind(MANAGEMENT) != "vrf" or refs(MANAGEMENT).get("tenant") != "tenant" or attrs(MANAGEMENT).get("name") != "Carrier Management" or
+            attrs(MANAGEMENT).get("enforce_unique") is not True or attrs(MANAGEMENT).get("rd") != f"{operator_asn}:{HUB_RT}" or
+            refs(MANAGEMENT).get("import_targets") != [hub_rt, spoke_rt] or refs(MANAGEMENT).get("export_targets") != [hub_rt] or
+            attrs(hub_rt).get("name") != f"{operator_asn}:{HUB_RT}" or attrs(spoke_rt).get("name") != f"{operator_asn}:{SPOKE_RT}" or
+            kind(hub_rt) != "route_target" or kind(spoke_rt) != "route_target" or
+            kind("provider-network/operator") != "provider_network" or
             refs("provider-network/operator").get("provider") != "provider/operator"):
-        report("provider-routing-domain", "vrf/provider", "The real backbone requires an operator-owned unique provider routing context and matching service network.")
+        report("provider-routing-domain", MANAGEMENT, "Carrier Management must import the CE spoke and its own hub target and export only the hub, "
+               "with the operator's service network beside it.")
+    if kind(OOB) != "vrf" or refs(OOB).get("tenant") != "tenant" or refs(OOB).get("import_targets") or refs(OOB).get("export_targets"):
+        report("provider-routing-domain", OOB, "The out-of-band context is the ISP's network: no route target joins it to the carrier.")
     expected_vcs, expected_terms = set(), set()
-    expected_accounts = {f"provider-account/provider/{label}" for label in CARRIER_NAMES} | {"provider-account/operator/noc", "provider-account/operator/fiber"}
+    expected_accounts = {f"provider-account/provider/{label}" for label in CARRIER_NAMES} | {"provider-account/operator/fiber"}
+    if any(refs(f"circuit/noc/{side}").get("provider") == "provider/operator" for side in ("a", "b")):
+        expected_accounts.add("provider-account/operator/noc")
     for account in expected_accounts:
         provider = "provider/operator" if account.startswith("provider-account/operator/") else account.removeprefix("provider-account/")
         if kind(account) != "provider_account" or refs(account).get("provider") != provider or "tenant" in refs(account):
@@ -896,7 +976,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         expected_vcs.add(vc); expected_accounts.add(account)
         if (kind(tenant) != "tenant" or kind(vrf) != "vrf" or refs(vrf).get("tenant") != tenant or attrs(vrf).get("enforce_unique") is not True or
                 attrs(vrf).get("rd") != f"{operator_asn}:{1001 + customer_slots[key]}" or
-                refs(vrf).get("import_targets") != [target] or refs(vrf).get("export_targets") != [target] or
+                refs(vrf).get("import_targets") != [target, hub_rt] or refs(vrf).get("export_targets") != [target, spoke_rt] or
                 kind(target) != "route_target" or attrs(target).get("name") != f"{operator_asn}:{1001 + customer_slots[key]}" or refs(target).get("tenant") != tenant):
             report("provider-customer-routing", vrf, "Each private customer needs its own tenant VRF and exact symmetric reserved route target.")
         if (kind(account) != "provider_account" or refs(account).get("provider") != "provider/operator" or "tenant" in refs(account) or
@@ -979,8 +1059,14 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     # --- Premises sit across the metro, not on top of their serving PoP ---
     for sid, (_, pop, _) in premises.items():
         here, there = site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")
-        if here and there and sid not in recipe.get("site_names", {}) and not PREMISES_KM[0] <= _km(here, there) <= PREMISES_KM[1]:
-            report("provider-premises-geography", f"site/{sid}", "Customer premises sit 2-25 km from their serving PoP.")
+        if not here or not there or sid in recipe.get("site_names", {}):
+            continue
+        # PoPs allocated after this premises cannot reassign its area.
+        rivals = [site_points.get(f"site/pop-{q}") for q in pops if q != pop and pops[q]["metro"] == pops[pop]["metro"]
+                  and allocations.get(f"pop-{q}", 1 << 62) < allocations[sid]]
+        if _km(here, there) > PREMISES_KM or any(p and _km(here, p) <= _km(here, there) for p in rivals):
+            report("provider-premises-geography", f"site/{sid}", "Customer premises lie in their serving PoP's area: within "
+                   f"{PREMISES_KM} km and nearer it than any other same-metro PoP that existed when they were ordered.")
 
     # --- BGP inventory: documentation records, never applied configuration ---
     def ipv4_of(port):
@@ -1066,7 +1152,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for side, (router, port, provider, circuit_key) in sorted(transit_peerings.items()):
             local = address_of(port, family)
             network = ip_interface(attrs(local)["address"]).network if local else None
-            candidates = prefixes_by_vrf_network[("vrf/provider", str(network))]
+            candidates = prefixes_by_vrf_network[(CORE, str(network))]
             expected_sessions[f"bgp-session/transit/{side}{tail}"] = peering(
                 router, f"{name_of(provider)} transit{label}", f"asn/transit-{side}", "transit",
                 f"External transit peering over {attrs(circuit_key).get('cid')}", local,

@@ -628,17 +628,31 @@ for the separately recorded pinned-target live qualification.
   clinical execution.
 - Provider work follows the independently reviewed contract under
   `build/goal-richness/provider/design-contract.md`: finite physical PoP ports,
-  real two-site circuits, in-band loopback management and permanent growth.
+  real two-site circuits and permanent growth.
   Provider allocation slots count /24 units; the fixed NOC occupies the first
   /16 and routed links/loopbacks reserve the final /16. Existing profiles retain
   their allocation units. Shared DC WAN attachment is an internal builder hook;
   the independent provider validator must check every NOC /31/circuit/PE path.
   Customer spoke-to-hub capacity is a finite declared flow model, not total
-  backbone/NOC/transit traffic. Since 0.16 PE loopbacks, PoP pair links,
-  inter-PoP spans and transit handoffs use carrier-owned RFC 5737 space, so the
-  final /16 now holds only management, NOC and customer access /31s. Same-metro
-  spans are owned dark fiber (no commit); inter-metro spans are leased 10G/100G
-  transport sized from the declared flows. Catalog additions require an explicit baseline;
+  backbone/NOC/transit traffic. Since 0.16 PE loopbacks (from host .1, never a
+  /24's network address), PoP pair links and inter-PoP spans use carrier-owned
+  RFC 5737 space and sit in the global table (no VRF, as Junos inet.0); each
+  transit /31 is numbered by its upstream from a recorded assignment outside
+  every operator aggregate. The final /16 holds only management, NOC and
+  customer access /31s. Management is the Carrier Management VRF (`vrf/provider`,
+  `<ASN>:9000`) joined to every customer VRF by a hub/spoke extranet
+  (`<ASN>:9000`/`:9001`) so the NOC reaches CE management; PE `fxp0` is cabled
+  and addressed there, and each PoP console server has an independent broadband
+  out-of-band circuit on NET2 in its own IPv4-only VRF. With IPv6 every routing
+  context owns its own routed /64. Same-metro spans are owned dark fiber (no
+  commit); inter-metro spans are 100G wavelengths on the 100G port; a NOC
+  handoff into another metro is a leased 1G private line. MX204 1G handoffs keep
+  `xe-` names (docs/modeling.md cites the source). Premises are placed in their
+  serving PoP's area (within 25 km, nearer it than any same-metro PoP allocated
+  before them), so name, address and homing agree. `lan_endpoints = 0` is a
+  CE-only premises managed on a /32 loopback; growing it to desks needs a new
+  baseline. Customer desks answer from the customer's own domain and PoP
+  facilities desks are the carrier hotel's remote hands. Catalog additions require an explicit baseline;
   preserve hospital source/artifacts and historical live evidence.
 - Provider BGP records (`estates/bgp.py`, since 0.14.0) are inventory, never
   execution. They document intended peerings so the `netbox_bgp` tables and the

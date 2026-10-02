@@ -52,8 +52,11 @@ class IPv4FamilyValidationTests(unittest.TestCase):
 
     def test_provider_unaddressed_management_port_rejects_ipv6_too(self):
         plan, objects = self.copy("provider-backbone")
-        port = next(key for key, obj in objects.items() if obj["kind"] == "interface" and key.endswith("/if/fxp0"))
-        router = objects[port]["refs"]["device"]
+        # PE fxp0 is addressed out-of-band since 0.16; the PoP management
+        # switch's dedicated port is the one that must stay unaddressed.
+        port = next(key for key, obj in objects.items() if obj["kind"] == "interface" and key.startswith("device/pop-")
+                    and "/mgmt-01/" in key and obj["attrs"].get("mgmt_only"))
+        router = next(key for key, obj in objects.items() if obj["kind"] == "device" and key.endswith("/pe-a"))
         extra = deepcopy(objects[objects[router]["refs"]["primary_ip6"]])
         extra["key"] = "ipv6/extra-fxp0"
         extra["refs"]["assigned_object"] = port

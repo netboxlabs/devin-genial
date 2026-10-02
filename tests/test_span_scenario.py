@@ -88,8 +88,8 @@ class SpanScenarioTests(unittest.TestCase):
                 field = "baseline_kbps" if stage == "baseline" else "maintenance_kbps"
                 self.assertEqual(row[field], summed[(row["edge"], row["from_pe"], row["to_pe"])] )
         active = [row for row in e["capacity"]["directions"] if row["maintenance_state"] == "active"]
-        # 10G leased commitment, 20% reserve, two 50 Mbps spokes on one direction.
-        self.assertEqual(min(Decimal(row["headroom_kbps"]) for row in active), 7900000)
+        # 100G wavelength commitment, 20% reserve, two 50 Mbps spokes on one direction.
+        self.assertEqual(min(Decimal(row["headroom_kbps"]) for row in active), 79900000)
 
     def test_exact_findings_include_lost_additional_failure_margin(self):
         e = self.envelope
@@ -130,10 +130,10 @@ class SpanScenarioTests(unittest.TestCase):
         for row in self.envelope["capacity"]["directions"]:
             if row["edge"] != self.envelope["subject"]:
                 continue
-            # The 10G commitment, not the 100G handoff, is the span's limit.
-            self.assertEqual(row["limit_kbps"], 10000000)
-            self.assertEqual(Decimal(row["usable_kbps"]), 8000000)
-            self.assertEqual(Decimal(row["baseline_available_kbps"]), 8000000)
+            # The 100G wavelength commitment is the span's limit.
+            self.assertEqual(row["limit_kbps"], 100000000)
+            self.assertEqual(Decimal(row["usable_kbps"]), 80000000)
+            self.assertEqual(Decimal(row["baseline_available_kbps"]), 80000000)
             self.assertEqual(row["maintenance_state"], "offline")
             self.assertEqual(Decimal(row["maintenance_available_kbps"]), 0)
             self.assertEqual(Decimal(row["headroom_kbps"]), 0)
