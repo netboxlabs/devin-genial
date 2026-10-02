@@ -362,7 +362,21 @@ The loader supplies three model defaults the raw bulk path would otherwise
 manufacture invalidly (`location.status`, `power_outlet.status`, `rack.starting_unit`),
 plus the columns NetBox's own `save()` derives (a rack's `form_factor`/`width`
 from its rack type, a device type's `_abs_weight`; `turbobulk._save_copies`);
-strict readback compares only emitted fields and does not verify them.
+strict readback compares only emitted fields and does not verify those.
+Every other save()/pre_save/post_save-derived column follows the
+component-cache rule instead — compiled into the original row, never repaired
+afterwards, and proved by `_verify_save_derived` at every readback
+(`save_derived` in receipts): prefix/cluster/wireless-LAN scope caches (exact
+`?site_id=`/`?region_id=`/`?site_group_id=`), interface and VM-interface
+`_name` (NetBox's `naturalize_interface`, ported verbatim; proved by the
+model's own Meta ordering), prefix `_depth`/`_children` (plan plus prefixes
+already on the target; a foreign container's own `_children` is never
+rewritten), IP-range `size`, device `airflow`/`cooling_method` from its type,
+VM `site` from its cluster, power-feed `available_power` (`?available_power=`),
+radio channel frequency/width, the VLAN-group default VID range, and cable
+`_abs_length` (ordering-only, unverified). The table and the deliberately
+uncompiled remainder are in docs/loading.md. Targets loaded before compiler
+`v02-turbobulk-14` fail this gate until reseeded.
 Write each bounded REST completion payload to the receipt before PATCH. Recover a
 lost response only from exact target readback; never resend an unresolved mutation.
 A lost zero-row finalizer response may adopt one exact core-job match inside its
