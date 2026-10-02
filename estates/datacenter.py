@@ -220,13 +220,15 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             if domain != "none":
                 metadata.update(replica_group=i // replicas + 1, replica_lane=i % replicas,
                                 replicas=replicas, failure_domain=domain)
+                # Growth appends shards, so the first shard's wording never
+                # depends on how many follow it.
                 lane = ("primary", "secondary", "tertiary", "quaternary")[i % replicas]
-                shard = f", shard {i // replicas + 1}" if instances > replicas else ""
+                shard = f", shard {i // replicas + 1}" if i >= replicas else ""
                 description = f"{service}{shard} ({lane})"
                 apart = "separate hosts in separate cabinets" if domain == "rack" else "separate hosts"
                 comments = f"Runs on {host_name}; its other replicas run on {apart}."
             else:
-                description = f"{service}, instance {i + 1}" if instances > 1 else service
+                description = f"{service}, instance {i + 1}" if i else service
                 comments = f"Runs on {host_name}."
             vm = w.add("virtual_machine", f"vm/{site.id}/{name}/{i+1:03}",
                        {"name": site.display_name(f"{name}-{i+1:03}"), "status": "active", "vcpus": cpus, "memory": memory,

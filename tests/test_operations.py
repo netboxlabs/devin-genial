@@ -72,9 +72,9 @@ class OperationsTests(unittest.TestCase):
 
     def test_custom_field_requires_definition_and_declared_choice(self):
         site = self.objects["site/dc-01"]
-        site["meta"]["requires"].remove("custom-field/operations-tier")
+        site["meta"]["requires"].remove("custom-field/service-class")
         self.assertIn("operations-custom-field", self.codes())
-        site["meta"]["requires"].append("custom-field/operations-tier")
+        site["meta"]["requires"].append("custom-field/service-class")
         next(iter(site["attrs"]["custom_fields"].values()))["selection"] = "undeclared"
         self.assertIn("operations-custom-field", self.codes())
 

@@ -5,6 +5,13 @@ import unittest
 
 from estates.generate import generate
 from estates.validate import validate
+from estates.validate_networking import routed_vlan_view
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 class EnterpriseValidationTests(unittest.TestCase):
@@ -125,8 +132,9 @@ class EnterpriseValidationTests(unittest.TestCase):
                 self.assertFinding("dc-power-diversity")
 
     def test_unaddressed_gateways_are_not_healthy(self):
+        routed = routed_vlans(self.plan)
         gateways = {o["key"] for o in self.plan["objects"] if o["kind"] == "interface" and
-                    o["attrs"].get("type") == "virtual" and o["refs"].get("untagged_vlan") == "vlan/dc-01/applications"}
+                    o["attrs"].get("type") == "virtual" and routed.get(o["key"]) == "vlan/dc-01/applications"}
         self.plan["objects"] = [o for o in self.plan["objects"] if not
                                 (o["kind"] == "ip_address" and o["refs"].get("assigned_object") in gateways)]
         self.assertFinding("dc-gateway-inventory")

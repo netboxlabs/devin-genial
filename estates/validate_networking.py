@@ -14,8 +14,9 @@ from .naming import IPAM_ROLES, prefix_role, segment_role
 
 
 def is_svi(obj):
-    return (obj.get("kind") == "interface" and obj.get("attrs", {}).get("type") == "virtual"
-            and not obj.get("refs", {}).get("parent"))
+    attrs, refs = obj.get("attrs"), obj.get("refs")
+    return (obj.get("kind") == "interface" and isinstance(attrs, dict) and attrs.get("type") == "virtual"
+            and not (isinstance(refs, dict) and refs.get("parent")))
 
 
 def svi_findings(plan):
@@ -46,39 +47,45 @@ def routed_vlan_view(plan):
     address gains nothing.
     """
     objects = plan.get("objects") if isinstance(plan, dict) else None
-    if not isinstance(objects, list) or not all(
-            isinstance(o, dict) and isinstance(o.get("refs"), dict) and isinstance(o.get("attrs"), dict) for o in objects):
+    if not isinstance(objects, list):
         return plan
-    index = {o.get("key"): o for o in objects}
+
+    def part(obj, name):
+        value = obj.get(name) if isinstance(obj, dict) else None
+        return value if isinstance(value, dict) else {}
+
+    index = {o.get("key"): o for o in objects if isinstance(o, dict)}
     bound = []
-    for obj in objects:
-        if obj.get("kind") == "prefix" and isinstance(obj["refs"].get("vlan"), str):
+    for obj in index.values():
+        refs = part(obj, "refs")
+        if obj.get("kind") == "prefix" and isinstance(refs.get("vlan"), str):
             try:
-                vlan_site = index.get(obj["refs"]["vlan"], {}).get("refs", {}).get("site")
-                bound.append((ipaddress.ip_network(obj["attrs"].get("prefix")), obj["refs"]["vlan"],
-                              obj["refs"].get("vrf"), vlan_site))
-            except (TypeError, ValueError, AttributeError):
+                bound.append((ipaddress.ip_network(part(obj, "attrs").get("prefix")), refs["vlan"],
+                              refs.get("vrf"), part(index.get(refs["vlan"]), "refs").get("site")))
+            except (TypeError, ValueError):
                 continue
     routed = {}
-    for obj in objects:
-        port = index.get(obj["refs"].get("assigned_object")) if obj.get("kind") == "ip_address" else None
-        if not port or not is_svi(port) or port["refs"].get("untagged_vlan") or port["key"] in routed:
+    for obj in index.values():
+        refs = part(obj, "refs")
+        port = index.get(refs.get("assigned_object")) if obj.get("kind") == "ip_address" else None
+        if (not isinstance(port, dict) or not is_svi(port) or part(port, "refs").get("untagged_vlan")
+                or port.get("key") in routed):
             continue
         try:
-            host = ipaddress.ip_interface(obj["attrs"].get("address")).ip
+            host = ipaddress.ip_interface(part(obj, "attrs").get("address")).ip
         except (TypeError, ValueError):
             continue
-        site = index.get(port["refs"].get("device"), {}).get("refs", {}).get("site")
+        site = part(index.get(part(port, "refs").get("device")), "refs").get("site")
         holding = [(net.prefixlen, vlan, vrf, vlan_site) for net, vlan, vrf, vlan_site in bound
                    if net.version == host.version and host in net]
-        matches = ([(length, vlan) for length, vlan, vrf, _ in holding if vrf == obj["refs"].get("vrf")]
+        matches = ([(length, vlan) for length, vlan, vrf, _ in holding if vrf == refs.get("vrf")]
                    or [(length, vlan) for length, vlan, _, vlan_site in holding if site and vlan_site == site])
         if matches:
             routed[port["key"]] = max(matches)[1]
     if not routed:
         return plan
-    return {**plan, "objects": [{**o, "refs": {**o["refs"], "untagged_vlan": routed[o["key"]]}} if o.get("key") in routed
-                                else o for o in objects]}
+    return {**plan, "objects": [{**o, "refs": {**o["refs"], "untagged_vlan": routed[o["key"]]}}
+                                if isinstance(o, dict) and o.get("key") in routed else o for o in objects]}
 
 
 def validate(plan, catalog=None):

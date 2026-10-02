@@ -47,7 +47,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `custom_field` | `extras.customfield` | `/api/extras/custom-fields/` | choice_set, owner | name + type | REST, main, ns-name |
 | `custom_field_choice_set` | `extras.customfieldchoiceset` | `/api/extras/custom-field-choice-sets/` | owner | name | REST, main, ns-name |
 | `custom_link` | `extras.customlink` | `/api/extras/custom-links/` | owner | name | REST, main, ns-name |
-| `device` | `dcim.device` | `/api/dcim/devices/` | cluster, device_type, location, platform, primary_ip4, primary_ip6, rack, role, site, tags, tenant, virtual_chassis | name + asset_tag (in site, tenant) | TB |
+| `device` | `dcim.device` | `/api/dcim/devices/` | cluster, device_type, location, owner, platform, primary_ip4, primary_ip6, rack, role, site, tags, tenant, virtual_chassis | name + asset_tag (in site, tenant) | TB |
 | `device_bay` | `dcim.devicebay` | `/api/dcim/device-bays/` | device, installed_device | name (in device) | TB |
 | `device_role` | `dcim.devicerole` | `/api/dcim/device-roles/` | — | name (in parent) | TB |
 | `device_type` | `dcim.devicetype` | `/api/dcim/device-types/` | manufacturer | model (in manufacturer) | TB |
@@ -60,7 +60,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `interface` | `dcim.interface` | `/api/dcim/interfaces/` | bridge, device, module, parent, primary_mac_address, tagged_vlans, untagged_vlan, vlan_translation_policy, vrf, wireless_lans | name + type (in device) | TB |
 | `inventory_item` | `dcim.inventoryitem` | `/api/dcim/inventory-items/` | component, device, manufacturer, parent, role | name + asset_tag (in device, parent) | TB |
 | `inventory_item_role` | `dcim.inventoryitemrole` | `/api/dcim/inventory-item-roles/` | — | name | TB |
-| `ip_address` | `ipam.ipaddress` | `/api/ipam/ip-addresses/` | assigned_object, tenant, vrf | address (in vrf) | TB |
+| `ip_address` | `ipam.ipaddress` | `/api/ipam/ip-addresses/` | assigned_object, owner, tenant, vrf | address (in vrf) | TB |
 | `ip_range` | `ipam.iprange` | `/api/ipam/ip-ranges/` | role, tenant, vrf | start_address + end_address (in vrf) | TB |
 | `ip_sec_policy` | `vpn.ipsecpolicy` | `/api/vpn/ipsec-policies/` | proposals | name | TB |
 | `ip_sec_profile` | `vpn.ipsecprofile` | `/api/vpn/ipsec-profiles/` | ike_policy, ipsec_policy | name + mode | TB |
@@ -83,11 +83,11 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `power_outlet` | `dcim.poweroutlet` | `/api/dcim/power-outlets/` | device, power_port | name (in device) | TB |
 | `power_panel` | `dcim.powerpanel` | `/api/dcim/power-panels/` | location, site | name (in site) | TB |
 | `power_port` | `dcim.powerport` | `/api/dcim/power-ports/` | device, module | name (in device) | TB |
-| `prefix` | `ipam.prefix` | `/api/ipam/prefixes/` | role, scope_site, tags, tenant, vlan, vrf | prefix (in vrf) | TB |
+| `prefix` | `ipam.prefix` | `/api/ipam/prefixes/` | owner, role, scope_site, tags, tenant, vlan, vrf | prefix (in vrf) | TB |
 | `provider` | `circuits.provider` | `/api/circuits/providers/` | asns | name (in parent) | TB |
 | `provider_account` | `circuits.provideraccount` | `/api/circuits/provider-accounts/` | owner, provider | account (in provider) | REST |
 | `provider_network` | `circuits.providernetwork` | `/api/circuits/provider-networks/` | provider | name (in provider) | TB |
-| `rack` | `dcim.rack` | `/api/dcim/racks/` | group, location, rack_type, role, site, tenant | name + asset_tag (in site, location) | TB |
+| `rack` | `dcim.rack` | `/api/dcim/racks/` | group, location, owner, rack_type, role, site, tenant | name + asset_tag (in site, location) | TB |
 | `rack_group` | `dcim.rackgroup` | `/api/dcim/rack-groups/` | owner | name | TB |
 | `rack_role` | `dcim.rackrole` | `/api/dcim/rack-roles/` | — | name (in parent) | TB |
 | `rack_type` | `dcim.racktype` | `/api/dcim/rack-types/` | manufacturer, owner | model (in manufacturer) | TB |
@@ -112,7 +112,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `virtual_disk` | `virtualization.virtualdisk` | `/api/virtualization/virtual-disks/` | owner, virtual_machine | name (in virtual_machine) | TB |
 | `virtual_machine` | `virtualization.virtualmachine` | `/api/virtualization/virtual-machines/` | cluster, device, platform, primary_ip4, primary_ip6, role, tags, tenant, virtual_machine_type | name (in cluster, device, tenant) | TB |
 | `virtual_machine_type` | `virtualization.virtualmachinetype` | `/api/virtualization/virtual-machine-types/` | default_platform, owner | name | TB |
-| `vlan` | `ipam.vlan` | `/api/ipam/vlans/` | group, role, site, tags, tenant | SDK default | TB |
+| `vlan` | `ipam.vlan` | `/api/ipam/vlans/` | group, owner, role, site, tags, tenant | SDK default | TB |
 | `vlan_group` | `ipam.vlangroup` | `/api/ipam/vlan-groups/` | scope_site, tenant | name (in scope_site, scope_location) | TB |
 | `vlan_translation_policy` | `ipam.vlantranslationpolicy` | `/api/ipam/vlan-translation-policies/` | — | name | TB |
 | `vlan_translation_rule` | `ipam.vlantranslationrule` | `/api/ipam/vlan-translation-rules/` | policy | local_vid (in policy) | TB |

@@ -23,6 +23,7 @@ from estates.model import DesignError, ROOT, canonical, hardware_catalog, recipe
 from estates.report import markdown
 from estates.validate import validate
 from estates.__main__ import main
+from estates.validate_networking import routed_vlan_view
 
 
 SMALL = dict(control_centers=2,
@@ -31,6 +32,12 @@ SMALL = dict(control_centers=2,
 SITE = "sub-oakridge"
 OTHER = "sub-stonebrook"
 OT_VLANS = (f"vlan/{SITE}/protection", f"vlan/{SITE}/telemetry", f"vlan/{SITE}/station")
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 def plan_for(**changes):
@@ -489,9 +496,10 @@ class UtilityZoneTests(unittest.TestCase):
         self.assertEqual(self.carriers(conduit),
                          {f"device/{SITE}/dist-a", f"device/{SITE}/dist-b",
                           f"device/{SITE}/ot-dist-a", f"device/{SITE}/ot-dist-b"})
+        routed = routed_vlans({"objects": list(self.objects.values())})
         gateways = [key for key, obj in self.objects.items()
                     if obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual"
-                    and obj["refs"].get("untagged_vlan") == conduit]
+                    and routed.get(key) == conduit]
         self.assertEqual(len(gateways), 4)
         addresses = sorted(self.objects[f"ip/{key}"]["attrs"]["address"] for key in gateways)
         self.assertEqual(len(set(addresses)), 4)

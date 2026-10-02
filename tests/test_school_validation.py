@@ -6,6 +6,13 @@ import unittest
 
 from estates.generate import generate
 from estates.validate import validate
+from estates.validate_networking import routed_vlan_view
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 class SchoolValidationTests(unittest.TestCase):
@@ -123,8 +130,9 @@ class SchoolValidationTests(unittest.TestCase):
                 self.assertFinding("school-geography")
 
     def test_unaddressed_campus_gateway_fails(self):
+        routed = routed_vlans(self.plan)
         ports = {obj["key"] for obj in self.plan["objects"] if obj["kind"] == "interface" and
-                 obj["attrs"].get("type") == "virtual" and obj["refs"].get("untagged_vlan") == "vlan/school-oak/students"}
+                 obj["attrs"].get("type") == "virtual" and routed.get(obj["key"]) == "vlan/school-oak/students"}
         self.plan["objects"] = [obj for obj in self.plan["objects"] if not
                                 (obj["kind"] == "ip_address" and obj["refs"].get("assigned_object") in ports)]
         self.strip_contracts()

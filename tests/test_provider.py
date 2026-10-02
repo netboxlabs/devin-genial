@@ -218,7 +218,9 @@ class ProviderTests(unittest.TestCase):
         for o in p['objects']:
             if o['kind']=='device' and o['refs'].get('role')=='role/provider-edge':
                 primary=objects[o['refs']['primary_ip4']]
-                self.assertEqual(primary['refs']['assigned_object'],o['key']+'/if/lo0')
+                # Junos addresses the loopback on unit 0, a child of lo0.
+                self.assertEqual(primary['refs']['assigned_object'],o['key']+'/if/lo0.0')
+                self.assertEqual(objects[o['key']+'/if/lo0.0']['refs']['parent'],o['key']+'/if/lo0')
                 loop=ipaddress.ip_interface(primary['attrs']['address'])
                 self.assertEqual(loop.network.prefixlen,32)
                 self.assertNotIn(int(loop.ip)%256,(0,255))
@@ -238,7 +240,10 @@ class ProviderTests(unittest.TestCase):
         for d in p['objects']:
             if d['kind']!='device' or d['refs'].get('device_type')!='hardware/provider-edge':continue
             ports=[o for o in p['objects'] if o['kind']=='interface' and o['refs'].get('device')==d['key']]
-            self.assertEqual(sum(o['attrs']['enabled'] for o in ports if o['attrs']['type']=='100gbase-x-qsfp28'),3)
+            # The mode exposes three 100G cages; any one left unused is shut like every unused port.
+            cabled={end for c in p['objects'] if c['kind']=='cable' for end in c['refs'].values()}
+            hundred=[o for o in ports if o['attrs']['type']=='100gbase-x-qsfp28']
+            self.assertTrue(all(o['attrs']['enabled'] is (o['key'] in cabled and o['attrs']['name']!='et-0/0/3') for o in hundred))
             for n in (0,1):
                 port=obj[f"{d['key']}/power/PEM {n}"]
                 self.assertEqual(port['attrs']['allocated_draw'], (320 + optical_draw[d['key']]) // 2 + (n < (320 + optical_draw[d['key']]) % 2))

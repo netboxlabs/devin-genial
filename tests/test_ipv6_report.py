@@ -28,7 +28,7 @@ class IPv6ReportTests(unittest.TestCase):
         self.assertIn("IPv6 interface", text)
         self.assertIn("Service example", text)
         self.assertEqual(sum(line.startswith("| ") for line in text.splitlines()), 8)
-        self.assertIn("lo0 [", text)
+        self.assertIn("lo0.0 [", text)
         self.assertNotIn("bank radio", text)
         self.assertIn("unknown transit far end stays unknown", text)
         self.assertIn("no routing, RA/DHCPv6, application binding or live ingestion", text)

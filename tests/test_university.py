@@ -14,11 +14,18 @@ from estates.model import DesignError, ROOT, canonical, hardware_catalog, recipe
 from estates.report import markdown
 from estates.validate import validate
 from estates.__main__ import main
+from estates.validate_networking import routed_vlan_view
 
 
 SMALL = dict(buildings=[dict(key="science", classrooms=4, lab_seats=24, offices=12)],
              residences=[dict(key="aspen", rooms=60)],
              library=dict(reading_seats=48, aps=3), wan_peak_mbps=2000)
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 def plan_for(**changes):
@@ -226,7 +233,10 @@ class UniversityCompositionTests(unittest.TestCase):
                 self.assertEqual(new[key]["refs"], obj["refs"], key)
             elif obj["kind"] in {"site", "rack", "location", "cable", "ip_address", "vlan", "prefix",
                                  "virtual_machine", "wireless_lan"} or key in occupied:
-                self.assertEqual(new[key], obj, key)
+                # A site's service class follows the bandwidth it buys, which
+                # growth may raise; every identity and placement stays put.
+                stable = lambda o: {**o, "attrs": {k: v for k, v in o["attrs"].items() if k != "custom_fields"}}
+                self.assertEqual(stable(new[key]), stable(obj), key)
             if obj["kind"] == "device":
                 for field in ("location", "rack", "site"):
                     self.assertEqual(new[key]["refs"].get(field), obj["refs"].get(field), key)
@@ -484,9 +494,10 @@ class UniversityValidatorTests(unittest.TestCase):
 
     def test_missing_gateway_svi_is_reported(self):
         def disable(plan, objects):
+            routed = routed_vlans(plan)
             for obj in plan["objects"]:
                 if (obj["kind"] == "interface" and obj["refs"].get("device") == "device/bldg-science/dist-a"
-                        and obj["refs"].get("untagged_vlan") == "vlan/bldg-science/security"):
+                        and routed.get(obj["key"]) == "vlan/bldg-science/security"):
                     obj["attrs"]["enabled"] = False
         self.assertIn("university-gateway-inventory", self.mutated(disable))
 

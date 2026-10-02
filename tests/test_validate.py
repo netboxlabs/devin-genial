@@ -133,7 +133,8 @@ class ValidationTests(unittest.TestCase):
         self.objects["d3"]["meta"]["endpoint"] = True
         self.plan["objects"].extend([
             {"key": "role/distribution", "kind": "device_role", "attrs": {"name": "distribution"}},
-            {"key": "svi", "kind": "interface", "attrs": {"name": "Vlan10", "type": "virtual", "mode": "access"}, "refs": {"device": "d1", "untagged_vlan": "vlan", "vrf": "vrf"}},
+            # A routed VLAN interface: no mode; its VLAN is its address's prefix's.
+            {"key": "svi", "kind": "interface", "attrs": {"name": "Vlan10", "type": "virtual"}, "refs": {"device": "d1", "vrf": "vrf"}},
             {"key": "gateway-ip", "kind": "ip_address", "attrs": {"address": "10.0.0.1/24"}, "refs": {"assigned_object": "svi", "vrf": "vrf"}},
         ])
 

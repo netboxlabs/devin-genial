@@ -6,6 +6,13 @@ import unittest
 
 from estates.generate import generate
 from estates.validate import validate
+from estates.validate_networking import routed_vlan_view
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 class HospitalValidationTests(unittest.TestCase):
@@ -188,8 +195,9 @@ class HospitalValidationTests(unittest.TestCase):
                 self.strip_explanations()
                 self.assertIn(code, self.codes())
         self.setUp()
+        routed = routed_vlans(self.plan)
         ports = {obj["key"] for obj in self.plan["objects"] if obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual" and
-                 obj["refs"].get("untagged_vlan") == "vlan/hospital-central/medical"}
+                 routed.get(obj["key"]) == "vlan/hospital-central/medical"}
         self.plan["objects"] = [obj for obj in self.plan["objects"] if not (obj["kind"] == "ip_address" and obj["refs"].get("assigned_object") in ports)]
         self.strip_explanations()
         self.assertIn("hospital-gateway-inventory", self.codes())
@@ -256,9 +264,10 @@ class HospitalValidationTests(unittest.TestCase):
         for mask in (8, 32):
             with self.subTest(mask=mask):
                 self.setUp()
+                routed = routed_vlans(self.plan)
                 svi = next(obj["key"] for obj in self.plan["objects"] if obj["kind"] == "interface" and
                            obj["refs"].get("device") == "device/hospital-central/dist-a" and
-                           obj["refs"].get("untagged_vlan") == "vlan/hospital-central/medical" and obj["attrs"].get("type") == "virtual")
+                           routed.get(obj["key"]) == "vlan/hospital-central/medical" and obj["attrs"].get("type") == "virtual")
                 address = next(obj for obj in self.plan["objects"] if obj["kind"] == "ip_address" and obj["refs"].get("assigned_object") == svi)
                 address["attrs"]["address"] = address["attrs"]["address"].split("/")[0] + f"/{mask}"
                 self.plan["contracts"] = []

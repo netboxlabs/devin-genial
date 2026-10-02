@@ -103,9 +103,9 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         cls.plan = generate(recipe_from_file(ROOT / "profiles/enterprise-dc.toml"))
         cls.objects = _index(cls.plan)
 
-    def test_all_68_kinds_and_references_have_declarative_compilers(self):
+    def test_all_67_kinds_and_references_have_declarative_compilers(self):
         kinds = {obj["kind"] for obj in self.objects.values()}
-        self.assertEqual(len(kinds), 68)
+        self.assertEqual(len(kinds), 67)  # 0.16 dropped the mirror rack groups
         self.assertFalse(kinds - SPECS.keys())
         unsupported = {(obj["kind"], ref) for obj in self.objects.values()
                        for ref in set(obj["refs"]) - SUPPORTED_REFS[obj["kind"]]}

@@ -11,8 +11,8 @@ class CoverageTests(unittest.TestCase):
     def test_complete_profile_and_explicit_external_user(self):
         plan = generate(recipe_from_file(ROOT / "profiles/bank-depth.toml"))
         coverage = type_coverage(plan)
-        self.assertEqual(coverage["candidate_types"], 101)
-        self.assertEqual(coverage["generated_candidate_types"], 101)
+        self.assertEqual(coverage["candidate_types"], 100)
+        self.assertEqual(coverage["generated_candidate_types"], 100)
         self.assertEqual(coverage["missing_candidate_types"], [])
         users = [obj for obj in plan["objects"] if obj["kind"] == "user"]
         self.assertEqual(len(users), 1)

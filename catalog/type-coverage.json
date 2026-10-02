@@ -695,8 +695,8 @@
     {
       "kind": "rack_group",
       "native_model": "dcim.rackgroup",
-      "category": "estate_candidate",
-      "notes": "",
+      "category": "not_modeled",
+      "notes": "Grouped only by room kind, rack groups mirrored the site groups (data-model review HIER-6); these estates have no cross-location rack grouping, so none is emitted.",
       "sdk_source_url": "https://github.com/netboxlabs/diode-sdk-python/blob/v1.14.0/netboxlabs/diode/sdk/diode/v1/ingester_pb2.pyi#L5086"
     },
     {

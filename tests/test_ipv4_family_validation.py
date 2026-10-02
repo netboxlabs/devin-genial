@@ -6,9 +6,16 @@ import unittest
 
 from estates.generate import generate
 from estates.validate import validate
+from estates.validate_networking import routed_vlan_view
 
 
 PROFILES = ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone")
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 class IPv4FamilyValidationTests(unittest.TestCase):
@@ -86,8 +93,9 @@ class IPv4FamilyValidationTests(unittest.TestCase):
 
     def test_ipv6_does_not_replace_dc_ipv4_gateway_witness(self):
         plan, objects = self.copy("enterprise-data-center")
+        routed = routed_vlans(plan)
         ports = [obj["key"] for obj in plan["objects"] if obj["kind"] == "interface"
-                 and obj["refs"].get("untagged_vlan") == "vlan/dc-01/applications"
+                 and routed.get(obj["key"]) == "vlan/dc-01/applications"
                  and obj["attrs"].get("type") == "virtual"]
         self.assertTrue(ports)
         for port in ports:

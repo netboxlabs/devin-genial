@@ -5,6 +5,13 @@ import unittest
 
 from estates.generate import generate
 from estates.validate_networking import validate
+from estates.validate_networking import routed_vlan_view
+
+
+def routed_vlans(plan):
+    """Each SVI's VLAN as the checks derive it (an SVI carries no mode)."""
+    return {o["key"]: o["refs"].get("untagged_vlan") for o in routed_vlan_view(plan)["objects"]
+            if o["kind"] == "interface"}
 
 
 class SchoolWirelessTests(unittest.TestCase):
@@ -129,8 +136,9 @@ class SchoolWirelessTests(unittest.TestCase):
         self.mutation(lambda o, p: o[trunk]["refs"]["tagged_vlans"].remove("vlan/school-oak/guest"), "school-wireless-trunk", self.guest_plan)
 
         def disable_gateways(objects, plan):
+            routed = routed_vlans(plan)
             for obj in objects.values():
-                if obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual" and obj["refs"].get("untagged_vlan") == "vlan/school-oak/guest":
+                if obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual" and routed.get(obj["key"]) == "vlan/school-oak/guest":
                     obj["attrs"]["enabled"] = False
         self.mutation(disable_gateways, "school-wireless-gateway", self.guest_plan)
 
@@ -145,8 +153,9 @@ class SchoolWirelessTests(unittest.TestCase):
 
     def test_student_gateway_must_be_enabled_and_addressed(self):
         def remove_gateways(objects, plan):
+            routed = routed_vlans(plan)
             for obj in objects.values():
-                if obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual" and str(obj["refs"].get("untagged_vlan", "")).endswith("/students"):
+                if obj["kind"] == "interface" and obj["attrs"].get("type") == "virtual" and str(routed.get(obj["key"]) or "").endswith("/students"):
                     obj["attrs"]["enabled"] = False
         self.mutation(remove_gateways, "school-wireless-gateway")
 
