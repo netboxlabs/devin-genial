@@ -176,6 +176,10 @@ def analyze(plan, catalog=None):
                 kind(refs(key).get("manufacturer")) == "manufacturer" and isinstance(manufacturer, str) and
                 isinstance(attrs(key).get("name"), str)) else None
 
+    def awaiting(port):
+        """A cage whose one cable is planned: it faces a handoff not yet in service and may stay shut."""
+        return len(cables[port]) == 1 and attrs(cables[port][0][0]).get("status") == "planned"
+
     module_parts, reserved, checked_types, serials = {}, defaultdict(int), set(), defaultdict(list)
     namespace = recipe.get("namespace") if isinstance(recipe, dict) else None
     for module in kinds["module"]:
@@ -224,7 +228,15 @@ def analyze(plan, catalog=None):
                 report("optics-module", module_type, "Optical module type must advertise exactly its reviewed manufacturer/form-factor bay types, without unknown or duplicated fit claims.")
         serial = attrs(module).get("serial")
         fmt = aoc_format(part)
-        if not isinstance(serial, str) or len(serial) > 50 or not fmt or re.fullmatch(serial_pattern(fmt), serial) is None:
+        # An optic for a handoff not yet in service is planned (not yet
+        # received: no serial) or staged (on hand), only in a shut cage
+        # whose one cable is itself planned.
+        waiting = len(bindings[module]) == 1 and awaiting(bindings[module][0])
+        status = attrs(module).get("status")
+        if status == "planned" and waiting:
+            if serial is not None:
+                report("optics-serial", module, "A planned optic has not been received and carries no serial.")
+        elif not isinstance(serial, str) or len(serial) > 50 or not fmt or re.fullmatch(serial_pattern(fmt), serial) is None:
             report("optics-serial", module, "Installed optical inventory requires a serial in its maker's catalog label shape; native serial fields are at most 50 characters.")
         elif (not part.get("assembly") and isinstance(namespace, str) and len(bindings[module]) == 1 and
               not same_unit(fmt, serial, vendor_serial(fmt, int.from_bytes(hashlib.sha256(f"{namespace}/{bindings[module][0]}".encode()).digest()[:8], "big")))):
@@ -237,7 +249,7 @@ def analyze(plan, catalog=None):
             report("optics-module", module, "Installed optical module requires an actual device owner for its power reservation.")
         if (kind(bay) != "module_bay" or refs(bay).get("device") != owner or "module" in refs(bay) or
                 attrs(bay).get("enabled") is not True or occupancy.get(bay, []) != [module] or
-                attrs(module).get("status") != "active" or len(bindings[module]) != 1 or
+                status not in ({"active", "planned", "staged"} if waiting else {"active"}) or len(bindings[module]) != 1 or
                 kind(bindings[module][0]) != "interface"):
             report("optics-module", module, "Optical module needs one enabled cage directly owned by its chassis without a parent module, unique occupancy, active status and exactly one real interface binding.")
 
@@ -263,7 +275,7 @@ def analyze(plan, catalog=None):
         if alias is None:
             report("optics-hardware", port, "Optical interface owner must resolve to its actual catalog manufacturer and model.")
         if (kind(port) != "interface" or spec is None or physical not in _CAGES or actual_type != physical or
-                attrs(port).get("enabled") is not True or attrs(port).get("mgmt_only", False) or
+                (attrs(port).get("enabled") is not True and not awaiting(port)) or attrs(port).get("mgmt_only", False) or
                 attrs(owner).get("status") != "active" or
                 children[(owner, "interface", name)] != [port]):
             report("optics-port", port, "An occupied optical cage must be its unique enabled catalog interface on an active owner; fixed copper, management, radio and virtual ports cannot host optics.")

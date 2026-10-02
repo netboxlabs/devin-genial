@@ -136,7 +136,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertEqual(validate(self.plan), [])
         self.assertEqual(validate(generate(self.plan["recipe"] | {"patching": "panels"})), [])
         self.assertEqual(sum(o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge" for o in self.plan["objects"]), 6)
-        self.assertEqual(sum(o["kind"] == "virtual_circuit_termination" for o in self.plan["objects"]), 3)
+        self.assertEqual(sum(o["kind"] == "virtual_circuit_termination" for o in self.plan["objects"]), 4)
 
     def test_missing_noc_circuit_cannot_hide_behind_shared_wan_mode(self):
         self.plan["objects"].remove(self.objects["circuit/noc/a"])
@@ -194,7 +194,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("provider-management-mode", self.codes())
         self.setUp()
         self.objects[f"ip/{fxp0}"]["refs"].pop("vrf")
-        self.objects[fxp0]["refs"].pop("vrf")
+        self.objects[f"{fxp0}.0"]["refs"].pop("vrf")  # Junos addresses fxp0 on unit 0
         self.assertIn("provider-management-mode", self.codes())
         # The console server's independent broadband path: cut, or re-homed
         # into the carrier's own management context, it no longer counts.

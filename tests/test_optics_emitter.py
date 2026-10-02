@@ -38,7 +38,7 @@ class OpticsEmitterTests(unittest.TestCase):
                     bay = objects[module["refs"]["module_bay"]]
                     self.assertEqual(port["refs"]["device"], module["refs"]["device"])
                     self.assertEqual(module["refs"]["device"], bay["refs"]["device"])
-                    self.assertLessEqual(len(module["attrs"]["serial"]), 50)
+                    self.assertLessEqual(len(module["attrs"].get("serial", "")), 50)  # a planned optic has none yet
                     self.assertLessEqual(len(bay["attrs"]["name"]), 64)
                     self.assertLessEqual(len(bay["attrs"]["position"]), 30)
                     mt = objects[module["refs"]["module_type"]]

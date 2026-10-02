@@ -204,7 +204,7 @@ TAGS = {
     "hub-site": ("Hub site", "0288d1", ("site",),
                  "Hosts shared services or private-WAN hubs that other sites depend on"),
     "dual-homed": ("Dual-homed", "388e3c", ("site",),
-                   "Active WAN access from two different carriers"),
+                   "Active WAN access from two different carriers, or into two different provider edges"),
     "acquired": ("Acquired", "a1887f", ("site", "device"),
                  "Carried over from an acquired network with its retained design"),
     "route-reflector": ("Route reflector", "7e57c2", ("device",),

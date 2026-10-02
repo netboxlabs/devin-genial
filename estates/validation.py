@@ -332,7 +332,8 @@ def _group_standards(g, group, devices, consoled, roles_of):
                            derivation="roles the estate cables to a console server anywhere"))
     dual = sorted(role for role in {d["refs"]["role"] for d in devices}
                   if all(len(g.children[d["key"]]["power_port"]) >= 2
-                         for d in devices if d["refs"]["role"] == role))
+                         for d in devices if d["refs"]["role"] == role)
+                  and not all(_customer_power(g, d) for d in devices if d["refs"]["role"] == role))
     if dual:
         expected = [{"subject": d["attrs"]["name"],
                      "cause": f"{sum(1 for p in g.children[d['key']]['power_port'] if g.peer.get(p['key']))}"
@@ -346,28 +347,38 @@ def _group_standards(g, group, devices, consoled, roles_of):
     return rules
 
 
+def _customer_power(g, d):
+    """Supplies on power the estate does not inventory (a provider CE in the customer's rack)."""
+    ports = g.children[d["key"]]["power_port"]
+    return bool(ports) and all(p["attrs"].get("mark_connected") and not g.peer.get(p["key"]) for p in ports)
+
+
 def _group_resilience(g, group, devices):
     """Graph checks; scoped by policy roles because the graph engine ignores rule roles."""
     rules = []
     feed_devices, paths = defaultdict(list), {}
-    for d in devices:
+    # A group whose every device runs on uninventoried power has no power
+    # path to check; its circuit checks still apply.
+    powered = not all(_customer_power(g, d) for d in devices)
+    for d in devices if powered else ():
         paths[d["key"]] = feeds = g.power_paths(d)
         if len(set(feeds)) == 1:
             feed_devices[feeds[0]].append(d["attrs"]["name"])
-    expected = [{"subject": d["attrs"]["name"], "cause": "no power port reaches a feed"}
-                for d in devices if g.children[d["key"]]["power_port"] and not paths[d["key"]]]
-    rules.append(_rule("Every powered device reaches a feed", "power_path_complete", "power", "high",
-                       {"min_complete_paths": 1}, engine="graph", model="predicted", expected=expected,
-                       derivation="cabled power paths port → PDU outlet → PDU inlet → feed"))
-    expected = []
-    for feed, names in sorted(feed_devices.items()):
-        obj = g.objects[feed]
-        expected.append({"subject": f"{obj['attrs']['name']}: {', '.join(sorted(names))}",
-                         "cause": f"every supply of {len(names)} device(s) draws from feed "
-                                  f"{obj['attrs']['name']} on panel {g.name(obj['refs']['power_panel'])}"})
-    rules.append(_rule("No feed is a single point of power", "power_feed_blast_radius", "power", "high",
-                       {"max_unprotected_devices": 0}, engine="graph", model="predicted", expected=expected,
-                       derivation="devices whose every power path shares one feed"))
+    if powered:
+        expected = [{"subject": d["attrs"]["name"], "cause": "no power port reaches a feed"}
+                    for d in devices if g.children[d["key"]]["power_port"] and not paths[d["key"]]]
+        rules.append(_rule("Every powered device reaches a feed", "power_path_complete", "power", "high",
+                           {"min_complete_paths": 1}, engine="graph", model="predicted", expected=expected,
+                           derivation="cabled power paths port → PDU outlet → PDU inlet → feed"))
+        expected = []
+        for feed, names in sorted(feed_devices.items()):
+            obj = g.objects[feed]
+            expected.append({"subject": f"{obj['attrs']['name']}: {', '.join(sorted(names))}",
+                             "cause": f"every supply of {len(names)} device(s) draws from feed "
+                                      f"{obj['attrs']['name']} on panel {g.name(obj['refs']['power_panel'])}"})
+        rules.append(_rule("No feed is a single point of power", "power_feed_blast_radius", "power", "high",
+                           {"max_unprotected_devices": 0}, engine="graph", model="predicted", expected=expected,
+                           derivation="devices whose every power path shares one feed"))
     sites = sorted({d["refs"]["site"] for d in devices})
     circuits = {site: g.site_circuits(site) for site in sites}
     if any(circuits.values()):

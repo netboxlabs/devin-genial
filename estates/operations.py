@@ -112,23 +112,45 @@ def _wan_accounts(w, owner):
 def _site_facts(w):
     """(hub sites, dual-homed sites) as the finished graph shows them.
 
-    A hub hosts a cluster or terminates the hub side of a private-WAN service;
-    a dual-homed site has active circuits from two different providers.
+    A hub hosts a cluster or terminates the hub side of a private-WAN service.
+    A dual-homed site has active WAN access from two different carriers, or
+    active access circuits into two different provider edges. A provider
+    backbone's own circuits are not a carrier, and out-of-band console
+    broadband is not WAN access.
     """
-    hubs, carriers = set(), defaultdict(set)
-    circuits = {o["key"]: o for o in w.objects.values() if o["kind"] == "circuit"}
-    for obj in w.objects.values():
+    hubs, carriers, edges = set(), defaultdict(set), defaultdict(set)
+    objects = w.objects
+    circuits = {o["key"]: o for o in objects.values() if o["kind"] == "circuit"}
+    cabled = {}
+    for obj in objects.values():
+        if obj["kind"] == "cable":
+            cabled[obj["refs"]["a"]], cabled[obj["refs"]["b"]] = obj["refs"]["b"], obj["refs"]["a"]
+    sides = defaultdict(dict)
+    for obj in objects.values():
         if obj["kind"] == "cluster" and obj["refs"].get("scope_site"):
             hubs.add(obj["refs"]["scope_site"])
         elif obj["kind"] == "virtual_circuit_termination" and obj["attrs"].get("role") == "hub":
             hubs.add(w.obj(w.obj(obj["refs"]["interface"])["refs"]["device"])["refs"]["site"])
-        elif obj["kind"] == "circuit_termination" and str(obj["refs"].get("termination", "")).startswith(("site/", "location/")):
-            circuit = circuits[obj["refs"]["circuit"]]
-            target = obj["refs"]["termination"]
+        elif obj["kind"] == "circuit_termination":
+            sides[obj["refs"]["circuit"]][obj["attrs"]["term_side"]] = obj
+    own = "provider/operator" if w.recipe["profile"] == "provider-backbone" else None
+    for key, ends in sides.items():
+        circuit = circuits[key]
+        if circuit["attrs"].get("status") != "active" or circuit["refs"].get("type") == "circuit-type/out-of-band":
+            continue
+        for side, term in ends.items():
+            target = str(term["refs"].get("termination", ""))
+            if not target.startswith(("site/", "location/")):
+                continue
             site = w.obj(target)["refs"]["site"] if target.startswith("location/") else target
-            if circuit["attrs"].get("status") == "active":
+            if circuit["refs"]["provider"] != own:
                 carriers[site].add(circuit["refs"]["provider"])
-    return hubs, {site for site, providers in carriers.items() if len(providers) >= 2}
+            far = ends.get("Z" if side == "A" else "A")
+            port = objects.get(cabled.get(far["key"]) if far else None, {})
+            device = objects.get(port.get("refs", {}).get("device"), {})
+            if circuit["refs"].get("type") == "circuit-type/access" and device.get("refs", {}).get("role") == "role/provider-edge":
+                edges[site].add(device["key"])
+    return hubs, {site for site in set(carriers) | set(edges) if len(carriers[site]) >= 2 or len(edges[site]) >= 2}
 
 
 def _shared(w, owner):

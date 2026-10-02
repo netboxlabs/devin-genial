@@ -19,6 +19,8 @@ AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee
 
 
 SERIAL_SHIFT_WEEKS = 8
+# A provider backbone's own provider record: the circuits it sells or runs itself.
+OPERATOR = "provider/operator"
 
 
 
@@ -92,7 +94,10 @@ def timeline(world, kinds, dated):
             maker = world.obj(world.obj(module["refs"]["module_type"])["refs"]["manufacturer"])["attrs"]["name"]
             fmt = (models.get(device["meta"].get("hardware"), {}).get("module_serial_format")
                    if module["key"].startswith(f"{device['key']}/module/") else formats.get(maker, formats["Generic"]))
-            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on[device["key"]])
+            # An optic staged for a handoff not yet in service arrived recently.
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/"))
+                           or (dated(module["key"], "staged", as_of, 7, 31) if module["attrs"].get("status") == "staged" else None)
+                           or installed_on[device["key"]])
         if fmt and serial:
             when = made(min(m["key"] for m in members), min(anchors))
             redated = redate_serial(fmt, serial, when)
@@ -273,7 +278,10 @@ def enrich(world):
         key, attrs, refs = circuit["key"], circuit["attrs"], circuit["refs"]
         provider = refs["provider"]
         name = world.obj(provider)["attrs"]["name"]
-        if provider not in provider_desks:
+        # The operator's own circuits are its products, not purchases: no
+        # carrier desk escalates them and no order goes to a supplier.
+        own = world.recipe["profile"] == "provider-backbone" and provider == OPERATOR
+        if not own and provider not in provider_desks:
             # A third-party carrier's desk answers from its own mail domain.
             domain = world.obj(provider)["meta"].get("support_domain")
             provider_desks[provider] = contact(f"contact/{provider}", f"{name} support desk", "carrier",
@@ -281,12 +289,22 @@ def enrich(world):
                 (f"Capacity and handoff coordination for {name}. Tenant technical desks handle local troubleshooting."
                  if world.recipe["profile"] == "provider-backbone" else
                  f"Circuit identifiers, contracted capacity and handoff coordination for {name}; customer-side troubleshooting stays with the tenant technical desk."))
-        assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
+        if not own:
+            assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
+        if attrs.get("termination_date"):
+            # A circuit being withdrawn carries its disconnect order.
+            journal(key, "disconnect-order", dated(key, "disconnect-order", as_of, 3, 25), "Disconnect order",
+                f"Disconnect of {attrs['cid']} scheduled for {attrs['termination_date']}; recover the handoff optics and cabling after that date.",
+                "warning")
         if "install_date" not in attrs:
             continue  # ordered work not yet in service has no dated history
         term = terms[key]
         site_name = world.obj(_site_of(world, term))["attrs"]["name"]
-        if "commit_rate" in attrs:  # owned fiber has no purchased commitment to request
+        if "commit_rate" in attrs and own:
+            buyer = "the NOC" if refs.get("tenant") == "tenant" else world.obj(refs["tenant"])["attrs"]["name"]
+            journal(key, "service-order", dated(key, "service-order", attrs["install_date"], 30, 31), "Service order",
+                f"Service order for {rate_kbps(attrs['commit_rate'])} from {buyer}; {attrs['cid']} is the service ID on the order.")
+        elif "commit_rate" in attrs:  # owned fiber has no purchased commitment to request
             journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "Order placed",
                 f"Ordered {rate_kbps(attrs['commit_rate'])} from {name}; quote {attrs['cid']} on every call to the carrier.")
         if world.recipe["profile"] == "provider-backbone":

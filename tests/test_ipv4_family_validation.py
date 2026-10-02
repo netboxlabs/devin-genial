@@ -46,7 +46,8 @@ class IPv4FamilyValidationTests(unittest.TestCase):
         for mutation in ("missing", "extra"):
             with self.subTest(mutation=mutation):
                 plan, objects = self.copy("provider-backbone")
-                port = next(key for key, obj in objects.items() if obj["kind"] == "interface" and key.endswith("/if/et-0/0/0"))
+                # Junos addresses the PE pair port on its logical unit 0.
+                port = next(key for key, obj in objects.items() if obj["kind"] == "interface" and key.endswith("/if/et-0/0/0.0"))
                 address = self.addresses(plan, port, 4)[0]
                 self.assertEqual(len(self.addresses(plan, port, 6)), 1)
                 if mutation == "missing":

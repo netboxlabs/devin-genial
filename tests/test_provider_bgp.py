@@ -53,11 +53,12 @@ class ProviderBgpShapeTests(unittest.TestCase):
         self.assertEqual(len(of_kind(self.plan, "bgp_peer_group")), len(GROUPS))
         sessions = of_kind(self.plan, "bgp_session")
         # Three PoPs: a reflector pair (1 session), four clients against both
-        # reflectors (8), two transit handoffs and three customer premises.
-        self.assertEqual(len(sessions), 1 + 2 * (2 * 3 - 2) + 2 + 3)
+        # reflectors (8), two transit handoffs and four customer access circuits
+        # (three premises; the hub is dual-homed).
+        self.assertEqual(len(sessions), 1 + 2 * (2 * 3 - 2) + 2 + 4)
         groups = {key: len([k for k in sessions if k.startswith(f"bgp-session/{key}")])
                   for key in ("ibgp", "transit", "customer")}
-        self.assertEqual(groups, {"ibgp": 9, "transit": 2, "customer": 3})
+        self.assertEqual(groups, {"ibgp": 9, "transit": 2, "customer": 4})
 
     def test_ibgp_reflectors_sit_in_two_metros_by_permanent_pop_order(self):
         order = self.plan["reservations"]["provider-pop-order"]
@@ -308,7 +309,7 @@ class ProviderBgpTransportTests(unittest.TestCase):
         self.assertFalse([key for key, obj in delivered.items() if obj["kind"] in BGP_KINDS])
         omitted = loader_only_records(self.plan)
         self.assertEqual({kind: omitted["counts"][kind] for kind in BGP_KINDS},
-                         {"bgp_routing_policy": 4, "bgp_peer_group": 3, "bgp_session": 14})
+                         {"bgp_routing_policy": 4, "bgp_peer_group": 3, "bgp_session": 15})
 
     def test_the_loader_covers_every_bgp_kind_on_the_rest_create_path(self):
         for kind in BGP_KINDS:
@@ -330,7 +331,7 @@ class ProviderBgpTransportTests(unittest.TestCase):
 
     def test_every_bgp_row_keeps_its_own_create_change_diff(self):
         expected = _expected_change_diff_counts(self.objects)
-        self.assertEqual(expected["netbox_bgp.bgpsession"], 14)
+        self.assertEqual(expected["netbox_bgp.bgpsession"], 15)
         self.assertEqual(expected["netbox_bgp.bgppeergroup"], 3)
         self.assertEqual(expected["netbox_bgp.routingpolicy"], 4)
 

@@ -63,7 +63,7 @@ class IPv6ValidationTests(unittest.TestCase):
 
         def fabricated_transit(plan, objects):
             obj = deepcopy(first(objects, "ip_address", lambda o: o["key"].startswith("ipv6/") and
-                o["refs"].get("assigned_object", "").endswith("/if/xe-0/1/7")))
+                o["refs"].get("assigned_object", "").endswith("/if/xe-0/1/7.0")))  # Junos unit 0
             obj["key"] = "remote/transit/address"
             value = ip_interface(obj["attrs"]["address"])
             obj["attrs"]["address"] = f"{value.ip+1}/127"

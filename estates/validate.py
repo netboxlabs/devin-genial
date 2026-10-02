@@ -358,7 +358,9 @@ def _validate(plan):
         device_type = refs(device).get("device_type")
         if device_type and model.get("model") and (kind(device_type) != "device_type" or attrs(device_type).get("model") != model["model"]):
             report("hardware-device-type", device, "Referenced device type differs from the catalog hardware model.")
-        if model.get("serial_format") and re.fullmatch(serial_pattern(model["serial_format"]),
+        # A planned unit has not shipped: it may carry no serial yet.
+        unshipped = attrs(device).get("status") == "planned" and "serial" not in attrs(device)
+        if model.get("serial_format") and not unshipped and re.fullmatch(serial_pattern(model["serial_format"]),
                                                        str(attrs(device).get("serial", ""))) is None:
             report("hardware-serial", device, f"Serial must follow the catalog {alias} format, not a synthetic placeholder.")
         platform = refs(device).get("platform")

@@ -110,11 +110,12 @@ class ProviderTests(unittest.TestCase):
         kinds=Counter(o["kind"] for o in plan["objects"])
         self.assertEqual(kinds["site"],7)
         self.assertEqual(kinds["virtual_circuit"],1)
-        self.assertEqual(kinds["virtual_circuit_termination"],3)
+        # Three premises; the hub takes a second attachment into its PoP's other PE.
+        self.assertEqual(kinds["virtual_circuit_termination"],4)
         # Two diverse spans per metro adjacency (Chicago-Detroit, Detroit-Cleveland),
         # three customer access circuits, two NOC handoffs, two transit ports
-        # and one out-of-band broadband circuit per PoP.
-        self.assertEqual(kinds["circuit"],14)
+        # and one out-of-band broadband circuit per PoP; the hub has two access circuits.
+        self.assertEqual(kinds["circuit"],15)
         # The NOC sits in Chicago: its Detroit handoff is a leased private line.
         self.assertEqual(objects_of(plan)["circuit/noc/b"]["refs"]["provider"],"provider/transport-b")
         self.assertEqual(objects_of(plan)["circuit/noc/a"]["refs"]["provider"],"provider/operator")
@@ -226,9 +227,10 @@ class ProviderTests(unittest.TestCase):
                 self.assertEqual(loop.network.prefixlen,32)
                 self.assertNotIn(int(loop.ip)%256,(0,255))
                 self.assertNotIn('vrf',primary['refs'])  # the core is the global table
-                # Out-of-band: fxp0 is cabled and addressed in Carrier Management.
+                # Out-of-band: fxp0 is cabled and addressed (on unit fxp0.0) in Carrier Management.
                 fxp=o['key']+'/if/fxp0'
-                self.assertEqual([i['refs']['vrf'] for i in assigned if i['refs']['assigned_object']==fxp],['vrf/provider'])
+                self.assertEqual(objects[fxp+'.0']['refs']['parent'],fxp)
+                self.assertEqual([i['refs']['vrf'] for i in assigned if i['refs']['assigned_object']==fxp+'.0'],['vrf/provider'])
                 self.assertTrue(any(fxp in c['refs'].values() for c in p['objects'] if c['kind']=='cable'))
 
     def test_catalog_mode_is_bounded_and_psu_names_keep_source_spaces(self):
