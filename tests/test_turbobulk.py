@@ -1821,3 +1821,16 @@ class TurboBulkLoaderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GlobalTableIdentity(unittest.TestCase):
+    """A prefix or IP in NetBox's global table carries no vrf ref (0.16 moved core and pool there)."""
+
+    def test_global_prefix_and_address_resolve_to_the_null_vrf(self):
+        from estates import turbobulk
+        prefix = {"kind": "prefix", "key": "root/pool", "attrs": {"prefix": "10.0.0.0/8"}, "refs": {}}
+        address = {"kind": "ip_address", "key": "ip/lo0", "attrs": {"address": "192.0.2.1/32"}, "refs": {}}
+        self.assertEqual(turbobulk._candidate_bucket_key(prefix, {}), ("prefix-vrf", "10.0.0.0/8", None))
+        self.assertEqual(turbobulk._candidate_bucket_key(address, {}), ("address-vrf", "192.0.2.1/32", None))
+        self.assertIn(("prefix-vrf", "10.0.0.0/8", None),
+                      turbobulk._row_bucket_keys("prefix", {"prefix": "10.0.0.0/8", "vrf": None}))

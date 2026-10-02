@@ -852,6 +852,12 @@ def _ref_id(obj, name, ids):
     return ids[obj["refs"][name]]
 
 
+def _vrf_id(obj, ids):
+    """VRF of a prefix/IP/range; None is NetBox's global table, a legitimate scope."""
+    key = obj["refs"].get("vrf")
+    return None if key is None else ids[key]
+
+
 def _component_cache_ids(obj, objects, ids):
     """Materialize ComponentModel caches from the component's parent device."""
     device = objects[obj["refs"]["device"]]
@@ -913,7 +919,7 @@ def _matches(obj, row, ids, objects=None):
                 row.get("name") == attrs["name"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
                 and ("tenant" not in obj["refs"] or _nested_id(row.get("tenant")) == _ref_id(obj, "tenant", ids)))
     if kind == "prefix":
-        return row.get("prefix") == attrs["prefix"] and _nested_id(row.get("vrf")) == _ref_id(obj, "vrf", ids)
+        return row.get("prefix") == attrs["prefix"] and _nested_id(row.get("vrf")) == _vrf_id(obj, ids)
     if kind == "circuit_termination":
         side = row.get("term_side")
         side = side.get("value") if isinstance(side, dict) else side
@@ -927,7 +933,7 @@ def _matches(obj, row, ids, objects=None):
         name = "model" if kind == "module_type" else "name"
         return row.get(name) == attrs[name] and _nested_id(row.get("manufacturer")) == _ref_id(obj, "manufacturer", ids)
     if kind == "ip_address":
-        return row.get("address") == attrs["address"] and _nested_id(row.get("vrf")) == _ref_id(obj, "vrf", ids)
+        return row.get("address") == attrs["address"] and _nested_id(row.get("vrf")) == _vrf_id(obj, ids)
     if kind == "power_feed":
         return row.get("name") == attrs["name"] and _nested_id(row.get("power_panel")) == _ref_id(obj, "power_panel", ids)
     if kind == "virtual_machine":
@@ -989,7 +995,7 @@ def _matches(obj, row, ids, objects=None):
     if kind == "ip_range":
         return (row.get("start_address") == attrs["start_address"]
                 and row.get("end_address") == attrs["end_address"]
-                and ("vrf" not in obj["refs"] or _nested_id(row.get("vrf")) == _ref_id(obj, "vrf", ids)))
+                and _nested_id(row.get("vrf")) == _vrf_id(obj, ids))
     if kind == "rack_type":
         return (row.get("model") == attrs["model"]
                 and _nested_id(row.get("manufacturer")) == _ref_id(obj, "manufacturer", ids))
@@ -1052,7 +1058,7 @@ def _candidate_bucket_key(obj, ids, objects=None):
     if kind == "vlan":
         return "vid-site", attrs["vid"], _ref_id(obj, "site", ids)
     if kind == "prefix":
-        return "prefix-vrf", attrs["prefix"], _ref_id(obj, "vrf", ids)
+        return "prefix-vrf", attrs["prefix"], _vrf_id(obj, ids)
     if kind == "circuit_termination":
         return "side-circuit", attrs["term_side"], _ref_id(obj, "circuit", ids)
     if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
@@ -1064,7 +1070,7 @@ def _candidate_bucket_key(obj, ids, objects=None):
         name = "model" if kind == "module_type" else "name"
         return "name-manufacturer", attrs[name], _ref_id(obj, "manufacturer", ids)
     if kind == "ip_address":
-        return "address-vrf", attrs["address"], _ref_id(obj, "vrf", ids)
+        return "address-vrf", attrs["address"], _vrf_id(obj, ids)
     if kind == "power_feed":
         return "name-panel", attrs["name"], _ref_id(obj, "power_panel", ids)
     if kind in {"vm_interface", "virtual_disk"}:
