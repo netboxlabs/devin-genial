@@ -97,6 +97,13 @@ sites = [
 ]
 
 [[customers]]
+key = "jetstream-cargo"
+name = "Jetstream Air Cargo"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
 key = "great-lakes-credit"
 name = "Great Lakes Credit Union"
 branch = "branch"
@@ -110,6 +117,13 @@ sites = [
   # Branch closing: its access circuit is deprovisioning, its CE decommissioning.
   { pop = "milwaukee-west-allis", count = 1, status = "decommissioning" },
 ]
+
+[[customers]]
+key = "great-plains-grain"
+name = "Great Plains Grain Exchange"
+service = "epl"
+rate_mbps = 100
+sites = [{ pop = "chicago-loop" }, { pop = "detroit-corktown" }]
 
 [[customers]]
 key = "harbor-logistics"
@@ -127,6 +141,13 @@ sites = [
 ]
 
 [[customers]]
+key = "quill-publishing"
+name = "Quill and Ink Publishing"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
 key = "riverbend-schools"
 name = "Riverbend Schools"
 branch = "school"
@@ -140,6 +161,13 @@ sites = [
 ]
 
 [[customers]]
+key = "kingfisher-capital"
+name = "Kingfisher Capital"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
 key = "northpoint-retail"
 name = "Northpoint Retail"
 branch = "store"
@@ -151,6 +179,13 @@ sites = [
   { pop = "milwaukee-menomonee", count = 2 },
   { pop = "cleveland-westlake", count = 1 },
 ]
+
+[[customers]]
+key = "delta-river-casino"
+name = "Delta River Casino"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "chicago-cermak" }]
 
 [[customers]]
 key = "summit-legal"
@@ -627,20 +662,6 @@ commit_mbps = 200
 sites = [{ pop = "detroit-new-center" }]
 
 [[customers]]
-key = "jetstream-cargo"
-name = "Jetstream Air Cargo"
-service = "dia"
-commit_mbps = 100
-sites = [{ pop = "chicago-cermak" }]
-
-[[customers]]
-key = "kingfisher-capital"
-name = "Kingfisher Capital"
-service = "dia"
-commit_mbps = 200
-sites = [{ pop = "chicago-loop" }]
-
-[[customers]]
 key = "lumen-ridge-ai"
 name = "Lumen Ridge AI"
 service = "dia"
@@ -674,13 +695,6 @@ name = "Pinnacle Esports Arena"
 service = "dia"
 commit_mbps = 2000
 sites = [{ pop = "cleveland-lakewood" }]
-
-[[customers]]
-key = "quill-publishing"
-name = "Quill and Ink Publishing"
-service = "dia"
-commit_mbps = 50
-sites = [{ pop = "chicago-cermak" }]
 
 [[customers]]
 key = "rookery-research"
@@ -751,13 +765,6 @@ name = "Cornerstone Community Church"
 service = "dia"
 commit_mbps = 50
 sites = [{ pop = "detroit-corktown" }]
-
-[[customers]]
-key = "delta-river-casino"
-name = "Delta River Casino"
-service = "dia"
-commit_mbps = 500
-sites = [{ pop = "chicago-cermak" }]
 
 [[customers]]
 key = "evergreen-cowork"
@@ -1044,13 +1051,6 @@ name = "Forge Post-Production"
 service = "epl"
 rate_mbps = 200
 sites = [{ pop = "detroit-new-center" }, { pop = "cleveland-flats" }]
-
-[[customers]]
-key = "great-plains-grain"
-name = "Great Plains Grain Exchange"
-service = "epl"
-rate_mbps = 100
-sites = [{ pop = "chicago-loop" }, { pop = "detroit-corktown" }]
 
 [[customers]]
 key = "heritage-health"

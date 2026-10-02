@@ -1270,8 +1270,11 @@ def _ix(w, pop_sites, ready):
             site = pop_sites[pop][0]
             port = site.interface(f"device/{site.id}/pe-a", IX_PORT)
             if installed is None:
-                installed = min(ready[pop] + timedelta(days=w.choose(f"{metro}/{pop}", "ix-install", range(60, 401))),
-                                (moved or as_of) - timedelta(days=60))
+                # An MX80 has four XFP ports, all in the aggregation LAG: an
+                # exchange port arrives with the MX204 (launch or cut-over).
+                pe_day = date.fromisoformat(w.obj(f"device/{site.id}/pe-a")["meta"].get("installed") or ready[pop].isoformat())
+                installed = min(max(ready[pop], pe_day) + timedelta(days=w.choose(f"{metro}/{pop}", "ix-install", range(30, 181))),
+                                (moved or as_of) - timedelta(days=30))
             key = f"circuit/ix/{metro}" + ("/former" if moved else "")
             _circuit(w, key, provider, account, kind, site, port, lan, None, None, handoff_mbps=IX_PORT_MBPS,
                      cid=f"{stem}-P{1000 + (_hash(ns, key, 'ix-port') % 9000):04d}", installed=installed,
@@ -1298,6 +1301,22 @@ def _ix(w, pop_sites, ready):
                                     other["attrs"]["status"] = "decommissioning"
             else:
                 w.obj(port)["attrs"]["description"] = f"{name} peering port"
+            # On the router itself, only once that router was in the rack: an
+            # older port moved onto it at its cut-over, which the plant's
+            # cut-over journal records.
+            pe = f"device/{site.id}/pe-a"
+            if installed.isoformat() >= w.obj(pe)["meta"].get("installed", ""):
+                from .operations_context import entry
+                entry(w, pe, f"ix-port-{metro}" + ("-former" if moved else ""), installed.isoformat(), "IX port turned up",
+                      f"{short} port {w.obj(key)['attrs']['cid']} turned up on {IX_PORT} under change "
+                      f"{timeline.change(w, key, '-turn-up')}" + (f", replacing the {pop_sites[hosts[1]][0].display} port after the exchange relocated."
+                                                                   if relocation and len(hosts) > 1 and not moved else "."))
+            if moved:
+                from .operations_context import entry
+                entry(w, pe, f"ix-port-{metro}-shut", moved.isoformat(), "IX port shut",
+                      f"{short} port {w.obj(key)['attrs']['cid']} shut on {IX_PORT} after the exchange relocated to "
+                      f"{pop_sites[hosts[0]][0].display}; disconnect ordered under change {timeline.change(w, key, '-disconnect')}.",
+                      "warning")
 
 
 # PoP services (DESIGN v0.18 §2, K7, K9, K16) and the second NID generation
@@ -1431,6 +1450,29 @@ def _ddos(w, pop_sites):
         entry(w, device, "racked", day.isoformat(), "Racked, awaiting activation",
               f"Racked under change {timeline.change(w, device, '-racked')}; activation at the MX304 cut-over: the MX204 port "
               "budget is exhausted (PIC0 is limited to 3x100G while all eight 10G SFP+ ports are in use).")
+
+
+def _stage_optics(w):
+    """Optics pre-installed in a chassis not yet in service share its state.
+
+    The staged TMS and the planned or staged MX304 hold their AOC ends and
+    pluggables on ``planned`` cables: a module there is ``staged`` (on site)
+    or ``planned`` (not yet shipped: no serial), never an in-service part.
+    """
+    # An AOC's two captive ends are one assembly: it is on site (staged, with
+    # its serial) if either end's chassis is.
+    states, members = {}, defaultdict(list)
+    for module in (o for o in w.objects.values() if o["kind"] == "module" and o["key"].startswith("optics-module/")):
+        status = w.obj(module["refs"]["device"])["attrs"].get("status")
+        identity = module["attrs"]["serial"] if module["attrs"].get("description", "").startswith("Captive end") else module["key"]
+        members[identity].append(module)
+        if status in ("planned", "staged"):
+            states[identity] = "staged" if "staged" in (status, states.get(identity)) else "planned"
+    for identity, status in states.items():
+        for module in members[identity]:
+            module["attrs"]["status"] = status
+            if status == "planned":
+                module["attrs"].pop("serial", None)
 
 
 def _ddos_controllers(w):
@@ -2095,7 +2137,7 @@ def _generate(recipe,previous=None):
     dc.contract["provider"]=dict(pop_count=len(pop_sites),customer_count=len(recipe["customers"]),customer_premises=len(entries),
         transport_spans=len(spans),capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
         management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
-    equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); _ix_addresses(w); networking.macs(w); _ix_route_servers(w)
+    equipment.enrich(w); optics.enrich(w); _stage_optics(w); poe.enrich(w); ipv6.enrich(w); _ix_addresses(w); networking.macs(w); _ix_route_servers(w)
     _apply_lifecycle(w,entries)
     _junos_units(w)
     operations.supporting_records(w)

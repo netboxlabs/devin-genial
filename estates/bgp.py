@@ -147,7 +147,9 @@ def enrich(world):
     order = world.reservations.get("provider-pop-order", {})
     routers = []
     for key, entry in objects.items():
-        if entry["kind"] != "device" or entry["refs"].get("role") != PE_ROLE:
+        # Only an in-service PE peers: a decommissioning relic or a planned
+        # successor carries no intended session (v0.18 PE generations).
+        if entry["kind"] != "device" or entry["refs"].get("role") != PE_ROLE or entry["attrs"].get("status") != "active":
             continue
         site = entry["refs"]["site"]
         pop = site.removeprefix("site/pop-")
