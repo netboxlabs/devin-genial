@@ -120,8 +120,11 @@ def timeline(world, kinds, dated):
     for device in kinds["device"]:
         key, site = device["key"], device["refs"].get("site")
         anchor = service_day.get(site)
-        installed_on[key] = (dated(key, "equipment-record", anchor, 7, 31) if anchor
-                             else dated(key, "equipment-record", as_of, 100, 20))
+        # A builder that knows a device's own install day (a later addition to
+        # an older site, a predecessor or successor generation) records it as
+        # meta "installed"; any other device arrives with its site.
+        installed_on[key] = device["meta"].get("installed") or (
+            dated(key, "equipment-record", anchor, 7, 31) if anchor else dated(key, "equipment-record", as_of, 100, 20))
 
     def made(key, anchor):
         return date.fromisoformat(dated(key, "manufactured", anchor, 30, 151))
@@ -185,14 +188,47 @@ COLOCATION = {"Chicago": ("Windward Interconnect", "windward-interconnect.exampl
               "Milwaukee": ("Kinnickinnic Colocation", "kinnickinnic-colo.example")}
 
 
-def journal_created(day):
-    """A journal entry's ``created`` timestamp: its event day, 15:00 UTC.
+# Deterministic time-of-day bands (UTC minutes, half-open). Orders, installs
+# and paperwork land in US business hours, 14:00-21:59 UTC; maintenance
+# windows at night, 04:00-08:59 UTC. Neither band crosses midnight UTC.
+TIME_BANDS = {"business": (14 * 60, 22 * 60), "night": (4 * 60, 9 * 60)}
 
-    Mid-morning across the US time zones the estates use, so no zone renders
-    the entry on the previous calendar day. Rendered the way NetBox's REST
-    serializer returns it, so strict readback compares it exactly.
+
+def journal_created(day, minute=15 * 60):
+    """A journal entry's ``created`` timestamp: its event day at ``minute`` UTC.
+
+    Rendered the way NetBox's REST serializer returns it, so strict readback
+    compares it exactly. ``minute`` comes from ``journal_minute``.
     """
-    return f"{day}T15:00:00Z"
+    return f"{day}T{minute // 60:02}:{minute % 60:02}:00Z"
+
+
+def journal_minute(world, target, event, band="business"):
+    """A stable minute of day inside ``band`` for one journal entry."""
+    low, high = TIME_BANDS[band]
+    return world.choose(target, f"journal-time-{event}", range(low, high))
+
+
+def journal_text(when, title, body):
+    """Journal markdown: a bold title line with the event date, a blank line, the body.
+
+    NetBox has no title field. The date stays in the text because the Diode
+    lane stamps ``created`` at ingest (diode.LOADER_ONLY_FIELDS).
+    """
+    return f"**{title}** · {when}\n\n{body}"
+
+
+def entry(world, target, event, when, title, body, kind="info", band="business"):
+    """Add one dated journal entry on ``target``; shared by every builder.
+
+    ``created`` is the event's own date and band time, not the load: TurboBulk
+    inserts a supplied value as-is, and a journal whose every entry reads the
+    day it was loaded tells no history. The key is ``journal/<target>/<event>``.
+    """
+    return world.add("journal_entry", f"journal/{target}/{event}",
+                     {"kind": kind, "comments": journal_text(when, title, body),
+                      "created": journal_created(when, journal_minute(world, target, event, band))},
+                     {"assigned_object": target}, {"operations": True})
 
 
 def customer_domain(tenant):
@@ -202,6 +238,95 @@ def customer_domain(tenant):
 
 def provider_customer(world, tenant):
     return world.recipe["profile"] == "provider-backbone" and tenant.startswith("tenant/cust-")
+
+
+#: [A] The day the NOC began journaling third-party maintenance notices
+#: (DESIGN §4.1): no maintenance notice predates it.
+NOTICE_JOURNALING = date(2025, 4, 1)
+#: Circuit types whose third-party provider sends maintenance notices: leased
+#: waves, transit and NOC private lines. Owned dark fibre, cellular
+#: best-effort service and exchange ports carry none.
+NOTICE_TYPES = frozenset({"circuit-type/backbone", "circuit-type/transit", "circuit-type/noc-access"})
+NOTICE_ONE_IN, CIR_ONE_IN, CIR_MIN_YEARS = 3, 2, 5
+
+
+def _initials(name):
+    return "".join(word[0] for word in name.split() if word[0].isalpha()).upper()
+
+
+def _carrier_paperwork(world, circuit, dated, change, journal):
+    """A provider circuit's paperwork beyond its order and handover.
+
+    - Cross-connect orders (DESIGN P1-10): every carrier-hotel cross-connect
+      (a termination with ``xconnect_id``) was ordered 14-44 days before the
+      circuit's install under a letter of authorization to the colo.
+    - Committed-rate upgrades (P1-11): one in two customer-access or transit
+      circuits in service at least five years carry one or two earlier,
+      lower tiers from the estate's own ladder on the same handoff; the
+      current rate stays the record's value.
+    - Maintenance notices (P1-12): one in three leased third-party circuits
+      carries one or two *completed* notices, all after NOTICE_JOURNALING,
+      at night UTC, in MAINTNOTE's field shape.
+    Choices are keyed by namespace, never seed, so a reseed adds or drops none.
+    """
+    from .provider import LARGE_TIERS_MBPS, handoff_mbps
+    from .naming import bandwidth, port_speed
+    key, attrs, refs = circuit["key"], circuit["attrs"], circuit["refs"]
+    ns, as_of = world.recipe["namespace"], date.fromisoformat(world.recipe["as_of"])
+    installed = date.fromisoformat(attrs["install_date"])
+    pick = lambda label: int(digest([ns, key, label]), 16)
+    for side in "AZ":
+        term = world.objects.get(f"{key}/{side}")
+        if not term or not term["attrs"].get("xconnect_id"):
+            continue
+        site = term["refs"]["termination"]
+        city = world.obj(site)["meta"].get("geography", {}).get("city") if site.startswith("site/") else None
+        colo = COLOCATION.get(city, (None,))[0]
+        if colo is None:
+            continue
+        loa = f"LOA-{_initials(colo)}-{100000 + pick('loa' + side) % 900000}"
+        z_side = f" Z side: {term['attrs']['pp_info']}." if term["attrs"].get("pp_info") else ""
+        journal(term["key"], "cross-connect-order", dated(term["key"], "cross-connect-order", attrs["install_date"], 14, 17),
+                "Cross-connect ordered",
+                f"Letter of authorization {loa} issued to {colo} for cross-connect {term['attrs']['xconnect_id']}.{z_side} "
+                "MMR-only jumper; the hotel runs it from the meet-me room to our demarcation panel.")
+    if attrs.get("status") != "active":
+        return
+    access = refs.get("type", "").endswith("-access") and refs.get("provider") == OPERATOR and refs.get("tenant") != "tenant"
+    transit = refs.get("type") == "circuit-type/transit"
+    rate = attrs.get("commit_rate", 0) // 1000
+    if (access or transit) and rate and (as_of - installed).days >= 365 * CIR_MIN_YEARS and pick("cir-upgrade") % CIR_ONE_IN == 0:
+        reserve = world.recipe["reserve_fraction"]
+        ladder = sorted({*world.recipe["wan_tiers_mbps"], *LARGE_TIERS_MBPS, 10000})
+        lower = [tier for tier in ladder if tier < rate and (transit or handoff_mbps(tier, reserve) == handoff_mbps(rate, reserve))]
+        steps = lower[-(1 + pick("cir-count") % 2):] + [rate] if lower else []
+        span = (as_of - installed).days - 365 - 30
+        for n, (before, after) in enumerate(zip(steps, steps[1:])):
+            when = installed + timedelta(days=365 + span * (n + 1) // len(steps))
+            speed = port_speed(handoff_mbps(rate, reserve) or 10000)
+            journal(key, f"cir-upgrade-{n + 1}", when.isoformat(), "Committed rate raised",
+                    f"Committed rate raised from {bandwidth(before)} to {bandwidth(after)} under change "
+                    f"{change(key, f'-cir-{n + 1}')}, on the same {speed} handoff.")
+    if refs.get("type") in NOTICE_TYPES and refs.get("provider") != OPERATOR and pick("maintenance") % NOTICE_ONE_IN == 0:
+        first = max(NOTICE_JOURNALING, installed + timedelta(days=30))
+        room = (as_of - first).days - 1
+        if room <= 0:
+            return
+        provider = world.obj(refs["provider"])["attrs"]["name"]
+        account = world.obj(refs["provider_account"])["attrs"]["account"] if refs.get("provider_account") else "not on file"
+        count = 1 + pick("maintenance-count") % 2
+        for n in range(count):
+            when = first + timedelta(days=room * n // count + pick(f"maintenance-day-{n}") % max(1, room // count))
+            event = f"maintenance-{n + 1}"
+            start = journal_minute(world, key, event, "night")
+            hours = 2 + pick(f"maintenance-hours-{n}") % 3
+            end = start + 60 * hours
+            notice = f"{_initials(provider)}-MNT-{when.year}-{1000 + pick(f'maintenance-id-{n}') % 9000}"
+            journal(key, event, when.isoformat(), "Provider maintenance completed",
+                    f"Provider: {provider}\nMaintenance ID: {notice}\nAccount: {account}\n"
+                    f"Window: {when.isoformat()} {start // 60:02}:{start % 60:02}–{end // 60 % 24:02}:{end % 60:02} UTC\n"
+                    f"Impact: up to {hours} hours of interruption inside the window, per provider notice\n"
+                    "Status: completed", "info", "night")
 
 
 def enrich(world):
@@ -302,12 +427,8 @@ def enrich(world):
         """The operator's change ticket for one subject's work; stable per subject."""
         return f"CHG{world.choose(target, 'journal-change' + work, range(1000000, 10000000)):07d}"
 
-    def journal(target, event, when, title, body, kind="info"):
-        # ``created`` is the event's own date (mid-morning US time), not the
-        # load: TurboBulk inserts a supplied value as-is, and a journal whose
-        # every entry reads the day it was loaded tells no history.
-        add("journal_entry", f"journal/{target}/{event}", {"kind": kind, "comments": f"{when} — {title}\n{body}",
-                                                           "created": journal_created(when)}, {"assigned_object": target})
+    def journal(target, event, when, title, body, kind="info", band="business"):
+        entry(world, target, event, when, title, body, kind, band)
 
     as_of = world.recipe["as_of"]
     for site in kinds["site"]:
@@ -323,12 +444,11 @@ def enrich(world):
         assign(key, desk, "facilities", "/facilities", "secondary")
         if key in biomedical_desks:
             assign(key, biomedical_desks[key], "biomedical", "/biomedical", "tertiary")
-        # Written when the site was readied: before its first equipment
-        # arrives (installs lead the service day by at most 37 days).
-        journal(key, "access-plan", dated(key, "access-plan", service_day[key], 40, 31) if key in service_day
-                else dated(key, "access-plan", as_of, 60, 31), "Site access",
-            f"Equipment-room visits are booked through {world.obj(desk)['attrs']['name']}; "
-            "give two working days' notice and flag any planned power work.")
+        # Standing policy, not an event: the site's own comments, not one more
+        # dated journal entry per site.
+        policy = (f"**Site access**\n\nEquipment-room visits are booked through {world.obj(desk)['attrs']['name']}; "
+                  "give two working days' notice and flag any planned power work.")
+        attrs["comments"] = f"{attrs['comments']}\n\n{policy}" if attrs.get("comments") else policy
 
     provider_desks = {}
     for circuit in kinds["circuit"]:
@@ -350,7 +470,8 @@ def enrich(world):
             assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
         if attrs.get("termination_date"):
             # A circuit being withdrawn carries its disconnect order.
-            journal(key, "disconnect-order", dated(key, "disconnect-order", as_of, 3, 25), "Disconnect order",
+            # Ordered before the earlier of today and the disconnect itself.
+            journal(key, "disconnect-order", dated(key, "disconnect-order", min(as_of, attrs["termination_date"]), 3, 25), "Disconnect order",
                 f"Disconnect ordered under change {change(key, '-disconnect')}; recover the handoff optics and cabling once the circuit is withdrawn.",
                 "warning")
         if "install_date" not in attrs:
@@ -372,6 +493,12 @@ def enrich(world):
                 journal(key, "delivery-slip", dated(key, "delivery-slip", attrs["install_date"], 5, 16), "Delivery slipped",
                         f"{name} missed the committed handover date; escalated to its support desk.", "warning")
         journal(key, "handover", attrs["install_date"], "Handed over", accepted, "success")
+        if world.recipe["profile"] == "provider-backbone":
+            _carrier_paperwork(world, circuit, dated, change, journal)
+    if world.recipe["profile"] == "provider-backbone" and as_of > NOTICE_JOURNALING.isoformat() and "site/dc-01" in world.objects:
+        journal("site/dc-01", "notice-journaling", NOTICE_JOURNALING.isoformat(), "Provider notices journaled",
+                "From today the NOC journals each completed third-party maintenance notice on the circuit it touched: "
+                "provider, maintenance ID, account, window and stated impact, as the provider sent them.")
 
     service_desks, anchors = {}, {}
     for vm in sorted(kinds["virtual_machine"], key=lambda obj: obj["key"]):
