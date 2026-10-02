@@ -382,12 +382,18 @@ def _service_classes(w):
         return
     rate = defaultdict(int)
     for term in w.objects.values():
-        if term["kind"] != "circuit_termination" or not str(term["refs"].get("termination", "")).startswith("site/"):
+        if term["kind"] != "circuit_termination":
+            continue
+        # A handoff may terminate at the room/cage Location (0.16); it counts for that location's site.
+        target = str(term["refs"].get("termination", ""))
+        if target.startswith("location/"):
+            target = w.objects[target]["refs"].get("site", "")
+        if not target.startswith("site/"):
             continue
         circuit = w.objects[term["refs"]["circuit"]]
         if circuit["attrs"].get("status") == "active":
             # Owned fiber buys no commit rate; its handoff port is the capacity.
-            rate[term["refs"]["termination"]] += circuit["attrs"].get("commit_rate") or term["attrs"].get("port_speed") or 0
+            rate[target] += circuit["attrs"].get("commit_rate") or term["attrs"].get("port_speed") or 0
     for site in (o for o in w.objects.values() if o["kind"] == "site"):
         mbps = rate[site["key"]] / 1000
         choice = next(key for key, _, ceiling in SERVICE_CLASSES if ceiling is None or mbps <= ceiling)
