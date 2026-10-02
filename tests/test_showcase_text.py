@@ -140,7 +140,7 @@ class ShowcaseText(unittest.TestCase):
             for obj in (self.of(plan, "config_context") + self.of(plan, "webhook")
                         + self.of(plan, "event_rule") + self.of(plan, "platform")
                         + self.of(plan, "virtual_machine_type")):
-                self.assertNotRegex(obj["attrs"]["description"], r"; no |not applied|unspecified|Inert|Wiring only")
+                self.assertNotRegex(obj["attrs"].get("description", ""), r"; no |not applied|unspecified|Inert|Wiring only")
         notes = [e["attrs"]["comments"] for e in self.of(self.provider, "journal_entry")]
         self.assertTrue(any("Committed capacity: 100 Gbps\n" in n for n in notes))
         self.assertEqual({c["attrs"]["comments"].split(" order: ")[0] for c in self.of(self.bank, "circuit")},

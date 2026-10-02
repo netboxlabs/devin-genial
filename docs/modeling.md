@@ -262,8 +262,7 @@ lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `100 Gbps backbone
 committed on a 100G handoff` (`bandwidth`/`port_speed`), and routed /31s name
 both ends. Material limitations stay on the record but move to `comments`, out
 of the list view: VM placement notes, external-transit ownership, provider
-accounts, the private-L3 control plane, rack-type dimensions and the
-diagnostic radio link. The estate-wide tag is `Managed`
+accounts, the private-L3 control plane and the diagnostic radio link. The estate-wide tag is `Managed`
 (slug `<namespace>-managed`); nothing selects rows by it. Journals state rates
 in operator units (`Committed capacity: 100 Gbps`, `naming.rate_kbps`), WAN
 circuit comments name their procurement cohort in words (`Standard branch
