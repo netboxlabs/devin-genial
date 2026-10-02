@@ -128,6 +128,15 @@ def routed_vlan_view(plan):
                    or [(length, vlan) for length, vlan, _, vlan_site in holding if site and vlan_site == site])
         if matches:
             routed[port["key"]] = max(matches)[1]
+    # A modeless physical port whose untagged logical unit holds the address
+    # (Junos ``fxp0.0`` under ``fxp0``) sits on that unit's segment.
+    for key in sorted(routed):
+        unit = index[key]
+        parent = index.get(part(unit, "refs").get("parent")) if isinstance(part(unit, "refs").get("parent"), str) else None
+        if (part(unit, "attrs").get("type") == "virtual" and isinstance(parent, dict)
+                and parent.get("kind") == "interface" and parent.get("key") not in routed
+                and not part(parent, "attrs").get("mode") and not part(parent, "refs").get("untagged_vlan")):
+            routed[parent["key"]] = routed[key]
     # The flag is the view's own: one already present in the input is dropped,
     # so a plan cannot claim a derived VLAN to escape the mode checks.
     forged = {o.get("key") for o in index.values() if part(o, "meta").get("vlan_from_address")} - routed.keys()
