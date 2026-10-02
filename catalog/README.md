@@ -1,7 +1,9 @@
 # Hardware catalog
 
 `hardware.json` is a small, versioned inventory consumed by the estate builder.
-Catalog **0.14** adds the [regional-carrier footprint models](#regional-carrier-footprint-models)
+Catalog **0.15** (generator 0.18) adds the [lived-in carrier models](#lived-in-carrier-models):
+the predecessor and successor generations, the PoP services and an older NID,
+each with cited vendor dates. Catalog **0.14** adds the [regional-carrier footprint models](#regional-carrier-footprint-models)
 and a top-level `rack_types` map. Catalog **0.12** replaces every authored "reference" model with a pinned real
 one or a plainly named `Generic` part, adds vendor-shaped
 [serial formats](#serial-numbers) and [platforms](#platforms), and makes the
@@ -116,6 +118,40 @@ position 1:1 (front `Port n` ↔ rear `Port n`). Passive models carry
 | --- | --- |
 | `pop-cabinet` | APC AR3100 NetShelter SX 42U, 600 × 1070 mm, `4-post-cabinet` |
 | `mpoe-cabinet` | KOSCAB kos-shts-9u55x45x50ds 9U wall cabinet, `wall-cabinet` |
+
+## Lived-in carrier aliases (catalog 0.15, generator 0.18)
+
+Stable aliases for the v0.18 provider history, services and second NID
+generation. Every model is pinned to the library commit above. The deviations
+and the dated evidence are in
+[Lived-in carrier models](#lived-in-carrier-models). Port names are the exact
+catalog names.
+
+| Alias | Model | Ports and fields the builders use |
+| --- | --- | --- |
+| `aggregation-legacy` | Juniper ACX5048-AC, 1U | Same contract as `aggregation`. `uni_ports` = `xe-0/0/0`–`39`; `lag_ports` = `xe-0/0/40`–`43`; `xe-0/0/44`–`47` 10G SFP+ spare; `et-0/0/48`–`53` **40G** QSFP+, unused (no 100G cage). A 1G UNI keeps the `xe-` name with `speed` 1000000, a declared normalization. Mgmt is `em0` (1000BASE-T, cabled); `em1` (SFP, mgmt_only) stays uncabled. RJ45 `Console`. PSU bays `Power Supply 0`/`1` hold JPSU-650W-AC-AFO and give C14 inlets **`PSU 0`** / **`PSU 1`** (with the space) |
+| `provider-edge-legacy` | Juniper MX80, 2U (the relic) | `fxp0` mgmt; `xe-0/0/0`–`3` 10G **XFP**; RJ45 `Console`; fixed C14 `PEM0`/`PEM1` (no space). MIC and fan bays are not modelled. Relics are uncabled and unpowered, so no optics are installed |
+| `provider-edge-successor` | Juniper MX304 (`JNP304`), 2U, not full depth, with one JNP304-LMCIC16 line card in bay `LCMIC0` | `et-0/0/0`–`15`, typed `400gbase-x-qsfpdd` (the pinned LMIC type), configured at 100G (`speed` 100000000) with QSFP28 optics. `pair_port` = `et-0/0/0`; `tms_port` = `et-0/0/1` (100G to the TMS over the generic AOC). The rest are spare. **No power ports, no console, no management port**: the pinned chassis has bays only, and neither the PSUs nor the Routing Engine are modelled for a planned or staged chassis |
+| `ddos-mitigation` | Arbor TMS HD 1000, 2U | `1`–`4` 100G QSFP28; `5`–`12` 10G SFP+; `Management` 1000BASE-T mgmt_only (cabled to the PoP mgmt switch); RJ45 `Console`. `offramp_ports` = [`1`, `2`] (1 ↔ PE-A2, 2 ↔ PE-B2, the MX304s). PSU bays `PSU 1`/`PSU 2` hold the labelled-fiction `TMS AC PSU (authored)` and give C14 inlets **`PSU1`** / **`PSU2`** |
+| `time-server` | Meinberg Lantime M300, 1U | `lan0` 100BASE-TX spare; `lan1` 1000BASE-TX; `management_port` = `lan1` (cabled to the mgmt switch). DE-9 console `serial`, uncabled. One fixed C14 `PWR1` (single supply) |
+| `nid-legacy` | Accedian MetroNID TE, 1U | Same contract as `nid`: `nni_port` `B_Network` (1G SFP); `uni_port` `A_Client` (1G SFP, the customer's 1000BASE-LX handoff); `management_interface` `Management` (virtual, builder-created, in-band). `Monitor-1`/`2` 1000BASE-T spare; `C_Management` mgmt_only, uncabled; RJ45 `Console`. Power ports `AC Power Adapter` and `Dual DC Power`, both `dc-terminal` (no PDU outlet fits; mark them connected) |
+
+**MX204 port-speed limit (declared fact; it explains the refresh).** Juniper's
+[port-speed page](https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-mx-routers.html),
+Table 3 "Valid Port Speed Combinations at Port Level (MX204)", allows only these
+PIC0 modes while all eight PIC1 10G ports are active: 100/100/100/0,
+100/100/10-40/10-40 and 100/10-40/10-40/10-40. 100/100/100/100 and
+100/100/100/10-40 both require PIC1 = 0. The provider PE runs 100/100/100/0 with
+eight 10G ports, so `et-0/0/3` stays disabled. **No fourth 100G link fits an
+MX204 that uses all its SFP+ ports.** The TMS therefore attaches to the MX304
+successor, never to an MX204. The page is archived at
+`build/catalog-evidence/lived-in/mx_speed.html`.
+
+Platforms: the three Juniper aliases declare `Juniper Junos`; `ddos-mitigation`
+declares `Arbor TMS` (slug `arbor-tms`); `time-server` declares `LANTIME OS`
+(slug `meinberg-lantime-os`); `nid-legacy` declares none, like `nid-10g`.
+Device roles are not catalog data. The DDoS Mitigation and Time Server roles
+belong to the provider builder.
 
 ## Selectable vendor lines
 
@@ -360,7 +396,8 @@ VLAN interface; platforms without one use `Vlan{vid}`.
 
 Network models declare a `platform`: Cisco IOS XE (C9200L), Cisco AP-COS
 (Catalyst 9120), Arista EOS, Juniper Junos, Fortinet FortiOS, ArubaOS and Ciena
-SAOS (the 3903 NID; the RAD NID declares none)
+SAOS (the 3903 NID; the RAD and Accedian NIDs declare none), Arbor TMS (the
+TMS HD 1000) and LANTIME OS (the M300)
 (AP-505). Each becomes one NetBox platform per estate, linked to its
 manufacturer, with a namespaced slug exactly like the existing Service Linux
 platform; devices reference it. Servers, PDUs, console servers, passive gear and
@@ -467,7 +504,7 @@ their presence here is not a claim of completed native round-trip testing.
 
 ## Installed optics policy
 
-The top-level `optics.parts` map defines twenty-three selected parts. Each stable part ID
+The top-level `optics.parts` map defines twenty-five selected parts. Each stable part ID
 records manufacturer/model, form factor, optical protocol, medium, connector,
 rate in **kbps**, reach in metres, power reservation in integer **mW**, source
 IDs and an explicit `compatible_interfaces` map from hardware alias to existing
@@ -479,22 +516,24 @@ Arista both sell a part named `SFP-10G-LR`.
 | --- | --- | --- | ---: |
 | `cisco-10g-lr` | Cisco `SFP-10G-LR` | `access` fixed `TenGigabitEthernet1/1/1–4`, 10G | 1,000 |
 | `cisco-10g-sr` | Cisco `SFP-10G-SR` (MMF, LC, 400 m OM4) | same cages as `cisco-10g-lr` | 1,000 |
-| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` and `pop-mgmt` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
+| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` and `pop-mgmt` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`; `aggregation-legacy` `xe-0/0/0–43`, 10G | 1,000 |
 | `juniper-10g-sr` | Juniper `EX-SFP-10GE-SR` (MMF, LC, 400 m OM4) | same cages as `juniper-10g-lr` | 1,000 |
 | `arista-10g-lr` | Arista `SFP-10G-LR` | `leaf` `Ethernet1–48`, 10G | 2,000 authored |
 | `arista-10g-sr` | Arista `SFP-10G-SR` (MMF, LC, 400 m OM4) | `leaf` `Ethernet1–48`, 10G | 1,000 |
 | `arista-100g-sr4` | Arista `QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | `leaf` `Ethernet49/1–56/1`; `core` `Ethernet1/1–32/1`, 100G | 3,500 |
 | `fortinet-10g-lr` | Fortinet `FN-TRAN-SFP+LR` | `edge` `x1/x2`, 10G | 1,000 authored |
-| `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7`; `aggregation` `xe-0/0/0–43`; configured **1G** | 1,000 |
+| `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7`; `aggregation` and `aggregation-legacy` `xe-0/0/0–43`; configured **1G** | 1,000 |
 | `juniper-1g-lh` | Juniper `SFP-1GE-LH` (70 km) | same cages as `juniper-1g-lx`, **1G**, owned runs over 10 km | 1,000 |
+| `juniper-10g-er` | Juniper `EX-SFP-10GE-ER` (40 km) | `aggregation-legacy` `xe-0/0/0–43`, 10G owned access runs (`juniper-10g-lr`/`-sr` cover the same cages) | 1,500 |
 | `juniper-sfpp-10g-sr` | Juniper `SFPP-10GE-SR` (MMF, LC, 400 m OM4) | `aggregation` `xe-0/0/0–43`, 10G (in-rack LAG members to the MX204) | 1,000 |
 | `juniper-sfpp-10g-lr` / `-er` | Juniper `SFPP-10GE-LR` (10 km) / `SFPP-10GE-ER` (40 km) | `aggregation` `xe-0/0/0–43`, 10G owned access runs | 1,000 / 1,500 |
 | `rad-10g-lr` / `-er` | RAD `SFP-P-1DH` (10 km) / `SFP-P-3DH` (40 km) | `nid-10g` `ETH-1/1–4`, 10G | 1,500 authored |
-| `generic-1g-lx` / `-zx` | Generic `SFP-1G-LX` (10 km) / `SFP-1G-ZX` (80 km) | `nid` ports `1`, `2`, 1G | 1,000 authored |
-| `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`, 100G | 3,500 |
+| `generic-1g-lx` / `-zx` | Generic `SFP-1G-LX` (10 km) / `SFP-1G-ZX` (80 km) | `nid` ports `1`, `2`; `nid-legacy` `A_Client`, `B_Network`; 1G | 1,000 authored |
+| `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`; `provider-edge-successor` `et-0/0/0–15`; 100G | 3,500 |
 | `juniper-100g-sr4` | Juniper `JNP-QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | same cages as `juniper-100g-lr4` | 3,500 |
 | `generic-10g-sr` | Generic `SFP-10G-SR` (third-party compatible) | `server` `eth1/eth2`, 10G | 1,000 authored |
 | `arista-100g-aoc-3m` | Arista `AOC-Q-Q-100G-3M` | `leaf` QSFP28 cages; existing peer uses `Ethernet49/1`, 100G | 3,500 authored per captive end |
+| `generic-100g-aoc-3m` | Generic `QSFP28-100G-AOC-3M` | `ddos-mitigation` `1`–`4`; `provider-edge-successor` `et-0/0/0–15` at 100G (the TMS offramp) | 3,500 authored per captive end |
 | `juniper-100g-aoc-3m` | Juniper `JNP-100G-AOC-3M` | `leaf-juniper` QSFP28 cages `et-0/0/48–55`, 100G | 3,500 authored per captive end |
 
 The Cisco [TMG lookup](https://tmgmatrix.cisco.com/) and its fixed-onboard-uplink
@@ -569,7 +608,7 @@ reach exactly as the independent check adds them. Two long-reach MX204 parts are
 | Part | Reach used | Power reserved | Source note |
 | --- | --- | --- | --- |
 | `SFP-1GE-LH` (740-031849) | 70 km | 1000 mW (vendor maximum 1 W) | High Tx power: the vendor requires optical attenuation on shorter links, so the installed module's description records an in-line attenuator |
-| `QSFP-100G-ER4L` (740-071175) | 30 km | 5500 mW (vendor maximum 5.5 W at 0-75 C) | 40 km needs host FEC; FEC is not modeled, so the catalog uses the 30 km no-FEC reach |
+| `QSFP-100G-ER4L` (740-071175) | 30 km | 5500 mW (vendor maximum 5.5 W at 0-75 C) | Also on the MX304 LMIC (catalog 0.15). 40 km needs host FEC; FEC is not modeled, so the catalog uses the 30 km no-FEC reach |
 
 `validate_optics` re-derives the owned run independently (the larger of the
 recorded distance and the site-coordinate route) and reports
@@ -616,6 +655,15 @@ accumulating earlier enrichment. Do not subtract optics from published PoE
 output budgets, count supply-nameplate watts as consumption, or erase an
 installed optic's reserve merely because its interface is disconnected.
 
+Catalog 0.15 adds the lived-in optics: the ACX5048 takes the `EX-SFP-10GE-*`
+family and the 1G LX/LH parts (the ACX5000 HCT list, not the ACX5448's
+`SFPP-10GE-*`); the MX304's LMIC ports take the existing LR4, SR4 and ER4L parts
+(MX304 HCT, component MX304-LMIC16, 22.2R1); the MetroNID takes the Generic
+1G parts; and the TMS offramp is one Generic 100G AOC. The QSFP-DD cage
+(`400gbase-x-qsfpdd`, form factor `qsfpdd`) holds a QSFP28 module at 100G; a
+port left at its native 400G finds no part. Juniper lists `JNP-100G-AOC-3M`
+for the MX304 but nothing places a Juniper AOC in an Arbor chassis, so the
+assembly is Generic at both ends (evidence rule L12).
 Catalog 0.14 adds the regional-carrier footprint optics above: the ACX5448-M's
 `SFPP-10GE-*` family (Juniper's HCT lists it, not `EX-SFP-10GE-*`, for the ACX),
 the LX/LH 1G parts on the ACX, two RAD 10G parts and two Generic 1G NID parts.
@@ -794,3 +842,155 @@ Serial formats remain fictional label shapes (Juniper ACX `WS…`, SRX `CV…`,
 Ciena `M…`, RAD `RD…`). `tests/test_footprint_catalog.py` pins every source,
 deviation and port contract above and proves optic selection on the new hosts
 on a synthetic world, each with failing mutations.
+
+## Lived-in carrier models
+
+Catalog 0.15 (generator 0.18) adds the provider's predecessor and successor
+generations, two PoP services and an older NID. Each library file is pinned at
+the commit above with its SHA-256 and CC0-1.0 licence. Vendor documents are
+archived under ignored `build/catalog-evidence/lived-in/` with their response
+hashes. Juniper HCT and documentation pages re-render per request, so their
+hashes prove only the archived response. The aliases are in
+[the lived-in alias table](#lived-in-carrier-aliases-catalog-015-generator-018).
+Each model carries a `lifecycle` map. Vendor dates in it cite a source in
+`source_ids`. An authored milestone is marked `available_basis: "authored"`
+and must never be quoted as a vendor date.
+
+| Alias | Dates | Basis |
+| --- | --- | --- |
+| `provider-edge-legacy` (MX80) | last order 2021-06-30; end of support 2026-06-30 | Juniper M-series EOL page, chassis row |
+| `provider-edge` (MX204) | EOL announced 2026-06-15, last order 2027-06-15, end of support 2032-06-30 (TSB107750); available 2018-01-01 | EOL page; the availability date is **authored** (Junos 17.4R1 is the earliest release) |
+| `aggregation-legacy` (ACX5048) | last order 2022-12-31; end of support 2027-12-31; available 2015-01-01 | ACX EOL page; the availability date is **authored** |
+| `aggregation` (ACX5448-M) | available 2019-07-01 | **authored**: base ACX5448 announced 2018-03-13, no -M GA date found, no EOL row |
+| `provider-edge-successor` (MX304) | available 2022-07-01 | **authored** from "orderable in the first half" of 2022 (TechTarget 2022-01-25) and Junos 22.2R1-S2; no EOL row |
+| `nid-legacy` (MetroNID TE) | MetroNID series launched 2008-04-15 | Accedian press release (Light Reading reprint) |
+| `time-server` (M300) | discontinued; successor LANTIME M320; no date given | Meinberg archive page |
+
+The two EOL pages were parsed on 2026-10-02 and recorded in
+`build/lived-in-design/VERIFICATION.md` section 1. That record is the
+evidence; the EOL pages themselves were not re-archived.
+
+**Juniper ACX5048-AC (`aggregation-legacy`).** Pinned
+[`Juniper/ACX5048-AC.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/ACX5048-AC.yaml)
+and [`JPSU-650W-AC-AFO`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JPSU-650W-AC-AFO.yaml).
+The [ACX5000 hardware guide](https://www.juniper.net/documentation/us/en/hardware/acx5000/acx5000.pdf)
+(2022-01-23) confirms three things:
+- 48 SFP+ ports, each "a native 10-Gigabit Ethernet port or … a 1-Gigabit
+  Ethernet port when 1-gigabit optics are inserted";
+- six QSFP+ ports at 40G or 4×10G;
+- "ACX5048 650 W JPSU-650W-AC-AFO", with AC typical 230 W and maximum
+  **365 W**.
+
+The two supplies install exactly like the EX3400's. Each bay
+`Power Supply 0`/`1` takes a module at position `PSU 0`/`PSU 1`, and the module
+owns the C14 inlet of the same name (the library's `{module}` template).
+Planning allowance **365 W**, the guide's maximum.
+
+**Declared normalization:** a 1G UNI keeps the `xe-0/0/N` name with `speed`
+1000000. The guide does not name the port with a 1G optic. QFX5100-class Junos
+renames it `ge-0/0/N`, so the ACX5048 may present `ge-`. The catalog keeps the
+pinned name, following the AP `eth0` precedent, and claims no vendor naming.
+
+The 40G `et-0/0/48`–`53` ports stay unused. Nothing may plan 100G on an
+ACX5048, which has no 100G cage. `em1`, the SFP management port, stays
+uncabled. Optics come from the
+[ACX5000 HCT list](https://apps.juniper.net/hct/product/ACX5000/100001):
+`EX-SFP-10GE-SR`/`-LR`/`-ER` and `SFP-1GE-LX`/`-LH`. That family page carries no
+per-model release list, so no Junos minimum is claimed.
+
+**Juniper MX80 (`provider-edge-legacy`).** Pinned
+[`Juniper/MX80.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/MX80.yaml).
+It has `fxp0`, four fixed 10G **XFP** ports and fixed C14 inlets `PEM0`/`PEM1`
+(no space). The library's 500 W maximum and 365 W allocated draw are not used,
+because a relic draws nothing. The empty MIC slots and the fan tray are not
+modelled. An MX80 has no 100G port at all; that is why the spans were re-lit
+during the PE refresh. Relics are uncabled and unpowered, so no optic is
+installed and the XFP cage type needs no part.
+
+**Juniper MX304 (`provider-edge-successor`).** Pinned
+[`Juniper/MX304.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/MX304.yaml)
+and the line card
+[`JNP304-LMCIC16`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JNP304-LMCIC16.yaml)
+(part 750-122718). The chassis type has bays only. The successor needs ports
+for the TMS offramp and its pair link, so the catalog expands the line card's
+`et-0/{module}/N` template at the `LCMIC0` position (`0`) into
+`et-0/0/0`–`15`, typed `400gbase-x-qsfpdd`.
+
+**Declared deviation:** these ports are listed on the chassis, as the
+`line_card` field records. The card is not installed as a NetBox module,
+because the shared equipment builder installs PSU modules only. The PSUs and
+the Routing Engine (its `mgmt_0`/`console_0`) are not modelled for a planned or
+staged chassis. The device therefore has no power, console or management port,
+and the power checks need no special case.
+
+Juniper's [LMIC page](https://www.juniper.net/documentation/us/en/hardware/mx304/topics/topic-map/mx304-interface-modules.html)
+says every LMIC16 port runs 100GbE. Builders set `speed` 100000000; an optic is
+selected only at 100G. The [MX304 HCT](https://apps.juniper.net/hct/product/MX304/100001)
+lists LR4, SR4, ER4L and `JNP-100G-AOC-3M` on the MX304-LMIC16 from 22.2R1.
+No planning allowance applies, because the successor is not powered.
+
+**MX204 port-speed limit.** This is the declared fact under
+[the alias table](#lived-in-carrier-aliases-catalog-015-generator-018). With
+eight active 10G ports, an MX204 cannot light a fourth 100G port, so the TMS
+attaches to the MX304. No part lists `provider-edge` `et-0/0/3`, and no part
+spans both `ddos-mitigation` and `provider-edge`. The tests pin both.
+
+**Arbor TMS HD 1000 (`ddos-mitigation`).** Pinned
+[`Arbor/TMS-HD-1000.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Arbor/TMS-HD-1000.yaml).
+The manufacturer keeps the library spelling "Arbor"; the product line is now
+NETSCOUT's. The
+[NETSCOUT data sheet](https://www.netscout.com/sites/default/files/2022-06/SECPDS_004_EN-2201%20-%20Arbor%20Threat%20Mitigation%20System.pdf)
+(SECPDS_004_EN-2201) gives the HD1000:
+- "Two 1500-watt redundant power supplies; 100-240V AC, 15-10 A";
+- 327 W with one Packet Processing Module;
+- up to 400 Gbps of licensed mitigation.
+
+No supply is pinned anywhere in the library, so the two PSU bays take a
+**labelled-fiction** module type, `TMS AC PSU (authored)`. Its name says so on
+every NetBox screen. Its C14 inlet is authored too: 1500 W at the PoP's 208 V
+feed draws at most about 7.2 A, inside a C14's 10 A rating. A 100–120 V feed
+would need a C20 inlet, which is not modelled. Planning allowance **327 W**,
+the one-PPM figure. The chassis is far larger than the estate's DIA demand.
+Descriptions say so, and licensed mitigation capacity is not modelled. The
+offramp is one Generic 100G AOC per PE. No NETSCOUT qualified-optics list is
+public, so the part is Generic (L12).
+
+**Meinberg LANTIME M300 (`time-server`).** Pinned
+[`Meinberg/lantime-m300.yml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Meinberg/lantime-m300.yml)
+(note `.yml`). It has `lan0` 100BASE-TX, `lan1` 1000BASE-TX (the
+`management_port`, cabled to the mgmt switch), a DE-9 `serial` console and one
+C14 `PWR1`, a single supply. The
+[Meinberg archive page](https://www.meinbergglobal.com/english/archive/lantime-m300.htm)
+announces end of sale and the successor LANTIME M320, with no date. Planning
+allowance **20 W**, the library maximum. Neither interface is `mgmt_only` in
+the library, which the catalog keeps. Platform `LANTIME OS` names the OS
+family only. No stratum, offset, PTP or SyncE is claimed.
+
+**Accedian MetroNID TE (`nid-legacy`).** Pinned
+[`Accedian/MetroNID-TE.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Accedian/MetroNID-TE.yaml).
+The [TE data sheet](https://www.tempestns.com/wp-content/uploads/2020/06/Accedian-TE-TE-S-data.pdf)
+(1Q 2015, reseller-hosted) gives 2 RJ-45 and 2 SFP ports plus management, part
+716-0PP. Accedian introduced the MetroNID series on
+[2008-04-15](https://www.lightreading.com/cable-technology/accedian-unveils-metronid).
+
+Port roles:
+- `B_Network`: the network-facing 1G SFP;
+- `A_Client`: the 1G SFP customer handoff (1000BASE-LX to customer-owned gear);
+- `Monitor-1`/`2`: spare;
+- `C_Management`: uncabled. Management is in-band, on the builder-created
+  virtual `Management` interface, as on the 3903.
+
+Both library power inputs are `dc-terminal`, fed by an external adapter that is
+not modelled. No PDU outlet fits them, so builders mark them connected.
+Planning allowance **13 W**, the library maximum; the data sheet publishes
+none. No qualified-optics list is public, so its SFPs are the Generic 1G parts
+(L12).
+
+Serial formats remain fictional label shapes:
+- ACX5048 `WR…`, MX80 `AB…`, MX304 `BV…`;
+- Arbor `AR…`, with `PS…` for the authored supplies;
+- Meinberg `0yy1…`, Accedian `Cyy…`.
+
+`tests/test_lived_in_catalog.py` pins every source, date, deviation and port
+contract above. It also proves optic selection on the new hosts on a synthetic
+world. Every check has a failing mutation.
