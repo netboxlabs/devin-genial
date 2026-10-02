@@ -1144,11 +1144,19 @@ facilities desk is the remote-hands desk of the carrier hotel's operator — one
 invented colocation company per metro (Windward Interconnect, Motorline Data
 Centers, Cuyahoga Colocation, Kinnickinnic Colocation) — not carrier staff.
 
-**Terminations.** A local handoff terminates in the room its equipment stands
-in — the PoP cage, the premises or NOC equipment room — so a circuit's A and Z
-read as a cage, not just a building; NetBox's termination save still caches
-the room's site, so `?site_id=` filters and WAN maps are unchanged. A far end
-NetBox cannot see stays on the carrier's provider network. Every carrier
+**Terminations.** A local handoff terminates on its **site** and names the
+room its equipment stands in — the PoP cage, the premises or NOC equipment
+room — in its description (`Local routed handoff, Cage G09`); a fibre handoff
+into a PoP also carries its meet-me-room position in `pp_info` (below). A far
+end NetBox cannot see stays on the carrier's provider network. Why site scope:
+R4a (0.16 development) terminated these on the room's Location, and a live
+visual review on NetBox Cloud (2026-10-02) found Visual Explorer's WAN geo map
+drawing "75 sites | 0 circuits": VE resolves a circuit end's site only when
+`termination_type` is `dcim.site` — it fetches locations but never maps a
+Location termination to its site (a product finding, COVERAGE.md). The WAN map
+is the showcase's headline view, so the room moved into the description, which
+also stopped the circuit list's Side Z column reading only `MDF`. The loader,
+strict readback and shared checks still accept a Location-scoped termination. Every carrier
 handoff into a PoP (leased spans, transit, NOC private lines and out-of-band
 broadband) records the carrier hotel's cross-connect order (`xconnect_id`,
 `XC-` plus seven digits, ledger `provider-cross-connects`), and a fibre handoff
