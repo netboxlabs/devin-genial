@@ -279,7 +279,7 @@ def analyze(plan, catalog=None):
             report("optics-hardware", port, "Optical interface owner must resolve to its actual catalog manufacturer and model.")
         if (kind(port) != "interface" or spec is None or physical not in _CAGES or actual_type != physical or
                 (attrs(port).get("enabled") is not True and not awaiting(port)) or attrs(port).get("mgmt_only", False) or
-                attrs(owner).get("status") != "active" or
+                (attrs(owner).get("status") not in ("active", "decommissioning") and not awaiting(port)) or
                 children[(owner, "interface", name)] != [port]):
             report("optics-port", port, "An occupied optical cage must be its unique enabled catalog interface on an active owner; fixed copper, management, radio and virtual ports cannot host optics.")
             continue

@@ -27,7 +27,9 @@ PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  # design's declared 300 W; the PoP management switch shares
                  # the access family's and the cellular console server the
                  # console family's planning figure.
-                 "aggregation": 300, "pop-mgmt": 120, "oob-server": 40}
+                 "aggregation": 300, "pop-mgmt": 120, "oob-server": 40,
+                 # Provider premises kit (catalog/README.md planning allowances).
+                 "nid": 52, "nid-10g": 40, "ce-small": 40}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the

@@ -1,11 +1,16 @@
 # NetBox Labs community showcase: one Great Lakes regional carrier seeded ALONE
 # onto a dedicated tenant's main (a second estate cannot pass the fresh-load
-# occupancy gate). 12 PoPs, three per metro, and 13 private-L3 enterprise
-# customers whose names echo the other industry profiles, one still onboarding
-# and one closing a branch; each premises is the carrier's CE alone, handing the
-# LAN to customer-owned gear (lan_endpoints = 0: a carrier does not inventory
-# its customers' desktops); dual-stack; Juniper
-# access beside the MX204 PEs, Arista leaf/spine kept. Fictional design inputs.
+# occupancy gate). 12 PoPs, three per metro, and 108 customers on 275 premises
+# (v0.17 regional-carrier footprint): 36 private-L3 VPN customers (2-12 sites,
+# each hub dual-homed on two NIDs; one still onboarding, one closing a branch),
+# 40 unmanaged and 20 managed dedicated-internet customers (four large DIA on
+# the 10G NID tier), and 12 two-ended Ethernet private lines. Every premises is
+# the carrier's demarcation (NID, plus a CE in an MPOE wall cabinet where the
+# carrier manages one) handing off to customer-owned gear (lan_endpoints = 0:
+# a carrier does not inventory its customers' desktops). Suburban PoPs with
+# few street-grid anchors serve fewer premises. Dual-stack (DIA stays
+# IPv4-only); Juniper access beside the MX204 PEs, Arista
+# leaf/spine kept. Customer names are authored; fictional design inputs.
 # Runbook: .claude/skills/showcase-tenant/SKILL.md.
 profile = "provider-backbone"
 namespace = "inland-fiber"
@@ -80,6 +85,8 @@ metro = "milwaukee"
 
 [[customers]]
 key = "lakeshore-health"
+name = "Lakeshore Health"
+branch = "clinic"
 hub_pop = "cleveland-flats"
 lan_endpoints = 0
 site_peak_mbps = 100
@@ -91,6 +98,8 @@ sites = [
 
 [[customers]]
 key = "great-lakes-credit"
+name = "Great Lakes Credit Union"
+branch = "branch"
 hub_pop = "detroit-dearborn"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -104,6 +113,8 @@ sites = [
 
 [[customers]]
 key = "harbor-logistics"
+name = "Harbor Logistics"
+branch = "depot"
 hub_pop = "milwaukee-oak-creek"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -117,6 +128,8 @@ sites = [
 
 [[customers]]
 key = "riverbend-schools"
+name = "Riverbend Schools"
+branch = "school"
 hub_pop = "detroit-corktown"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -128,6 +141,8 @@ sites = [
 
 [[customers]]
 key = "northpoint-retail"
+name = "Northpoint Retail"
+branch = "store"
 hub_pop = "chicago-pilsen"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -139,6 +154,8 @@ sites = [
 
 [[customers]]
 key = "summit-legal"
+name = "Summit Legal Partners"
+branch = "office"
 hub_pop = "chicago-loop"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -151,6 +168,8 @@ sites = [
 
 [[customers]]
 key = "keystone-foods"
+name = "Keystone Foods"
+branch = "plant"
 hub_pop = "milwaukee-west-allis"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -162,6 +181,8 @@ sites = [
 
 [[customers]]
 key = "crescent-energy"
+name = "Crescent Energy"
+branch = "field office"
 hub_pop = "chicago-loop"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -173,6 +194,8 @@ sites = [
 
 [[customers]]
 key = "lakemont-university"
+name = "Lakemont University"
+branch = "campus"
 hub_pop = "cleveland-flats"
 lan_endpoints = 0
 site_peak_mbps = 200
@@ -183,6 +206,8 @@ sites = [
 
 [[customers]]
 key = "meridian-plastics"
+name = "Meridian Plastics"
+branch = "plant"
 hub_pop = "detroit-new-center"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -194,6 +219,8 @@ sites = [
 
 [[customers]]
 key = "cedar-regional-bank"
+name = "Cedar Regional Bank"
+branch = "branch"
 hub_pop = "chicago-cermak"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -207,6 +234,8 @@ sites = [
 
 [[customers]]
 key = "northgate-power"
+name = "Northgate Power and Light"
+branch = "service center"
 hub_pop = "detroit-corktown"
 lan_endpoints = 0
 site_peak_mbps = 50
@@ -217,10 +246,12 @@ sites = [
   { pop = "chicago-pilsen", count = 1 },
 ]
 
-# Onboarding: contract signed, nothing in service yet. Sites, CEs, access
+# Onboarding: contract signed, nothing in service yet. Sites, NIDs, CEs, access
 # circuits and BGP sessions are planned and its addresses reserved.
 [[customers]]
 key = "harvest-retail"
+name = "Harvest Market"
+branch = "store"
 status = "planned"
 hub_pop = "milwaukee-oak-creek"
 lan_endpoints = 0
@@ -230,3 +261,835 @@ sites = [
   { pop = "cleveland-westlake", count = 1 },
   { pop = "chicago-cermak", count = 1 },
 ]
+
+[[customers]]
+key = "anchor-insurance"
+name = "Anchor Mutual Insurance"
+branch = "agency"
+hub_pop = "milwaukee-menomonee"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-loop", count = 2 },
+  { pop = "cleveland-flats", count = 2 },
+  { pop = "milwaukee-menomonee", count = 3 },
+]
+
+[[customers]]
+key = "bayview-dental"
+name = "Bayview Dental Group"
+branch = "practice"
+hub_pop = "milwaukee-menomonee"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "chicago-cermak", count = 2 },
+  { pop = "milwaukee-menomonee", count = 2 },
+]
+
+[[customers]]
+key = "birchwood-senior"
+name = "Birchwood Senior Living"
+branch = "community"
+hub_pop = "milwaukee-west-allis"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "cleveland-lakewood", count = 3 },
+  { pop = "milwaukee-west-allis", count = 3 },
+]
+
+[[customers]]
+key = "copperline-mfg"
+name = "Copperline Manufacturing"
+branch = "plant"
+hub_pop = "cleveland-westlake"
+lan_endpoints = 0
+site_peak_mbps = 200
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-pilsen" },
+  { pop = "cleveland-westlake", count = 2 },
+]
+
+[[customers]]
+key = "driftwood-hotels"
+name = "Driftwood Hotels"
+branch = "hotel"
+hub_pop = "detroit-new-center"
+lan_endpoints = 0
+site_peak_mbps = 100
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "detroit-new-center", count = 3 },
+]
+
+[[customers]]
+key = "elmhurst-auto"
+name = "Elmhurst Auto Group"
+branch = "dealership"
+hub_pop = "chicago-loop"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "chicago-loop", count = 3 },
+  { pop = "cleveland-flats", count = 2 },
+]
+
+[[customers]]
+key = "fairhaven-clinics"
+name = "Fairhaven Clinics"
+branch = "clinic"
+hub_pop = "milwaukee-menomonee"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-pilsen", count = 3 },
+  { pop = "detroit-corktown", count = 2, site_peak_mbps = 100 },
+  { pop = "milwaukee-menomonee", count = 3 },
+]
+
+[[customers]]
+key = "granite-title"
+name = "Granite Title and Escrow"
+branch = "office"
+hub_pop = "detroit-new-center"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 200
+sites = [
+  { pop = "cleveland-flats" },
+  { pop = "detroit-new-center", count = 2 },
+]
+
+[[customers]]
+key = "hollister-pharmacy"
+name = "Hollister Pharmacy"
+branch = "pharmacy"
+hub_pop = "cleveland-flats"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-pilsen", count = 3 },
+  { pop = "cleveland-flats", count = 3 },
+  { pop = "milwaukee-west-allis", count = 2, site_peak_mbps = 100 },
+]
+
+[[customers]]
+key = "ironbridge-eng"
+name = "Ironbridge Engineering"
+branch = "office"
+hub_pop = "cleveland-westlake"
+lan_endpoints = 0
+site_peak_mbps = 100
+hub_commit_mbps = 200
+sites = [
+  { pop = "cleveland-westlake" },
+  { pop = "detroit-dearborn" },
+]
+
+[[customers]]
+key = "juniper-library"
+name = "Juniper Valley Library District"
+branch = "library"
+hub_pop = "chicago-cermak"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "detroit-corktown", count = 2 },
+  { pop = "milwaukee-menomonee", count = 2 },
+]
+
+[[customers]]
+key = "kestrel-freight"
+name = "Kestrel Freight Lines"
+branch = "terminal"
+hub_pop = "chicago-loop"
+lan_endpoints = 0
+site_peak_mbps = 100
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-loop", count = 3 },
+  { pop = "detroit-new-center", count = 3 },
+]
+
+[[customers]]
+key = "larkspur-vet"
+name = "Larkspur Veterinary Hospitals"
+branch = "animal hospital"
+hub_pop = "detroit-dearborn"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "cleveland-westlake", count = 2 },
+  { pop = "detroit-dearborn", count = 3 },
+]
+
+[[customers]]
+key = "maplecrest-county"
+name = "Maplecrest County Government"
+branch = "county office"
+hub_pop = "cleveland-lakewood"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+sites = [
+  { pop = "cleveland-lakewood", count = 3 },
+  { pop = "detroit-corktown", count = 2 },
+  { pop = "milwaukee-menomonee", count = 2, site_peak_mbps = 100 },
+]
+
+[[customers]]
+key = "northshore-cu"
+name = "Northshore Federal Credit Union"
+branch = "branch"
+hub_pop = "milwaukee-west-allis"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "chicago-loop", count = 3 },
+  { pop = "cleveland-flats", count = 2 },
+  { pop = "milwaukee-west-allis", count = 3 },
+]
+
+[[customers]]
+key = "oakline-grocers"
+name = "Oakline Grocers"
+branch = "store"
+hub_pop = "chicago-pilsen"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-pilsen", count = 3 },
+  { pop = "detroit-new-center", count = 2, site_peak_mbps = 100 },
+]
+
+[[customers]]
+key = "prairie-staffing"
+name = "Prairie Staffing Services"
+branch = "office"
+hub_pop = "milwaukee-oak-creek"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 200
+sites = [
+  { pop = "detroit-corktown", count = 2 },
+  { pop = "milwaukee-oak-creek", count = 2 },
+]
+
+[[customers]]
+key = "quarry-hill-homes"
+name = "Quarry Hill Homes"
+branch = "sales center"
+hub_pop = "milwaukee-menomonee"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 200
+sites = [
+  { pop = "cleveland-flats" },
+  { pop = "milwaukee-menomonee", count = 2 },
+]
+
+[[customers]]
+key = "redwing-fitness"
+name = "Redwing Fitness Clubs"
+branch = "club"
+hub_pop = "detroit-dearborn"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "chicago-pilsen", count = 3 },
+  { pop = "detroit-dearborn", count = 3 },
+]
+
+[[customers]]
+key = "silverlake-eye"
+name = "Silverlake Eye Care"
+branch = "clinic"
+hub_pop = "detroit-corktown"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 200
+sites = [
+  { pop = "detroit-corktown", count = 2 },
+  { pop = "detroit-new-center", count = 2 },
+]
+
+[[customers]]
+key = "tamarack-tire"
+name = "Tamarack Tire and Service"
+branch = "service center"
+hub_pop = "cleveland-flats"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 500
+sites = [
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "cleveland-flats", count = 3 },
+]
+
+[[customers]]
+key = "union-mills-cpa"
+name = "Union Mills CPA Group"
+branch = "office"
+hub_pop = "cleveland-westlake"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 100
+sites = [
+  { pop = "chicago-loop" },
+  { pop = "cleveland-westlake" },
+]
+
+[[customers]]
+key = "westbrook-schools"
+name = "Westbrook Catholic Schools"
+branch = "school"
+hub_pop = "milwaukee-menomonee"
+lan_endpoints = 0
+site_peak_mbps = 50
+hub_commit_mbps = 1000
+sites = [
+  { pop = "chicago-loop", count = 2, site_peak_mbps = 100 },
+  { pop = "milwaukee-menomonee", count = 3 },
+  { pop = "milwaukee-west-allis", count = 3 },
+]
+
+[[customers]]
+key = "brightpath-media"
+name = "Brightpath Media"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "cobalt-analytics"
+name = "Cobalt Analytics"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "cleveland-lakewood" }]
+
+[[customers]]
+key = "deerfield-studios"
+name = "Deerfield Studios"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "cleveland-westlake" }]
+
+[[customers]]
+key = "emberly-games"
+name = "Emberly Games"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "foxglove-labs"
+name = "Foxglove Labs"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "glasshouse-arch"
+name = "Glasshouse Architects"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "halcyon-biotech"
+name = "Halcyon Biotech"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "ironclad-security"
+name = "Ironclad Security"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "jetstream-cargo"
+name = "Jetstream Air Cargo"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
+key = "kingfisher-capital"
+name = "Kingfisher Capital"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "lumen-ridge-ai"
+name = "Lumen Ridge AI"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "midwest-colo"
+name = "Midwest Colocation"
+service = "dia"
+commit_mbps = 5000
+sites = [{ pop = "detroit-dearborn" }]
+
+[[customers]]
+key = "nimbus-hosting"
+name = "Nimbus Hosting"
+service = "dia"
+commit_mbps = 5000
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "orchard-software"
+name = "Orchard Software"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "pinnacle-esports"
+name = "Pinnacle Esports Arena"
+service = "dia"
+commit_mbps = 2000
+sites = [{ pop = "cleveland-lakewood" }]
+
+[[customers]]
+key = "quill-publishing"
+name = "Quill and Ink Publishing"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
+key = "rookery-research"
+name = "Rookery Research"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "sable-trading"
+name = "Sable Trading"
+service = "dia"
+commit_mbps = 2000
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "tidewater-broadcast"
+name = "Tidewater Broadcasting"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "uplift-robotics"
+name = "Uplift Robotics"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "cleveland-westlake" }]
+
+[[customers]]
+key = "vantage-diagnostics"
+name = "Vantage Diagnostics"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "wavecrest-design"
+name = "Wavecrest Design"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "milwaukee-west-allis" }]
+
+[[customers]]
+key = "yardley-stadium"
+name = "Yardley Stadium"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "detroit-dearborn" }]
+
+[[customers]]
+key = "zephyr-logistics"
+name = "Zephyr Logistics"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "beacon-hill-law"
+name = "Beacon Hill Law"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "cornerstone-church"
+name = "Cornerstone Community Church"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "delta-river-casino"
+name = "Delta River Casino"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
+key = "evergreen-cowork"
+name = "Evergreen Coworking"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "fieldhouse-sports"
+name = "Fieldhouse Sports Medicine"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "greystone-hotel"
+name = "Greystone Hotel"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "harborview-condos"
+name = "Harborview Condominiums"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "inkwell-agency"
+name = "Inkwell Creative Agency"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "jubilee-theater"
+name = "Jubilee Theater"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "lakefront-museum"
+name = "Lakefront Science Museum"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "marigold-foods"
+name = "Marigold Foods Test Kitchen"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "nightingale-hospice"
+name = "Nightingale Hospice"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "onyx-render"
+name = "Onyx Render Farm"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "parkway-surgery"
+name = "Parkway Surgery Center"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "rivermark-brewing"
+name = "Rivermark Brewing"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "stonegate-academy"
+name = "Stonegate Academy"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "alder-dental"
+name = "Alder Street Dental"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "bluebird-bakery"
+name = "Bluebird Bakery"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "coastal-realty"
+name = "Coastal Realty"
+service = "dia"
+managed = true
+commit_mbps = 100
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "dunmore-insurance"
+name = "Dunmore Insurance Agency"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "eastside-pediatrics"
+name = "Eastside Pediatrics"
+service = "dia"
+managed = true
+commit_mbps = 100
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "finch-accountants"
+name = "Finch and Co Accountants"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "gardenia-florist"
+name = "Gardenia Florist"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "hartwell-pt"
+name = "Hartwell Physical Therapy"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "ivy-lane-montessori"
+name = "Ivy Lane Montessori"
+service = "dia"
+managed = true
+commit_mbps = 100
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "jasper-print"
+name = "Jasper Print Shop"
+service = "dia"
+managed = true
+commit_mbps = 100
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "kettle-corner-cafe"
+name = "Kettle Corner Cafe"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "linden-optometry"
+name = "Linden Optometry"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "mosaic-salon"
+name = "Mosaic Salon and Spa"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "northwind-travel"
+name = "Northwind Travel"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "olive-branch-law"
+name = "Olive Branch Law Office"
+service = "dia"
+managed = true
+commit_mbps = 100
+sites = [{ pop = "detroit-new-center" }]
+
+[[customers]]
+key = "pebble-creek-vet"
+name = "Pebble Creek Veterinary"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "cleveland-flats" }]
+
+[[customers]]
+key = "rosewood-chiro"
+name = "Rosewood Chiropractic"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "detroit-corktown" }]
+
+[[customers]]
+key = "sparrow-hardware"
+name = "Sparrow Hardware"
+service = "dia"
+managed = true
+commit_mbps = 100
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
+key = "thistle-books"
+name = "Thistle Books"
+service = "dia"
+managed = true
+commit_mbps = 50
+sites = [{ pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "willow-tax"
+name = "Willow Tax Services"
+service = "dia"
+managed = true
+commit_mbps = 200
+sites = [{ pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "bridgewater-trading"
+name = "Bridgewater Trading Group"
+service = "epl"
+rate_mbps = 500
+sites = [{ pop = "chicago-pilsen" }, { pop = "detroit-corktown" }]
+
+[[customers]]
+key = "calumet-steel"
+name = "Calumet Steel"
+service = "epl"
+rate_mbps = 200
+sites = [{ pop = "milwaukee-menomonee" }, { pop = "chicago-loop" }]
+
+[[customers]]
+key = "dresden-imaging"
+name = "Dresden Medical Imaging"
+service = "epl"
+rate_mbps = 500
+sites = [{ pop = "cleveland-flats" }, { pop = "detroit-new-center" }]
+
+[[customers]]
+key = "everline-data"
+name = "Everline Data Centers"
+service = "epl"
+rate_mbps = 500
+sites = [{ pop = "milwaukee-menomonee" }, { pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "forge-post"
+name = "Forge Post-Production"
+service = "epl"
+rate_mbps = 200
+sites = [{ pop = "detroit-new-center" }, { pop = "cleveland-flats" }]
+
+[[customers]]
+key = "great-plains-grain"
+name = "Great Plains Grain Exchange"
+service = "epl"
+rate_mbps = 100
+sites = [{ pop = "chicago-loop" }, { pop = "detroit-corktown" }]
+
+[[customers]]
+key = "heritage-health"
+name = "Heritage Health Network"
+service = "epl"
+rate_mbps = 500
+sites = [{ pop = "cleveland-flats" }, { pop = "chicago-pilsen" }]
+
+[[customers]]
+key = "inland-port"
+name = "Inland Port Authority"
+service = "epl"
+rate_mbps = 200
+sites = [{ pop = "detroit-corktown" }, { pop = "milwaukee-menomonee" }]
+
+[[customers]]
+key = "kenwood-research"
+name = "Kenwood Research Institute"
+service = "epl"
+rate_mbps = 500
+sites = [{ pop = "chicago-loop" }, { pop = "detroit-new-center" }]
+
+[[customers]]
+key = "lakeview-broadcast"
+name = "Lakeview Broadcast Center"
+service = "epl"
+rate_mbps = 200
+sites = [{ pop = "detroit-new-center" }, { pop = "chicago-loop" }]
+
+[[customers]]
+key = "metro-transit"
+name = "Metro Transit Authority"
+service = "epl"
+rate_mbps = 100
+sites = [{ pop = "chicago-pilsen" }, { pop = "cleveland-flats" }]
+
+[[customers]]
+key = "northfield-hospital"
+name = "Northfield Hospital"
+service = "epl"
+rate_mbps = 500
+sites = [{ pop = "milwaukee-menomonee" }, { pop = "detroit-corktown" }]

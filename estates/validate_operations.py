@@ -623,6 +623,7 @@ def _context(plan, objects, kinds):
 # and the switch roles a baseline config context governs.
 _TAG_KINDS = {"hub-site": {"site"}, "dual-homed": {"site"}, "acquired": {"site", "device"},
               "route-reflector": {"device"}, "transit-edge": {"device"}, "managed-ce": {"device"},
+              "managed-service": {"device", "circuit"},
               "pci-scope": {"device", "vlan", "prefix"}, "clinical": {"device", "vlan", "prefix"},
               "ot-zone": {"device", "vlan", "prefix"},
               "multi-site": {"virtual_machine"}}
@@ -779,14 +780,15 @@ def _shared(plan, objects, kinds, report):
              for value in obj["refs"].values()
              for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
     for port in kinds["interface"]:
-        if (port["key"] not in named and port["attrs"].get("enabled") is not False
+        demarcation = bool(port["attrs"].get("mark_connected") and port["attrs"].get("label"))
+        if (port["key"] not in named and not demarcation and port["attrs"].get("enabled") is not False
                 and port["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
                 and not any(port["refs"].get(field) for field in ("untagged_vlan", "tagged_vlans", "wireless_lans"))):
             report("operations-unused-port", port["key"], "Unused ports are disabled on every role; this port is uncabled, "
                    "unaddressed and carries nothing, yet still enabled.")
     cabled = {cable["refs"].get(side) for cable in kinds["cable"] for side in ("a", "b")}
     for port in kinds["interface"]:
-        if port["attrs"].get("mark_connected") and (port["key"] in cabled or port["key"] not in named
+        if port["attrs"].get("mark_connected") and (port["key"] in cabled or (port["key"] not in named and not port["attrs"].get("label"))
                                                      or port["attrs"].get("enabled") is False):
             report("operations-unused-port", port["key"], "mark_connected stands for an uninventoried far end of a "
                    "port in service; NetBox refuses it beside a real cable.")

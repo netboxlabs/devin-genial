@@ -258,14 +258,14 @@ to four; `guest` defaults to `0`.
 
 ## Provider backbone
 
-Allowlist: `estates/provider.py:50`, with `COMMON` at `estates/provider.py:20`.
+Allowlist: `estates/provider.py:275`, with `COMMON` at `estates/provider.py:25`.
 Accepts every common key including `wan_tiers_mbps`; `reservation_user` must be
 empty. `demo` additionally accepts `provider-span-maintenance`.
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
 | `topology` | string | `incremental-mesh` | `incremental-mesh` only: metro dark-fiber rings plus two diverse leased spans per neighbouring metro, append-only under growth ([geography](modeling.md#provider-backbone-geography-and-numbering)) | **rebaseline** |
-| `pops` | array of tables | three PoPs in Chicago, Detroit, Cleveland | `3`–`64` entries spanning at least three distinct metros | grow-only; an existing entry must stay byte-identical |
+| `pops` | array of tables | three PoPs in Chicago, Detroit, Cleveland | `3`–`15` entries spanning at least three distinct metros (two PE loopbacks per PoP from the documentation /27) | grow-only; an existing entry must stay byte-identical |
 | `customers` | array of tables | one `harbor-logistics` customer | `1`–`256` entries; list order is onboarding order (customer slot, ASN, RD, account, first install date) | grow-only; append new customers |
 | `noc_pop_a` | string | first PoP key in sorted order | An existing PoP key, distinct from `noc_pop_b` | **rebaseline** |
 | `noc_pop_b` | string | second PoP key in sorted order | An existing PoP key, distinct from `noc_pop_a` | **rebaseline** |
@@ -273,29 +273,44 @@ empty. `demo` additionally accepts `provider-span-maintenance`.
 | `asn_base` | integer | namespace-derived | `4200000000`–`4294966271`, aligned to a 1024-number block from `4200000000`; customer VPN ASNs only. The operator and upstream ASNs are RFC 5398 documentation numbers chosen by namespace. Global target ASN conflict preflight is still required. | **rebaseline** |
 | `discovery_lab` | boolean or table | `false` | `true` (three lab routers) or `{ nodes = 3 }` / `{ nodes = 4 }`. Adds the [network lab](modeling.md#provider-network-lab) the real-discovery lab runs: 392 records for three nodes. | **rebaseline** |
 
-Each `[[pops]]` entry (`estates/provider.py:70`) requires exactly two keys:
+Each `[[pops]]` entry (`estates/provider.py:291`) requires exactly two keys:
 
 | Key | Type | Default | Accepted values and bounds |
 | --- | --- | --- | --- |
 | `key` | string | required | Unique `[a-z][a-z0-9-]{0,19}`, also unique after removing hyphens |
 | `metro` | string | required | `chicago`, `detroit`, `cleveland` or `milwaukee` |
 
-Each `[[customers]]` entry (`estates/provider.py:95`) requires `key`, `hub_pop` and
-`sites`:
+Each `[[customers]]` entry (`estates/provider.py:319`) requires `key` and `sites`
+(and `hub_pop` for `private-l3`). Every service also accepts `name` (an authored
+display name, 1–60 characters, unique; default the titled key) and `status`.
+Every premises is the carrier's demarcation: a Ciena 3903 NID (a RAD ETX-2i-10G
+when the rate times `1 + reserve_fraction` exceeds 1G) landed on a home-side
+aggregation UNI, plus a carrier CE in an MPOE wall cabinet where the service is
+managed ([provider services](modeling.md#provider-backbone-geography-and-numbering)).
 
 | Key | Type | Default | Accepted values and bounds | Growth |
 | --- | --- | --- | --- | --- |
 | `key` | string | required | Unique `[a-z][a-z0-9-]{0,19}` | identity |
-| `service` | string | `private-l3` | `private-l3` only | **rebaseline** |
-| `hub_pop` | string | required | One of this customer's own attachment PoPs; ordinal `001` there is the hub premises, dual-homed by a second access circuit (CE `wan2`) into the PoP's other PE | **rebaseline** |
+| `name` | string | titled `key` | 1–60 characters, unique across customers | **rebaseline** |
+| `service` | string | `private-l3` | `private-l3`, `dia` (dedicated internet, one premises) or `epl` (Ethernet private line, exactly two premises at two PoPs) | **rebaseline** |
+| `commit_mbps` | integer | `100` | `dia` only: a member of `wan_tiers_mbps` or `2000`/`5000`; one /29 from the 64 documentation /29s. Above 1G with reserve it takes the 10G NID tier | **rebaseline** |
+| `managed` | boolean | `false` | `dia` only: `true` adds a carrier CE (Juniper SRX300) in an MPOE cabinet, a public /31 from the 32 managed links and the /29 routed to the CE; at most 1G with reserve. `false` hands the /29 (PE .1) to a labelled customer-firewall demarcation | **rebaseline** |
+| `rate_mbps` | integer | `100` | `epl` only: a member of `wan_tiers_mbps` or `2000`/`5000`; native `l2vpn` type `epl` with a VC-ID from the append-only `provider-epl-vcid` ledger (from 10001), port-based Q-in-Q S-VLANs | **rebaseline** |
+| `branch` | string | `branch` | `private-l3` only: the lowercase noun the premises descriptions use (`store`, `clinic`, `county office`; 2–24 letters) | **rebaseline** |
+
+| Key | Type | Default | Accepted values and bounds | Growth |
+| --- | --- | --- | --- | --- |
+| `hub_pop` | string | required | One of this customer's own attachment PoPs; `private-l3` only; ordinal `001` there is the hub premises, dual-homed on two NIDs (one per aggregation side) into both PEs of the PoP, CE `wan2` on the second | **rebaseline** |
 | `sites` | array of tables | required | `2`–`len(pops)` entries, each a distinct known PoP | grow-only |
-| `site_peak_mbps` | integer | `50` | `1`–`800` directed traffic from each non-hub premises toward its hub; ≤ `1000 × (1 − reserve_fraction)` | **rebaseline** |
-| `hub_commit_mbps` | integer | `1000` | `1`–`1000`, must be a member of `wan_tiers_mbps`, and must cover `(premises − 1) × site_peak_mbps` after reserve | **rebaseline** (bandwidth renewal) |
-| `lan_endpoints` | integer | `4` | `0`–`12` wired office desks at each premises; `0` is the CE alone: unracked on customer power in the customer's room, routing the customer's own LAN /24 (from a shared per-customer RFC1918 plan, VRF-scoped) on `port1`, managed on a carrier loopback | grow-only; `0` to more needs a new baseline |
+| `site_peak_mbps` | integer | `50` | `private-l3` only. `1`–`800` directed traffic from each non-hub premises toward its hub; ≤ `1000 × (1 − reserve_fraction)` | **rebaseline** |
+| `hub_commit_mbps` | integer | `1000` | `private-l3` only. `1`–`1000`, must be a member of `wan_tiers_mbps`, and must cover the summed spoke peaks after reserve | **rebaseline** (bandwidth renewal) |
+| `lan_endpoints` | integer | `4` | `private-l3` only. `0`–`12` wired office desks at each premises; `0` is the NID and CE alone in the MPOE wall cabinet on customer power, routing the customer's own LAN /24 (from a shared per-customer RFC1918 plan, VRF-scoped) on the CE's first LAN port, managed on a carrier loopback | grow-only; `0` to more needs a new baseline |
 | `status` | string | `active` | `active` or `planned` (onboarding: every premises planned, its virtual circuit planned) | growth may move `planned` → `active` |
 
 Each `sites` entry accepts `pop` (required, a known PoP key, unique within the
-customer), `count` (optional, default `1`, `1`–`12`) and `status` (optional,
+customer), `count` (optional, default `1`, `1`–`12`; always `1` for DIA and EPL),
+`site_peak_mbps` (optional, `private-l3` only: that entry's premises' own peak,
+`1`–`800`, rebaseline-frozen) and `status` (optional,
 default the customer's: `active`, `planned` — provisioning under an active
 customer — or `decommissioning`; every entry of a planned customer is planned,
 and an active customer's `hub_pop` entry stays active). The status applies to
@@ -303,10 +318,12 @@ every premises in the entry and to every record they own; see
 [provider customer lifecycle](modeling.md#provider-customer-lifecycle).
 Growth may move an entry forward (planned → active, active → decommissioning);
 any other change, or removing a premises, needs a new baseline.
-Combined customer and NOC attachments cannot exceed twelve per PoP; a hub premises counts twice (its two access circuits). Composed site
+Customer attachments cannot exceed 80 per PoP (40 UNIs per aggregation switch; MX304 or hub/access PoPs are the growth path); a hub premises counts twice. Each attachment's home side comes from the alternating `provider-agg-home/<pop>` ledger and its service VLAN rides only that side's LAGs. Per side, the declared active peaks must fit the 4×10G AGG-PE LAG with reserve, and still fit after one member's loss. DIA customers stop at 64 (/29 ceiling), managed DIA at 32 (/31 ceiling). Composed site
 identities (`ce-<customer>-<pop>-<nnn>`) must not collide. The `pop` homes those
 premises: each is placed (and named) in that PoP's service area — within 25 km
-and nearer it than any other same-metro PoP that existed when it was ordered.
+and nearer it than any other same-metro PoP that existed when it was ordered,
+on a 150 m street grid around an authored anchor and at least 300 m from every
+earlier premises.
 
 ## Retail chain
 
