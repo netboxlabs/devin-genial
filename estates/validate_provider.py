@@ -11,6 +11,14 @@ the management switch and cellular console server in R01; every customer
 premises is a NID-terminated access circuit into one aggregation side, with a
 carrier CE in an MPOE wall cabinet where the service is managed. Every gate
 below re-derives its obligation from the recipe, the ledgers and the graph.
+
+v0.18 lived-in carrier (build/lived-in-design/DESIGN.md §§2-4, §7): the
+provider timeline is restated from its frozen ``provider-timeline`` ledgers
+(estates/timeline.py is never imported), and each cabinet's install history
+from it: a core PoP's cage of R01/R02 or an edge PoP's one cabinet, units
+top-down from ``provider-cabinet-u``, blanked never-reused gaps with dated
+rack journals, MX80 relics, the MX304 successor, the cold spare, the time
+server and the DDoS appliance, exchanges and former customers.
 """
 
 from collections import Counter, defaultdict, deque
