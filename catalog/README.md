@@ -98,7 +98,7 @@ names. Deviations and evidence are in
 | `pop-mgmt` | Juniper EX3400-24T, 1U, no PoE | `access_ports` `ge-0/0/0`–`23`; `uplink_ports` `xe-0/2/0`–`3`; `stack_ports` `et-0/1/0`/`1`; `me0` mgmt; two JPSU-150-AC-AFO → C14 `Power Supply 0`/`1` |
 | `oob-server` | Opengear OM2216-L, 1U | `eth0` mgmt (cabled), `eth1` spare, `Cellular Interface (LTE)` type `lte` (uncableable); `Port 1`–`16` RJ45 console-server ports; C14 `PS1`/`PS2` |
 | `pdu-switched` | APC AP8941 Switched Rack PDU 2G, 0U, 208 V 30 A | NEMA L6-30P `Power Port 1`; `Power Outlet 1`–`24` (C13, C19 at 8/16/24); `Network` 100BASE-TX mgmt; RJ12 `Serial` |
-| `osp-panel` | CommScope FMS-K2BI-L1A1-48-SP (760254438), 1U | front `Port 1`–`48` (`lc`, declared deviation from `lc-apc`) ↔ rear `Port 1`–`48` (`splice`), 1:1 |
+| `osp-panel` | Commscope (library spelling) FMS-K2BI-L1A1-48-SP (760254438), 1U | front `Port 1`–`48` (`lc`, declared deviation from `lc-apc`) ↔ rear `Port 1`–`48` (`splice`), 1:1 |
 | `demarc-panel` | Generic LC-24-port Fiber Patch Panel, 1U | front `Port 1`–`24` `lc` ↔ rear `Port 1`–`24` `lc`, 1:1 |
 | `cable-manager-1u` / `cable-manager-2u` | Generic Cable Management Panel 1U / 2U | no ports; counts toward utilization |
 | `blanking-1u` / `blanking-2u` | Generic Blanking Panel 1U / 2U | no ports; `exclude_from_utilization: true` |
@@ -558,7 +558,10 @@ cover the circuit's recorded `distance`, or, where the circuit records none,
 the two terminating sites' great-circle distance times the authored 1.3 route
 factor. `estates/optics.py` picks the **shortest** reviewed reach that covers
 the run from the parts sharing that host cage, rate and medium, so local links
-and short spans keep LX/LR4. Two long-reach MX204 parts are pinned for this
+and short spans keep LX/LR4. Since catalog 0.14 the run is traced through
+single-position passive panel mappings (an aggregation UNI patched through the
+OSP panel reaches its access circuit), and the local cords count toward the
+reach exactly as the independent check adds them. Two long-reach MX204 parts are pinned for this
 (Juniper HCT, checked 2026-10-02; the MX204 product list names both):
 
 | Part | Reach used | Power reserved | Source note |

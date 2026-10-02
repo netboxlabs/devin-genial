@@ -172,6 +172,14 @@ class FootprintOpticsSelectionTests(unittest.TestCase):
         cable("uni-10g", port("agg", "xe-0/0/2", "10gbase-x-sfpp"), tenG_z, length=10)
         cable("nni-10g", port("nid10", "ETH-1/1", "10gbase-x-sfpp"), tenG_a, length=10)
         cable("handoff", port("nid", "3", m_type(w, "nid", "3")), port("ce", "ge-0/0/0", "1000base-t"), kind="cat6")
+        # A UNI patched through the OSP panel (front 1 <-> rear 1) to a 27 km owned access circuit.
+        add("device", "device/osp", {}, {"device_type": "hardware/osp-panel", "location": "location/cage"})
+        rear = add("rear_port", "device/osp/rear/1", {"name": "Port 1", "type": "splice", "positions": 1}, {"device": "device/osp"})
+        front = add("front_port", "device/osp/front/1", {"name": "Port 1", "type": "lc", "rear_port_position": 1},
+                    {"device": "device/osp", "rear_port": rear})
+        _, osp_z = circuit("via-osp", 27)
+        cable("uni-osp", port("agg", "xe-0/0/3", "10gbase-x-sfpp", 1000000), front, length=4)
+        cable("osp-term", rear, osp_z, length=2)
         return w
 
     def installed(self, w):
@@ -193,6 +201,7 @@ class FootprintOpticsSelectionTests(unittest.TestCase):
             "agg/xe-0/0/1": "Juniper/SFP-1GE-LH",          # 27 km: shortest covering reach
             "agg/xe-0/0/2": "Juniper/SFPP-10GE-ER",        # 10G tier, 25 km
             "nid10/ETH-1/1": "RAD/SFP-P-3DH",
+            "agg/xe-0/0/3": "Juniper/SFP-1GE-LH",          # 27 km traced through the OSP panel
         })
         self.assertEqual(w.objects["cable/lag"]["attrs"]["type"], "mmf")
         self.assertNotIn("optics-module/interface/nid/3", w.objects)  # copper RJ-45 UNI takes no optic
@@ -213,6 +222,11 @@ class FootprintOpticsSelectionTests(unittest.TestCase):
         w.objects["cable/uni-far"]["refs"]["b"] = "circuit/near/A"
         with self.assertRaisesRegex(DesignError, "no reviewed optic"):
             optics.enrich(w)
+        # Without the panel's front/rear mapping the trace stops at the panel: a 10 km part.
+        w = self.world()
+        del w.objects["device/osp/front/1"]["refs"]["rear_port"]
+        optics.enrich(w)
+        self.assertEqual(self.installed(w)["agg/xe-0/0/3"], "Juniper/SFP-1GE-LX")
         # The library's SFP typing of the Ciena combo port would demand an optic on a copper handoff.
         catalog = hardware_catalog()
         catalog["models"]["nid"]["interfaces"][2]["type"] = "1000base-x-sfp"

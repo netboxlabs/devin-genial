@@ -52,6 +52,29 @@ def owned_span_m(objects, endpoint):
     return round(km(*points) * ROUTE_FACTOR * 1000) if len(points) == 2 else 0
 
 
+_METRES = {"m": 1, "cm": .01, "ft": .3048, "in": .0254, "km": 1000}
+
+
+def far_end(objects, attached, mates, cable, start):
+    """(channel end, local metres) from `start` along `cable` through passive panels.
+
+    A fibre patched through a panel (an OSP panel's front, its 1:1 rear, the
+    next cable) is one optical channel: the optic sees whatever ends it, and
+    the local cords add to the owned span it must reach. Stops at an
+    interface, a circuit termination, or anything unmapped.
+    """
+    length, seen = 0, set()
+    while True:
+        attrs = cable["attrs"]
+        length += attrs.get("length", 0) * _METRES.get(attrs.get("length_unit"), 0)
+        end = cable["refs"]["b" if cable["refs"]["a"] == start else "a"]
+        mate = mates.get(end)
+        if mate is None or mate not in attached or end in seen:
+            return end, length
+        seen.add(end)
+        start, cable = mate, attached[mate]
+
+
 # Device types an estate keeps after their last device is replaced: the bank's
 # acquired-branch line survives an access refresh (types are never deleted by
 # a refresh). While an estate carries that lineage, the part definitions both
@@ -129,6 +152,11 @@ def enrich(world):
                 and len(rooms) == 1 and None not in rooms
                 and all(selections.get(cage_lookup(end, "mmf")) for end in (a, b))):
             cable["attrs"]["type"] = "mmf"
+    # Single-position panel mappings (front n <-> rear n), both directions.
+    mates = {}
+    for obj in objects.values():
+        if obj["kind"] == "front_port" and obj["refs"].get("rear_port"):
+            mates[obj["key"]], mates[obj["refs"]["rear_port"]] = obj["refs"]["rear_port"], obj["key"]
     occupied = []
     for interface in objects.values():
         if interface["kind"] != "interface" or interface["key"] not in attached:
@@ -141,11 +169,14 @@ def enrich(world):
         device = objects[interface["refs"]["device"]]
         alias = device["refs"]["device_type"].removeprefix("hardware/")
         rate = attrs.get("speed", cage[1])
-        span = owned_span_m(objects, cable["refs"]["b" if cable["refs"]["a"] == key else "a"])
-        # The shortest reviewed reach that covers the owned span; local channels
-        # (span 0) keep the catalog's short-reach part.
+        end, local = far_end(objects, attached, mates, cable, key)
+        span = owned_span_m(objects, end)
+        # The shortest reviewed reach that covers the owned span plus its local
+        # cords (the check adds both); local channels (span 0) keep the
+        # catalog's short-reach part.
         part_id = min((p for p in selections.get((alias, attrs["name"], rate, cable["attrs"]["type"]), ())
-                       if parts[p]["reach_m"] >= span), key=lambda p: parts[p]["reach_m"], default=None)
+                       if parts[p]["reach_m"] >= (span + local if span else 0)),
+                      key=lambda p: parts[p]["reach_m"], default=None)
         if part_id is None:
             raise DesignError(f"{key}: no reviewed optic for {models[alias]['model']} "
                               f"{attrs['name']} at {rate} kbps over {cable['attrs']['type']}"

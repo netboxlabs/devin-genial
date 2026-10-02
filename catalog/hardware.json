@@ -4959,7 +4959,7 @@
       "serial_format": "5A{yyww}E#####"
     },
     "osp-panel": {
-      "manufacturer": "CommScope",
+      "manufacturer": "Commscope",
       "model": "FMS-K2BI-L1A1-48-SP",
       "slug": "commscope-fms-k2bi-l1a1-48-sp",
       "part_number": "760254438",
