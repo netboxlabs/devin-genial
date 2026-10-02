@@ -28,7 +28,6 @@ COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "re
 DEFAULT_POPS = [dict(key="chicago-west",metro="chicago"),dict(key="detroit-south",metro="detroit"),
                 dict(key="cleveland-east",metro="cleveland")]
 DEFAULT_CUSTOMERS = [dict(key="harbor-logistics",hub_pop="chicago-west",sites=[dict(pop=p["key"],count=1) for p in DEFAULT_POPS])]
-CUSTOMER_DEFAULTS = dict(service="private-l3",site_peak_mbps=50,hub_commit_mbps=1000,lan_endpoints=4,status="active")
 # Per-service recipe fields beyond key, sites, status and an optional authored
 # display name. Private L3 keeps its original grammar (and defaults); DIA is one
 # premises with a committed rate; an EPL is exactly two premises at two PoPs.
