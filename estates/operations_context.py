@@ -9,6 +9,7 @@ ticket it ran under and who confirmed it.
 from collections import defaultdict
 from datetime import date, timedelta
 
+from . import timeline as history
 from .automation import enrich as automation_records
 from .model import DesignError, digest, redate_serial
 from .naming import main_scoped_name, titleize
@@ -188,46 +189,30 @@ COLOCATION = {"Chicago": ("Windward Interconnect", "windward-interconnect.exampl
               "Milwaukee": ("Kinnickinnic Colocation", "kinnickinnic-colo.example")}
 
 
-# Deterministic time-of-day bands (UTC minutes, half-open). Orders, installs
-# and paperwork land in US business hours, 14:00-21:59 UTC; maintenance
-# windows at night, 04:00-08:59 UTC. Neither band crosses midnight UTC.
-TIME_BANDS = {"business": (14 * 60, 22 * 60), "night": (4 * 60, 9 * 60)}
+def journal_created(day, key, band="business"):
+    """A journal entry's ``created``: its event day at a stable time in ``band``.
 
-
-def journal_created(day, minute=15 * 60):
-    """A journal entry's ``created`` timestamp: its event day at ``minute`` UTC.
-
-    Rendered the way NetBox's REST serializer returns it, so strict readback
-    compares it exactly. ``minute`` comes from ``journal_minute``.
+    One formula for every writer (estates/timeline.py ``created``): orders,
+    installs and paperwork in US business hours (14:00-21:59 UTC), maintenance
+    at night (04:00-08:59 UTC), keyed by the journal's own key. Rendered the
+    way NetBox's REST serializer returns it, so strict readback compares it.
     """
-    return f"{day}T{minute // 60:02}:{minute % 60:02}:00Z"
-
-
-def journal_minute(world, target, event, band="business"):
-    """A stable minute of day inside ``band`` for one journal entry."""
-    low, high = TIME_BANDS[band]
-    return world.choose(target, f"journal-time-{event}", range(low, high))
-
-
-def journal_text(when, title, body):
-    """Journal markdown: a bold title line with the event date, a blank line, the body.
-
-    NetBox has no title field. The date stays in the text because the Diode
-    lane stamps ``created`` at ingest (diode.LOADER_ONLY_FIELDS).
-    """
-    return f"**{title}** · {when}\n\n{body}"
+    return history.created(day, key, band)
 
 
 def entry(world, target, event, when, title, body, kind="info", band="business"):
     """Add one dated journal entry on ``target``; shared by every builder.
 
-    ``created`` is the event's own date and band time, not the load: TurboBulk
-    inserts a supplied value as-is, and a journal whose every entry reads the
-    day it was loaded tells no history. The key is ``journal/<target>/<event>``.
+    Comments are DESIGN P0-8 markdown (``timeline.entry``): a bold title and
+    the event date, a blank line, then the body. NetBox has no title field;
+    the date stays in the text because the Diode lane stamps ``created`` at
+    ingest (diode.LOADER_ONLY_FIELDS). ``created`` is the event's own date and
+    band time, not the load: TurboBulk inserts a supplied value as-is. The key
+    is ``journal/<target>/<event>``.
     """
-    return world.add("journal_entry", f"journal/{target}/{event}",
-                     {"kind": kind, "comments": journal_text(when, title, body),
-                      "created": journal_created(when, journal_minute(world, target, event, band))},
+    key = f"journal/{target}/{event}"
+    return world.add("journal_entry", key, {"kind": kind, "comments": history.entry(title, when, body),
+                                            "created": journal_created(when, key, band)},
                      {"assigned_object": target}, {"operations": True})
 
 
@@ -242,7 +227,7 @@ def provider_customer(world, tenant):
 
 #: [A] The day the NOC began journaling third-party maintenance notices
 #: (DESIGN §4.1): no maintenance notice predates it.
-NOTICE_JOURNALING = date(2025, 4, 1)
+NOTICE_JOURNALING = history.NOTICES_BEGIN
 #: Circuit types whose third-party provider sends maintenance notices: leased
 #: waves, transit and NOC private lines. Owned dark fibre, cellular
 #: best-effort service and exchange ports carry none.
@@ -258,7 +243,7 @@ def _carrier_paperwork(world, circuit, dated, change, journal):
     """A provider circuit's paperwork beyond its order and handover.
 
     - Cross-connect orders (DESIGN P1-10): every carrier-hotel cross-connect
-      (a termination with ``xconnect_id``) was ordered 14-44 days before the
+      (a termination with ``xconnect_id``) was ordered 14-30 days before the
       circuit's install under a letter of authorization to the colo.
     - Committed-rate upgrades (P1-11): one in two customer-access or transit
       circuits in service at least five years carry one or two earlier,
@@ -318,7 +303,9 @@ def _carrier_paperwork(world, circuit, dated, change, journal):
         for n in range(count):
             when = first + timedelta(days=room * n // count + pick(f"maintenance-day-{n}") % max(1, room // count))
             event = f"maintenance-{n + 1}"
-            start = journal_minute(world, key, event, "night")
+            # The window opens at the entry's own night-band time.
+            hh, mm = journal_created(when.isoformat(), f"journal/{key}/{event}", "night")[11:16].split(":")
+            start = 60 * int(hh) + int(mm)
             hours = 2 + pick(f"maintenance-hours-{n}") % 3
             end = start + 60 * hours
             notice = f"{_initials(provider)}-MNT-{when.year}-{1000 + pick(f'maintenance-id-{n}') % 9000}"
@@ -395,7 +382,8 @@ def enrich(world):
             f"Network triage and technical escalation for {obj['attrs']['name']}; coordinates site, platform and carrier specialists.")
     infrastructure_roles = {f"role/{role}" for role in (
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
-        "ap", "console-server", "stack", "laboratory", "provider-edge", "customer-edge")}
+        "ap", "console-server", "stack", "laboratory", "provider-edge", "customer-edge",
+        "aggregation", "ddos-mitigation", "time-server")}
     for obj in objects:
         if (obj["kind"] in {"site", "cluster", "circuit"}
                 or (obj["kind"] == "device" and obj["refs"].get("role") in infrastructure_roles)

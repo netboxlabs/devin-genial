@@ -229,6 +229,8 @@ TAGS = {
                 "Operational-technology segment, or equipment that carries or attaches to one"),
     "multi-site": ("Multi-site service", "5c6bc0", ("virtual_machine",),
                    "Workload with replicas in more than one site"),
+    "legacy-naming": ("Legacy naming", "6d4c41", ("device",),
+                      "Installed before the current naming standard; keeps its original name until replaced"),
 }
 
 
