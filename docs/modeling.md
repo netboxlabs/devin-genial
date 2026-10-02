@@ -746,8 +746,10 @@ mutation in `tests/test_estate_hygiene.py`.
   decommissioning premises; the acquisition/refresh, power and span-maintenance
   snapshots carry their own states.
 - **Tags name properties the graph shows** (`naming.TAGS`): `Hub site` (hosts a
-  cluster or a private-WAN hub), `Dual-homed` (active circuits from two
-  carriers), `Acquired` (Birch lineage sites and devices), `Route reflector`
+  cluster or a private-WAN hub), `Dual-homed` (active WAN access from two
+  different carriers — a provider's own circuits are not a carrier and console
+  broadband is not WAN access — or access circuits into two different provider
+  edges, as a provider customer hub has), `Acquired` (Birch lineage sites and devices), `Route reflector`
   (the remote end of iBGP client sessions), `Transit edge`, `Managed CE`, and
   `PCI scope`, `Clinical` and `OT zone` on the payment, clinical and
   operational-technology VLANs, their prefixes and every device that carries or
@@ -833,7 +835,11 @@ mutation in `tests/test_estate_hygiene.py`.
   carries none.
   Junos addresses the loopback on logical unit 0: the PE's `lo0` carries a
   virtual `lo0.0` child that holds its IPv4/IPv6 loopbacks, and BGP peers from
-  it. Like-for-like optical links carry their cage rate as `speed`. Links
+  it. Every other addressed physical port of a PoP's Junos device — PE data
+  ports, `fxp0`, a Junos management switch's routed uplinks — is addressed the
+  same way, on a virtual `<port>.0` child that carries the address and routing
+  context (`provider._junos_units`); the physical port keeps its cable, optic,
+  speed and MAC, and BGP local addresses cite the unit's address. Like-for-like optical links carry their cage rate as `speed`. Links
   between network roles (spine, leaf, core, distribution, WAN edge, access,
   provider edge) and over the operator's own backbone and dark-fiber spans carry
   jumbo MTU at the smaller of the two platforms' ceilings (Junos 9192, EOS
@@ -888,19 +894,24 @@ provider customers, NOC, transit and transport retain separate accounts. Changin
 technical ownership does not silently renew a commercial contract.
 
 Journals carry only what their record cannot show (since 0.16.0): the change
-ticket an event ran under and who confirmed it — never a cid, termination,
-rate, serial, cabinet, U position or module the record already holds. Their
-kind follows the event: completed events are `success`, a problem is
-`warning`, everything else `info`. Each site has a `Site access` note (book
-visits through the facilities desk, info). Each in-service circuit has one
-`Handed over` note (success): `Accepted into service under change CHGnnnnnnn.`,
-plus, for a third-party carrier, that carrier's support desk confirming the
-handover and closing its ticket. One third-party delivery in five, chosen per
-circuit by a namespace-keyed hash (so neither a reseed nor growth moves one),
-also has a `Delivery slipped` warning 5–20 days before its handover: the
-carrier missed the committed date and was escalated. The first VM in each
-site/workload has a `First instance placed` note naming its host (success).
-The change ticket is a seeded per-subject choice. Each entry's
+ticket an event ran under and who ordered, confirmed or escalated it — never a
+cid, termination, rate, date field, serial, cabinet, U position or module the
+record already holds. Their kind follows the event: completed events are
+`success`, a problem or open action is `warning`, everything else `info`. Each
+site has a `Site access` note (book visits through the facilities desk, info).
+Each in-service circuit has one `Handed over` note (success): `Accepted into
+service under change CHGnnnnnnn.`, plus, for a third-party carrier, that
+carrier's support desk confirming the handover and closing its ticket. A
+provider backbone's own circuits are its products: one it sells carries a
+`Service order` note (`Ordered by <buyer>; provisioning tracked under change
+…`, info) and no carrier-escalation assignment. A withdrawing circuit carries a
+`Disconnect order` (its own disconnect change; recover the handoff optics and
+cabling, warning). One third-party delivery in five, chosen per circuit by a
+namespace-keyed hash (so neither a reseed nor growth moves one), also has a
+`Delivery slipped` warning 5–20 days before its handover: the carrier missed
+the committed date and was escalated. The first VM in each site/workload has a
+`First instance placed` note naming its host (success). Change tickets are
+seeded per-subject choices. Each entry's
 `created` timestamp is its own event date at 15:00 UTC, so the Journal list
 reads as history rather than as the day it was loaded: TurboBulk inserts a
 supplied `created` column as-is (it skips only auto primary keys; a missing
@@ -1045,7 +1056,7 @@ outside the operator pool (`3fff:fff:1::/64`, `3fff:fff:2::/64` for a
 address pool.
 
 **Routing contexts.** The backbone core — PE `lo0.0`, pair and span /31s and the
-transit /31s — is the **global table** (no VRF), as `inet.0` is on Junos.
+transit /31s, each on its `.0` unit — is the **global table** (no VRF), as `inet.0` is on Junos.
 PoP management switches, console servers, PE `fxp0`, the switch-to-PE uplinks
 and the NOC handoffs are the **Carrier Management** VRF (`<ASN>:9000`). Each
 customer VRF imports its own target plus the management **hub** target
@@ -1089,11 +1100,42 @@ with an actionable error.
 
 **Premises equipment.** With `lan_endpoints > 0` a premises is a CE trunking
 management and client VLANs to a same-room access switch that serves the office
-pod. With `lan_endpoints = 0` it is the **CE only**: `port1` hands the client
-VLAN off untagged to customer-owned equipment (not inventoried), and the CE is
-managed on its own `/32` loopback (host .1 of the site /24) in the customer VRF,
-exported to Carrier Management through the spoke target. Growing a CE-only
-customer to `lan_endpoints > 0` moves CE management and needs a new baseline.
+pod, racked and powered by the carrier. With `lan_endpoints = 0` it is the **CE
+only**, the way a carrier actually inventories a managed router at a customer:
+
+- The CE stands **unracked** in the customer's equipment room (site and
+  location, no rack): the customer's cabinet, PDU and power are not the
+  carrier's inventory, so the premises has no carrier rack, PDU, power panel or
+  feed. The CE's supplies are `mark_connected` (customer power) and carry
+  `Customer-provided power in the customer's rack`; power checks cover only
+  power the estate inventories, and the validation sidecar omits power rules for
+  a site group whose every device runs on customer power.
+- **Customer LAN space is the customer's.** `port1` is a routed handoff into the
+  customer's own LAN, numbered from a per-customer RFC1918 plan
+  (`provider.CUSTOMER_LAN_PLANS`: 172.20/16, 192.168/16, 172.24/16, 10.10/16,
+  skipping any plan inside the carrier's `address_pool`, chosen by the
+  customer's permanent slot). Plans repeat across customers on purpose — several
+  customers number from the same /16 and their premises LANs overlap exactly —
+  which is safe because each customer VRF enforces uniqueness only inside itself.
+  The carrier records only each premises' routed LAN `/24` (`prefix/<sid>/lan`,
+  IPAM role `Customer`, ledger `provider-customer-lans/<customer>`) and the CE's
+  `.1` on `port1`; no carrier-pool site block, VLAN, DHCP/static range or desk
+  wording. Customer LANs are IPv4-only: the carrier assigns them no IPv6.
+- **Carrier space** at the premises is only the CE management `/32` loopback
+  (host .1 of the site's allocation slot) in the customer VRF, exported to
+  Carrier Management through the spoke target, and the PE-CE `/31`.
+
+Growing a CE-only customer to `lan_endpoints > 0` moves CE management and needs a
+new baseline.
+
+**Hubs are dual-homed.** Each customer's hub premises takes a second access
+circuit (`circuit/customer/<sid>/b`, CID suffix `-2`) from its CE's `wan2` into
+the **other PE** of its PoP: the two service positions are reserved back to
+back, so they always land on opposite PEs. The second attachment has its own
+`/31`, BGP session and `hub` virtual-circuit termination (`PrivateL3-2`), and
+counts against the PoP's twelve service positions. It is one CE, so a CE
+failure can still isolate the hub; spokes stay single-homed. The declared
+spoke-to-hub flow model keeps the primary attachment.
 
 **Contacts.** A customer's NOC and premises facilities desks answer from the
 customer's own domain (`noc@cedar-regional-bank.example`). A PoP cage's
@@ -1141,7 +1183,12 @@ moves together:
 An onboarding customer's virtual circuit is `planned`. A circuit not yet in
 service has no `install_date` and no dated order or handoff history; equipment
 not yet installed gets no installation journal and stays out of the asset
-lifecycle BOMs. None of these paths counts as healthy capacity: only active
+lifecycle BOMs. Nothing not yet in service looks installed: the serving PE
+port is shut (`enabled = false`, on its unit too), and its optic is `planned`
+with no serial for an onboarding customer, or `staged` with a recently dated
+serial for a provisioning entry; a planned CE and its supplies carry no serial
+until the unit ships. A deprovisioning access circuit carries its scheduled
+`termination_date` (21–60 days after `as_of`) and a `Disconnect order` journal. None of these paths counts as healthy capacity: only active
 premises offer spoke-to-hub traffic, and power validation covers in-service
 equipment only. An active customer's hub entry must stay active. Growth may
 move a premises forward — planned to provisioning or active, provisioning to
@@ -1180,7 +1227,7 @@ What the estate emits:
 | --- | --- | --- |
 | Routing policy | 4 | `Transit Import/Export`, `Customer Import/Export`, each weighted and described as reference intent. **No rules**: a named policy is inventory, a rule set would read as configuration. |
 | Peer group | 3 | `iBGP Core`, `Transit Upstream`, `Customer Private L3`. Each carries the operator's own ASN as `local_as`; the transit and customer groups bind the matching import/export policies. |
-| Session | (1 + 2(2N−2) + T + C) × F | One record per modeled adjacency, for N PoPs, T transit handoffs, C customer premises and F address families (2 with `ipv6_pool`). |
+| Session | (1 + 2(2N−2) + T + C) × F | One record per modeled adjacency, for N PoPs, T transit handoffs, C customer access circuits (one per premises plus each hub's second) and F address families (2 with `ipv6_pool`). |
 
 Sessions come in three families, and every field is attributed from the
 finished graph rather than authored per site:

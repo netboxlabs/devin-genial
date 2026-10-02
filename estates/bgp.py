@@ -111,7 +111,9 @@ def enrich(world):
     families = (4, 6) if "ipv6_pool" in world.recipe else (4,)
 
     def address(port, what, family=4):
-        key = address_of[family].get(port)
+        # A Junos port is addressed on its logical unit 0 (provider._junos_units).
+        unit = interfaces.get((obj(port)["refs"].get("device"), f"{obj(port)['attrs'].get('name')}.0"))
+        key = address_of[family].get(port) or address_of[family].get(unit)
         if key is None:
             raise DesignError(f"BGP inventory needs an IPv{family} address on {what} ({port})")
         return key

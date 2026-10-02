@@ -266,7 +266,8 @@ def resolve(raw):
                 raise DesignError(f"Customer {key}: attachment PoPs must be unique known keys")
             seen.add(pop)
             entry["count"] = _integer(entry.get("count",1),f"Customer {key} site count",1,12)
-            attachment_count[pop] += entry["count"]
+            # A hub premises takes a second service position for its second circuit.
+            attachment_count[pop] += entry["count"]+(pop == c["hub_pop"])
             for n in range(1,entry["count"]+1):
                 sid = f"ce-{key}-{pop}-{n:03}"
                 if sid in site_ids:
@@ -942,6 +943,27 @@ def ce_loopback(block):
     return ipaddress.ip_network((int(block.network_address)+1,32))
 
 
+# A customer brings its own private LAN plan; the carrier records only the
+# routed LAN prefix of each premises, in the customer's VRF. Plans repeat
+# across customers on purpose (several enterprises number from 172.20/16), and
+# each VRF enforces uniqueness only inside itself. A plan inside the carrier's
+# own address_pool is skipped, so customer space never sits in its aggregate.
+CUSTOMER_LAN_PLANS = ("172.20.0.0/16","192.168.0.0/16","172.24.0.0/16","10.10.0.0/16")
+
+
+def customer_lan(w,customer,sid):
+    """The routed /24 of one CE-only premises, from its customer's own plan.
+
+    The plan follows the customer's permanent onboarding slot; the /24 follows
+    an append-only per-customer ledger, so growth never renumbers a premises.
+    """
+    pool = ipaddress.ip_network(w.recipe["address_pool"])
+    plans = [ipaddress.ip_network(p) for p in CUSTOMER_LAN_PLANS if not ipaddress.ip_network(p).overlaps(pool)]
+    plan = plans[w.reservations["provider-customers"][customer["key"]]%len(plans)]
+    slot = w.reserve(f"provider-customer-lans/{customer['key']}",sid,255)
+    return ipaddress.ip_network((int(plan.network_address)+256*(slot+1),24))
+
+
 def _service_port(w,pop_sites,pop,target):
     slot = w.reserve(f"provider-service-ports/{pop}",target,12)
     site,routers = pop_sites[pop]
@@ -963,8 +985,14 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     managed_lan = c["lan_endpoints"] > 0
-    _site_network(site,"clients",25,128,20)
-    edge = site.device("edge","edge-01","customer-edge")
+    if managed_lan:
+        _site_network(site,"clients",25,128,20)
+    # A CE-only premises: the CE stands in the customer's own equipment room
+    # and rack, on customer power. The carrier inventories the CE, not the
+    # cabinet, PDU or panel it does not own.
+    edge = site.device("edge","edge-01","customer-edge",racked=managed_lan)
+    if not managed_lan:
+        w.obj(edge)["refs"]["location"] = site.equipment_location
     a = site.interface(edge,"port1")
     switch = None
     if managed_lan:
@@ -981,13 +1009,18 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
             site.address(vi,role,host=1,primary=role=="management",device=edge)
         vi = site.virtual_interface(switch,"Vlan10","management"); site.address(vi,"management",host=2,primary=True,device=switch)
     else:
-        # CE only: port1 hands the customer LAN to customer-owned equipment
-        # (not inventoried) and the CE is managed on its own loopback.
-        vlan,_ = site.network("clients")
-        w.obj(a)["attrs"]["mode"] = "access"; w.obj(a)["refs"]["untagged_vlan"] = vlan
+        # CE only: port1 is a routed handoff into the customer's own LAN,
+        # numbered from the customer's own address plan (customer_lan); the
+        # CE is managed on a carrier loopback, the only carrier space here
+        # besides the PE-CE /31.
+        lan = customer_lan(w,c,sid)
         w.obj(a)["attrs"]["description"] = "Customer LAN handoff to customer-owned equipment"
-        vi = site.virtual_interface(edge,"Clients","clients"); w.obj(vi)["refs"]["parent"] = a
-        site.address(vi,"clients",host=1,device=edge)
+        w.add("prefix",f"prefix/{sid}/lan",dict(prefix=str(lan),status="active",description=f"{titleize(key)} LAN at {site.display}",
+              comments="Customer-assigned address space routed over the private L3 service."),
+              dict(vrf=vrf,tenant=tenant,scope_site=site.key))
+        _ip(w,a,lan,1,vrf,tenant)
+        for port in (f"{edge}/power/{p['name']}" for p in w.hardware("edge")["power_ports"]):
+            w.obj(port)["attrs"].update(mark_connected=True,description="Customer-provided power in the customer's rack")
         net = ce_loopback(w.site_network(sid))
         w.add("prefix",f"prefix/{sid}/management",dict(prefix=str(net),status="active",description=f"CE management loopback at {site.display}"),
               dict(vrf=vrf,tenant=tenant,scope_site=site.key))
@@ -1005,34 +1038,42 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
             w.obj(port)["attrs"]["mode"] = "access"; w.obj(port)["refs"]["untagged_vlan"] = vlan
         site.patch(switch,access_ports[i],device,"eth0",panel,i+1)
         site.address(target,"clients",primary=True,device=device)
-    pop_site,pe_port = _service_port(w,pop_sites,pop,sid)
     hub = pop==c["hub_pop"] and number==1
+    # A hub is dual-homed: its CE's wan1 and wan2 take two access circuits
+    # into both PEs of its PoP. The two service positions are reserved back to
+    # back, so they always sit on opposite PEs.
+    attachments = [("wan1",sid,"","PrivateL3")]+([("wan2",f"{sid}/b","-2","PrivateL3-2")] if hub else [])
+    ports = [_service_port(w,pop_sites,pop,target) for _,target,_,_ in attachments]
+    pop_site,pe_port = ports[0]
     usable = 1-Decimal(str(w.recipe["reserve_fraction"]))
     rate = c["hub_commit_mbps"] if hub else next(tier for tier in w.recipe["wan_tiers_mbps"] if tier*usable>=c["site_peak_mbps"])
-    port=site.interface(edge,"wan1"); circuit=f"circuit/customer/{sid}"
     # The access tail's route length: premises to serving PoP times the route
     # factor, recorded on the circuit so optics read it rather than re-derive it.
     here,there = (w.obj(k)["attrs"] for k in (site.key,pop_site.key))
     distance = (round(km((here["latitude"],here["longitude"]),(there["latitude"],there["longitude"]))*ROUTE_FACTOR,1)
                 if "latitude" in here and "latitude" in there else None)
-    _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,pe_port,rate,tenant,handoff_mbps=1000,
-             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",
-             installed=installed if lifecycle(c,pop) in ("active","decommissioning") else None,distance_km=distance)
-    _routed_pair(w,circuit,port,pe_port,vrf,tenant)
-    vi=w.add("interface",f"{edge}/if/PrivateL3",dict(name="PrivateL3",type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
-             dict(device=edge,parent=port,vrf=vrf))
-    w.add("virtual_circuit_termination",f"virtual-circuit-termination/{sid}",dict(role="hub" if hub else "spoke",description=f"{site.display} {'hub' if hub else 'spoke'}"),
-          dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
+    for (wan,target,suffix,name),(_,peer) in zip(attachments,ports):
+        port=site.interface(edge,wan); circuit=f"circuit/customer/{target}"
+        _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,peer,rate,tenant,handoff_mbps=1000,
+                 cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}{suffix}",
+                 installed=installed if lifecycle(c,pop) in ("active","decommissioning") else None,distance_km=distance)
+        _routed_pair(w,circuit,port,peer,vrf,tenant)
+        vi=w.add("interface",f"{edge}/if/{name}",dict(name=name,type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
+                 dict(device=edge,parent=port,vrf=vrf))
+        w.add("virtual_circuit_termination",f"virtual-circuit-termination/{target}",dict(role="hub" if hub else "spoke",description=f"{site.display} {'hub' if hub else 'spoke'}"),
+              dict(virtual_circuit=f"virtual-circuit/customer/{key}",interface=vi))
     site.contract.update(required_device_roles={"role/customer-edge":1,**({"role/access":1} if managed_lan else {})},endpoint_count=c["lan_endpoints"],
                          demand=dict(lan_endpoints=c["lan_endpoints"],peak_mbps=c["site_peak_mbps"],hub=hub,commit_mbps=rate),access_hardware=w.hardware_alias("access"))
-    site.contract["assumptions"].extend(["The private-L3 customer has one physical access circuit and one CE. A CE, access-link or serving-PE failure can isolate this premises.",
+    site.contract["assumptions"].extend(["The hub has two access circuits from one CE into both PEs of its PoP; a CE failure can still isolate it."
+        if hub else "The private-L3 customer has one physical access circuit and one CE. A CE, access-link or serving-PE failure can isolate this premises.",
         "Twelve fixed office positions and a same-room access switch preserve existing endpoint cables and addresses during growth. Customer LAN is wired; no wireless service is modeled."
         if managed_lan else "The CE hands the customer LAN to customer-owned equipment that is not inventoried; the carrier manages only the CE."])
     if managed_lan:
         _console_management(site,switch)
+        site.power()
     else:
         equipment.enrich_site(site,demonstrations=False)
-    site.power()
+        site.contract["assumptions"].append("The CE stands in the customer's own rack on customer power; that rack and its power are not inventoried.")
     return dict(site=site.key,customer=key,router=w.obj(pe_port)["refs"]["device"],hub=hub,peak_mbps=c["site_peak_mbps"],
                 stage=lifecycle(c,pop))
 
@@ -1059,10 +1100,11 @@ def _apply_lifecycle(w,entries):
     for key,obj in objects.items():
         if obj["refs"].get("device") in owner: owner[key] = owner[obj["refs"]["device"]]
     for site,(_,sid) in stages.items():
-        circuit = f"circuit/customer/{sid}"
-        owner[circuit] = owner[f"{circuit}/A"] = owner[f"{circuit}/Z"] = site
-        for prefix in (f"prefix/link/{circuit}",f"ipv6/prefix/link/{circuit}"):
-            if prefix in objects: owner[prefix] = site
+        for circuit in (f"circuit/customer/{sid}",f"circuit/customer/{sid}/b"):
+            if circuit not in objects: continue
+            owner[circuit] = owner[f"{circuit}/A"] = owner[f"{circuit}/Z"] = site
+            for prefix in (f"prefix/link/{circuit}",f"ipv6/prefix/link/{circuit}"):
+                if prefix in objects: owner[prefix] = site
     for key,obj in objects.items():
         if obj["kind"] == "cable":
             ends = [owner.get(obj["refs"][side]) for side in ("a","b")]
@@ -1086,6 +1128,54 @@ def _apply_lifecycle(w,entries):
             obj["attrs"]["status"] = LIFECYCLE[stages[site][0]][field[obj["kind"]]]
     for site,(stage,_) in stages.items():
         objects[site]["attrs"]["status"] = LIFECYCLE[stage]["site"]
+    # Nothing not yet in service looks installed: the serving PE handoff is
+    # shut and its optic planned (no serial) or staged on the shelf; a planned
+    # CE and its supplies have no serial until the unit is shipped. A
+    # withdrawing access circuit carries its scheduled disconnect date.
+    as_of = date.fromisoformat(w.recipe["as_of"])
+    for key,site in owner.items():
+        stage,obj = stages[site][0],objects[key]
+        if stage in OPTIC_STAGE and obj["kind"] == "interface" and objects[obj["refs"]["device"]]["refs"].get("role") == "role/provider-edge":
+            obj["attrs"]["enabled"] = False
+            if module := obj["refs"].get("module"):
+                objects[module]["attrs"]["status"] = OPTIC_STAGE[stage]
+                if stage == "planned": objects[module]["attrs"].pop("serial",None)
+        elif stage == "planned" and obj["kind"] in ("device","module"):
+            obj["attrs"].pop("serial",None)
+            if obj["kind"] == "module": obj["attrs"]["status"] = "planned"
+        elif stage == "decommissioning" and obj["kind"] == "circuit":
+            obj["attrs"]["termination_date"] = (as_of+timedelta(days=w.choose(key,"disconnect",range(21,61)))).isoformat()
+
+
+def _junos_units(w):
+    """Junos addresses an interface on a logical unit: et-0/0/1.0, never bare et-0/0/1.
+
+    Every address on a physical port of a PoP's Junos device (PE data ports,
+    fxp0, a Junos management switch's routed uplinks) moves to a virtual
+    ``<port>.0`` child that also carries the routing context; the physical
+    port keeps its cable, optic, speed and MAC. Address keys are identities
+    (BGP sessions name them), so only the assignment moves. lo0.0 follows the
+    same rule in operations._loopback_units.
+    """
+    units = {}
+    for ip in [o for o in w.objects.values() if o["kind"] == "ip_address"]:
+        port = w.objects.get(ip["refs"].get("assigned_object"),{})
+        if port.get("kind") != "interface" or port["attrs"].get("type") in (None,"virtual","lag","bridge"):
+            continue
+        device = w.objects[port["refs"]["device"]]
+        if device["refs"].get("platform") != "platform/juniper-junos" or not device["refs"]["site"].startswith("site/pop-"):
+            continue
+        if port["key"] not in units:
+            units[port["key"]] = w.add("interface",f"{port['key']}.0",
+                dict(name=f"{port['attrs']['name']}.0",type="virtual",enabled=port["attrs"].get("enabled",True)),
+                dict(device=device["key"],parent=port["key"],**({"vrf":port["refs"]["vrf"]} if port["refs"].get("vrf") else {})))
+        ip["refs"]["assigned_object"] = units[port["key"]]
+    for key in units:
+        w.objects[key]["refs"].pop("vrf",None)  # the routing context is the unit's
+
+
+# The serving PE optic of a premises not yet in service.
+OPTIC_STAGE = {"planned":"planned","provisioning":"staged"}
 
 
 def _capacity(graph,attachments,reserve):
@@ -1211,6 +1301,7 @@ def _generate(recipe,previous=None):
         management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
     equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w)
     _apply_lifecycle(w,entries)
+    _junos_units(w)
     operations.supporting_records(w)
     bgp.enrich(w)
     discovery_lab.add_discovery_lab(w)

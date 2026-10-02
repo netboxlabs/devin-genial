@@ -350,17 +350,21 @@ def _context(plan, objects, kinds):
             maker = attrs(module_type.get("refs", {}).get("manufacturer")).get("name")
             fmt = (host_spec(owner).get("module_serial_format") if module["key"].startswith(f"{owner}/module/")
                    else optic_formats.get(maker, optic_formats.get("Generic")))
-            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on.get(owner))
+            # An optic staged for a handoff not yet in service arrived recently.
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/"))
+                           or (scheduled(module["key"], "staged", recipe.get("as_of"), 7, 31)
+                               if module["attrs"].get("status") == "staged" else None)
+                           or installed_on.get(owner))
         if all(anchors):
             check_serial(members[0]["key"], fmt, serial, min(anchors), SERIAL_SHIFT_WEEKS)
 
     def later(when, floor):
         return max(when, floor) if isinstance(when, str) and isinstance(floor, str) else when
 
-    def change(key):
-        """The stable change ticket a subject's event cites (restated seeded choice)."""
+    def change(key, work=""):
+        """The stable change ticket a subject's work cites (restated seeded choice)."""
         try:
-            return f"CHG{1000000 + int(digest([recipe['seed'], key, 'journal-change', plan['generator_version']]), 16) % 9000000:07d}"
+            return f"CHG{1000000 + int(digest([recipe['seed'], key, 'journal-change' + work, plan['generator_version']]), 16) % 9000000:07d}"
         except (KeyError, TypeError):
             return None
 
@@ -434,15 +438,28 @@ def _context(plan, objects, kinds):
                     or account.get("refs", {}).get("owner") != "owner/operations"):
                 fail("operations-provider-account", key, "WAN procurement must retain its actual provider and procurement lineage; acquisition does not renew the account.")
         provider_name = attrs(provider).get("name", "")
-        # A provider-backbone third-party carrier answers from its own domain.
-        own_domain = recipe.get("profile") == "provider-backbone" and provider != "provider/operator"
-        contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
-                                 None if own_domain else f"carrier-{provider.removeprefix('provider/')}.support")
-        expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        # A provider backbone's own circuits are its products: no carrier desk
+        # escalates them and their order is a service order, never a purchase.
+        own = recipe.get("profile") == "provider-backbone" and provider == "provider/operator"
+        if not own:
+            # A provider-backbone third-party carrier answers from its own domain.
+            contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
+                                     None if recipe.get("profile") == "provider-backbone"
+                                     else f"carrier-{provider.removeprefix('provider/')}.support")
+            expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        if data.get("termination_date") is not None:
+            if data.get("status") != "deprovisioning":
+                fail("operations-journal", key, "Only a circuit being withdrawn carries a disconnect date.")
+            expect_note(key, "disconnect-order", scheduled(key, "disconnect-order", recipe.get("as_of"), 3, 25),
+                        (change(key, "-disconnect"),), "warning")
         if data.get("status") in {"planned", "provisioning"}:
             if "install_date" in data:
                 fail("operations-journal", key, "A circuit not yet in service has no install date.")
             continue  # and no dated order or handoff history yet
+        if own and "commit_rate" in data:
+            buyer = "the NOC" if refs.get("tenant") == "tenant" else attrs(refs.get("tenant")).get("name")
+            expect_note(key, "service-order", scheduled(key, "service-order", data.get("install_date"), 30, 31),
+                        (buyer, change(key)))
         local = terms[key]
         if len(local) != 1 or objects.get(site_of(local[0]["refs"].get("termination")), {}).get("kind") != "site":
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
@@ -566,6 +583,8 @@ def _context(plan, objects, kinds):
     forms = {
         "equipment-record": ("Installed", r"Racked and cabled under change ([^\n;]+); the visit was booked through ([^\n]+)\."),
         "access-plan": ("Site access", r"Equipment-room visits are booked through ([^\n]+); give two working days' notice and flag any planned power work\."),
+        "service-order": ("Service order", r"Ordered by ([^\n;]+); provisioning tracked under change ([^\n.]+)\."),
+        "disconnect-order": ("Disconnect order", r"Disconnect ordered under change ([^\n;]+); recover the handoff optics and cabling once the circuit is withdrawn\."),
         "delivery-slip": ("Delivery slipped", r"([^\n;]+) missed the committed handover date; escalated to its support desk\."),
         "handover": ("Handed over", r"Accepted into service under change ([^\n.]+)\.(?: ([^\n]+) support desk confirmed the handover and closed its ticket\.)?"),
         "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\.")}

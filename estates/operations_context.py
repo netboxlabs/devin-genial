@@ -23,6 +23,8 @@ AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee
 SERIAL_SHIFT_WEEKS = 8
 # One third-party circuit delivery in this many slipped past its committed date.
 SLIP_ONE_IN = 5
+# A provider backbone's own provider record: the circuits it sells or runs itself.
+OPERATOR = "provider/operator"
 
 
 
@@ -96,7 +98,10 @@ def timeline(world, kinds, dated):
             maker = world.obj(world.obj(module["refs"]["module_type"])["refs"]["manufacturer"])["attrs"]["name"]
             fmt = (models.get(device["meta"].get("hardware"), {}).get("module_serial_format")
                    if module["key"].startswith(f"{device['key']}/module/") else formats.get(maker, formats["Generic"]))
-            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on[device["key"]])
+            # An optic staged for a handoff not yet in service arrived recently.
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/"))
+                           or (dated(module["key"], "staged", as_of, 7, 31) if module["attrs"].get("status") == "staged" else None)
+                           or installed_on[device["key"]])
         if fmt and serial:
             when = made(min(m["key"] for m in members), min(anchors))
             redated = redate_serial(fmt, serial, when)
@@ -242,9 +247,9 @@ def enrich(world):
 
     service_day, installed_on = timeline(world, kinds, dated)
 
-    def change(target):
-        """The operator's change ticket for one subject's event; stable per subject."""
-        return f"CHG{world.choose(target, 'journal-change', range(1000000, 10000000)):07d}"
+    def change(target, work=""):
+        """The operator's change ticket for one subject's work; stable per subject."""
+        return f"CHG{world.choose(target, 'journal-change' + work, range(1000000, 10000000)):07d}"
 
     def journal(target, event, when, title, body, kind="info"):
         # ``created`` is the event's own date (mid-morning US time), not the
@@ -279,7 +284,10 @@ def enrich(world):
         key, attrs, refs = circuit["key"], circuit["attrs"], circuit["refs"]
         provider = refs["provider"]
         name = world.obj(provider)["attrs"]["name"]
-        if provider not in provider_desks:
+        # The operator's own circuits are its products, not purchases: no
+        # carrier desk escalates them and no order goes to a supplier.
+        own = world.recipe["profile"] == "provider-backbone" and provider == OPERATOR
+        if not own and provider not in provider_desks:
             # A third-party carrier's desk answers from its own mail domain.
             domain = world.obj(provider)["meta"].get("support_domain")
             provider_desks[provider] = contact(f"contact/{provider}", f"{name} support desk", "carrier",
@@ -287,14 +295,24 @@ def enrich(world):
                 (f"Capacity and handoff coordination for {name}. Tenant technical desks handle local troubleshooting."
                  if world.recipe["profile"] == "provider-backbone" else
                  f"Circuit identifiers, contracted capacity and handoff coordination for {name}; customer-side troubleshooting stays with the tenant technical desk."))
-        assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
+        if not own:
+            assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
+        if attrs.get("termination_date"):
+            # A circuit being withdrawn carries its disconnect order.
+            journal(key, "disconnect-order", dated(key, "disconnect-order", as_of, 3, 25), "Disconnect order",
+                f"Disconnect ordered under change {change(key, '-disconnect')}; recover the handoff optics and cabling once the circuit is withdrawn.",
+                "warning")
         if "install_date" not in attrs:
             continue  # ordered work not yet in service has no dated history
-        # One event per circuit, and only what the record cannot show: the
-        # change it went live under and who confirmed the handover. Its cid,
-        # terminations, rates and dates are fields the circuit already holds.
+        # Only what the record cannot show: the change it went live under and
+        # who ordered or confirmed it. Its cid, terminations, rates and dates
+        # are fields the circuit already holds.
+        if "commit_rate" in attrs and own:
+            buyer = "the NOC" if refs.get("tenant") == "tenant" else world.obj(refs["tenant"])["attrs"]["name"]
+            journal(key, "service-order", dated(key, "service-order", attrs["install_date"], 30, 31), "Service order",
+                f"Ordered by {buyer}; provisioning tracked under change {change(key)}.")
         accepted = f"Accepted into service under change {change(key)}."
-        if provider != "provider/operator":
+        if provider != OPERATOR:
             accepted += f" {name} support desk confirmed the handover and closed its ticket."
             # Some carrier deliveries slip: a per-circuit choice keyed by namespace,
             # not seed, so a reseed never adds or drops an event (and growth

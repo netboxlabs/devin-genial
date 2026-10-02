@@ -150,7 +150,7 @@ switch's non-management port carries access mode (`operations._host_ports`,
 `interface-host-mode`): host and `mgmt_only` ports read their segment through
 the same view, while host trunks (`tagged`), units under them and VLAN-
 translating L2VPN attachments keep theirs; Junos loopbacks sit on
-`lo0.0`; regions run country → state → metro; one owner on every infrastructure
+`lo0.0` (PoP Junos data ports and `fxp0` on `<port>.0`); regions run country → state → metro; one owner on every infrastructure
 record; module-bay types are per-maker classes while supply fit still follows the
 device type's catalog entry; device types carry only pinned-source part numbers,
 weights and airflow; journal `created` is the event date (TurboBulk inserts it;
@@ -719,12 +719,25 @@ for the separately recorded pinned-target live qualification.
   `xe-` names (docs/modeling.md cites the source). Premises are placed in their
   serving PoP's area (within 25 km, nearer it than any same-metro PoP allocated
   before them), so name, address and homing agree. `lan_endpoints = 0` is a
-  CE-only premises managed on a /32 loopback; growing it to desks needs a new
-  baseline. Customer desks answer from the customer's own domain and PoP
+  CE-only premises managed on a carrier /32 loopback: the CE stands unracked
+  on customer power (no carrier rack, PDU, panel or feed; supplies
+  `mark_connected`), and `port1` routes the customer's own LAN /24 from a
+  per-customer RFC1918 plan outside the carrier pool that several customers
+  deliberately share (VRF-scoped uniqueness; no carrier VLAN, ranges or site
+  block; IPv4-only). Growing it to desks needs a new baseline. Every hub is
+  dual-homed: a second access circuit (`circuit/customer/<sid>/b`) from CE
+  `wan2` into the PoP's other PE, with its own /31, BGP session and hub
+  termination; spokes stay single-homed. The operator's own circuits carry a
+  service-order journal and no carrier-escalation desk; `Dual-homed` means two
+  third-party carriers or two provider edges. A premises not yet in service has
+  its PE port shut and its optic planned (no serial) or staged; a planned CE has
+  no serial; a deprovisioning circuit carries `termination_date` and a
+  disconnect-order journal. PoP Junos ports are addressed on `<port>.0` units
+  (like `lo0.0`), which BGP local addresses cite. Customer desks answer from the customer's own domain and PoP
   facilities desks are the carrier hotel's remote hands. Local circuit handoffs
   terminate in the cage or equipment room (a Location), so the save-hook cache
   still resolves the site; carrier handoffs into a PoP carry `xconnect_id` and,
-  for fibre, the PE cabinet enclosure position in `pp_info`. Customer virtual
+  for fibre, the carrier hotel's meet-me-room panel position in `pp_info`. Customer virtual
   circuits terminate `hub`/`spoke`; access circuits record their route
   `distance`; customer ASNs carry their tenant. A customer may be onboarding
   (`status = "planned"`) and a premises entry `planned` or `decommissioning`

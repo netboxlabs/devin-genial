@@ -616,6 +616,10 @@ def validate(plan, catalog=None):
                 report("mac-primary-missing", port, "Generated interface MAC must also be its visible primary MAC.")
     if plan.get("recipe", {}).get("profile"):
         addressed = {refs(key).get("assigned_object") for key in by_kind["ip_address"]}
+        # A Junos port is addressed on its logical unit 0; its MAC stays on the port.
+        addressed |= {refs(unit).get("parent") for unit in list(addressed)
+                      if attrs(unit).get("type") == "virtual" and refs(unit).get("parent")
+                      and attrs(unit).get("name") == f"{attrs(refs(unit)['parent']).get('name')}.0"}
         eligible = {key for key in addressed if kind(key) in {"interface", "vm_interface"}
                     and attrs(key).get("type") not in {"virtual", "bridge"}}
         ouis = hardware_catalog().get("mac_ouis", {})
