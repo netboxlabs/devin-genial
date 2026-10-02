@@ -198,8 +198,9 @@ deviation set), `drift.md` (the operator talk track) and `checks.json`. There is
 no `demo` recipe key and no resolver change: `drift` is a subcommand over an
 already healthy frozen plan, like `power-scenario`.
 
-Fourteen drift items land on one selected site, covering the four behaviours
-NetBox Labs advertises Assurance detecting: undocumented objects, drift against
+On every campus-access profile, fourteen drift items land on one selected
+site (the provider takes its own [PoP set](#provider-pop-drift)), covering the
+four behaviours NetBox Labs advertises Assurance detecting: undocumented objects, drift against
 documented intent, documented infrastructure discovery never saw, and data-quality
 damage. Every subject is property-selected from stable keys — the site is the
 first eligible one in permanent allocation order, then the first eligible switch,
@@ -214,9 +215,51 @@ switch with its uplink and management address. Two stories deliberately link up:
 the port moved onto the VLAN that the undocumented-VLAN item creates, and the
 old address of the re-addressed endpoint reappearing on a neighbour.
 
+### Provider PoP drift
+
+A carrier's discovery reads its own PoP equipment, never its customers' LANs —
+and a CE-only customer premises (`lan_endpoints = 0`, as in
+`profiles/showcase-provider.toml`) has no endpoint to drift at all. So
+`provider-backbone` baselines always take a provider-native subject set:
+
+```sh
+just generate profiles/showcase-provider.toml build/showcase-r3
+just drift build/showcase-r3/plan.json build/showcase-drift
+just drift-check build/showcase-drift
+```
+
+The anchor is the first eligible PoP in the permanent `provider-pop-order`
+ledger (never name order), then its PE pair, management switch and console
+server in numeric-aware name order. Every subject is a permanent property of
+the PoP build — the PE-to-PE link, the management port cabled to the second
+PE's dedicated management port, the PE's primary loopback, the second PE's
+power supplies — so appending PoPs or customers, which consume spare PE ports,
+never moves one. Seven items, all four classes:
+
+| Item | Class | Wire |
+| --- | --- | --- |
+| `undocumented-loopback-address` — a second /32 staged on the PE's `lo0`, the highest unused host in the documented loopback pool | undocumented-object | 1 IP address create |
+| `replaced-optic-serial` — the optic on the PE-to-PE link swapped for a spare | drift-vs-intent | 1 Module update (matched on its bay) |
+| `pe-link-description-drift` — the technician's note on that same port | drift-vs-intent | 1 Interface update |
+| `management-port-shut` — the management-switch port facing the second PE left shut | drift-vs-intent | 1 Interface update |
+| `replaced-console-server` — a like-for-like swap: new chassis serial and NIC MAC | drift-vs-intent | 1 MAC create, Interface and Device updates |
+| `power-supply-not-observed` — the second PE's second PSU absent from the inventory walk | documented-not-observed | nothing (no tombstone) |
+| `serial-case-drift` — a second collector lower-cases the second PE's serial | data-quality | 1 Device update |
+
+Spare serials expand from the part's own catalog format (the device model's
+`serial_format`, the optic maker's optics format) with a date code 4–20 weeks
+before the baseline's `as_of`; the replacement MAC keeps the documented vendor
+OUI and is unused anywhere in the baseline. The payload reaches MAC address,
+module, module bay and module type identities in addition to the campus kinds;
+all four exist on NetBox 4.6, and a module bay is named only through its thin
+identity, so the 4.7-only module bay type is never reached. No routing-protocol
+state, BGP session, optical diagnostic or customer-premises observation is
+expressed or claimed — the BGP inventory records are not drift subjects.
+
 `observed/` is a **projection** of the plan: only the drifted records are emitted
 in full, and every other record exists to resolve nested matching identities. So
-the payload is fifteen records, not a whole estate, and each one carries the exact
+the payload is fifteen records on the campus path and eight on the provider
+path, not a whole estate, and each one carries the exact
 documented site, tenant and device identities Assurance matches on. Changing a
 matching identity is a hard error — that would create a duplicate object rather
 than a field deviation. The payload is restricted to models that exist on NetBox

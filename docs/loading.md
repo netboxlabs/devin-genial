@@ -377,6 +377,75 @@ Use `main-seed` or `disposable-baseline` when terminated circuits matter
 visually. The condition lifts once TurboBulk refreshes that table without a
 colliding rename.
 
+### Compliance policies for Validation
+
+The NetBox Labs Validation plugin (`netbox_validation`, written against
+1.14.1) gets the same sidecar shape: `just validation PLAN OUT` derives
+`validation.json` bound to the plan's canonical SHA-256, `just
+validation-check PLAN OUT` recomputes and byte-compares it, and
+`VALIDATION_WRITES=1 just seed-validation OUT TARGET [RECEIPT]` creates the
+policies and rules over REST, runs each policy once and compares the engine's
+failing checks with the artifact's prediction. `just unseed-validation RECEIPT
+TARGET` deletes exactly the runs and policies the receipt recorded. The starter
+policy packs are deliberately not installed: their parameters assume a
+leaf/spine data centre (`required_roles: [spine, leaf]`, VLANs 100–3999, an
+`MGMT` VRF, `ntp_servers` in every context), so on a generated estate most of
+their failures restate a wrong premise rather than a finding.
+
+Every policy is derived from the finished graph:
+
+- **Estate baseline** (all devices): addressing, cabling and context hygiene
+  the generator's validators already enforce (no duplicate or orphan IPs, VRF
+  consistency, symmetric and traceable cabling, …); enabled ports are cabled;
+  devices carry the fields every device in the plan has (`serial`, `tenant`);
+  routed-link roles use the masks the plan uses (`/31`, plus `/30` only when
+  the plan allocates one) — scoped to roles whose every addressed physical port
+  is a routed link, because the engine reads any addressed physical port,
+  management LANs included, as point-to-point; and every device renders every
+  leaf key of the estate's unscoped config context.
+- **One standards policy per site group** (customer premises, PoPs, data
+  centres, schools, …): the device roles present at every site of that kind,
+  the VLAN-ID range the plan allocates there, the smallest per-site count of a
+  paired managed role (two PEs per PoP, two spines per DC), the role-scoped
+  context keys, dual-supply devices cabling both supplies, and — where the
+  site kind has console servers — console reachability for the roles the
+  estate cables to one anywhere.
+- **One resilience policy per site group** (graph engine): every powered
+  device reaches a feed, no feed is a single point of power, two circuits from
+  two providers per site, circuits diverse by provider and device, rack and
+  cross-rack cable failure impact. Scoped by policy roles to the roles that
+  *draw* power: a PDU's single inlet is the distribution layer by design (the
+  A/B pair is the redundancy), and the graph engine ignores rule-level roles.
+- **One naming policy per platform**: per interface type, the name shapes that
+  platform's catalog hardware carries (`xe-\d+/\d+/\d+` on Junos 10G ports).
+
+Each rule records its derivation and, where modeled, the subjects it should
+fail on with the graph cause (feed and panel, circuit IDs and providers, the
+uncabled ports). The seed readback groups the run's results by check, compares
+failing subjects with that prediction and records unpredicted and missing
+subjects in the receipt as engine drift — it never fails the seed for them.
+Checks whose premise the estate does not share are listed under `excluded` in
+the artifact with the reason observed live (A/B pairs flagged by
+`consistent_device_naming`, dual-corded pairs by `shared_failure_domain`, a
+management switch read as cutting off the whole estate by
+`device_single_point_of_failure`, …). Results, findings and compliance scores
+are engine output: the sidecar never writes them.
+
+Live findings on the 1.14.1 Cloud tenant: a run POST requires
+`"status": "pending"` in the body; deleting a policy leaves its runs behind
+(policy `null`) and a pack's `schedule` keeps creating errored runs, so
+unseeding deletes runs before policies; and every result of a check is filed
+under the **first** rule carrying that check in the policy, with each rule's
+own parameters still applied — so a policy holds one rule per check
+(`build` refuses a repeat), which is why naming is one policy per platform.
+
+For the provider showcase plan the sidecar derives 11 policies and 57 rules
+predicting 310 failing subjects; seeded on `crsk8600` (2026-10-02) every one of
+the 57 rules matched its prediction exactly: single-homed customer premises
+(59 sites) and their single feed (59 feeds), two PoPs and the NOC whose
+circuits all come from one provider, the DC management switch's uncabled
+console, and 185 devices with enabled-but-uncabled spare ports.
+
 ## Verify without loading
 
 `just verify-target ARTIFACT TARGET [BRANCH]` runs the loader's final strict

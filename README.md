@@ -184,6 +184,12 @@ For a procurement story behind the same equipment, `just lifecycle PLAN OUT`
 derives BOMs, purchase orders, deliveries and spares pools from the plan and
 `seed-lifecycle` writes them through the Asset Lifecycle plugin — see
 [procurement history](docs/loading.md#procurement-history-for-asset-lifecycle).
+For a compliance view of it, `just validation PLAN OUT` derives NetBox
+Validation policies whose parameters come from the plan (VLAN ranges, interface
+naming per platform, required roles and context keys per site kind) together
+with a prediction of each finding and its cause; `seed-validation` creates and
+runs them and compares the engine's findings with that prediction — see
+[compliance policies](docs/loading.md#compliance-policies-for-validation).
 
 A few behaviors worth knowing before your first load; the
 [loading guide](docs/loading.md) has the full mechanics:
