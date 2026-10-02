@@ -68,7 +68,7 @@ class WorkerDied(JobTimeout):
 
 
 RECEIPT_VERSION = 4
-COMPILER_VERSION = "v02-turbobulk-14"
+COMPILER_VERSION = "v02-turbobulk-15"
 DEFAULT_JOB_ROWS = 2_000
 # TurboBulk's JSONL reader fixes the column set from the first chunk (10,000
 # rows), so a sparse payload spanning chunks can silently drop columns.
@@ -81,7 +81,8 @@ UPLOAD_FORMATS = ("auto", "jsonl", "parquet")
 REST_PATCH_ROWS = 100
 READ_ATTEMPTS = 4
 DEVICE_COMPONENT_KINDS = {
-    "console_port", "console_server_port", "interface", "module_bay", "power_outlet", "power_port",
+    "console_port", "console_server_port", "front_port", "interface", "module_bay", "power_outlet",
+    "power_port", "rear_port",
 }
 # Models NetBox registers no search indexer for (verified against the pinned
 # 4.7.1 source via netbox.search.get_indexer): a rebuild_search_index hook on
@@ -369,6 +370,8 @@ SPECS = {
     "power_panel": ("dcim.powerpanel", "/api/dcim/power-panels/"),
     "power_port": ("dcim.powerport", "/api/dcim/power-ports/"),
     "interface": ("dcim.interface", "/api/dcim/interfaces/"),
+    "front_port": ("dcim.frontport", "/api/dcim/front-ports/"),
+    "rear_port": ("dcim.rearport", "/api/dcim/rear-ports/"),
     "ip_address": ("ipam.ipaddress", "/api/ipam/ip-addresses/"),
     "journal_entry": ("extras.journalentry", "/api/extras/journal-entries/"),
     "mac_address": ("dcim.macaddress", "/api/dcim/mac-addresses/"),
@@ -467,6 +470,8 @@ CONTENT_TYPES = {
     "location": ("dcim", "location"),
     "provider_network": ("circuits", "providernetwork"),
     "interface": ("dcim", "interface"),
+    "front_port": ("dcim", "frontport"),
+    "rear_port": ("dcim", "rearport"),
     "vm_interface": ("virtualization", "vminterface"),
     "circuit_termination": ("circuits", "circuittermination"),
     "power_port": ("dcim", "powerport"),
@@ -507,7 +512,11 @@ REST_CREATE_KINDS = ({"module_bay_type", "provider_account"}
 # constraint, so the row inserts and only surfaces at the next full_clean —
 # observed as a branching-merge failure on location/power_outlet status).
 RENDER_DEFAULTS = {"location": {"status": "active"}, "power_outlet": {"status": "enabled"},
-                   "rack": {"starting_unit": 1}}
+                   "rack": {"starting_unit": 1},
+                   # FrontPort.positions (model default 1). The plan carries the
+                   # legacy one-position mapping on the front port and positions
+                   # only on the rear port; strict readback requires exactly 1.
+                   "front_port": {"positions": 1}}
 
 ATTRIBUTE_RENAMES = {("module_type", "attributes"): "attribute_data"}
 
@@ -534,12 +543,21 @@ DIRECT_REFS = {
     "profile": "profile_id", "provider_account": "provider_account_id",
     "region": "region_id", "rir": "rir_id", "interface": "interface_id",
     "provider_network": "provider_network_id", "virtual_circuit": "virtual_circuit_id",
+    # Interface.lag (LAG membership, same table: the LAG precedes its members by
+    # phase) and the Q-in-Q service VLAN on an interface or a customer VLAN.
+    "lag": "lag_id", "qinq_svlan": "qinq_svlan_id",
 }
 
 DEFERRED = {"primary_ip4", "primary_ip6", "oob_ip", "primary_mac_address",
             "tagged_vlans", "tags", "groups", "module_bay_types", "ipaddresses",
             "asns", "export_targets", "import_targets", "wireless_lans",
-            "proposals", "master"}
+            "proposals", "master",
+            # NetBox 4.5+ replaced FrontPort.rear_port with private PortMapping
+            # rows that TurboBulk will not write; REST completion PATCHes the
+            # front port's writable rear_ports list instead.
+            "rear_port"}
+# Canonical deferred reference -> the writable REST field that carries it.
+REST_PATCH_FIELD_NAMES = {"rear_port": "rear_ports"}
 SUPPORTED_REFS = {
     "aggregate": {"rir", "tenant"},
     "asn": {"rir", "tenant"},
@@ -559,8 +577,10 @@ SUPPORTED_REFS = {
     "device": {"cluster", "device_type", "location", "owner", "platform", "primary_ip4", "primary_ip6", "rack", "role", "site", "tags", "tenant", "virtual_chassis"},
     "device_role": set(),
     "device_type": {"manufacturer"},
-    "interface": {"bridge", "device", "module", "parent", "primary_mac_address", "tagged_vlans",
-                  "untagged_vlan", "vlan_translation_policy", "vrf", "wireless_lans"},
+    "interface": {"bridge", "device", "lag", "module", "parent", "primary_mac_address", "qinq_svlan",
+                  "tagged_vlans", "untagged_vlan", "vlan_translation_policy", "vrf", "wireless_lans"},
+    "front_port": {"device", "module", "rear_port"},
+    "rear_port": {"device", "module"},
     "ip_address": {"assigned_object", "owner", "tenant", "vrf"},
     "journal_entry": {"assigned_object"},
     "location": {"parent", "site", "tenant"},
@@ -597,7 +617,7 @@ SUPPORTED_REFS = {
     "tenant": {"group"},
     "virtual_disk": {"owner", "virtual_machine"},
     "virtual_machine": {"cluster", "device", "platform", "primary_ip4", "primary_ip6", "role", "tags", "tenant", "virtual_machine_type"},
-    "vlan": {"group", "owner", "role", "site", "tags", "tenant"},
+    "vlan": {"group", "owner", "qinq_svlan", "role", "site", "tags", "tenant"},
     "vlan_group": {"scope_site", "tenant"},
     "vm_interface": {"primary_mac_address", "untagged_vlan", "virtual_machine", "vrf"},
     "vrf": {"export_targets", "import_targets", "tenant"},
@@ -914,7 +934,12 @@ def _matches(obj, row, ids, objects=None):
                 row.get("name") == attrs["name"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
                 and ("location" not in obj["refs"] or _nested_id(row.get("location")) == _ref_id(obj, "location", ids)))
     if kind == "vlan":
-        return row.get("vid") == attrs["vid"] and _nested_id(row.get("site")) == _ref_id(obj, "site", ids)
+        # A VLAN may be site-scoped, grouped, or both (a PoP VLAN group scoped
+        # to its site); an S-VLAN's customer VLANs also share VIDs. Every scope
+        # the plan names must match, and an unnamed one must be empty.
+        return row.get("vid") == attrs["vid"] and all(
+            _nested_id(row.get(field)) == (_ref_id(obj, field, ids) if field in obj["refs"] else None)
+            for field in ("site", "group", "qinq_svlan"))
     if kind == "cluster":
         return (row.get("name") == attrs["name"]
                 and ("scope_site" not in obj["refs"] or
@@ -931,7 +956,8 @@ def _matches(obj, row, ids, objects=None):
         side = side.get("value") if isinstance(side, dict) else side
         return side == attrs["term_side"] and _nested_id(row.get("circuit")) == _ref_id(obj, "circuit", ids)
     if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
-                "interface", "cooling_intake", "cooling_outflow", "device_bay", "virtual_device_context"}:
+                "interface", "front_port", "rear_port", "cooling_intake", "cooling_outflow", "device_bay",
+                "virtual_device_context"}:
         return row.get("name") == attrs["name"] and _nested_id(row.get("device")) == _ref_id(obj, "device", ids)
     if kind == "module":
         return _nested_id(row.get("module_bay")) == _ref_id(obj, "module_bay", ids)
@@ -1062,13 +1088,14 @@ def _candidate_bucket_key(obj, ids, objects=None):
         return (("asset-tag", attrs["asset_tag"]) if attrs.get("asset_tag") else
                 ("name-site", attrs["name"], _ref_id(obj, "site", ids)))
     if kind == "vlan":
-        return "vid-site", attrs["vid"], _ref_id(obj, "site", ids)
+        return "vid", attrs["vid"]
     if kind == "prefix":
         return "prefix-vrf", attrs["prefix"], _vrf_id(obj, ids)
     if kind == "circuit_termination":
         return "side-circuit", attrs["term_side"], _ref_id(obj, "circuit", ids)
     if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
-                "interface", "cooling_intake", "cooling_outflow", "device_bay", "virtual_device_context"}:
+                "interface", "front_port", "rear_port", "cooling_intake", "cooling_outflow", "device_bay",
+                "virtual_device_context"}:
         return "name-device", attrs["name"], _ref_id(obj, "device", ids)
     if kind == "module":
         return "module-bay", _ref_id(obj, "module_bay", ids)
@@ -1170,7 +1197,7 @@ def _row_bucket_keys(kind, row):
             keys.append(("asset-tag", row["asset_tag"]))
         return keys
     if kind == "vlan":
-        return [("vid-site", row.get("vid"), nested(row.get("site")))]
+        return [("vid", row.get("vid"))]
     if kind == "prefix":
         return [("prefix-vrf", row.get("prefix"), nested(row.get("vrf")))]
     if kind == "circuit_termination":
@@ -1178,7 +1205,8 @@ def _row_bucket_keys(kind, row):
         side = side.get("value") if isinstance(side, dict) else side
         return [("side-circuit", side, nested(row.get("circuit")))]
     if kind in {"console_port", "console_server_port", "module_bay", "power_port", "power_outlet",
-                "interface", "cooling_intake", "cooling_outflow", "device_bay", "virtual_device_context"}:
+                "interface", "front_port", "rear_port", "cooling_intake", "cooling_outflow", "device_bay",
+                "virtual_device_context"}:
         return [("name-device", row.get("name"), nested(row.get("device")))]
     if kind == "module":
         return [("module-bay", nested(row.get("module_bay")))]
@@ -1556,12 +1584,18 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports", hi
         row["parent_object_id"] = ids[target["key"]]
     for name in DEFERRED:
         row.pop(name, None)
+    if obj["kind"] == "front_port":
+        # The legacy one-position mapping becomes a PortMapping row through the
+        # REST rear_ports completion; FrontPort has no such column in 4.5+.
+        row.pop("rear_port_position", None)
     return row
 
 
 def _rendered_columns(obj, service_shape="protocol_ports"):
     """Return database columns without needing resolved target IDs."""
     columns = (set(obj["attrs"]) | set(RENDER_DEFAULTS.get(obj["kind"], ()))) - DEFERRED
+    if obj["kind"] == "front_port":
+        columns.discard("rear_port_position")
     if obj["kind"] == "rack" and "rack_type" in obj["refs"]:
         columns.update(RACK_TYPE_COPIES)
     if obj["kind"] == "device_type" and "weight" in obj["attrs"]:
@@ -1807,6 +1841,11 @@ def _expected_change_diff_counts(objects):
                        if obj["kind"] not in BRANCH_EXEMPT_KINDS)
     expected["dcim.cabletermination"] += 2 * sum(
         obj["kind"] == "cable" for obj in objects.values())
+    # The rear_ports completion PATCH creates one change-logged PortMapping per
+    # mapped front port; the PATCH itself folds into the front port's existing
+    # create diff (one ChangeDiff per object), so front ports gain no update.
+    expected["dcim.portmapping"] += sum(
+        obj["kind"] == "front_port" and "rear_port" in obj["refs"] for obj in objects.values())
     return +expected
 
 
@@ -2444,7 +2483,8 @@ def _rest_schema_preflight(client, objects):
 def _rest_patch_preflight(client, objects):
     required = defaultdict(set)
     for obj in objects.values():
-        required[obj["kind"]].update(set(obj["refs"]) & DEFERRED)
+        required[obj["kind"]].update(REST_PATCH_FIELD_NAMES.get(field, field)
+                                     for field in set(obj["refs"]) & DEFERRED)
     result = {}
     for kind, fields in sorted(required.items()):
         if not fields:
@@ -2555,13 +2595,33 @@ def _observed_patch_value(value):
     return _nested_id(value)
 
 
+def _front_port_mapping(obj, ids):
+    """The front port's single-position PortMapping as the REST rear_ports list."""
+    return [{"position": 1, "rear_port": ids[obj["refs"]["rear_port"]],
+             "rear_port_position": obj["attrs"].get("rear_port_position", 1)}]
+
+
+def _observed_mapping(value):
+    return [{"position": item.get("position"), "rear_port": _nested_id(item.get("rear_port")),
+             "rear_port_position": item.get("rear_port_position")}
+            for item in (value or []) if isinstance(item, dict)]
+
+
 def _patch_state(actual, desired, purpose):
     """Return field matches after proving every nonmatching value is safe to replace."""
     matches = []
     for field, expected in desired.items():
         if field == "id":
             continue
-        if field in REST_PATCH_LIST_FIELDS:
+        if field == "rear_ports":
+            # Empty is the fresh TurboBulk row; anything else must already be
+            # exactly this mapping, never silently replaced.
+            observed = _observed_mapping(actual.get(field))
+            if observed and observed != expected:
+                raise LoadError(
+                    f"{purpose} target {desired['id']} field {field} changed concurrently"
+                )
+        elif field in REST_PATCH_LIST_FIELDS:
             observed = sorted(_nested_id(item) for item in (actual.get(field) or []))
             if set(observed) - set(expected):
                 raise LoadError(
@@ -2840,18 +2900,27 @@ def _readback_fields(plan):
     return fields
 
 
+# NetBox PathEndpoint models: their viewsets carry the /trace/ action.
+TRACE_KINDS = {"interface", "console_port", "console_server_port", "power_port", "power_outlet",
+               "power_feed"}
+
+
 def _verify_paths(client, plan, objects, ids, workers=8):
     cables = [obj for obj in plan["objects"] if obj["kind"] == "cable"]
     if not cables:
         return {"cables_expected": 0, "cables_traced": 0, "failures": [], "wall_seconds": 0.0}
 
     def trace(cable):
-        endpoint = objects[cable["refs"]["a"]]
+        ends = [objects[cable["refs"][side]] for side in ("a", "b")]
+        # Path endpoints expose /trace/; pass-through ports and circuit
+        # terminations expose only the CablePaths running through them.
+        endpoint = next((end for end in ends if end["kind"] in TRACE_KINDS), ends[0])
+        view = "trace" if endpoint["kind"] in TRACE_KINDS else "paths"
         endpoint_id = ids[endpoint["key"]]
         endpoint_id = endpoint_id["id"] if isinstance(endpoint_id, dict) else endpoint_id
         cable_id = ids[cable["key"]]
         cable_id = cable_id["id"] if isinstance(cable_id, dict) else cable_id
-        _, result = client.request(f"/api/{ENDPOINTS[endpoint['kind']]}/{endpoint_id}/trace/")
+        _, result = client.request(f"/api/{ENDPOINTS[endpoint['kind']]}/{endpoint_id}/{view}/")
         if not result or not _trace_contains_cable(result, cable_id, cable["attrs"]["label"]):
             raise LoadError("trace did not contain its cable")
         return cable["key"]
@@ -3101,6 +3170,8 @@ def _complete_rest(client, plan, objects, ids, receipt, receipt_path):
                     row[field] = sorted(ids[key] for key in obj["refs"][field])
             if kind == "virtual_machine":
                 row["start_on_boot"] = obj["attrs"].get("start_on_boot", "off")
+            if "rear_port" in obj["refs"]:
+                row["rear_ports"] = _front_port_mapping(obj, ids)
             expected[row["id"]] = row
         _reconcile_rest_patches(
             client, SPECS[kind][1], rows, receipt, receipt_path, purpose, expected)
