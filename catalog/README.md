@@ -66,8 +66,10 @@ inlets. Their catalog entries describe explicitly populated configurations.
 `configured_modules` preserves the bay, position, installed module, and resulting
 port name. The `power_ports` list expands the upstream module's naming template
 using that position. The equipment builder installs matching module types/modules into the source
-bays and attaches these existing power ports to them. Module types share a
-source-linked inventory profile and explicit bay form factors. No component
+bays and attaches these existing power ports to them. PSU module types carry
+their model and explicit bay form factors but no module-type profile (since
+0.16.0): the catalog pins no wattage or input voltage, so a profile could only
+have repeated the source URL, which stays here as provenance. No component
 templates are generated or replicated.
 
 The matching PSU families are listed in the [Cisco hardware guide](https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9200/hardware/install/b-c9200-hig/product_overview.html),
@@ -198,7 +200,6 @@ library commit above, each source carrying its URL, SHA-256 and CC0-1.0 license.
 | `server` | Supermicro SuperServer 1029U-E1CRTP2 | [`Supermicro/SYS-1029U-E1CRTP2.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Supermicro/SYS-1029U-E1CRTP2.yaml) (`a7c2c39a…dc873`): `BMC` management; onboard `eth1`, `eth2` 10G SFP+ (the `data_ports` the DC builder cables) and `eth3`, `eth4` 1GbE left spare; DE-9 `Serial`. Two installed PWS-751P-1R supplies in bays `PSU1`/`PSU2` materialize C14 inlets `PSU1`/`PSU2` |
 | `pdu` | APC AP9572 | [`APC/AP9572.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9572.yaml) (`251027449…72c8472`): Basic Rack PDU, Zero U, 16A 208/230V; C20 `Power Port 1`; C13 `Outlet 1`–`Outlet 15`; no network management |
 | `pdu-120` | APC AP9563 | [`APC/AP9563.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9563.yaml) (`7e46d35c…84ff`): Basic Rack PDU, 1U, 20A 120V; NEMA 5-20P `Source`; NEMA 5-20R `Outlet 1`–`Outlet 10`; no network management. The small-room kit's PDU (provider customer premises), mounted at the rack's top unit |
-| `fibre-panel` | Panduit FCE1U (Opticom Rack Mount Fiber Enclosure, 1 RU, 4 Ports) | [`Panduit/FCE1U.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/FCE1U.yaml) (`95162477…14d4`): 1U passive, unpowered fibre enclosure. Its four adapter-panel module bays and `subdevice_role` are not emitted (no adapter panels are modeled); one per provider PoP cabinet |
 | `patch-panel` | Panduit DP24688TGY (Cat 6 Punchdown Patch Panel, 24 Ports, 1 RU) | [`Panduit/DP24688TGY.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/DP24688TGY.yaml) (`b5299f24…ccd5`): front `01`–`24` 8P8C, rear `01`–`24` 110 punchdown, mapped one-to-one |
 | `wall-outlet` | Generic "Wall box, 1 UTP plug" | [`Generic/wall-box-1-utp-plug.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/wall-box-1-utp-plug.yaml) (`8138ca1f…bcaa1`): front and rear `Port 1`, 8P8C |
 | `console-server` | Opengear CM8116 | [`Opengear/CM8116.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/CM8116.yaml) (`ae6718cc…de174`): RJ45 `Port 1`–`Port 16`; `NET1`/`NET2` management; own `Console` plus `USB A`/`USB B`; C14 `PS1`/`PS2` |
@@ -244,7 +245,7 @@ Declared deviations and selections:
   (`generic-design-v1`), not a vendor product.
 
 `airflow` is carried only where a source states it: `front-to-rear` on the
-Arista, Juniper and Supermicro chassis and `passive` on the AP9572, AP9563, FCE1U,
+Arista, Juniper and Supermicro chassis and `passive` on the AP9572, AP9563,
 CM8148 and Aruba AP-505, copied unchanged. `part_number`, `weight` and
 `weight_unit` follow the same rule (0.16): each is copied from the model's
 SHA-pinned devicetype-library file and is absent where the file is silent
@@ -427,7 +428,7 @@ their presence here is not a claim of completed native round-trip testing.
 
 ## Installed optics policy
 
-The top-level `optics.parts` map defines twelve selected parts. Each stable part ID
+The top-level `optics.parts` map defines eighteen selected parts. Each stable part ID
 records manufacturer/model, form factor, optical protocol, medium, connector,
 rate in **kbps**, reach in metres, power reservation in integer **mW**, source
 IDs and an explicit `compatible_interfaces` map from hardware alias to existing
@@ -438,13 +439,19 @@ Arista both sell a part named `SFP-10G-LR`.
 | Part ID | Manufacturer / model | Selected host cages and mode | Reserved mW per module/end |
 | --- | --- | --- | ---: |
 | `cisco-10g-lr` | Cisco `SFP-10G-LR` | `access` fixed `TenGigabitEthernet1/1/1–4`, 10G | 1,000 |
+| `cisco-10g-sr` | Cisco `SFP-10G-SR` (MMF, LC, 400 m OM4) | same cages as `cisco-10g-lr` | 1,000 |
 | `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
+| `juniper-10g-sr` | Juniper `EX-SFP-10GE-SR` (MMF, LC, 400 m OM4) | same cages as `juniper-10g-lr` | 1,000 |
 | `arista-10g-lr` | Arista `SFP-10G-LR` | `leaf` `Ethernet1–48`, 10G | 2,000 authored |
+| `arista-10g-sr` | Arista `SFP-10G-SR` (MMF, LC, 400 m OM4) | `leaf` `Ethernet1–48`, 10G | 1,000 |
 | `arista-100g-lr4` | Arista `QSFP-100G-LR4` | `leaf` `Ethernet49/1–56/1`; `core` `Ethernet1/1–32/1`, 100G | 4,500 |
+| `arista-100g-sr4` | Arista `QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | same cages as `arista-100g-lr4` | 3,500 |
 | `fortinet-10g-lr` | Fortinet `FN-TRAN-SFP+LR` | `edge` `x1/x2`, 10G | 1,000 authored |
 | `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7` configured **1G** | 1,000 |
 | `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`, 100G | 3,500 |
+| `juniper-100g-sr4` | Juniper `JNP-QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | same cages as `juniper-100g-lr4` | 3,500 |
 | `generic-10g-lr` | Generic `SFP-10G-LR` (third-party compatible) | `server` `eth1/eth2`, 10G | 2,000 authored |
+| `generic-10g-sr` | Generic `SFP-10G-SR` (third-party compatible) | `server` `eth1/eth2`, 10G | 1,000 authored |
 | `arista-100g-aoc-3m` | Arista `AOC-Q-Q-100G-3M` | `leaf` QSFP28 cages; existing peer uses `Ethernet49/1`, 100G | 3,500 authored per captive end |
 | `juniper-100g-aoc-3m` | Juniper `JNP-100G-AOC-3M` | `leaf-juniper` QSFP28 cages `et-0/0/48–55`, 100G | 3,500 authored per captive end |
 
@@ -474,9 +481,23 @@ is archived and supplies part specifications, but does not by itself prove a
 host fit. Source entries preserve that distinction rather than presenting a
 full archival or multivendor certification claim.
 
-All selected independent modules use duplex LC SMF with matching LX, LR, LH,
-LR4 or ER4 Lite protocol and effective rate. Every short-reach part, including
-the generic server optic, has 10 km nominal reach. The shared authored
+Single-mode parts use duplex LC with matching LX, LR, LH, LR4 or ER4 Lite
+protocol and effective rate, 10 km nominal reach or more. **Short-reach parts**
+(since 0.16.0) are multimode: SR on duplex LC (400 m on OM4) and SR4 on MPO-12
+(100 m on OM4). `estates/optics.py` selects by the cable's medium, and turns a
+direct single-mode jumper into OM4 multimode when both cages sit in one room,
+the run is within the shortest multimode reach (100 m) and both cages take a
+reviewed multimode part; a 10 km optic on a 3 m in-room jumper was a tell.
+Building backbones, carrier handoffs and owned spans stay single-mode, as does
+any jumper with a FortiGate 100F end: no primary source confirms
+`FN-TRAN-SFP+SR` on that host (its 100F ordering extract lists only the LR
+part, and the Fortinet transceiver sheet alone does not establish host fit).
+`validate_optics` refuses LR on such a jumper (`optics-reach-class`) and
+requires both ends of a multimode channel to share the connector. SR host fit:
+Juniper's HCT pages for `EX-SFP-10GE-SR` and `JNP-QSFP-100G-SR4` (MX204,
+QFX5120-48Y, EX3400; EX3300 by its datasheet's ordering table), Cisco's TMG
+notes for `SFP-10G-SR` on the C9200L fixed uplinks, and Arista's transceiver
+guide (Tables 10/12 and 6/14.0, no platform restriction on either SR row). The shared authored
 `local_min_m: 3` / `local_max_m: 100` envelope applies to the **sum of the
 complete known local cable path**, bounded by both endpoint reaches. It is a
 conservative modeling limit, not a vendor minimum, computed loss budget or
@@ -504,7 +525,7 @@ and short spans keep LX/LR4. Two long-reach MX204 parts are pinned for this
 recorded distance and the site-coordinate route) and reports
 `optics-span-reach` when the installed part falls short. An owned circuit longer
 than every reviewed part is a generation error, never a silently short optic.
-Single-lambda 100G LR, SR, BiDi, DWDM, amplified line systems and breakout
+Single-lambda 100G LR, SR BiDi, DWDM, amplified line systems, DAC and breakout
 remain outside this selection.
 
 The AOC entry has `assembly: true` and `assembly_length_m: 3`. It is one
@@ -520,12 +541,16 @@ source list and the planning power reservation are catalog provenance only:
 emitted NetBox optic module types carry just the datasheet facts (protocol,
 medium, connector, rate and reach).
 `vendor_max_power_mw` is present only for verified electrical maxima: Cisco
-LR ([Table 8](https://www.cisco.com/c/en/us/products/collateral/interfaces-modules/transceiver-modules/data_sheet_c78-455693.html)),
+LR and SR ([Table 8](https://www.cisco.com/c/en/us/products/collateral/interfaces-modules/transceiver-modules/data_sheet_c78-455693.html)),
 Juniper [LR](https://apps.juniper.net/hct/model/EX-SFP-10GE-LR),
+[SR](https://apps.juniper.net/hct/model/EX-SFP-10GE-SR),
+[SR4](https://apps.juniper.net/hct/model/JNP-QSFP-100G-SR4),
 [LX](https://apps.juniper.net/hct/model/SFP-1GE-LX),
-[LR4](https://apps.juniper.net/hct/model/JNP-QSFP-100G-LR4), and Arista LR4
-([FAQ, page 5](https://www.arista.com/assets/data/pdf/Datasheets/Arista-100G_Optics_FAQ.pdf)).
-Arista 10G reserves an authored 2 W because an explicit maximum was not found.
+[LR4](https://apps.juniper.net/hct/model/JNP-QSFP-100G-LR4), Arista LR4 and SR4
+([FAQ, page 5](https://www.arista.com/assets/data/pdf/Datasheets/Arista-100G_Optics_FAQ.pdf))
+and Arista SR (transceiver datasheet page 6, 1 W for SFP+ optics).
+Arista 10G LR keeps its authored 2 W reserve; the same datasheet line would
+support 1 W, a revision left for a later baseline.
 Fortinet's published 850 mW dissipation is rounded to 1 W for planning and is
 not represented as a verified worst-case limit. The AOC FAQ's 3.5 W figure does
 not explicitly distinguish one end from the assembly; the catalog conservatively

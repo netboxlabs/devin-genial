@@ -130,9 +130,13 @@ List-view hygiene (0.16, `operations.finalize`, run first by `World.finish` afte
 every builder): tags, taxonomy pruning, unused-port state, planned cabinets, DNS,
 MTU and loopback roles are derived from the finished graph and re-derived by
 `validate_operations._shared`. A tag must be discriminating (never on every
-candidate of its kinds) and land only on `naming.TAGS` kinds. Prune only roles,
-regions and passive cabling types: device types, platforms and makers are a fixed
-library because growth and scenario snapshots must never delete one.
+candidate of its kinds) and land only on `naming.TAGS` kinds. Prune every
+unreferenced role, region, device/module/bay type, module-type profile and maker
+(`operations.PRUNABLE`): emit only installed taxonomy. The one exception is the
+bank's acquisition lineage (`optics.RETAINED`/`retained_hosts`): the
+`inherited-access` type and the part definitions it and the refresh's access
+line can take stay, because a refresh snapshot must neither add nor delete a
+shared type. PSU module types carry no profile (no source-URL attribute).
 The 0.16 data-model review pass (`tests/test_data_model_review.py`): one
 `naming.PALETTE` keeps every coloured taxonomy record in an estate distinct, and
 cables carry jacket colours by medium; the site `Service class` field is the
@@ -141,7 +145,11 @@ carry no per-rack `form_factor`/`width` (the loader re-creates `Rack.save()`'s
 copy, `turbobulk._save_copies`) and no rack groups; every unused physical port
 is disabled on every role (in-service ports with no modeled cable are
 `mark_connected`); SVIs carry no mode — checks derive their VLAN from the
-address's prefix (`validate_networking.routed_vlan_view`); Junos loopbacks sit on
+address's prefix (`validate_networking.routed_vlan_view`); likewise only a
+switch's non-management port carries access mode (`operations._host_ports`,
+`interface-host-mode`): host and `mgmt_only` ports read their segment through
+the same view, while host trunks (`tagged`), units under them and VLAN-
+translating L2VPN attachments keep theirs; Junos loopbacks sit on
 `lo0.0`; regions run country → state → metro; one owner on every infrastructure
 record; module-bay types are per-maker classes while supply fit still follows the
 device type's catalog entry; device types carry only pinned-source part numbers,
@@ -152,9 +160,12 @@ cabinet) or from an explicit recipe lifecycle (the provider's customer and
 premises `status` keys), never invented events; required paths stay `active`,
 and a planned, provisioning or decommissioning path never counts as healthy
 capacity.
-Journals are short operational lines whose kind follows the event (completed
-success, open action warning, else info); never restate the record's own
-fields; dates follow the site's service day (its first circuit's install date,
+Journals carry only what the record cannot show — a seeded change ticket,
+who confirmed or escalated — never its own fields (cid, terminations, rates,
+serials, cabinet, U, modules): one `Handed over` per in-service circuit, a
+namespace-keyed one-in-five carrier `Delivery slipped` warning, one
+`Installed` per cabinet, `Site access` per site, `First instance placed` per
+workload; kind follows the event (completed success, problem warning, else info); dates follow the site's service day (its first circuit's install date,
 read from the graph). Contact priority follows desk order (technical primary, local or
 commercial secondary, specialist tertiary).
 WAN procurement accounts retain bank design lineage across acquisition/refresh;
@@ -166,11 +177,10 @@ earliest service its equipment carries) and every serial date code is a manufact
 week 30-180 days before that (an optic's before its own port's circuit) (`operations_context.timeline`, re-derived by
 `validate_operations`). Never date a record from `as_of` when a circuit dates it.
 Equipment journals select the first eligible device per actual rack by permanent
-U position. Keep installed component and facilities facts stable; never embed
-current cable peers or mutable tenant desk names in immutable journal comments.
-Optical journals choose that device's first catalog physical optical cage before
-considering occupancy; an occupied cage adds one note without a new ledger.
-Preserve its interface, module/bay and exact journal identities during growth.
+U position. Keep facilities facts stable; never embed current cable peers or
+mutable tenant desk names in immutable journal comments. No journal restates an
+installed optic or PSU (those notes were dropped in 0.16). Preserve exact
+journal identities during growth.
 Native interface-module ownership cascades on deletion: no module removal,
 hot-swap or executed replacement workflow is implemented.
 Acquisition and power-defect scenarios must retain their exact existing invariants.
@@ -667,9 +677,10 @@ for the separately recorded pinned-target live qualification.
   mounts contiguously from the bottom rail — 42U would read three-quarters
   empty — and the small-room kit (13U Panduit R2P26 two-post, one 1U 120 V
   AP9563 at the top unit, one 120 V / 20 A circuit, no console server) for a
-  single-CE premises (`Site.small_kit`, provider customers). PoP cabinets add
-  real passive content, one FCE1U fibre enclosure per PE cabinet — never
-  padding. `facility_id` is a room-scoped cabinet code (`DH-02-C03`,
+  single-CE premises (`Site.small_kit`, provider customers). PoP cabinets
+  hold no fibre enclosure of their own (one with no ports was a prop); a fibre
+  carrier handoff's `pp_info` is the carrier hotel's meet-me-room panel
+  position (`provider-mmr-positions/<pop>`), not the operator's. `facility_id` is a room-scoped cabinet code (`DH-02-C03`,
   `G09-01-N02`); 0U equipment is racked
   without a position, exactly as NetBox models it. US feeds are 208 V / 20 A
   single-phase (the AP9572 is a 16 A PDU); only the provider validator's own
@@ -752,7 +763,9 @@ for the separately recorded pinned-target live qualification.
   routers: Nokia 7220 IXR-D2L records whose model, serial (`Sim Serial No.`)
   and platform (`NOKIA_SRL v26.7.2`) are exactly what the SR Linux container
   reports, so real discovery matches them, with comments naming the production
-  router each mirrors. It lives in a NOC `Network Lab` room, uses only RFC 2544
+  router each mirrors. It stands unracked in a NOC `Network Lab` room (a
+  container occupies no rack unit; the routers stay devices with primary IPs so
+  discovery matches them), uses only RFC 2544
   `198.18.0.0/15` addresses with no VRF, and carries no circuit, BGP session,
   power, console or production cable. It is selected from the permanent
   `provider-pop-order` ledger and cabled from the finished graph's routed /31
@@ -792,6 +805,11 @@ for the separately recorded pinned-target live qualification.
   The operator's own circuits (`provider/operator`) are not a handoff: the optic
   must reach the circuit `distance` (else its two sites' route distance) and the
   builder picks the shortest reviewed reach that covers it (`optics-span-reach`).
+  Reach follows the run: a direct same-room jumper within the shortest
+  multimode reach whose cages both take a reviewed SR/SR4 part runs OM4 `mmf`
+  (`optics.enrich`; `optics-reach-class` refuses LR there). Backbones,
+  handoffs, owned spans, LC patch-panel channels and FortiGate 100F jumpers (no
+  primary source for an SR part on it) stay single-mode.
 - Shared campus/DC physical checks receive independently resolved school demand.
   Descriptive metadata and omitted contracts cannot erase required infrastructure.
 - Bank DC validation derives complete power/compute/service obligations from
