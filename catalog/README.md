@@ -132,7 +132,7 @@ catalog names.
 | `aggregation-legacy` | Juniper ACX5048-AC, 1U | Same contract as `aggregation`. `uni_ports` = `xe-0/0/0`–`39`; `lag_ports` = `xe-0/0/40`–`43`; `xe-0/0/44`–`47` 10G SFP+ spare; `et-0/0/48`–`53` **40G** QSFP+, unused (no 100G cage). A 1G UNI keeps the `xe-` name with `speed` 1000000, a declared normalization. Mgmt is `em0` (1000BASE-T, cabled); `em1` (SFP, mgmt_only) stays uncabled. RJ45 `Console`. PSU bays `Power Supply 0`/`1` hold JPSU-650W-AC-AFO and give C14 inlets **`PSU 0`** / **`PSU 1`** (with the space) |
 | `provider-edge-legacy` | Juniper MX80, 2U (the relic) | `fxp0` mgmt; `xe-0/0/0`–`3` 10G **XFP**; RJ45 `Console`; fixed C14 `PEM0`/`PEM1` (no space). MIC and fan bays are not modelled. Relics are uncabled and unpowered, so no optics are installed |
 | `provider-edge-successor` | Juniper MX304 (`JNP304`), 2U, not full depth, with one JNP304-LMCIC16 line card in bay `LCMIC0` | `et-0/0/0`–`15`, typed `400gbase-x-qsfpdd` (the pinned LMIC type), configured at 100G (`speed` 100000000) with QSFP28 optics. `pair_port` = `et-0/0/0`; `tms_port` = `et-0/0/1` (100G to the TMS over the generic AOC). The rest are spare. **No power ports, no console, no management port**: the pinned chassis has bays only, and neither the PSUs nor the Routing Engine are modelled for a planned or staged chassis |
-| `ddos-mitigation` | Arbor TMS HD 1000, 2U | `1`–`4` 100G QSFP28; `5`–`12` 10G SFP+; `Management` 1000BASE-T mgmt_only (cabled to the PoP mgmt switch); RJ45 `Console`. `offramp_ports` = [`1`, `2`] (1 ↔ PE-A2, 2 ↔ PE-B2, the MX304s). PSU bays `PSU 1`/`PSU 2` hold the labelled-fiction `TMS AC PSU (authored)` and give C14 inlets **`PSU1`** / **`PSU2`** |
+| `ddos-mitigation` | Arbor TMS HD 1000, 2U | `1`–`4` 100G QSFP28; `5`–`12` 10G SFP+; `Management` 1000BASE-T mgmt_only (cabled to the PoP mgmt switch); RJ45 `Console`. `offramp_ports` = [`1`, `2`] (1 ↔ PE-A2, 2 ↔ PE-B2, the MX304s). PSU bays `PSU 1`/`PSU 2` hold the labelled-fiction `TMS AC PSU` and give C14 inlets **`PSU1`** / **`PSU2`** |
 | `time-server` | Meinberg Lantime M300, 1U | `lan0` 100BASE-TX spare; `lan1` 1000BASE-TX; `management_port` = `lan1` (cabled to the mgmt switch). DE-9 console `serial`, uncabled. One fixed C14 `PWR1` (single supply) |
 | `nid-legacy` | Accedian MetroNID TE, 1U | Same contract as `nid`: `nni_port` `B_Network` (1G SFP); `uni_port` `A_Client` (1G SFP, the customer's 1000BASE-LX handoff); `management_interface` `Management` (virtual, builder-created, in-band). `Monitor-1`/`2` 1000BASE-T spare; `C_Management` mgmt_only, uncabled; RJ45 `Console`. Power ports `AC Power Adapter` and `Dual DC Power`, both `dc-terminal` (no PDU outlet fits; mark them connected) |
 
@@ -946,8 +946,9 @@ NETSCOUT's. The
 - up to 400 Gbps of licensed mitigation.
 
 No supply is pinned anywhere in the library, so the two PSU bays take a
-**labelled-fiction** module type, `TMS AC PSU (authored)`. Its name says so on
-every NetBox screen. Its C14 inlet is authored too: 1500 W at the PoP's 208 V
+**labelled-fiction** module type, `TMS AC PSU`. The fiction is declared
+here and in its `authored-tms-psu` source, never on the record: an operational
+name, like every other NetBox record (`record-disclaimer`). Its C14 inlet is authored too: 1500 W at the PoP's 208 V
 feed draws at most about 7.2 A, inside a C14's 10 A rating. A 100–120 V feed
 would need a C20 inlet, which is not modelled. Planning allowance **327 W**,
 the one-PPM figure. The chassis is far larger than the estate's DIA demand.

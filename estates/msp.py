@@ -338,10 +338,13 @@ def _managed_by(world):
         if desk is None or world.objects[desk]["key"] != f"contact/operations/tenant/{item['key']}":
             raise DesignError(f"{site}: managed office must carry its own customer technical desk")
         node = world.obj(site)
+        # Ahead of the standing site-access policy the shared builder wrote.
+        policy = node["attrs"].get("comments")
         node["attrs"]["comments"] = (
             f"Customer-owned premises operated by {world.recipe['name']} under a managed-network contract. "
             f"Escalation runs through {world.obj(desk)['attrs']['name']}; the local management segment "
-            f"({world.obj(f'prefix/{sid}/management')['attrs']['prefix']}) carries the operated equipment.")
+            f"({world.obj(f'prefix/{sid}/management')['attrs']['prefix']}) carries the operated equipment."
+            + (f"\n\n{policy}" if policy else ""))
         node["meta"]["operated_by"] = {"provider": ns, "technical_contact": desk,
                                        "management_segment": f"prefix/{sid}/management"}
 

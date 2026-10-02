@@ -780,7 +780,7 @@
     },
     "authored-tms-psu": {
       "url": "README.md#lived-in-carrier-models",
-      "purpose": "Labelled fiction: the pinned TMS HD 1000 type declares PSU bays and the library pins no Arbor/NETSCOUT supply. The module type 'TMS AC PSU (authored)' stands for the data sheet's 1500 W AC supply; its C14 inlet is authored (1500 W at the PoP's 208 V feed draws at most about 7.2 A, inside a C14's 10 A rating)."
+      "purpose": "Labelled fiction: the pinned TMS HD 1000 type declares PSU bays and the library pins no Arbor/NETSCOUT supply. The module type 'TMS AC PSU' stands for the data sheet's 1500 W AC supply; its C14 inlet is authored (1500 W at the PoP's 208 V feed draws at most about 7.2 A, inside a C14's 10 A rating)."
     }
   },
   "hardware_lines": {
@@ -6405,13 +6405,13 @@
         {
           "bay": "PSU 1",
           "position": "PSU1",
-          "model": "TMS AC PSU (authored)",
+          "model": "TMS AC PSU",
           "power_port": "PSU1"
         },
         {
           "bay": "PSU 2",
           "position": "PSU2",
-          "model": "TMS AC PSU (authored)",
+          "model": "TMS AC PSU",
           "power_port": "PSU2"
         }
       ],

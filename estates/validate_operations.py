@@ -1,12 +1,13 @@
 """Independent scope, chronology and graph-fact checks for operations inventory."""
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
+from itertools import product
 import math
 import re
 
 from .model import digest, hardware_catalog, serial_date_code
-from .naming import dedicated, titleize
+from .naming import bandwidth, dedicated, titleize
 
 
 # A CSV export template must be one header line plus exactly one queryset loop,
@@ -35,6 +36,88 @@ PROVIDER_COLOCATION = {"Illinois": ("Windward Interconnect", "windward-interconn
                        "Michigan": ("Motorline Data Centers", "motorline-dc.example"),
                        "Ohio": ("Cuyahoga Colocation", "cuyahoga-colo.example"),
                        "Wisconsin": ("Kinnickinnic Colocation", "kinnickinnic-colo.example")}
+# Restated journal time-of-day bands (UTC, [start, end) hours): orders,
+# installs and paperwork in US business hours, maintenance at night.
+_BANDS = {"business": (14, 22), "night": (4, 9)}
+# Restated provider history facts (estates/timeline.py, DESIGN v0.18 §4.1):
+# vendor notices are quoted "per vendor notice"; the others are authored.
+NS2_ADOPTED = date(2018, 3, 1)
+NOTICES_BEGIN = date(2025, 4, 1)
+MX80_END_OF_SALE, MX80_END_OF_SUPPORT = date(2021, 6, 30), date(2026, 6, 30)
+MX304_AVAILABLE = date(2022, 7, 1)
+ACX5048_LAST_ORDER, ACX5048_END_OF_SUPPORT = date(2022, 12, 31), date(2027, 12, 31)
+# Restated carrier paperwork policy: one in three leased third-party services
+# carries completed maintenance notices, one in two long-lived (five years)
+# access or transit circuits carries committed-rate upgrades, and every
+# leased term renews every 36 months.
+NOTICE_TYPES = frozenset({"circuit-type/backbone", "circuit-type/transit", "circuit-type/noc-access",
+                          "circuit-type/cellular-oob", "circuit-type/ix-port"})
+NOTICE_ONE_IN, CIR_ONE_IN, CIR_MIN_YEARS, TERM_MONTHS = 3, 2, 5, 36
+# Journal events that record a device arriving in its rack (an ordered
+# successor holds its reserved units from the order).
+_INSTALL_EVENTS = frozenset({"equipment-record", "installed", "replaced", "racked", "ordered", "received"})
+
+# Finite journal forms by event: a bold title and the body each claim may take.
+_JOURNAL_FORMS = {
+    "equipment-record": ("Installed", r"Racked and cabled under change ([^\n;]+); the visit was booked through ([^\n]+)\."),
+    "service-order": ("Service order", r"Ordered by ([^\n;]+); provisioning tracked under change ([^\n.]+)\."),
+    "disconnect-order": ("Disconnect order", r"Disconnect ordered under change ([^\n;]+); recover the handoff optics and cabling once the circuit is withdrawn\."),
+    "delivery-slip": ("Delivery slipped", r"([^\n;]+) missed the committed handover date; escalated to its support desk\."),
+    "handover": ("Handed over", r"Accepted into service under change ([^\n.]+)\.(?: ([^\n]+) support desk confirmed the handover and closed its ticket\.)?"),
+    "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\."),
+    "service-ceased": ("Service ceased", r"Service ceased; NID not recovered — premises access ended\."),
+    # Provider paperwork (v0.18 P1-10..12) and the NOC's notice policy.
+    "cross-connect-order": ("Cross-connect ordered", r"Letter of authorization ([A-Z]+-[A-Z]+-\d{6}) issued to ([^\n]+) for "
+                            r"cross-connect ([^\n ]+)\.(?: Z side: ([^\n]+)\.)? MMR-only jumper; the hotel runs it from the "
+                            r"meet-me room to our demarcation panel\."),
+    "cir-upgrade": ("Committed rate raised", r"Committed rate raised from ([^\n]+) to ([^\n]+) under change (CHG\d{7}), "
+                    r"on the same ([^\n ]+) handoff\."),
+    "term-renewal": ("Term renewed", r"([^\n]+) service term renewed for (\d+) months under change (CHG\d{7}); "
+                     r"service and handoff unchanged\."),
+    "maintenance": ("Provider maintenance completed", r"Provider: ([^\n]+)\nMaintenance ID: ([^\n]+)\nAccount: ([^\n]+)\n"
+                    r"Window: ([^\n]+) UTC\nImpact: up to (\d+) hours of interruption inside the window, per provider notice\n"
+                    r"Status: completed"),
+    "notice-journaling": ("Provider notices journaled", r"From today the NOC journals each completed third-party maintenance "
+                          r"notice on the circuit it touched \(provider, maintenance ID, account, window and stated impact, "
+                          r"as the provider sent them\) and each PoP's annual cage audit\."),
+    "cage-audit": ("Cage audit", r"Annual cage audit with ([^\n]+) remote hands under change (CHG\d{7}): cabinet labels, "
+                   r"blanking and power cords walked against this record\."),
+    "ix-port": ("IX port turned up", r"([^\n]+) port ([^\n ]+) turned up on ([^\n ]+) under change (CHG\d{7})"
+                r"(?:, replacing the ([^\n]+) port after the exchange relocated)?\."),
+    "ix-port-shut": ("IX port shut", r"([^\n]+) port ([^\n ]+) shut on ([^\n ]+) after the exchange relocated to ([^\n]+); "
+                     r"disconnect ordered under change (CHG\d{7})\."),
+    # Provider plant history (v0.18 §3-§4): generations, gaps and spares.
+    "installed": ("Installed", r"Racked as the launch PE of ([^\n]+) under (CHG\d{7})\."),
+    "cut-over": ("Cut over", r"Replaced Juniper MX80 ([^\n]+) under (CHG\d{7}); services cut over (\d{4}-\d{2})\. "
+                 r"Spans re-lit at 100G \(the MX80 has only 10G XFP\)\."),
+    "cut-over-relic": ("Cut over", r"Services moved to ([^\n]+) under (CHG\d{7}); uncabled and powered off, de-rack scheduled\."),
+    "end-of-support": ("End of support", r"Vendor end of support (\S+) per vendor notice \(end of sale (\S+)\)\."),
+    "end-of-sale": ("Last order date", r"ACX5048 last order (\S+), end of support (\S+), per vendor notice\. "
+                    r"No aggregation refresh has started\."),
+    "replaced": ("Replaced predecessor", r"Replaced ([^\n]+), under (CHG\d{7}); (services|management) cut over (\d{4}-\d{2})\."),
+    "removed": ("Removed", r"Removed: ([^\n]+), (CHG\d{7})\. (U\d+(?:-U\d+)?) left empty and blanked; units are not reused\."),
+    "spare-racked": ("Cold spare racked", r"Pre-racked as the metro's cold-spare aggregation chassis under (CHG\d{7}); ([^\n]+)\."),
+    "racked": ("Racked, awaiting activation", r"Racked under change (CHG\d{7}); activation at the MX304 cut-over: the MX204 "
+               r"port budget is exhausted \(PIC0 is limited to 3x100G while all eight 10G SFP\+ ports are in use\)\."),
+    "successor-ordered": ("Successor ordered", r"MX304 successor ([^\n ]+) ordered under (CHG\d{7}): ([^\n]+)\."),
+    "ordered": ("Ordered", r"Purchase order raised under (CHG\d{7}); units reserved in the cabinet\."),
+    "received": ("Received and staged", r"Shipment received; chassis racked and staged, not in service\.")}
+
+
+def _stamp(day, key, band="business"):
+    """Restated: a journal's ``created`` instant inside its band, keyed by the journal."""
+    low, high = _BANDS[band]
+    n = int(digest(["journal-time", key]), 16)
+    return f"{day}T{low + n % (high - low):02}:{(n // 97) % 60:02}:00Z"
+
+
+def _add_months(day, months):
+    year, month = divmod(day.month - 1 + months, 12)
+    return date(day.year + year, month + 1, min(day.day, 28))
+
+
+def _initials(name):
+    return "".join(word[0] for word in name.split() if word[0].isalpha()).upper()
 
 
 def _renders_csv_rows(code):
@@ -257,7 +340,8 @@ def _context(plan, objects, kinds):
         return recipe.get("profile") == "provider-backbone" and str(tenant).startswith("tenant/cust-")
     infrastructure_roles = {f"role/{role}" for role in (
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
-        "ap", "console-server", "stack", "laboratory", "provider-edge", "customer-edge")}
+        "ap", "console-server", "stack", "laboratory", "provider-edge", "customer-edge",
+        "aggregation", "ddos-mitigation", "time-server")}
 
     def expect_contact(key, name, role, scope, mailbox, area=None):
         contacts[key] = (name, role, scope, mailbox, area)
@@ -302,11 +386,47 @@ def _context(plan, objects, kinds):
         for port, far in (ends, ends[::-1]):
             if isinstance(circuit_day.get(far), str) and objects.get(port, {}).get("kind") == "interface":
                 port_day[port] = min(circuit_day[far], port_day.get(port, circuit_day[far]))
+    # A device that arrived after its site (a provider PoP's later generation,
+    # successor or spare) shows its own arrival as a dated install journal; a
+    # provider PoP's other plant arrived with the PoP's launch or its PE
+    # refresh (the frozen ``provider-timeline`` ledger), or with another
+    # arrival journaled at that site. Every other device installs on its
+    # site's schedule. ``installed_on`` holds the candidate install days.
+    reservations = plan.get("reservations") if isinstance(plan.get("reservations"), dict) else {}
+
+    def ledger_day(event, pop):
+        value = reservations.get(f"provider-timeline/{event}/{pop}")
+        day = value.get("day") if isinstance(value, dict) else None
+        return date.fromordinal(day).isoformat() if type(day) is int and day > 0 else None
+
+    journals_on = defaultdict(dict)
+    for obj in kinds["journal_entry"]:
+        target = obj["refs"].get("assigned_object")
+        if isinstance(target, str) and obj["key"].startswith(f"journal/{target}/"):
+            journals_on[target][obj["key"].removeprefix(f"journal/{target}/")] = obj
+
+    def arrivals(device):
+        """Install days this device's own journals record (dates read from ``created``).
+        Its equipment record is excluded: that date is checked against these."""
+        return sorted(str(obj["attrs"].get("created", ""))[:10] for event, obj in journals_on[device].items()
+                      if event in _INSTALL_EVENTS - {"equipment-record"}
+                      or (event == "cut-over" and obj["attrs"].get("kind") == "success"))
+
+    site_arrivals = defaultdict(set)
+    for device in kinds["device"]:
+        site_arrivals[device["refs"].get("site")].update(arrivals(device["key"]))
     installed_on = {}
     for device in kinds["device"]:
-        anchor = service_day.get(device["refs"].get("site"))
-        installed_on[device["key"]] = (scheduled(device["key"], "equipment-record", anchor, 7, 31) if anchor
-                                       else scheduled(device["key"], "equipment-record", recipe.get("as_of"), 100, 20))
+        site = device["refs"].get("site")
+        anchor = service_day.get(site)
+        schedule = (scheduled(device["key"], "equipment-record", anchor, 7, 31) if anchor
+                    else scheduled(device["key"], "equipment-record", recipe.get("as_of"), 100, 20))
+        pop = str(site).removeprefix("site/pop-")
+        plant = (recipe.get("profile") == "provider-backbone" and str(site).startswith("site/pop-")
+                 and ledger_day("launch", pop))
+        own = arrivals(device["key"]) if plant else []
+        installed_on[device["key"]] = (own if own else sorted({schedule, ledger_day("launch", pop), ledger_day("refresh", pop),
+                                                                  *site_arrivals[site]} - {None}) if plant else [schedule])
     serial_catalog = hardware_catalog()
     host_specs = {(m["manufacturer"], m["model"]): m for m in serial_catalog["models"].values()}
     optic_formats = serial_catalog["optics"]["serial_formats"]
@@ -317,26 +437,26 @@ def _context(plan, objects, kinds):
 
     def check_serial(key, fmt, serial, installed, slack_weeks=0):
         """The printed date code is a manufacture 30-180 days before the install
-        (plus the builder's bounded uniqueness shift for detachable modules)."""
-        if not fmt or not isinstance(serial, str) or not serial or not installed:
+        (plus the builder's bounded uniqueness shift for detachable modules);
+        ``installed`` lists the install days the graph admits."""
+        if not fmt or not isinstance(serial, str) or not serial or not installed or not all(installed):
             return
         code = serial_date_code(fmt, serial)
-        latest = date.fromisoformat(installed).toordinal() - 30
-        earliest = date.fromisoformat(installed).toordinal() - 180 - 7 * slack_weeks
-        if code is None:
-            ok = False
-        elif code[1] is None:
-            # redate_serial prints the ISO year (a manufacture on 30 December
-            # 2019 is ISO 2020-W01), so compare ISO years, not calendar years.
-            ok = (date.fromordinal(earliest).isocalendar()[0] <= code[0]
-                  <= date.fromordinal(latest).isocalendar()[0])
-        else:
+
+        def fits(day):
+            latest = date.fromisoformat(day).toordinal() - 30
+            earliest = date.fromisoformat(day).toordinal() - 180 - 7 * slack_weeks
+            if code[1] is None:
+                # redate_serial prints the ISO year (a manufacture on 30 December
+                # 2019 is ISO 2020-W01), so compare ISO years, not calendar years.
+                return (date.fromordinal(earliest).isocalendar()[0] <= code[0]
+                        <= date.fromordinal(latest).isocalendar()[0])
             try:
                 monday = date.fromisocalendar(code[0], code[1], 1).toordinal()
             except ValueError:
-                monday = None
-            ok = monday is not None and earliest - 6 <= monday <= latest
-        if not ok:
+                return False
+            return earliest - 6 <= monday <= latest
+        if code is None or not any(fits(day) for day in installed):
             fail("operations-serial-date", key, "A serial's date code must be a manufacture week 30-180 days before "
                  "the install the graph's own circuit dates imply.")
     for device in kinds["device"]:
@@ -354,12 +474,13 @@ def _context(plan, objects, kinds):
             fmt = (host_spec(owner).get("module_serial_format") if module["key"].startswith(f"{owner}/module/")
                    else optic_formats.get(maker, optic_formats.get("Generic")))
             # An optic staged for a handoff not yet in service arrived recently.
-            anchors.append(port_day.get(module["key"].removeprefix("optics-module/"))
-                           or (scheduled(module["key"], "staged", recipe.get("as_of"), 7, 31)
-                               if module["attrs"].get("status") == "staged" else None)
-                           or installed_on.get(owner))
+            day = (port_day.get(module["key"].removeprefix("optics-module/"))
+                   or (scheduled(module["key"], "staged", recipe.get("as_of"), 7, 31)
+                       if module["attrs"].get("status") == "staged" else None))
+            anchors.append([day] if day else installed_on.get(owner))
         if all(anchors):
-            check_serial(members[0]["key"], fmt, serial, min(anchors), SERIAL_SHIFT_WEEKS)
+            # The assembly is dated from its earliest end's install.
+            check_serial(members[0]["key"], fmt, serial, sorted({min(days) for days in product(*anchors)}), SERIAL_SHIFT_WEEKS)
 
     def later(when, floor):
         return max(when, floor) if isinstance(when, str) and isinstance(floor, str) else when
@@ -371,8 +492,11 @@ def _context(plan, objects, kinds):
         except (KeyError, TypeError):
             return None
 
-    def expect_note(key, event, when, facts, kind="info"):
-        notes[f"journal/{key}/{event}"] = (key, event, when, tuple(map(str, facts)), kind)
+    def expect_note(key, event, when, facts, kind="info", band="business", form=None):
+        """``when`` is the event's day, the set of days the graph admits for it,
+        or an inclusive (first, last) window; ``form`` defaults to the event
+        without its ordinal (``term-renewal-2`` -> ``term-renewal``)."""
+        notes[f"journal/{key}/{event}"] = (key, form or re.sub(r"-\d+$", "", event), when, tuple(map(str, facts)), kind, band)
 
     for tenant in kinds["tenant"]:
         key = tenant["key"]
@@ -418,12 +542,97 @@ def _context(plan, objects, kinds):
                        f"@{site['refs']['tenant'].removeprefix('tenant/cust-')}.example")
         contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, mailbox, site_area(key))
         expect_assignment(key, contact, "facilities", "/facilities", "secondary")
-        expect_note(key, "access-plan", scheduled(key, "access-plan", service_day[key], 40, 31) if key in service_day
-                    else scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), (contact_name,))
-    terms = defaultdict(list)
+        # Standing access policy lives in the site's own comments, not a journal.
+        policy = (f"**Site access**\n\nEquipment-room visits are booked through {contact_name}; "
+                  "give two working days' notice and flag any planned power work.")
+        if not str(data.get("comments", "")).endswith(policy) or str(data.get("comments", "")).count("**Site access**") != 1:
+            fail("operations-site-access", key, "Site comments must end with one access policy naming the site's own facilities desk.")
+    terms, all_terms = defaultdict(list), defaultdict(list)
     for term in kinds["circuit_termination"]:
+        all_terms[term["refs"].get("circuit")].append(term)
         if term["attrs"].get("term_side") == "A":
             terms[term["refs"].get("circuit")].append(term)
+
+    def colocation(site):
+        """The carrier hotel a provider site stands in, read from its own postal address."""
+        lines = str(attrs(site).get("physical_address", "")).split("\n")
+        return PROVIDER_COLOCATION.get(lines[1].rpartition(", ")[2] if len(lines) > 1 else None, (None, None))[0]
+
+    def carrier_paperwork(circuit, provider_name):
+        """A provider circuit's cross-connect orders, rate upgrades, renewals and
+        maintenance notices, from the restated policy and the circuit's own fields."""
+        key, data, refs = circuit["key"], circuit["attrs"], circuit["refs"]
+        try:
+            installed, as_of = date.fromisoformat(data["install_date"]), date.fromisoformat(recipe["as_of"])
+        except (KeyError, TypeError, ValueError):
+            return
+
+        def pick(label):
+            return int(digest([ns, key, label]), 16)
+        for term in all_terms[key]:
+            side, target = term["attrs"].get("term_side"), str(term["refs"].get("termination", ""))
+            colo = colocation(target) if target.startswith("site/") else None
+            if not term["attrs"].get("xconnect_id") or colo is None:
+                continue
+            facts = (f"LOA-{_initials(colo)}-{100000 + pick(f'loa{side}') % 900000}", colo, term["attrs"]["xconnect_id"])
+            expect_note(term["key"], "cross-connect-order",
+                        scheduled(term["key"], "cross-connect-order", data["install_date"], 14, 17),
+                        facts + ((term["attrs"]["pp_info"],) if term["attrs"].get("pp_info") else ()))
+        if data.get("status") != "active":
+            return
+        third_party = refs.get("type") in NOTICE_TYPES and refs.get("provider") != "provider/operator"
+        access = (str(refs.get("type", "")).endswith("-access") and refs.get("provider") == "provider/operator"
+                  and refs.get("tenant") != "tenant")
+        rate = data["commit_rate"] // 1000 if type(data.get("commit_rate")) is int else 0
+        upgrades = [event for event in journals_on[key] if re.fullmatch(r"cir-upgrade-\d+", event)]
+        if ((access or refs.get("type") == "circuit-type/transit") and rate
+                and (as_of - installed).days >= 365 * CIR_MIN_YEARS and pick("cir-upgrade") % CIR_ONE_IN == 0):
+            # The lower tiers come from the estate's own ladder and the record
+            # keeps today's rate: each raise starts where the previous ended
+            # and the last ends at the circuit's committed rate.
+            count = len(upgrades)
+            if sorted(upgrades) != sorted(f"cir-upgrade-{n}" for n in range(1, count + 1)) or count > 1 + pick("cir-count") % 2:
+                fail("operations-journal", key, "Committed-rate upgrades are one or two numbered steps on a chosen long-lived circuit.")
+                count = 0
+            speeds = {t["attrs"].get("port_speed") for t in terms[key]}
+            speed = next(iter(speeds)) if len(speeds) == 1 else None
+            handoff = f"{speed // 1000000}G" if type(speed) is int and speed % 1000000 == 0 else None
+            steps = []
+            for n in range(1, count + 1):
+                found = re.search(r"from (\d+) (Mbps|Gbps) to (\d+) (Mbps|Gbps)",
+                                  str(journals_on[key][f"cir-upgrade-{n}"]["attrs"].get("comments", "")))
+                steps.append(tuple(int(found.group(i)) * (1000 if found.group(i + 1) == "Gbps" else 1) for i in (1, 3))
+                             if found else (0, 0))
+            chained = (all(0 < low < high for low, high in steps) and all(a[1] == b[0] for a, b in zip(steps, steps[1:]))
+                       and all(high == rate for _, high in steps[-1:]))
+            span = (as_of - installed).days - 365 - 30
+            for n, (low, high) in enumerate(steps, 1):
+                expect_note(key, f"cir-upgrade-{n}", (installed + timedelta(days=365 + span * n // (count + 1))).isoformat(),
+                            (bandwidth(low), bandwidth(high), change(key, f"-cir-{n}"), handoff) if chained else ("unchained rates",))
+        if not third_party:
+            return
+        n = 1
+        while (renewal := _add_months(installed, n * TERM_MONTHS)) < as_of:
+            # A leased service renews on each full term's install anniversary.
+            expect_note(key, f"term-renewal-{n}", renewal.isoformat(), (provider_name, TERM_MONTHS, change(key, f"-term-{n}")))
+            n += 1
+        if pick("maintenance") % NOTICE_ONE_IN:
+            return
+        first = max(NOTICES_BEGIN, installed + timedelta(days=30))
+        room = (as_of - first).days - 1
+        account = attrs(refs.get("provider_account")).get("account", "not on file")
+        count = 1 + pick("maintenance-count") % 2
+        for n in range(count if room > 0 else 0):
+            when = (first + timedelta(days=room * n // count + pick(f"maintenance-day-{n}") % max(1, room // count))).isoformat()
+            event = f"maintenance-{n + 1}"
+            # The notice's window opens at the entry's own night-band time.
+            hours, minutes = _stamp(when, f"journal/{key}/{event}", "night")[11:16].split(":")
+            start = 60 * int(hours) + int(minutes)
+            length = 2 + pick(f"maintenance-hours-{n}") % 3
+            end = start + 60 * length
+            expect_note(key, event, when, (
+                provider_name, f"{_initials(provider_name)}-MNT-{when[:4]}-{1000 + pick(f'maintenance-id-{n}') % 9000}", account,
+                f"{when} {start // 60:02}:{start % 60:02}–{end // 60 % 24:02}:{end % 60:02}", length), "info", "night")
     for circuit in kinds["circuit"]:
         key, data, refs = circuit["key"], circuit["attrs"], circuit["refs"]
         provider = refs.get("provider", "")
@@ -450,11 +659,20 @@ def _context(plan, objects, kinds):
                                      None if recipe.get("profile") == "provider-backbone"
                                      else f"carrier-{provider.removeprefix('provider/')}.support")
             expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        ceased = data.get("status") == "decommissioned"
         if data.get("termination_date") is not None:
-            if data.get("status") != "deprovisioning":
-                fail("operations-journal", key, "Only a circuit being withdrawn carries a disconnect date.")
-            expect_note(key, "disconnect-order", scheduled(key, "disconnect-order", recipe.get("as_of"), 3, 25),
+            if data.get("status") not in {"deprovisioning", "decommissioned"}:
+                fail("operations-journal", key, "Only a circuit being withdrawn or already withdrawn carries a disconnect date.")
+            # Ordered before the earlier of today and the disconnect itself.
+            expect_note(key, "disconnect-order", scheduled(key, "disconnect-order",
+                                                           min(str(recipe.get("as_of")), str(data["termination_date"])), 3, 25),
                         (change(key, "-disconnect"),), "warning")
+        if ceased:
+            # A former customer's withdrawn circuit: no terminations remain,
+            # and its service ceased on its own termination date.
+            if all_terms[key] or not data.get("termination_date") or not data.get("install_date"):
+                fail("operations-journal", key, "A decommissioned circuit keeps its install and termination dates and no terminations.")
+            expect_note(key, "service-ceased", data.get("termination_date"), ())
         if data.get("status") in {"planned", "provisioning"}:
             if "install_date" in data:
                 fail("operations-journal", key, "A circuit not yet in service has no install date.")
@@ -464,13 +682,15 @@ def _context(plan, objects, kinds):
             expect_note(key, "service-order", scheduled(key, "service-order", data.get("install_date"), 30, 31),
                         (buyer, change(key)))
         local = terms[key]
-        if len(local) != 1 or objects.get(site_of(local[0]["refs"].get("termination")), {}).get("kind") != "site":
+        if not ceased and (len(local) != 1 or objects.get(site_of(local[0]["refs"].get("termination")), {}).get("kind") != "site"):
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
         expect_note(key, "handover", data.get("install_date"),
                     (change(key),) + ((provider_name,) if provider != "provider/operator" else ()), "success")
         if provider != "provider/operator" and int(digest([ns, key, "journal-slip"]), 16) % SLIP_ONE_IN == 0:
             expect_note(key, "delivery-slip", scheduled(key, "delivery-slip", data.get("install_date"), 5, 16),
                         (provider_name,), "warning")
+        if recipe.get("profile") == "provider-backbone":
+            carrier_paperwork(circuit, provider_name)
     listeners = defaultdict(list)
     for service in kinds["service"]:
         listeners[service["refs"].get("virtual_machine")].append(service)
@@ -501,6 +721,176 @@ def _context(plan, objects, kinds):
                                                 service_day.get(objects.get(refs.get("device"), {}).get("refs", {}).get("site"), "")),
                     (attrs(refs.get("device")).get("name"),), "success")
 
+    def observed(target, event, form):
+        """The captured claims of an existing journal in ``form``, or None."""
+        obj = journals_on[target].get(event)
+        title, body = _JOURNAL_FORMS[form]
+        found = re.fullmatch(r"\*\*" + re.escape(title) + r"\*\* · (\d{4}-\d{2}-\d{2})\n\n" + body,
+                             str(obj["attrs"].get("comments", ""))) if obj else None
+        return found.groups() if found else None
+
+    def provider_history():
+        """The provider plant's dated history (v0.18 §3-§4), re-derived from the
+        frozen ``provider-timeline`` ledger, device models and rack contents."""
+        as_of = str(recipe.get("as_of"))
+        if as_of > NOTICES_BEGIN.isoformat() and "site/dc-01" in objects:
+            expect_note("site/dc-01", "notice-journaling", NOTICES_BEGIN.isoformat(), ())
+        model = lambda device: str(attrs(objects.get(device, {}).get("refs", {}).get("device_type")).get("model", ""))
+        units = defaultdict(dict)
+        for device in kinds["device"]:
+            position = device["attrs"].get("position")
+            height = attrs(device["refs"].get("device_type")).get("u_height", 1)
+            if type(position) in (int, float):
+                for unit in range(math.floor(position), math.ceil(position + height)):
+                    units[device["refs"].get("rack")][unit] = device["key"]
+        removals = defaultdict(set)
+        for rack in kinds["rack"]:
+            site = str(rack["refs"].get("site", ""))
+            launch = ledger_day("launch", site.removeprefix("site/pop-"))
+            for event in [e for e in journals_on[rack["key"]] if e.startswith("removed/")]:
+                groups = observed(rack["key"], event, "removed")
+                facts = ("not a removal",)
+                if groups:
+                    first, _, last = groups[3].removeprefix("U").partition("-U")
+                    span = range(int(first), int(last or first) + 1)
+                    # The gap stays empty and blanked: only blanking panels fill it.
+                    blanked = all(model(units[rack["key"]].get(unit)).startswith("Blanking Panel") for unit in span)
+                    legacy = re.fullmatch(re.escape(str(attrs(site).get("facility", "")).lower()) + r"-rtr[12]",
+                                          groups[1].removeprefix("Juniper MX80 "))
+                    if blanked and (legacy and groups[1].startswith("Juniper MX80 ")
+                                    or re.fullmatch(r"the original [^\n,;]+; not inventoried", groups[1])):
+                        facts = (groups[1], change(f"{rack['key']}/{event.removeprefix('removed/')}", "-removed"), groups[3])
+                        removals[site].add((groups[1], groups[0]))
+                expect_note(rack["key"], event, (launch, as_of), facts, form="removed")
+        for site in kinds["site"]:
+            key = site["key"]
+            pop = key.removeprefix("site/pop-")
+            launch, refresh = ledger_day("launch", pop), ledger_day("refresh", pop)
+            if not key.startswith("site/pop-") or not launch:
+                continue
+            prefix = f"device/{key.removeprefix('site/')}/"
+            facility = str(site["attrs"].get("facility", "")).lower()
+            colo = colocation(key)
+            # The annual cage audit on each launch anniversary since journaling began.
+            day = date.fromisoformat(launch)
+            for year in range(NOTICES_BEGIN.year, date.fromisoformat(as_of).year + 1):
+                when = day.replace(year=year, day=min(day.day, 28))
+                if colo and NOTICES_BEGIN <= when < date.fromisoformat(as_of) and when > day:
+                    expect_note(key, f"cage-audit-{year}", when.isoformat(), (colo, change(key, f"-audit-{year}")), form="cage-audit")
+            for n, side in enumerate("ab", 1):
+                pe, relic = f"{prefix}pe-{side}", f"{prefix}legacy-pe-{side}"
+                if refresh:
+                    # The refresh cut each PE over from its MX80 on the ledger's day.
+                    predecessor = attrs(relic).get("name") if relic in objects else f"{facility}-rtr{n}"
+                    expect_note(pe, "cut-over", refresh, (predecessor, change(pe, "-cutover"), refresh[:7]), "success")
+                if relic in objects:
+                    if not refresh or model(relic) != "MX80" or not re.fullmatch(re.escape(facility) + r"-rtr[12]", str(attrs(relic).get("name"))):
+                        fail("operations-journal", relic, "A retained predecessor is an MX80 with its legacy name at a refreshed PoP.")
+                    expect_note(relic, "installed", launch, (attrs(key).get("name"), change(relic)), "success")
+                    expect_note(relic, "cut-over", refresh, (attrs(pe).get("name"), change(pe, "-cutover")), "warning", form="cut-over-relic")
+                    if MX80_END_OF_SUPPORT.isoformat() <= as_of:
+                        expect_note(relic, "end-of-support", MX80_END_OF_SUPPORT.isoformat(),
+                                    (MX80_END_OF_SUPPORT, MX80_END_OF_SALE), "warning")
+                successor = f"{prefix}pe-{side}2"
+                if successor in objects:
+                    ordered = (observed(successor, "ordered", "ordered") or (None,))[0]
+                    expect_note(successor, "ordered", (MX304_AVAILABLE.isoformat(), as_of), (change(successor, "-order"),))
+                    reasons = (observed(pe, "successor-ordered", "successor-ordered") or (None,) * 4)[3]
+                    expect_note(pe, "successor-ordered", ordered or "unordered",
+                                (attrs(successor).get("name"), change(successor, "-order"), reasons), "warning")
+                    if attrs(successor).get("status") == "staged":
+                        expect_note(successor, "received", (ordered, as_of), (), "success")
+            for device in [d for d in kinds["device"] if d["refs"].get("site") == key]:
+                dkey, role, status = device["key"], device["refs"].get("role"), device["attrs"].get("status")
+                if model(dkey).startswith("ACX5048") and status != "inventory":
+                    expect_note(dkey, "end-of-sale", ACX5048_LAST_ORDER.isoformat(), (ACX5048_LAST_ORDER, ACX5048_END_OF_SUPPORT))
+                if role == "role/aggregation" and status == "inventory":
+                    bought = (f"bought before the {ACX5048_LAST_ORDER} last order date, per vendor notice"
+                              if model(dkey).startswith("ACX5048") else "the metro's aggregation model")
+                    expect_note(dkey, "racked", (launch, as_of), (change(dkey), bought), form="spare-racked")
+                if role == "role/ddos-mitigation" and status == "staged":
+                    expect_note(dkey, "racked", (launch, as_of), (change(dkey, "-racked"),))
+                groups = observed(dkey, "replaced", "replaced")
+                if groups:
+                    # A replacement retires an original whose rack gap is journaled the same day.
+                    scope = "services" if role == "role/aggregation" else "management"
+                    expect_note(dkey, "replaced", groups[0] if (groups[1], groups[0]) in removals[key] else "no matching removal",
+                                (groups[1], change(dkey, "-replace"), scope, groups[0][:7]), "success")
+            replaced = {(groups[1], groups[0]) for d in kinds["device"] if d["refs"].get("site") == key
+                        for groups in [observed(d["key"], "replaced", "replaced")] if groups}
+            for text, day in removals[key] - replaced:
+                if not text.startswith("Juniper MX80 "):
+                    fail("operations-journal", key, f"Removing {text} on {day} needs the replacement's own journal.")
+        # Exchange ports: turned up on the PE that holds the port, on the
+        # circuit's own install day; a relocated exchange's old port shuts on
+        # the day its new port turns up.
+        peers = {}
+        for cable in kinds["cable"]:
+            peers[cable["refs"].get("a")], peers[cable["refs"].get("b")] = cable["refs"].get("b"), cable["refs"].get("a")
+
+        def reaches(port, target):
+            """Follow cables (through patch-panel front/rear pairs) from a port to a termination."""
+            end = peers.get(port)
+            for _ in range(8):
+                if end == target:
+                    return True
+                if objects.get(end, {}).get("kind") != "front_port":
+                    return False
+                end = peers.get(objects[end]["refs"].get("rear_port"))
+            return False
+        for device in kinds["device"]:
+            for event in [e for e in journals_on[device["key"]] if e.startswith("ix-port-")]:
+                metro = event.removeprefix("ix-port-").removesuffix("-shut").removesuffix("-former")
+                current, former = f"circuit/ix/{metro}", f"circuit/ix/{metro}/former"
+                circuit = former if event.endswith(("-shut", "-former")) else current
+                network = next((attrs(t["refs"].get("termination")).get("name", "") for t in all_terms[circuit]
+                                if str(t["refs"].get("termination", "")).startswith("provider-network/")), "")
+                pe_site = next((site_of(t["refs"].get("termination")) for t in terms[circuit]), None)
+                port = re.search(r" on (\S+) ", str(journals_on[device["key"]][event]["attrs"].get("comments", "")))
+                holds = (pe_site == device["refs"].get("site") and port is not None
+                         and any(reaches(f"{device['key']}/if/{port.group(1)}", t["key"]) for t in terms[circuit])
+                         and attrs(circuit).get("cid") and network.endswith(" peering LAN"))
+                short = network.removesuffix(" peering LAN")
+                if not holds:
+                    expect_note(device["key"], event, "no exchange port", ("not an exchange port",), form="ix-port")
+                elif event.endswith("-shut"):
+                    moved_to = next((site_of(t["refs"].get("termination")) for t in terms[current]), None)
+                    expect_note(device["key"], event, attrs(current).get("install_date"),
+                                (short, attrs(former)["cid"], port.group(1), attrs(moved_to).get("name"),
+                                 change(former, "-disconnect")), "warning", form="ix-port-shut")
+                else:
+                    replacing = (() if circuit == former or former not in objects else
+                                 (attrs(next((site_of(t["refs"].get("termination")) for t in terms[former]), None)).get("name"),))
+                    expect_note(device["key"], event, attrs(circuit).get("install_date"),
+                                (short, attrs(circuit)["cid"], port.group(1), change(circuit, "-turn-up")) + replacing, form="ix-port")
+        for circuit in kinds["circuit"]:
+            if not circuit["key"].startswith("circuit/ix/"):
+                continue
+            site = next((site_of(t["refs"].get("termination")) for t in terms[circuit["key"]]), "")
+            pe, metro = f"device/{site.removeprefix('site/')}/pe-a", circuit["key"].split("/")[2]
+            former = circuit["key"].endswith("/former")
+            if former and f"ix-port-{metro}-shut" not in journals_on[pe]:
+                fail("operations-journal", circuit["key"], "A relocated exchange port needs its shut journal on the PE that held it.")
+            # A port turned up on a router already in the rack is journaled on
+            # it; one older than the router moved onto it at its cut-over.
+            arrived = (arrivals(pe) or [ledger_day("launch", site.removeprefix("site/pop-"))])[0]
+            event = f"ix-port-{metro}" + ("-former" if former else "")
+            if arrived and str(circuit["attrs"].get("install_date")) >= arrived and event not in journals_on[pe]:
+                fail("operations-journal", circuit["key"], "An exchange port turned up on an installed router needs its turn-up journal.")
+
+    # Legacy names (v0.18 P0-5): a device installed before the NS-2 naming
+    # standard that still exists keeps its <facility>-<role><n> name, and the
+    # `legacy-naming` tag marks exactly those devices.
+    for device in kinds["device"] if recipe.get("profile") == "provider-backbone" else ():
+        site = device["refs"].get("site")
+        facility = str(attrs(site).get("facility", "")).lower()
+        legacy = bool(facility) and re.fullmatch(re.escape(facility) + r"-[a-z]+\d", str(device["attrs"].get("name"))) is not None
+        tagged = "tag/legacy-naming" in (device["refs"].get("tags") or [])
+        early = bool(installed_on.get(device["key"])) and min(installed_on[device["key"]]) < NS2_ADOPTED.isoformat()
+        if tagged != legacy or (legacy and not early):
+            fail("operations-tag", device["key"], "The legacy-naming tag marks exactly the devices that keep a pre-NS-2 "
+                 "<facility>-<role><n> name, each installed before the standard was adopted.")
+
     equipment_anchors = {}
     for device in kinds["device"]:
         refs, data = device["refs"], device["attrs"]
@@ -516,9 +906,13 @@ def _context(plan, objects, kinds):
             equipment_anchors[rack] = device
     for device in equipment_anchors.values():
         key = device["key"]
+        if "installed" in journals_on[key]:
+            continue  # the plant's own dated history already records this install
         # The visit is booked through the site's own facilities desk.
         desk = contacts.get(f"contact/{device['refs'].get('site')}", (None,))[0]
-        expect_note(key, "equipment-record", installed_on.get(key), (change(key), desk), "success")
+        expect_note(key, "equipment-record", set(installed_on.get(key) or ()), (change(key), desk), "success")
+    if recipe.get("profile") == "provider-backbone":
+        provider_history()
 
     for role, (title, group) in roles.items():
         # The role carries an authored display name with a namespaced slug; the
@@ -583,23 +977,25 @@ def _context(plan, objects, kinds):
     # against the graph; the emitter and its metadata are not validation inputs.
     # One short, human operational line per event; the record itself already
     # shows its fields, so a note states only what happened or what to do.
-    forms = {
-        "equipment-record": ("Installed", r"Racked and cabled under change ([^\n;]+); the visit was booked through ([^\n]+)\."),
-        "access-plan": ("Site access", r"Equipment-room visits are booked through ([^\n]+); give two working days' notice and flag any planned power work\."),
-        "service-order": ("Service order", r"Ordered by ([^\n;]+); provisioning tracked under change ([^\n.]+)\."),
-        "disconnect-order": ("Disconnect order", r"Disconnect ordered under change ([^\n;]+); recover the handoff optics and cabling once the circuit is withdrawn\."),
-        "delivery-slip": ("Delivery slipped", r"([^\n;]+) missed the committed handover date; escalated to its support desk\."),
-        "handover": ("Handed over", r"Accepted into service under change ([^\n.]+)\.(?: ([^\n]+) support desk confirmed the handover and closed its ticket\.)?"),
-        "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\.")}
+    forms = _JOURNAL_FORMS
+    as_of_day = str(recipe.get("as_of"))
+
+    def admitted(day, when):
+        """A recorded day against an exact day, a set of days or an inclusive window."""
+        if isinstance(when, tuple):
+            return all(isinstance(bound, str) for bound in when) and when[0] <= day <= when[1]
+        return day in when if isinstance(when, (set, frozenset)) else day == when
     for obj in kinds["journal_entry"]:
         key = obj["key"]
         if key not in notes:
             fail("operations-journal", key, "Journal has no required immutable site, circuit, workload or equipment event.")
             continue
-        target, event, when, facts, expected_kind = notes[key]
-        title, body = forms[event]
+        target, form, when, facts, expected_kind, band = notes[key]
+        title, body = forms[form]
         comments = obj["attrs"].get("comments", "")
-        match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
+        # A bold title and the event date, a blank line, then the body.
+        match = (re.fullmatch(r"\*\*" + re.escape(title) + r"\*\* · (\d{4}-\d{2}-\d{2})\n\n" + body, comments)
+                 if isinstance(comments, str) else None)
         if (obj["refs"] != {"assigned_object": target} or obj["attrs"].get("kind") != expected_kind
                 or set(obj["attrs"]) != {"kind", "comments", "created"}):
             fail("operations-journal", key, "Journal must retain its actual subject, its event's kind (completed events success, "
@@ -607,13 +1003,14 @@ def _context(plan, objects, kinds):
         if not match or tuple(g for g in match.groups()[1:] if g is not None) != facts:
             fail("operations-journal-facts", key, "Journal claims must match the subject's actual address, contact, circuit, resource or listener facts.")
         try:
-            recorded = date.fromisoformat(match.group(1)) if match else None
-            if (recorded is None or match.group(1) != when or recorded > date.fromisoformat(recipe["as_of"])
-                    or obj["attrs"].get("created") != f"{when}T15:00:00Z"):
+            day = match.group(1) if match else None
+            if (day is None or not admitted(day, when) or date.fromisoformat(day) > date.fromisoformat(as_of_day)
+                    or obj["attrs"].get("created") != _stamp(day, key, band)):
                 raise ValueError
         except (KeyError, TypeError, ValueError):
             fail("operations-journal-date", key, "Authored event date must match its stable seeded chronology, not exceed "
-                 "as_of, and be the entry's own created timestamp (15:00 UTC that day).")
+                 "as_of, and be the entry's own created timestamp at its band's time of day (business hours, or night "
+                 "for maintenance).")
     for key in notes:
         if objects.get(key, {}).get("kind") != "journal_entry":
             fail("operations-journal", key, "Required bounded lifecycle event is missing.")
@@ -629,7 +1026,7 @@ _TAG_KINDS = {"hub-site": {"site"}, "dual-homed": {"site"}, "acquired": {"site",
               "managed-service": {"device", "circuit"},
               "pci-scope": {"device", "vlan", "prefix"}, "clinical": {"device", "vlan", "prefix"},
               "ot-zone": {"device", "vlan", "prefix"},
-              "multi-site": {"virtual_machine"}}
+              "multi-site": {"virtual_machine"}, "legacy-naming": {"device"}}
 _TAXONOMY = ("device_role", "rack_role", "region")
 # Restated service-class bands: (choice key, ceiling in Mbps; None = above).
 _SERVICE_CLASSES = (("essential", 100), ("standard", 500), ("enhanced", 2000),

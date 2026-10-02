@@ -305,6 +305,43 @@ def validate(plan):
             wanted = original+[companions[a] for a in original if a in companions]
             if not original or assigned != wanted:
                 report("ipv6-service", key, "A dual-stack service must retain its IPv4 listeners and their exact IPv6 companions.")
+    # An internet exchange's peering LAN is IPv6-only by design: no IPv4 twin.
+    # It is the exchange's space (outside the operator pool) holding our
+    # member address on the PE unit whose port is cabled, through the colo
+    # demarc, to an IX-port circuit that lands on an exchange provider
+    # network; its other addresses are the exchange's unassigned route servers.
+    peers = {}
+    for obj in objects.values():
+        if obj["kind"] == "cable":
+            peers[refs(obj["key"]).get("a")], peers[refs(obj["key"]).get("b")] = refs(obj["key"]).get("b"), refs(obj["key"]).get("a")
+    landed = {refs(key).get("circuit") for key, obj in objects.items() if obj["kind"] == "circuit_termination"
+              and kind(refs(key).get("termination")) == "provider_network"}
+    exchange_ends = {key for key, obj in objects.items() if obj["kind"] == "circuit_termination"
+                     and refs(refs(key).get("circuit")).get("type") == "circuit-type/ix-port"
+                     and attrs(key).get("term_side") == "A" and refs(key).get("circuit") in landed}
+
+    def to_exchange(port):
+        end = peers.get(port)
+        for _ in range(8):
+            if end in exchange_ends:
+                return True
+            if kind(end) != "front_port":
+                return False
+            end = peers.get(refs(end).get("rear_port"))
+        return False
+    exchange_lans = set()
+    for key, value in addresses.items():
+        owner = refs(key).get("assigned_object")
+        if (value.version == 6 and kind(owner) == "interface" and attrs(owner).get("type") == "virtual"
+                and refs(refs(owner).get("device")).get("role") == "role/provider-edge" and to_exchange(refs(owner).get("parent"))):
+            lan = next((p for p, net in networks.items() if net == value.network and not net.overlaps(pool)), None)
+            if lan:
+                exchange_lans.add(lan)
+                expected.update({lan, key})
+    for key, value in addresses.items():
+        if (value.version == 6 and not refs(key).get("assigned_object")
+                and any(value.network == networks[lan] for lan in exchange_lans)):
+            expected.add(key)
     for key in sorted(six-expected):
         report("ipv6-unexpected", key, "IPv6 record has no requested segment, host or registry obligation; no remote owners or IPv6 FHRP are invented.")
     return findings

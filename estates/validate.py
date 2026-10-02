@@ -450,7 +450,11 @@ def _validate(plan):
     term_kinds = {"interface", "front_port", "rear_port", "power_port", "power_outlet", "power_feed", "circuit_termination", "console_port", "console_server_port"}
     for circuit in by_kind["circuit"]:
         terms = [term for term in children[("circuit", circuit)] if kind(term) == "circuit_termination"]
-        if sorted(attrs(term).get("term_side", "") for term in terms) != ["A", "Z"]:
+        # A decommissioned circuit that carries its termination date has been
+        # withdrawn and may keep no terminations. Any other circuit needs both ends.
+        withdrawn = attrs(circuit).get("status") == "decommissioned" and bool(attrs(circuit).get("termination_date"))
+        sides = sorted(attrs(term).get("term_side", "") for term in terms)
+        if sides != ["A", "Z"] and not (withdrawn and not sides):
             report("circuit-terminations", circuit, "A complete generated circuit needs exactly A and Z terminations.")
         for term in terms:
             target = refs(term).get("termination")

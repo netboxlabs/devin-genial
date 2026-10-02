@@ -33,6 +33,13 @@ class GenerationTests(unittest.TestCase):
         with self.assertRaisesRegex(DesignError, "version.*rebaseline"):
             generate(plan["recipe"], previous=previous)
 
+    def test_allocation_ledgers_exclude_dated_local_variation(self):
+        # Service days and the provider timeline follow the seed; every other
+        # scope (including a provider ledger that merely shares a stem) stays.
+        plan = {"reservations": {"site-in-service/site/a": {"day": 1}, "provider-timeline/launch/x": {"day": 2},
+                                 "provider-pop-order": {"x": 0}, "provider-timelines": {"y": 0}}}
+        self.assertEqual(allocation_ledgers(plan), {"provider-pop-order": {"x": 0}, "provider-timelines": {"y": 0}})
+
     def test_seed_changes_only_declared_local_variation(self):
         changed = generate(self.baseline["recipe"] | {"seed": 43})
         self.assertEqual(validate(changed), [])
