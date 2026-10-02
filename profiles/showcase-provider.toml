@@ -180,7 +180,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "chicago-pilsen", count = 3 },
-  { pop = "milwaukee-menomonee", count = 2 },
+  { pop = "milwaukee-menomonee", count = 4 },
   { pop = "cleveland-westlake", count = 1 },
 ]
 
@@ -512,7 +512,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
-  { pop = "chicago-cermak", count = 5 },
+  { pop = "chicago-cermak", count = 3 },
   { pop = "chicago-pilsen", count = 3 },
   { pop = "detroit-new-center", count = 2, site_peak_mbps = 100 },
 ]
@@ -578,8 +578,8 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 500
 sites = [
-  { pop = "chicago-cermak", count = 5 },
-  { pop = "cleveland-flats", count = 3 },
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "cleveland-flats", count = 5 },
 ]
 
 [[customers]]
