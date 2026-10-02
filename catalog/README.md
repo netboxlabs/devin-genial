@@ -457,7 +457,9 @@ panel or extension belongs inside its path. Independent optic serial numbers
 must not be invented for its ends. Empty unused cages are allowed; only an
 actually installed module/end receives a component power reservation.
 
-`power_basis` distinguishes verified maxima from planning choices.
+`power_basis` distinguishes verified maxima from planning choices. It is catalog
+provenance only: emitted NetBox module-type attributes carry the reservation and
+vendor datasheet URLs, never this note or an in-repo policy anchor.
 `vendor_max_power_mw` is present only for verified electrical maxima: Cisco
 LR ([Table 8](https://www.cisco.com/c/en/us/products/collateral/interfaces-modules/transceiver-modules/data_sheet_c78-455693.html)),
 Juniper [LR](https://apps.juniper.net/hct/model/EX-SFP-10GE-LR),

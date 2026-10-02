@@ -12,7 +12,7 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names", "hardware"}
+          "naming", "site_names", "hardware", "tenancy"}
 CAMPUS_NETWORKS = ("clinical", "medical", "imaging", "staff", "wireless", "security", "management")
 NETWORKS = ("management", "clinical", "medical", "wireless", "security", "applications",
             "database", "backup", "wan", "storage", "staff", "imaging")
@@ -124,7 +124,7 @@ def workloads(facilities):
         result.append(dict(key=key, slot=slot, instances=2*max(1,(count+size-1)//size), replicas=2,
             failure_domain="rack", network="applications", vcpus=cpus, memory_mb=memory, disk_mb=disk,
             listeners=listeners, criticality="tier-1" if key in {"identity","dns","clinical-records"} else "tier-2",
-            replica_description="complete health-system service shard; application replication and recovery are not executed"))
+            replica_description="complete health-system service shard"))
     return result
 
 

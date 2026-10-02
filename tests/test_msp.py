@@ -218,8 +218,7 @@ class MspCompositionTests(unittest.TestCase):
         self.assertIn("managed-network contract", site["attrs"]["comments"])
         self.assertIn(objects["prefix/off-summit-legal-01/management"]["attrs"]["prefix"],
                       site["attrs"]["comments"])
-        self.assertIn("No service-level commitment, remote-access path or ticketing workflow",
-                      site["attrs"]["comments"])
+        self.assertNotIn("No service-level commitment", site["attrs"]["comments"])
         self.assertEqual(site["meta"]["operated_by"]["provider"], "arbor")
         # The provider holds the carrier account; the customer holds the circuit.
         circuit = objects["circuit/off-summit-legal-01/a/1"]

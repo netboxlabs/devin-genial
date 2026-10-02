@@ -57,15 +57,14 @@ INSTALL_WORKERS = 8
 VENDORS = {
     "regional": {"name": "Tallgrass Network Supply", "code": "TNS",
                  "description": "Regional reseller for switching, compute, power and optics",
-                 "comments": "Fictional reseller authored by the estate generator."},
+                 "comments": ""},
     "carrier": {"name": "Ostrander Carrier Systems", "code": "OCS",
                 "description": "Carrier-equipment distributor for provider-edge routing platforms",
-                "comments": "Fictional distributor authored by the estate generator."},
+                "comments": ""},
 }
 COURIER = {"name": "Tallgrass Freight", "code": "tallgrass-freight", "tracking_url": "",
            "description": "Regional freight carrier for equipment deliveries",
-           "comments": ("Fictional carrier authored by the estate generator. It has no "
-                        "tracking URL, so its tracking numbers never open a real parcel.")}
+           "comments": ""}
 LADDERS = {"boms/": ["draft", "approved", "ordered", "fulfilled"],
            "purchase-orders/": ["draft", "approved", "ordered", "fulfilled"],
            "shipments/": ["prepared", "shipped", "received"]}
@@ -189,8 +188,7 @@ def create(plan):
                 "vendor": vendor,
                 "order_id": f"{code}-{ordered[2:4]}{ordered[5:7]}-{_hash(site_key, vendor, 'po') % 16**6:06X}",
                 "description": f"Initial equipment order for {site['name']}"[:DESCRIPTION_LIMIT],
-                "comments": (f"Approved {approved}; ordered {ordered}; fulfilled {received}.\n"
-                             "Unit prices are not recorded: the estate holds no pricing facts."),
+                "comments": f"Approved {approved}; ordered {ordered}; fulfilled {received}.",
                 "items": sorted([list(item), lines[item]] for item in lines if vendor_of[item] == vendor),
                 "shipment": {
                     "tracking_number": f"TGF{_hash(site_key, vendor, 'tracking') % 10**10:010d}",
@@ -205,7 +203,7 @@ def create(plan):
             "name": f"{site['name']} — initial build",
             "description": f"Racked network, power and compute equipment with installed modules at {site['name']}"[:DESCRIPTION_LIMIT],
             "comments": (f"Approved {_days(approved, -_pick(site_key, 'bom', 1, 4))}; first installation "
-                         f"record {installed}.\nScope: racked equipment and access points at this site, "
+                         f"{installed}.\nScope: racked equipment and access points at this site, "
                          "and every module installed in them; endpoints are excluded."),
             "rules": [{"object_types": ["dcim.device"],
                        "parameters": {"site": [site["slug"]],

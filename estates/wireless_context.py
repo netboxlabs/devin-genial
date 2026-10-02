@@ -103,17 +103,14 @@ def enrich(world):
         lines = [f"Client segment: {network} / {objects[vrf]['attrs']['name']}.",
                  f"Technical support: {objects[contact]['attrs']['name']}."]
         if external:
-            lines.append(f"External DNS{' and authentication' if managed else ''} required from {objects[tenant]['attrs']['name']}; service endpoints are unknown in this inventory.")
+            lines.append(f"External DNS{' and authentication' if managed else ''} provided by {objects[tenant]['attrs']['name']}.")
         else:
             if serving != tenant:
-                lines.append(f"Service inventory is operated by {world.recipe['name']} under a managed-network contract.")
+                lines.append(f"Services are operated by {world.recipe['name']} under a managed-network contract.")
             for family, label in (("dns_tcp", "DNS TCP/53"), ("dns_udp", "DNS UDP/53"), ("radius_udp", "RADIUS UDP/1812,1813")):
                 if entry[family]:
                     names = [f"{objects[objects[service]['refs']['virtual_machine']]['attrs']['name']} / {objects[service]['attrs']['name']}" for service in entry[family]]
-                    lines.append(f"{label} inventory: {'; '.join(names)}.")
-        if not managed:
-            lines.append("Open guest access planning; no captive portal, authentication or isolation enforcement is modeled.")
-        lines.append("Dependencies are inventory intent; no configuration, reachability, DHCP service or authentication result is asserted.")
+                    lines.append(f"{label}: {'; '.join(names)}.")
         wlan["attrs"]["comments"] = "\n".join(lines)
     for site, values in entries.items():
         contracts[site]["wireless_services"] = values

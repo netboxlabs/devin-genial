@@ -34,7 +34,7 @@ class OpticsContextTests(unittest.TestCase):
                 self.assertLessEqual(len(notes), sum(o["kind"] == "rack" for o in plan["objects"]))
                 for note in notes:
                     self.assertEqual(objects[note["refs"]["assigned_object"]]["kind"], "device")
-                    self.assertIn("no module deletion, hot-swap or replacement is recorded as executed", note["attrs"]["comments"])
+                    self.assertTrue(note["attrs"]["comments"].endswith("Preserve the interface and its dependent records."))
 
     def test_note_facts_subject_chronology_and_execution_claims_rejected(self):
         for change in ("part", "serial", "interface", "contact", "date", "execution", "missing", "subject"):

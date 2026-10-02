@@ -266,14 +266,12 @@ class UtilityCompositionTests(unittest.TestCase):
         objects = self.objects()
         for key in (f"device/{SITE}/rtu-01", f"device/{SITE}/relay-02",
                     f"device/{SITE}/hmi-01", f"device/{SITE}/gateway-01"):
-            # Limitations stay on the record, in comments, out of the list-view description.
+            # Limitations live in docs/modeling.md and the report, never on the record.
             attrs = objects[key]["attrs"]
             self.assertNotIn("Reference", attrs["description"])
-            self.assertIn("no telemetry point, protection setting, control action or utility protocol",
-                          attrs["comments"])
+            self.assertNotIn("comments", attrs)
         room = objects[f"location/{SITE}/bay-01"]["attrs"]
-        self.assertIn("no electrical rating, protection setting or control function is configured",
-                      room["comments"].lower())
+        self.assertNotIn("comments", room)
         self.assertNotIn("configured", room["description"])
 
     def test_substation_uses_only_catalog_reference_hardware(self):

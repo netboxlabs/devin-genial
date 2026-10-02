@@ -199,6 +199,20 @@ def _automation_walkthrough(objects, kinds):
     return lines
 
 
+# Stated once in the report, never on a record (naming.DISCLAIMER refuses them there).
+RECORD_LIMITATIONS = (
+    "Nothing is configured, applied or executed: routing, forwarding, VRRP, IPsec, the recovery L2VPN, VM "
+    "replication and recovery, wireless authentication, DHCP and RF coverage are inventory; AP mounts are planned, not surveyed.",
+    "Provider BGP sessions, peer groups and policies document intended peerings; no session state, route exchange "
+    "or policy evaluation is claimed.",
+    "Transit and carrier interiors, a transit peer's remote interface and owner, and duct diversity are unknown.",
+    "Provider accounts hold no credentials or live purchase; circuits record purchased capacity, not an acceptance test.",
+    "Clinical, OT and utility station endpoints are reference inventory with no clinical, control or protection "
+    "function, certification or industrial protocol.",
+    "The webhook endpoint is a reserved `.invalid` placeholder and its event rule is disabled.",
+)
+
+
 def _wireless_walkthrough(plan, objects, kinds):
     """Bounded navigation examples from actual wired APs and WLAN dependencies."""
     aps = [o for o in kinds["device"] if o["refs"].get("role") == "role/ap"]
@@ -516,6 +530,10 @@ def markdown(plan):
              "Rendering it does not run the independent validator or the Diode SDK checks; their results are reported separately. "
              "No live NetBox acceptance, reconciliation, packet forwarding, protocol convergence, or application recovery is established here.", "",
              "Replay uses the recipe's synthetic observation date. Hardware provenance and configured PSU assumptions are recorded in `catalog/README.md`.", "",
+             "## Documented limitations", "",
+             "NetBox records carry operational data only; these limitations apply to the whole estate and are stated "
+             "here rather than on each record (repository `docs/modeling.md#documented-limitations`).", "",
+             *[f"- {item}" for item in RECORD_LIMITATIONS], "",
              "## Estate topology", "",
              ("PoPs, customer premises and the NOC connect through actual two-site circuit terminations. "
               "Only external transit interiors are abstracted; labels count modeled circuits." if is_provider else

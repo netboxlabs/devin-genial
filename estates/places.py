@@ -234,22 +234,13 @@ SPACE_DESCRIPTIONS = {
     "production_line": "Production line cell with installed controller, operator-panel and field-device positions",
     "loading_dock": "Warehouse loading dock with installed scanner-station positions",
     "control_room": "Substation control-house room with installed station HMI, gateway and corporate desk positions",
-    "switchyard_bay": "Switchyard bay position with installed remote-terminal-unit and protection-relay records",
+    "switchyard_bay": "Switchyard bay position with an installed remote terminal unit and protection relay",
 }
-# Material limitations stay on the record, in comments, out of the list view.
+# Operational room notes. Modeling limitations (RF, clinical, OT, utility)
+# belong in docs/modeling.md and the report, never on the record.
 SPACE_COMMENTS = {
-    "computer_lab": "Lab seats are shared and do not add to enrollment.",
-    "patient_room": "Monitoring endpoints are reference inventory; no clinical equipment certification is claimed.",
-    "imaging_room": "The modality is reference inventory; no clinical function is executed.",
-    "dorm_room": "Ports are installed capacity; no resident-owned device is represented.",
-    "production_line": "No control function or industrial protocol is configured.",
-    "switchyard_bay": "No electrical rating, protection setting or control function is configured.",
+    "computer_lab": "Lab seats are shared across classes.",
 }
-RF_UNVERIFIED = "AP mount positions are planned; RF coverage is unverified."
-CONTROL_INVENTORY = "Inventory only: no control function, safety rating or industrial protocol is configured."
-STATION_INVENTORY = ("Inventory only: no telemetry point, protection setting, control action "
-                     "or utility protocol is configured.")
-CLINICAL_INVENTORY = "Reference inventory: no clinical function or equipment certification is claimed."
 
 
 def _site_display(site):
@@ -269,11 +260,9 @@ def endpoint_label(cohort):
     return text[:1].upper() + text[1:]
 
 
-def _describe(site, node, space, cohort, detail="", comments=None):
+def _describe(site, node, space, cohort, detail=""):
     node["attrs"]["description"] = (f"{endpoint_label(cohort)} in {space['attrs']['name']} at {_site_display(site)}"
                                     + (f"; {detail}" if detail else ""))
-    if comments:
-        node["attrs"]["comments"] = comments
 
 
 def _authored_identity(site, city):
@@ -763,7 +752,7 @@ def school_endpoint(site, key, room, cohort, ordinal):
     node = site.w.obj(key)
     node["refs"]["location"] = room
     ap = role == "role/ap"
-    _describe(site, node, space, cohort, ap and "staff on wlan0, students on wlan1", ap and RF_UNVERIFIED)
+    _describe(site, node, space, cohort, ap and "staff on wlan0, students on wlan1")
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving}, access_channel_length_m=route)
 
@@ -809,7 +798,7 @@ def retail_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: retail access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
     ap = role == "role/ap"
-    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0", ap and RF_UNVERIFIED)
+    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0")
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -865,7 +854,7 @@ def msp_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: managed-office access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
     ap = role == "role/ap"
-    _describe(site, node, space, cohort, ap and "staff and any requested guest WLAN ride wlan0", ap and RF_UNVERIFIED)
+    _describe(site, node, space, cohort, ap and "staff and any requested guest WLAN ride wlan0")
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -933,8 +922,7 @@ def plant_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: plant access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
     ap = role == "role/ap"
-    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0",
-              CONTROL_INVENTORY if role in {"role/plc", "role/hmi", "role/field-device"} else ap and RF_UNVERIFIED)
+    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0")
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -982,8 +970,7 @@ def substation_endpoint(site, key, room, cohort, ordinal):
     if route > MAX_CHANNEL_M:
         raise DesignError(f"{key}: substation access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
-    _describe(site, node, space, cohort, comments=STATION_INVENTORY if role in {
-        "role/rtu", "role/protection-relay", "role/hmi", "role/station-gateway"} else None)
+    _describe(site, node, space, cohort)
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving},
         access_channel_length_m=route)
@@ -1106,7 +1093,7 @@ def university_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: campus access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
     ap = role == "role/ap"
-    _describe(site, node, space, cohort, ap and "staff on wlan0, students on wlan1", ap and RF_UNVERIFIED)
+    _describe(site, node, space, cohort, ap and "staff on wlan0, students on wlan1")
     node["meta"].update(cohort=cohort, placement={"room": room, "function": space["meta"]["space_type"],
         "floor": space["meta"]["floor"], "position_m": point, "cable_origin": serving}, access_channel_length_m=route)
 
@@ -1170,7 +1157,6 @@ def hospital_endpoint(site, key, room, cohort, ordinal):
         raise DesignError(f"{key}: clinical access channel needs {route} m; reviewed limit is {MAX_CHANNEL_M} m")
     node["refs"]["location"] = room
     ap = role == "role/ap"
-    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0",
-              CLINICAL_INVENTORY if role in {"role/medical-device", "role/imaging-device"} else ap and RF_UNVERIFIED)
+    _describe(site, node, space, cohort, ap and "staff WLAN on wlan0")
     node["meta"].update(cohort=cohort,placement={"room":room,"function":space["meta"]["space_type"],
         "floor":space["meta"]["floor"],"position_m":point,"cable_origin":serving},access_channel_length_m=route)

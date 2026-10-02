@@ -299,12 +299,14 @@ helpers in `estates/naming.py`: device roles read as `Provider edge router` or
 `Rack PDU` (`ROLE_LABELS`), segments as `Office workstations` or `Point-of-sale
 lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `100 Gbps backbone
 committed on a 100G handoff` (`bandwidth`/`port_speed`), and routed /31s name
-both ends. Material limitations stay on the record but move to `comments`, out
-of the list view: VM placement notes, external-transit ownership, provider
-accounts, the private-L3 control plane, the diagnostic radio link, unverified
-AP RF coverage, the inventory-only status of OT, station and clinical endpoints,
-and the matching room notes (patient, imaging, production-line, switchyard-bay,
-residence and lab rooms). Endpoint descriptions read in sentence case with
+both ends. **No record carries a disclaimer.** Names, descriptions, comments,
+labels, module attributes and journals hold operational data only; the
+modeling limitations are documented once, below and in the generated
+`report.md`, never restated per record (both showcase reviewers called
+per-record disclaimers the loudest synthetic tell). `naming.DISCLAIMER` backs a
+`record-disclaimer` validation finding that refuses phrases such as "not
+verified", "no … is claimed", "documentation inventory", "fictional",
+"placeholder", "planning intent" or "unknown". Endpoint descriptions read in sentence case with
 acronyms intact — `Classroom AP`, `Point-of-sale lane`, `Station HMI`,
 `Bedside monitor`. The estate-wide tag is `Managed`
 (slug `<namespace>-managed`); nothing selects rows by it. Journals state rates
@@ -314,11 +316,44 @@ order: …`, `naming.COHORT_LABELS`), service desks name their workload
 (`Teller API service desk`), and sites carry no boilerplate comment — bank
 branches keep a one-line lineage note. The four automation records (config
 contexts, export templates, webhook, event rule) have no REST-writable
-`comments` in the pinned 4.7 serializers, so their descriptions read
+`comments` in the pinned 4.7 serializers; their descriptions read
 operationally (`Notify NetOps automation of device changes; disabled until the
 receiver is live`) while the webhook stays on a reserved `.invalid` host and
-its rule ships disabled; that inert limitation is stated here and in
-`estates/automation.py`, and enforced by `validate_operations`.
+its rule ships disabled — structure `validate_operations` enforces.
+
+### Documented limitations
+
+These hold for every estate and are stated here and in the report instead of on
+the records they concern:
+
+- **Execution.** Nothing is configured, applied, executed or measured: VM
+  replication and recovery, routing, forwarding, VRRP, IPsec and the recovery
+  L2VPN, wireless authentication, DHCP, captive portals, RF coverage and the
+  diagnostic radio hop are inventory. AP mount positions are planned, not
+  surveyed.
+- **BGP.** Provider sessions, peer groups and policies document intended
+  peerings; no session state, route exchange or policy evaluation is claimed
+  (see [provider BGP inventory](#provider-bgp-inventory)).
+- **External parties.** Transit interiors, a transit peer's remote interface
+  and owner, carrier interiors and duct diversity are unknown; separate
+  providers do not establish diverse ducts. External bank DNS/RADIUS endpoints
+  are unknown.
+- **Commercial records.** Provider accounts hold no credentials and record no
+  live purchase; circuits are purchased capacity without an acceptance test;
+  the future WAN rack reservation records no purchase or installation; the
+  Asset Lifecycle sidecar's vendors and courier are fictional and its orders
+  carry no prices.
+- **Industry endpoints.** Clinical, imaging, OT plant-floor and utility station
+  endpoints are reference inventory with no clinical function, certification,
+  control function, protection setting or industrial/utility protocol.
+  Residence-room ports are installed capacity, not resident devices; MSP sites
+  carry no SLA, remote-access path or ticketing workflow.
+- **Automation.** The webhook's `.invalid` endpoint is a placeholder and its
+  event rule is disabled; config contexts are documentation intent.
+- **Addressing and hardware.** The IPv6 registry allocates documentation space;
+  optic `power_reservation_mw` values follow the catalog's `power_basis`
+  (vendor maxima or authored conservative reservations, see
+  [the catalog](../catalog/README.md)).
 
 Panel cable labels use `P` for cabinet patch cord, `H` for horizontal run, `R`
 for room cord, and `D` for an abstracted direct channel. Other cable numbers use
@@ -654,9 +689,10 @@ without them.
 configuration, applies nothing to any device, establishes no session and claims
 no protocol state — no convergence, no route exchange, no policy evaluation.
 A session's `status` is the plugin's inventory status for an *intended*
-peering, not observed state. Every record repeats that in its `comments`, and
-the independent validator refuses one that does not. This is the same rule the
-inert webhook follows.
+peering, not observed state. That limitation is documented here and in the
+report, not on the records: they carry name, description, status and weight
+only, and the independent validator refuses any other field (a rule,
+community, prefix list or session-state field would read as configuration).
 
 What the estate emits:
 
@@ -680,8 +716,7 @@ finished graph rather than authored per site:
   cable: the PE that really hosts the handoff, its `/31` address, and the
   upstream provider's own ASN. The far end stays `remote_prefix` on that real
   `/31` rather than an invented remote address, because the remote interface
-  and its owner are unknown — the same limit the transit journals and the
-  provider network record already state.
+  and its owner belong to the upstream and are not modeled.
 - **eBGP customer** is attributed from each private-L3 access circuit: the
   serving PE and its `/31` address as local, the CE's address as remote, the
   customer's own ASN from its site, and the customer tenant.

@@ -16,7 +16,8 @@ dispatches nothing.
 
 Display naming splits this module in two (estates/naming.py): the export
 templates, webhook and event rule are Branching-exempt rows that land on main,
-so they keep the "<namespace> …" name `just retire` matches.  Config contexts
+so on a shared tenant they keep the "<namespace> …" name `just retire`
+matches (a dedicated tenant drops it; see naming.main_scoped_name).  Config contexts
 are branch-scoped — `get_branchable_object_types()` lists extras.configcontext
 — so they go with the branch and carry an authored, namespace-free name.
 """
@@ -24,6 +25,7 @@ are branch-scoped — `get_branchable_object_types()` lists extras.configcontext
 from collections import defaultdict
 
 from .model import DesignError
+from .naming import main_scoped_name
 
 
 # Service hosts recorded per workload. Two servers is a believable list, and
@@ -123,23 +125,23 @@ def enrich(world):
         {"roles": roles})
 
     add("export_template", "export-template/device-inventory",
-        {"name": f"{ns} Device inventory (CSV)", "object_types": ["dcim.device"],
+        {"name": main_scoped_name(world.recipe, "Device inventory (CSV)"), "object_types": ["dcim.device"],
          "template_code": DEVICE_TEMPLATE, "mime_type": "text/csv",
          "file_extension": "csv", "as_attachment": True,
          "description": "One row per device with its site, role, type and serial"})
     add("export_template", "export-template/cable-report",
-        {"name": f"{ns} Cable report (CSV)", "object_types": ["dcim.cable"],
+        {"name": main_scoped_name(world.recipe, "Cable report (CSV)"), "object_types": ["dcim.cable"],
          "template_code": CABLE_TEMPLATE, "mime_type": "text/csv",
          "file_extension": "csv", "as_attachment": True,
          "description": "One row per cable with its media, status, length and both termination lists"})
 
     webhook = add("webhook", "webhook/netops",
-                  {"name": f"{ns} NetOps automation endpoint", "payload_url": WEBHOOK_URL,
+                  {"name": main_scoped_name(world.recipe, "NetOps automation endpoint"), "payload_url": WEBHOOK_URL,
                    "http_method": "POST", "http_content_type": "application/json",
                    "ssl_verification": True,
-                   "description": "NetOps automation receiver; placeholder .invalid host until a real one is set"})
+                   "description": "NetOps automation receiver"})
     add("event_rule", "event-rule/device-change",
-        {"name": f"{ns} Device change notification", "object_types": ["dcim.device"],
+        {"name": main_scoped_name(world.recipe, "Device change notification"), "object_types": ["dcim.device"],
          "event_types": list(EVENT_TYPES), "action_type": "webhook", "enabled": False,
          "description": "Notify NetOps automation of device changes; disabled until the receiver is live"},
         {"action_object": webhook})

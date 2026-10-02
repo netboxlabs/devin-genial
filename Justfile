@@ -123,8 +123,8 @@ branch-delete target name:
 
 # Full demo retirement: delete the branch AND the namespace's main-scoped rows
 # (event rule, webhook, export templates, custom-field trio, owners/owner groups)
-retire target name namespace:
-    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete --retire-namespace {{quote(namespace)}}
+retire target name namespace tenancy="shared":
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.branch {{quote(target)}} {{quote(name)}} --delete --retire-namespace {{quote(namespace)}} --tenancy {{quote(tenancy)}}
 
 # Strictly verify a target against an artifact with zero writes (any seeding path)
 verify-target artifact target branch='':

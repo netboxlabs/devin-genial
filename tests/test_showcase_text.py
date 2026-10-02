@@ -13,6 +13,7 @@ from pathlib import Path
 
 from estates.generate import generate
 from estates.model import DesignError
+from estates.naming import disclaimer
 from estates.validate import validate
 
 ROOT = Path(__file__).parents[1]
@@ -55,7 +56,7 @@ class ShowcaseText(unittest.TestCase):
             self.assertNotIn("configured BGP sessions", vc["attrs"]["comments"])
         for vm in self.of(self.provider, "virtual_machine"):
             self.assertNotIn("not verified", vm["attrs"]["description"])
-            self.assertIn("not verified", vm["attrs"]["comments"])
+            self.assertEqual(vm["attrs"]["comments"], "Independent host and rack lanes.")
 
     def test_customer_vrfs_carry_their_route_target_as_rd(self):
         for vrf in self.of(self.provider, "vrf"):
@@ -155,6 +156,59 @@ class ShowcaseText(unittest.TestCase):
             if o["key"] == entry["key"] else o for o in self.provider["objects"]]}
         self.assertIn(("operations-journal-facts", entry["key"]),
                       {(f["code"], f["object"]) for f in validate(broken)})
+
+
+class RecordDisclaimers(unittest.TestCase):
+    """Records carry operational data only; limitations live in docs and the report."""
+
+    # One former per-record disclaimer per family the 0.16 sweep removed.
+    REMOVED = {
+        "bgp_session": ("comments", "Documentation inventory: the intended peering is recorded, nothing is configured."),
+        "circuit": ("comments", "Purchased capacity record; no forwarding acceptance test is claimed."),
+        "provider_account": ("comments", "Commercial inventory account; no credentials or live purchase is claimed."),
+        "virtual_machine": ("comments", "Independent host and rack lanes; service execution and recovery are not verified."),
+        "asn_range": ("comments", "Peering records are documentation inventory, never applied configuration."),
+        "provider_network": ("comments", "The control plane is documented inventory, not executed routing."),
+        "prefix": ("comments", "The far end belongs to the upstream; its remote interface and owner are unknown."),
+        "webhook": ("description", "NetOps automation receiver; placeholder .invalid host"),
+        "rir": ("name", "IPv6 documentation registry"),
+        "location": ("comments", "Monitoring endpoints are reference inventory; no clinical certification is claimed."),
+        "device": ("comments", "AP mount positions are planned; RF coverage is unverified."),
+        "asn": ("comments", "Planning intent; no configuration is asserted."),
+        "module_type": ("attributes", '{"power_basis": "authored conservative reservation"}'),
+    }
+
+    def test_no_profile_emits_a_disclaimer(self):
+        for path in sorted((ROOT / "profiles").glob("*.toml")):
+            raw = tomllib.loads(path.read_text())
+            if raw.get("profile") == "provider-backbone":
+                raw["discovery_lab"] = True
+            with self.subTest(profile=path.name):
+                offenders = [(o["key"], disclaimer(o)) for o in generate(raw)["objects"] if disclaimer(o)]
+                self.assertEqual(offenders, [], f"{path.name}: {offenders[:5]}")
+
+    def test_an_injected_disclaimer_fails_validation_in_every_removed_family(self):
+        plan = plan_for("provider-backbone")
+        self.assertNotIn("record-disclaimer", {f["code"] for f in validate(plan)})
+        for kind, (field, text) in self.REMOVED.items():
+            with self.subTest(kind=kind):
+                victim = next(o for o in plan["objects"] if o["kind"] == kind)
+                original = victim["attrs"].get(field)
+                victim["attrs"][field] = text
+                try:
+                    self.assertIn(("record-disclaimer", victim["key"]),
+                                  {(f["code"], f["object"]) for f in validate(plan)})
+                finally:
+                    if original is None:
+                        victim["attrs"].pop(field)
+                    else:
+                        victim["attrs"][field] = original
+
+    def test_the_substantive_safety_properties_remain_structural(self):
+        plan = plan_for("provider-backbone")
+        hook = next(o for o in plan["objects"] if o["kind"] == "webhook")
+        self.assertTrue(hook["attrs"]["payload_url"].split("/")[2].endswith(".invalid"))
+        self.assertIs(next(o for o in plan["objects"] if o["kind"] == "event_rule")["attrs"]["enabled"], False)
 
 
 if __name__ == "__main__":

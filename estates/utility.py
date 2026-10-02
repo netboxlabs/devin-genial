@@ -47,7 +47,7 @@ from .model import (DesignError, World, hardware_catalog, resolve_bank_recipe, r
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names", "hardware"}
+          "naming", "site_names", "hardware", "tenancy"}
 # Corporate (IT) substation segments. `wan` addresses the two carrier handoffs
 # and carries no client and no gateway SVI, so it is not trunked with these.
 IT_NETWORKS = ("management", "office")
@@ -185,7 +185,7 @@ def workloads(recipe):
         result.append(dict(key=key, slot=slot, instances=2*groups, replicas=2, failure_domain="rack",
                            network=network, vcpus=vcpus, memory_mb=memory, disk_mb=disk,
                            listeners=listeners, criticality="tier-1" if key in TIER_1 else "tier-2",
-                           replica_description="complete operational service shard; application replication and recovery are not executed"))
+                           replica_description="complete operational service shard"))
     return result
 
 

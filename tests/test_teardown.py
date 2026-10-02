@@ -90,10 +90,13 @@ class Batching(unittest.TestCase):
 
 
 class Gates(unittest.TestCase):
-    def _artifact(self, temporary):
+    def _artifact(self, temporary, tenancy=None):
         """A minimal on-disk artifact: teardown only needs a bound plan."""
+        recipe = {"namespace": "probe", "name": "Probe"}
+        if tenancy:
+            recipe["tenancy"] = tenancy
         plan = {"schema_version": 1, "generator_version": "fixture",
-                "recipe": {"namespace": "probe", "name": "Probe"},
+                "recipe": recipe,
                 "objects": [
                     {"key": "site:a", "kind": "site", "attrs": {"name": "A"}, "refs": {}},
                     {"key": "rack:a", "kind": "rack", "attrs": {"name": "R"},
@@ -192,8 +195,8 @@ class TeardownRun(unittest.TestCase):
     PLAN_IDS = {"site:a": {"kind": "site", "id": 10},
                 "rack:a": {"kind": "rack", "id": 20}}
 
-    def _run(self, temporary, present, final_ids, receipt=None, client=None):
-        artifact = Gates._artifact(self, temporary)
+    def _run(self, temporary, present, final_ids, receipt=None, client=None, tenancy=None):
+        artifact = Gates._artifact(self, temporary, tenancy)
         client = client or _FakeClient(present)
         verifications = [{"ids": self.PLAN_IDS, "matched_objects": 2,
                           "unmatched_target_ids": {}},
@@ -219,7 +222,15 @@ class TeardownRun(unittest.TestCase):
             self.assertLess(order.index("dcim/racks"), order.index("dcim/sites"),
                             "a rack must be deleted before the site it references")
             retire.assert_called_once()   # extras and owners come last
+            self.assertEqual(retire.call_args.args[1:], ("probe",))
+            self.assertIs(retire.call_args.kwargs["dedicated"], False)
             self.assertEqual(result["retired_rows"], 1)
+
+    def test_a_dedicated_tenancy_plan_retires_by_bare_labels(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            present = {"dcim/sites": {10}, "dcim/racks": {20}}
+            _result, _client, retire = self._run(temporary, present, {}, tenancy="dedicated")
+            self.assertIs(retire.call_args.kwargs["dedicated"], True)
 
     def test_a_resume_skips_batches_the_receipt_already_recorded(self):
         with tempfile.TemporaryDirectory() as temporary:
