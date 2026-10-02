@@ -1024,32 +1024,37 @@ def _premises_places(w,entries,points):
     authored places anchor no more than PREMISES_KM from it and nearer it than
     any other same-metro PoP of the premises' time. Among those, a hash of the
     site id picks; a customer reuses an anchor only once every eligible one is
-    taken, in allocation-slot order, so growth never moves or renames a site.
+    taken. The point is a 150 m street-grid offset from the anchor, at least
+    300 m from every earlier premises; all in allocation-slot order, so growth
+    never moves or renames a site.
     Returns sid -> (display name, latitude, longitude, anchor).
     """
     overrides,result = w.recipe.get("site_names",{}),{}
     if w.recipe.get("naming","authored") != "authored":
         return result
-    for c in w.recipe["customers"]:
-        mine = sorted((w.allocations[sid],sid,pop) for sid,customer,pop,_ in entries if customer["key"] == c["key"])
-        taken = Counter()
-        for _,sid,pop in mine:
-            if sid in overrides:
-                continue
-            city = next(row[0] for row in places.METROS if row[0].lower() == w.provider_metros[sid])
-            jitter = sha256(f"geo/{sid}".encode()).digest()
-            point = lambda a:(round(a[2]+(jitter[0]/255-0.5)*2*places.JITTER_LAT,6),
-                              round(a[3]+(jitter[1]/255-0.5)*2*places.JITTER_LON,6))
-            rivals = [q for q in serving_pops(w,sid,pop) if q != pop]
-            eligible = [a for a in places.ANCHORS[city] if len(a) == 4 and km(points[pop],point(a)) <= PREMISES_KM and
-                        all(km(points[pop],point(a)) < km(points[q],point(a)) for q in rivals)]
-            if not eligible:
-                raise DesignError(f"{sid}: no authored {city} anchor lies in the service area of PoP {pop} "
-                                  f"(within {PREMISES_KM} km and nearer it than any other {city} PoP)")
-            anchor = min(eligible,key=lambda a:(taken[a[0][0]],_hash("premises",sid,a[0][0])))
-            taken[anchor[0][0]] += 1
-            label = anchor[0][0] + (f" {taken[anchor[0][0]]}" if taken[anchor[0][0]] > 1 else "")
-            result[sid] = (f"{titleize(c['key'])} {label}",*point(anchor),anchor)
+    # One pass in permanent allocation-slot order across every customer: each
+    # premises takes the first free 150 m street-grid point (places.grid_place)
+    # at least 300 m from every earlier premises, so growth never moves a site.
+    customers,taken,placed = {c["key"]:c for c in w.recipe["customers"]},defaultdict(Counter),[]
+    for _,sid,key,pop in sorted((w.allocations[sid],sid,customer["key"],pop) for sid,customer,pop,_ in entries):
+        if sid in overrides:
+            continue
+        c,mine = customers[key],taken[key]
+        city = next(row[0] for row in places.METROS if row[0].lower() == w.provider_metros[sid])
+        rivals = [q for q in serving_pops(w,sid,pop) if q != pop]
+        eligible = [a for a in places.ANCHORS[city] if len(a) == 4 and km(points[pop],a[2:4]) <= PREMISES_KM and
+                    all(km(points[pop],a[2:4]) < km(points[q],a[2:4]) for q in rivals)]
+        if not eligible:
+            raise DesignError(f"{sid}: no authored {city} anchor lies in the service area of PoP {pop} "
+                              f"(within {PREMISES_KM} km and nearer it than any other {city} PoP)")
+        found = places.grid_place(sid,sorted(eligible,key=lambda a:(mine[a[0][0]],_hash("premises",sid,a[0][0]))),placed)
+        if found is None:
+            raise DesignError(f"{sid}: every street-grid position {places.MIN_PREMISES_SPACING_M} m from earlier premises is taken "
+                              f"in PoP {pop}'s service area; add {city} anchors (places.ANCHORS) or a PoP")
+        anchor,point = found
+        placed.append(point); mine[anchor[0][0]] += 1
+        label = anchor[0][0] + (f" {mine[anchor[0][0]]}" if mine[anchor[0][0]] > 1 else "")
+        result[sid] = (f"{customer_name(c)} {label}",*point,anchor)
     return result
 
 
@@ -1385,7 +1390,7 @@ def _dia(w,site,c,pop,pop_sites,rate,installed,distance,code,kind,serial,result)
     att = _attach(w,pop_sites,pop,sid,nid,site,c,rate=rate,handoff=handoff_mbps(rate,w.recipe["reserve_fraction"]),kind=kind,cid=f"{code}-DIA-{serial:05d}",installed=installed,distance=distance)
     block = dia_networks()[w.reserve("provider-dia-29",sid,len(dia_networks()))]
     assignment = w.add("prefix",f"prefix/dia/{sid}",dict(prefix=str(block),status="active",
-                       description=f"{customer_name(c)} internet assignment at {site.display}"),dict(tenant=tenant,scope_site=site.key))
+                       description=f"{customer_name(c)} internet assignment at {site.display}"),dict(tenant=tenant))
     w.provider_service_records[site.key].append(assignment)
     if managed:
         edge = site.device(SMALL_CE_ALIAS,"edge-01","customer-edge")

@@ -750,6 +750,9 @@ def unused_ports(objects):
     return {key for key, obj in objects.items()
             if obj["kind"] == "interface" and obj["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
             and key not in named
+            # A labelled demarcation (a provider NID handing off to customer
+            # equipment that is not inventoried) is in service by declaration.
+            and not (obj["attrs"].get("mark_connected") and obj["attrs"].get("label"))
             and not any(obj["refs"].get(field) for field in ("untagged_vlan", "tagged_vlans", "wireless_lans"))}
 
 

@@ -1321,7 +1321,7 @@ def _validate(plan):
                 if recipe.get("profile") == "provider-backbone":
                     # The independent provider check requires exact loopback/SVI
                     # ownership and real uplinks for this in-band composition.
-                    virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access"})
+                    virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access", "role/nid"})
                 if attrs(primary).get("type") == "virtual" and refs(device).get("role") in virtual_management_roles:
                     continue
                 peer = terminal_peers.get(primary)
