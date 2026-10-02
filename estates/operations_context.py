@@ -21,6 +21,8 @@ AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee
 
 
 SERIAL_SHIFT_WEEKS = 8
+# One third-party circuit delivery in this many slipped past its committed date.
+SLIP_ONE_IN = 5
 
 
 
@@ -294,6 +296,12 @@ def enrich(world):
         accepted = f"Accepted into service under change {change(key)}."
         if provider != "provider/operator":
             accepted += f" {name} support desk confirmed the handover and closed its ticket."
+            # Some carrier deliveries slip: a per-circuit choice keyed by namespace,
+            # not seed, so a reseed never adds or drops an event (and growth
+            # never moves one), dated before the handover it delayed.
+            if int(digest([world.recipe["namespace"], key, "journal-slip"]), 16) % SLIP_ONE_IN == 0:
+                journal(key, "delivery-slip", dated(key, "delivery-slip", attrs["install_date"], 5, 16), "Delivery slipped",
+                        f"{name} missed the committed handover date; escalated to its support desk.", "warning")
         journal(key, "handover", attrs["install_date"], "Handed over", accepted, "success")
 
     service_desks, anchors = {}, {}

@@ -17,7 +17,7 @@ from .model import DesignError
 from .naming import main_scoped_name
 from .networking import _physical_peers, address_ranges, ipam_roles
 from .operations_context import enrich as operational_context
-from .optics import RETAINED
+from .optics import RETAINED, retained_hosts
 
 # Real enclosure per emitted cabinet height (catalog/README.md, rack type).
 RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
@@ -787,9 +787,10 @@ def _prune(w):
     pruned type simply creates it again. RETAINED lineage types and the part
     definitions they can carry stay, so an access refresh deletes no type.
     """
+    hosts = retained_hosts(w)
     retained = {f"hardware/{alias}" for alias in RETAINED} | {
         f"module-type/{part['manufacturer']}/{part['model']}" for part in w.catalog["optics"]["parts"].values()
-        if set(part["compatible_interfaces"]) & RETAINED}
+        if set(part["compatible_interfaces"]) & hosts}
     while True:
         referenced = retained | {target for obj in w.objects.values() for value in obj["refs"].values()
                                  for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}

@@ -24,6 +24,8 @@ _EVENT_TYPES = {"object_created", "object_updated", "object_deleted",
 _MAX_ENDPOINT_HOSTS = 2
 # Restated: the builder's bounded week shift that keeps detachable serials unique.
 SERIAL_SHIFT_WEEKS = 8
+# Restated: one third-party circuit delivery in this many slipped (seeded per circuit).
+SLIP_ONE_IN = 5
 # Restated, not imported: real metro area codes; the 555-0100..0199 block is
 # reserved for fictional use, so no contact can carry a dialable number.
 AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
@@ -446,6 +448,9 @@ def _context(plan, objects, kinds):
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
         expect_note(key, "handover", data.get("install_date"),
                     (change(key),) + ((provider_name,) if provider != "provider/operator" else ()), "success")
+        if provider != "provider/operator" and int(digest([ns, key, "journal-slip"]), 16) % SLIP_ONE_IN == 0:
+            expect_note(key, "delivery-slip", scheduled(key, "delivery-slip", data.get("install_date"), 5, 16),
+                        (provider_name,), "warning")
     listeners = defaultdict(list)
     for service in kinds["service"]:
         listeners[service["refs"].get("virtual_machine")].append(service)
@@ -561,6 +566,7 @@ def _context(plan, objects, kinds):
     forms = {
         "equipment-record": ("Installed", r"Racked and cabled under change ([^\n;]+); the visit was booked through ([^\n]+)\."),
         "access-plan": ("Site access", r"Equipment-room visits are booked through ([^\n]+); give two working days' notice and flag any planned power work\."),
+        "delivery-slip": ("Delivery slipped", r"([^\n;]+) missed the committed handover date; escalated to its support desk\."),
         "handover": ("Handed over", r"Accepted into service under change ([^\n.]+)\.(?: ([^\n]+) support desk confirmed the handover and closed its ticket\.)?"),
         "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\.")}
     for obj in kinds["journal_entry"]:

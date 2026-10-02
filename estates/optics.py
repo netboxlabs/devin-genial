@@ -54,8 +54,17 @@ def owned_span_m(objects, endpoint):
 
 # Device types an estate keeps after their last device is replaced: the bank's
 # acquired-branch line survives an access refresh (types are never deleted by
-# a refresh), and so does the definition of each part that line can carry.
+# a refresh). While an estate carries that lineage, the part definitions both
+# it and the access line a refresh installs can take are kept too, so the
+# refresh snapshot neither adds nor deletes a shared module type.
 RETAINED = frozenset({"inherited-access"})
+
+
+def retained_hosts(world):
+    """Host aliases whose part definitions stay whether or not a cage holds one."""
+    if not any(f"hardware/{alias}" in world.objects for alias in RETAINED):
+        return frozenset()
+    return RETAINED | {world.hardware_alias("access")}
 
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
@@ -151,8 +160,9 @@ def enrich(world):
     library = {alias for alias in models if f"hardware/{alias}" in objects
                and (f"hardware/{alias}" in held or alias in RETAINED)}
     installed_parts = {entry[3] for entry in occupied}
+    kept = retained_hosts(world) & library
     for part_id in sorted(key for key, part in parts.items()
-                          if key in installed_parts or set(part["compatible_interfaces"]) & RETAINED & library):
+                          if key in installed_parts or set(part["compatible_interfaces"]) & kept):
         part = parts[part_id]
         part_bays = sorted({bay_type for bay_type, alias in part_bay_types[part_id] if alias in library})
         for bay_type in part_bays:

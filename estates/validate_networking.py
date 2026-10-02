@@ -50,19 +50,27 @@ def host_port_findings(plan):
     an L2 attachment carrying a VLAN translation policy.
     """
     objects = plan.get("objects") if isinstance(plan, dict) else None
-    index = {o.get("key"): o for o in objects if isinstance(o, dict)} if isinstance(objects, list) else {}
+    # Generated estates only: a hand-authored legacy graph carries no roles to
+    # tell a switch from a host (the generic dimensional fixtures).
+    generated = isinstance(plan, dict) and ("generator_version" in plan or isinstance(plan.get("recipe"), dict)
+                                            and "profile" in plan["recipe"])
+    index = ({o.get("key"): o for o in objects if isinstance(o, dict) and isinstance(o.get("key"), str)}
+             if isinstance(objects, list) and generated else {})
 
     def part(obj, name):
         value = obj.get(name) if isinstance(obj, dict) else None
         return value if isinstance(value, dict) else {}
+
+    def get(key):
+        return index.get(key) if isinstance(key, str) else None
     findings = []
     for obj in index.values():
         attrs, refs = part(obj, "attrs"), part(obj, "refs")
         if obj.get("kind") != "interface" or attrs.get("mode") != "access" or is_svi(obj):
             continue
-        role = part(index.get(refs.get("device")), "refs").get("role")
+        role = part(get(refs.get("device")), "refs").get("role")
         if ((role not in SWITCH_ROLES or attrs.get("mgmt_only"))
-                and part(index.get(refs.get("parent")), "attrs").get("mode") != "tagged"
+                and part(get(refs.get("parent")), "attrs").get("mode") != "tagged"
                 and not refs.get("vlan_translation_policy")):
             findings.append({"code": "interface-host-mode", "object": obj["key"],
                              "message": "Only a switch's own port carries an access-mode VLAN; a host or management "

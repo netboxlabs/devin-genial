@@ -67,26 +67,21 @@ class ProviderIntegrationTests(unittest.TestCase):
         enrich(world)
         return world.finish()
 
-    def test_handoff_notes_follow_both_actual_ends_and_customer_service_owner(self):
+    def test_handover_notes_follow_the_actual_carrier_and_customer_service_owner(self):
         for remote_kind, name in (("site", "Detroit PoP"), ("provider_network", "Transit network")):
             with self.subTest(remote=remote_kind):
                 plan = self.operations_plan(remote_kind)
                 self.assertEqual(validate(plan), [])
                 objects = {obj["key"]: obj for obj in plan["objects"]}
-                note = objects["journal/circuit/span/handoff-plan"]["attrs"]["comments"]
-                if remote_kind == "site":
-                    self.assertIn("A termination: Chicago PoP\nZ termination: " + name, note)
-                    self.assertIn("A handoff: 100 Gbps\nZ handoff: 100 Gbps", note)
-                else:
-                    self.assertIn("A termination: Chicago PoP\nZ network boundary: " + name, note)
-                    self.assertIn("A handoff: 100 Gbps", note)
-                    self.assertIn("Remote side: upstream carrier network.", note)
-                    self.assertNotIn("Z handoff:", note)
+                note = objects["journal/circuit/span/handover"]["attrs"]["comments"]
+                # The handover cites its change and the carrier that confirmed
+                # it; ends and rates are the circuit's own fields.
+                self.assertIn("Span carrier support desk confirmed the handover", note)
+                self.assertNotIn(name, note)
                 assignment = objects["contact-assignment/virtual-circuit/acme"]
                 self.assertEqual(assignment["refs"]["contact"], "contact/operations/tenant/cust-acme")
                 for key, field, value, code in (
-                    ("journal/circuit/span/handoff-plan", "comments", note.replace(name, "Wrong destination"), "operations-journal-facts"),
-                    ("termination/Z" if remote_kind == "site" else "termination/A", "port_speed", 1000000, "operations-journal-facts"),
+                    ("journal/circuit/span/handover", "comments", note.replace("Span carrier", "Wrong carrier"), "operations-journal-facts"),
                     ("contact-assignment/virtual-circuit/acme", "contact", "contact/operations", "operations-contact"),
                 ):
                     bad = deepcopy(plan)

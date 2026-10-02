@@ -120,16 +120,11 @@ class SharedDepthTests(unittest.TestCase):
                 racks = {objects[o["refs"]["assigned_object"]]["refs"]["rack"] for o in notes}
                 subjects = {o["refs"]["assigned_object"] for o in notes}
                 self.assertEqual(len(racks), len(subjects))
-                optical = [o for o in notes if o["key"].endswith("/optic-replacement-plan")]
-                legacy = [o for o in notes if o not in optical]
-                self.assertGreater(len(legacy), len(racks))  # Still includes a PSU story.
-                self.assertLessEqual(len(legacy), 2 * len(racks))
-                self.assertTrue(optical)
-                self.assertLessEqual(len(optical), len(racks))
-                self.assertEqual(len(optical), len({o["refs"]["assigned_object"] for o in optical}))
-                self.assertLessEqual(len(notes), 3 * len(racks))
+                # One installation event per cabinet; no restating PSU or optic notes.
+                self.assertEqual(len(notes), len(racks))
+                self.assertTrue(all(o["key"].endswith("/equipment-record") for o in notes))
                 self.assertEqual(operations_findings(plan), [])
-                for event in ("equipment-record", "psu-replacement-plan", "optic-replacement-plan"):
+                for event in ("equipment-record",):
                     key = next(o["key"] for o in notes if o["key"].endswith('/'+event))
                     broken = deepcopy(plan)
                     broken["objects"] = [o for o in broken["objects"] if o["key"] != key]
@@ -138,7 +133,7 @@ class SharedDepthTests(unittest.TestCase):
                         broken = deepcopy(plan)
                         note = next(o for o in broken["objects"] if o["key"] == key)
                         if mutation == "false-fact":
-                            note["attrs"]["comments"] = note["attrs"]["comments"].replace("serial ", "serial wrong-", 1)
+                            note["attrs"]["comments"] = note["attrs"]["comments"].replace("under change CHG", "under change CHG0", 1)
                         elif mutation == "wrong-subject":
                             note["refs"]["assigned_object"] = "site/dc-01"
                         elif mutation == "executed":
