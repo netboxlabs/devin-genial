@@ -118,7 +118,7 @@ def check_services(objects, tl):
             problems.append(f"{pop}: M300 iff a NOC handoff")
         if tms in objects:
             device = objects[tms]
-            if device["attrs"]["status"] != "staged" or "exceeds current DIA demand" not in device["attrs"]["description"]:
+            if device["attrs"]["status"] != "staged" or "well above current DIA commit" not in device["attrs"]["description"]:
                 problems.append(f"{tms}: staged, with the declared oversize")
             ends = {c["refs"]["b" if c["refs"]["a"].startswith(tms) else "a"] for c in of_kind(objects, "cable")
                     if tms + "/if/" in c["refs"]["a"] + c["refs"]["b"] and c["attrs"].get("type") == "aoc"}

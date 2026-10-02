@@ -1225,8 +1225,11 @@ IX_PORT, IX_PORT_MBPS = "xe-0/1/5", 10000
 # documentation range.
 IX_ASNS = (65536, 65551)
 IX_ROUTE_SERVERS = bgp.IX_ROUTE_SERVERS
-IX_IPV4_NOTE = "IPv4 peering not modelled: documentation IPv4 space is consumed by the DIA allocation ceiling."
-IX_NO_POOL_NOTE = "Route-server sessions omitted: the peering LAN is IPv6-only and this estate carries no ipv6_pool."
+# DESIGN [D]: the IPv4 declaration sits on the ProviderNetwork and the IX
+# circuit, in operational words (records carry no disclaimers, naming.DISCLAIMER):
+# the documentation-space reason itself is stated in docs/modeling.md.
+IX_IPV4_NOTE = "No IPv4 peering: the IPv4 blocks are committed to dedicated internet customer assignments."
+IX_NO_POOL_NOTE = "No route-server sessions: the peering LAN is IPv6-only and this network holds no IPv6 allocation."
 # The Milwaukee exchange moved buildings (shape-only mirror of MKE-IX's 2025
 # move): the old port at the metro's second PoP is being withdrawn.
 IX_RELOCATED = "milwaukee"
@@ -1248,6 +1251,9 @@ def _ix(w, pop_sites, ready):
     """
     tl, ns, as_of = timeline.of(w), w.recipe["namespace"], date.fromisoformat(w.recipe["as_of"])
     kind = fibre.circuit_type(w, "ix-port", "IX Port").removeprefix("circuit-type/")
+    # The exchanges' route-server ASNs sit in their own declared range.
+    w.add("asn_range", "asn-range/exchanges", dict(name="Exchange routing domains", slug=f"{ns}-exchange-routing",
+          start=IX_ASNS[0], end=IX_ASNS[1], description="Internet exchange route-server AS numbers"), {"rir": "rir/arin"})
     for metro in IX_METROS:
         hosts = [p for p in tl.order if tl.metro[p] == metro]
         if not hosts:
@@ -1328,13 +1334,13 @@ TIME_SERVER_HOST, DDOS_HOST = 20, 21
 # A premises installed before this day on an unmanaged single-NID service
 # (unmanaged DIA or EPL, 1G handoff) still runs the first NID generation.
 LEGACY_NID_BEFORE = date(2016, 1, 1)
-DDOS_DESCRIPTION = ("DDoS mitigation appliance, staged for the MX304 refresh; chassis capacity exceeds current DIA demand; "
-                    "licensed mitigation capacity not modelled")
-TIME_DESCRIPTION = ("PoP time server on the management LAN; GPS antenna via the colo roof riser, not modelled. "
+DDOS_DESCRIPTION = ("DDoS mitigation appliance, staged for the MX304 refresh; chassis capacity well above current DIA commit; "
+                    "licence tier not on record")
+TIME_DESCRIPTION = ("PoP time server on the management LAN; GPS antenna via the colo roof riser. "
                     "Discontinued; successor LANTIME M320, per vendor page")
 CONTROLLER = "ddos-detection"
 CONTROLLER_DESCRIPTION = ("Flow-based DDoS detection and mitigation controller "
-                          "(Sightline-class; labelled fiction, no vendor product claimed)")
+                          "(Sightline-class)")
 
 
 def _service_role(w, role):
@@ -1510,7 +1516,7 @@ def _ix_addresses(w):
         port = f"device/{site.removeprefix('site/')}/pe-a/if/{IX_PORT}"
         member = 0x100 + _hash(w.recipe["namespace"], metro, "ix-member") % 0xfe00
         w.add("ip_address", f"ix/{metro}/member", dict(address=f"{lan[member]}/64", status="active"),
-              dict(assigned_object=port, tenant="tenant"))
+              dict(assigned_object=port))  # assigned by the exchange from its LAN: no tenant, like the LAN
 
 
 def _ix_route_servers(w):
