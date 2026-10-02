@@ -101,6 +101,10 @@ lifecycle-check plan out:
 seed-lifecycle out target receipt='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
+# Regenerate docs/schema-map.md (kind -> NetBox model -> endpoint -> identity -> delivery)
+schema-map:
+    python3 -m estates.schema_map
+
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:
     python3 -m estates.load {{quote(artifact)}} --load-check

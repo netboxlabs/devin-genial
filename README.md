@@ -277,7 +277,7 @@ and [live results](lab/README.md#current-v09-qualification) for scope and limits
 | Choose Diode, TurboBulk or REST | [Transport model](docs/transports.md) · [Loading](docs/loading.md) |
 | Seed environments and verify without loading | [Seeding](docs/seeding.md) |
 | Check scale, compatibility and historical evidence | [Qualification](docs/qualification.md) · [Community comparison](COMPARISON.md) |
-| Extend the generator | [Development](CLAUDE.md) · [Graph contract](CONTRACT.md) · [Hardware catalog](catalog/README.md) |
+| Extend the generator | [Development](CLAUDE.md) · [Graph contract](CONTRACT.md) · [Schema map](docs/schema-map.md) · [Hardware catalog](catalog/README.md) |
 | See remaining gaps or prior acceptance criteria | [Coverage](COVERAGE.md) · [Completed goal](GOAL.md) |
 
 Generated datasets, credentials and historical receipts under `build/` are local
