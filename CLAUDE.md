@@ -139,6 +139,10 @@ WAN procurement accounts retain bank design lineage across acquisition/refresh;
 provider customer/NOC/transport accounts keep their separate authored policy.
 Direct technical assignments follow equipment role and actual tenant. Biomedical
 responsibility remains distinct; do not collide with its device-assignment key.
+One timeline: a device installs 7-37 days before the earliest circuit on its own
+ports (else its site's first circuit) and every serial date code is a manufacture
+week 30-180 days before that (`operations_context.timeline`, re-derived by
+`validate_operations`). Never date a record from `as_of` when a circuit dates it.
 Equipment journals select the first eligible device per actual rack by permanent
 U position. Keep installed component and facilities facts stable; never embed
 current cable peers or mutable tenant desk names in immutable journal comments.
@@ -721,6 +725,9 @@ for the separately recorded pinned-target live qualification.
   native field limits. Count all installed optic/end power reservations once per
   host, separately from chassis and PD allowance. Stop tracing at carrier handoffs;
   no optical-loss, observed FEC or remote-hardware claim follows from local reach.
+  The operator's own circuits (`provider/operator`) are not a handoff: the optic
+  must reach the circuit `distance` (else its two sites' route distance) and the
+  builder picks the shortest reviewed reach that covers it (`optics-span-reach`).
 - Shared campus/DC physical checks receive independently resolved school demand.
   Descriptive metadata and omitted contracts cannot erase required infrastructure.
 - Bank DC validation derives complete power/compute/service obligations from
@@ -876,8 +883,10 @@ for the separately recorded pinned-target live qualification.
   overrides any site by id. Slugs, DNS, device names and matching keys keep the
   stable namespace form; name pools hash the site id (never the seed or other
   sites), so growth cannot rename and seeds cannot reshuffle. Workspace.finish
-  enforces global display-name uniqueness. Never rename objects in a running
-  estate; naming keys are rebaseline-frozen.
+  enforces global display-name uniqueness. House numbers follow position, never a
+  hash: the Chicago and Milwaukee County grids, else real `places.STREET_REFS`
+  points; `unique_addresses` keeps full addresses unique by allocation order.
+  Never rename objects in a running estate; naming keys are rebaseline-frozen.
 - Recipe `hardware` selects the vendor line for exactly three role families:
   `access`, `leaf` and `ap`. `catalog/hardware_lines` declares each family's
   default and alternates; an unknown family or vendor is a hard error listing the

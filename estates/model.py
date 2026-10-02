@@ -30,7 +30,9 @@ def digest(value):
 # Serial grammar for the catalog's `serial_format` templates. The formats are
 # fictional imitations of each vendor's printed convention, never real units:
 # `#` digit, `@` letter (no I/O, as vendors avoid them), `*` either, `{yy}` a
-# 2018-2024 year, `{yyww}` that year plus an ISO week; anything else is literal.
+# year, `{yyww}` that year plus an ISO week; anything else is literal. The
+# hashed date is a placeholder: operations_context.timeline re-dates it to the
+# unit's manufacture week (redate_serial) once circuit dates are known.
 SERIAL_DIGITS = "0123456789"
 SERIAL_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 SERIAL_CLASSES = {"#": SERIAL_DIGITS, "@": SERIAL_LETTERS, "*": SERIAL_DIGITS + SERIAL_LETTERS}

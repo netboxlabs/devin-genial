@@ -1,5 +1,5 @@
 {
-  "version": "0.12",
+  "version": "0.13",
   "sources": {
     "access-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9200L-24P-4X.yaml",

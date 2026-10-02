@@ -176,7 +176,7 @@ ANCHORS = {
 # neighbourhood or suburb: the road OpenStreetMap Nominatim reverse-geocoded at
 # the anchor centre plus the streets (with a house number, in that locality)
 # that reverse geocoding returned at eight more points inside the anchor's
-# jitter box (build/r3a/samples.json, 2026-10-02). A site hashes its id onto one
+# jitter box (build/geo-verify/samples.json, 2026-10-02). A site hashes its id onto one
 # street; its house number follows its position (see street_number), never a
 # hash, so two nearby sites on one street get nearby numbers. Numbers are
 # synthetic: never a surveyed or real premises.
@@ -296,7 +296,7 @@ ADDRESS_STREETS = {
 # grids: (latitude, longitude, house number) points OpenStreetMap Nominatim
 # returned for that street in that locality (reverse samples inside the anchor
 # boxes, plus forward lookups of a numbered address on each Detroit and
-# Cleveland street run; build/r3a/geo-cache.json). Two well-separated points
+# Cleveland street run; build/geo-verify/geo-cache.json). Two well-separated points
 # number a street linearly along the line through them; one point numbers it by
 # distance from the locality's address origin (ADDRESS_ORIGINS).
 STREET_REFS = {

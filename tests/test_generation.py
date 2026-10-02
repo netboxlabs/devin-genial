@@ -45,7 +45,13 @@ class GenerationTests(unittest.TestCase):
                     if obj["kind"] == "device":
                         self.assertRegex(obj["attrs"].pop("serial"), r"^[0-9A-Z]{8,20}$")
                     # Optic serials hash the namespace and interface/cable
-                    # identity, never the seed, so they stay in the comparison.
+                    # identity, never the seed, so they stay in the comparison;
+                    # only their date code follows the seeded timeline.
+                    if obj["kind"] == "module" and obj["key"].startswith("optics-module/"):
+                        serial = obj["attrs"]["serial"]  # Generic G{yy}…, the makers' three-letter {yyww}
+                        obj["attrs"]["serial"] = serial[:1] + "<made>" + serial[3:] if serial.startswith("G") else serial[:3] + "<made>" + serial[7:]
+                    if obj["kind"] == "cable" and obj["attrs"].get("comments", "").startswith("Assembly serial: "):
+                        obj["attrs"]["comments"] = re.sub(r"^Assembly serial: (...)\d{4}", r"Assembly serial: \1<made>", obj["attrs"]["comments"])
                     if obj["kind"] == "module" and not obj["key"].startswith("optics-module/"):
                         self.assertRegex(obj["attrs"].pop("serial"), r"^[0-9A-Z]{8,20}$")
                     if obj["kind"] == "circuit":
@@ -54,6 +60,9 @@ class GenerationTests(unittest.TestCase):
                         obj["attrs"]["comments"] = re.sub(r"\d{4}-\d{2}-\d{2}", "<authored-date>", obj["attrs"]["comments"])
                         if obj["key"].endswith("/equipment-record"):
                             obj["attrs"]["comments"], count = re.subn(r" serial [0-9A-Z]{8,20} racked in ", " serial <device-serial> racked in ", obj["attrs"]["comments"])
+                            self.assertEqual(count, 1)
+                        if obj["key"].endswith("/optic-replacement-plan"):
+                            obj["attrs"]["comments"], count = re.subn(r" serial [0-9A-Z]{8,20}; ", " serial <optic-serial>; ", obj["attrs"]["comments"])
                             self.assertEqual(count, 1)
                         if obj["key"].endswith("/psu-replacement-plan"):
                             obj["attrs"]["comments"], count = re.subn(r" \(installed serial [0-9A-Z]{8,20}\) ", " (installed serial <module-serial>) ", obj["attrs"]["comments"])

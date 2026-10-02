@@ -41,17 +41,17 @@ def timeline(world, kinds, dated):
         if site.startswith("site/"):
             service_day[site] = min(circuit_day[term["key"]], service_day.get(site, circuit_day[term["key"]]))
     for cable in kinds["cable"]:
-        ends = (cable["refs"]["a"], cable["refs"]["b"])
+        ends = (cable["refs"].get("a"), cable["refs"].get("b"))
         for port, far in (ends, ends[::-1]):
             if far in circuit_day and world.objects.get(port, {}).get("kind") == "interface":
                 port_day[port] = min(circuit_day[far], port_day.get(port, circuit_day[far]))
     carried = {}
     for port, day in port_day.items():
-        device = world.obj(port)["refs"]["device"]
+        device = world.obj(port)["refs"].get("device")
         carried[device] = min(day, carried.get(device, day))
     as_of, installed_on = world.recipe["as_of"], {}
     for device in kinds["device"]:
-        key, site = device["key"], device["refs"]["site"]
+        key, site = device["key"], device["refs"].get("site")
         anchor = carried.get(key) or service_day.get(site)
         installed_on[key] = (dated(key, "equipment-record", anchor, 7, 31) if anchor
                              else dated(key, "equipment-record", as_of, 100, 20))
@@ -80,7 +80,7 @@ def timeline(world, kinds, dated):
         for module in members:
             device = world.obj(module["refs"]["device"])
             maker = world.obj(world.obj(module["refs"]["module_type"])["refs"]["manufacturer"])["attrs"]["name"]
-            fmt = (models[device["meta"]["hardware"]].get("module_serial_format")
+            fmt = (models.get(device["meta"].get("hardware"), {}).get("module_serial_format")
                    if module["key"].startswith(f"{device['key']}/module/") else formats.get(maker, formats["Generic"]))
             anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on[device["key"]])
         if fmt and serial:

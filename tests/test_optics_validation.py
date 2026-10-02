@@ -175,7 +175,8 @@ class OpticsValidationTests(unittest.TestCase):
         port = next(o for o in objects.values() if o["kind"] == "interface" and o["attrs"].get("speed") == 1000000
                     and o["attrs"].get("type") == "10gbase-x-sfpp" and "module" in o["refs"])
         self.assertEqual(analyze(plan)[0], [])
-        self.assertEqual(objects[port["refs"]["module"]]["refs"]["module_type"], "module-type/Juniper/SFP-1GE-LX")
+        self.assertIn(objects[port["refs"]["module"]]["refs"]["module_type"],
+                      {"module-type/Juniper/SFP-1GE-LX", "module-type/Juniper/SFP-1GE-LH"})
         port["attrs"].pop("speed")
         self.assertIn("optics-compatibility", self.codes(plan))
 

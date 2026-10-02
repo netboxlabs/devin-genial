@@ -276,8 +276,15 @@ vendor's printed convention, not real units**: Cisco `FOC`/`FJC` plus year-week
 plus four characters, Arista `JPE`/`SSJ`, twelve-character Juniper, Fortinet
 `FG100FTK…`, Supermicro `S…X…`, APC `5A…E…`, Opengear numeric, Aruba `CN…`,
 and an alphanumeric OEM style for Generic and Panduit parts. Template grammar:
-`#` digit, `@` letter (I and O excluded), `*` either, `{yy}` a 2018–2024 year,
-`{yyww}` that year plus a week. `estates/model.py` `vendor_serial` expands a
+`#` digit, `@` letter (I and O excluded), `*` either, `{yy}` a year,
+`{yyww}` that year plus an ISO week. The date code is the unit's manufacture
+week on the estate's one timeline (since 0.16.0): `vendor_serial` fills a
+placeholder and `operations_context.timeline` re-dates it 30–180 days before
+the unit's install (a device 7–37 days before the earliest circuit on its own
+ports, else its site's first circuit; an optic before its own port's circuit),
+stepping a detachable optic one week earlier when two would otherwise print the
+same serial. `validate_operations` re-derives the install and reports
+`operations-serial-date` when a date code does not precede it. `estates/model.py` `vendor_serial` expands a
 template from the namespace plus the same stable per-device key the old `SYN-`
 serial used (so estates with the same seed do not repeat each other's serials), so
 serials remain deterministic and growth-stable. The independent check
@@ -414,7 +421,7 @@ their presence here is not a claim of completed native round-trip testing.
 
 ## Installed optics policy
 
-The top-level `optics.parts` map defines ten selected parts. Each stable part ID
+The top-level `optics.parts` map defines twelve selected parts. Each stable part ID
 records manufacturer/model, form factor, optical protocol, medium, connector,
 rate in **kbps**, reach in metres, power reservation in integer **mW**, source
 IDs and an explicit `compatible_interfaces` map from hardware alias to existing
@@ -461,15 +468,38 @@ is archived and supplies part specifications, but does not by itself prove a
 host fit. Source entries preserve that distinction rather than presenting a
 full archival or multivendor certification claim.
 
-All selected independent modules use duplex LC SMF with matching LX, LR or
-LR4 protocol and effective rate. Every part, including the generic server
-optic, has 10 km nominal reach. The shared authored
+All selected independent modules use duplex LC SMF with matching LX, LR, LH,
+LR4 or ER4 Lite protocol and effective rate. Every short-reach part, including
+the generic server optic, has 10 km nominal reach. The shared authored
 `local_min_m: 3` / `local_max_m: 100` envelope applies to the **sum of the
 complete known local cable path**, bounded by both endpoint reaches. It is a
 conservative modeling limit, not a vendor minimum, computed loss budget or
-receive-power measurement. Circuit terminations end local tracing: a three-metre
-handoff says nothing about the carrier's intercity span or remote transceiver.
-Single-lambda 100G LR, SR, BiDi, DWDM and breakout remain outside this selection.
+receive-power measurement. A third-party carrier's circuit termination ends
+local tracing: a three-metre handoff says nothing about the carrier's intercity
+span or remote transceiver.
+
+The operator's **own** fiber is different (since 0.16.0): a circuit whose
+provider is the estate's operator (`provider/operator` — the provider
+backbone's owned dark-fiber spans, customer access circuits and same-metro NOC
+access) carries the optic's light end to end, so the selected part's reach must
+cover the circuit's recorded `distance`, or, where the circuit records none,
+the two terminating sites' great-circle distance times the authored 1.3 route
+factor. `estates/optics.py` picks the **shortest** reviewed reach that covers
+the run from the parts sharing that host cage, rate and medium, so local links
+and short spans keep LX/LR4. Two long-reach MX204 parts are pinned for this
+(Juniper HCT, checked 2026-10-02; the MX204 product list names both):
+
+| Part | Reach used | Power reserved | Source note |
+| --- | --- | --- | --- |
+| `SFP-1GE-LH` (740-031849) | 70 km | 1000 mW (vendor maximum 1 W) | High Tx power: the vendor requires optical attenuation on shorter links, so the installed module's description records an in-line attenuator |
+| `QSFP-100G-ER4L` (740-071175) | 30 km | 5500 mW (vendor maximum 5.5 W at 0-75 C) | 40 km needs host FEC; FEC is not modeled, so the catalog uses the 30 km no-FEC reach |
+
+`validate_optics` re-derives the owned run independently (the larger of the
+recorded distance and the site-coordinate route) and reports
+`optics-span-reach` when the installed part falls short. An owned circuit longer
+than every reviewed part is a generation error, never a silently short optic.
+Single-lambda 100G LR, SR, BiDi, DWDM, amplified line systems and breakout
+remain outside this selection.
 
 The AOC entry has `assembly: true` and `assembly_length_m: 3`. It is one
 preterminated optical cable with two captive ends of the **same part and
@@ -505,7 +535,8 @@ accumulating earlier enrichment. Do not subtract optics from published PoE
 output budgets, count supply-nameplate watts as consumption, or erase an
 installed optic's reserve merely because its interface is disconnected.
 
-Catalog 0.11 adds the three alternate lines and their reviewed optics; catalog
+Catalog 0.13 adds the two long-reach MX204 optics above (`SFP-1GE-LH`, `QSFP-100G-ER4L`)
+for the operator's own fiber. Catalog 0.11 adds the three alternate lines and their reviewed optics; catalog
 0.10 left every existing interface, PSU, PoE fact and device model unchanged. Phase 5 runtime evidence in `build/goal-connected-depth/phase5/`
 qualifies its module/bay/interface and assembly relationships, repeat/growth
 identities, passive paths and additive power checks offline. Live qualification
