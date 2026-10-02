@@ -36,6 +36,49 @@ def _site_of(world, term):
     target = term["refs"]["termination"]
     return world.obj(target)["refs"]["site"] if target.startswith("location/") else target
 
+SERVICE_DAY_LEDGER = "site-in-service/"
+
+
+def allocation_ledgers(plan):
+    """The plan's seed-invariant allocation ledgers: every reservation scope
+    except the frozen service days, which are dated local variation."""
+    return {scope: items for scope, items in plan["reservations"].items()
+            if not scope.startswith(SERVICE_DAY_LEDGER)}
+
+
+def _freeze_service_days(world, kinds):
+    """Read or record each site's frozen service day; date appended circuits on or after it.
+
+    ponytail: only a site that had a dated circuit at first generation is
+    frozen. A circuit-less site that later gains its first circuit still moves
+    from the as_of-relative install schedule to the circuit-relative one;
+    freezing that needs a "never in service" sentinel the graph-only validator
+    could also read. No current growth path does it.
+    """
+    terminations = defaultdict(set)
+    for term in kinds["circuit_termination"]:
+        site = _site_of(world, term)
+        if site.startswith("site/"):
+            terminations[term["refs"]["circuit"]].add(site)
+    earliest = {}
+    for circuit, sites in terminations.items():
+        day = world.obj(circuit)["attrs"].get("install_date")
+        if day:
+            for site in sites:
+                earliest[site] = min(day, earliest.get(site, day))
+    frozen = {}
+    for site, day in earliest.items():
+        ledger = world.reservations.setdefault(SERVICE_DAY_LEDGER + site, {})
+        # A fresh site records today's derivation; a grown one keeps its ledger.
+        ledger.setdefault("day", date.fromisoformat(day).toordinal())
+        frozen[site] = date.fromordinal(ledger["day"]).isoformat()
+    for circuit, sites in terminations.items():
+        attrs = world.obj(circuit)["attrs"]
+        floor = max((frozen[site] for site in sites if site in frozen), default=None)
+        if attrs.get("install_date") and floor and attrs["install_date"] < floor:
+            attrs["install_date"] = floor
+
+
 def timeline(world, kinds, dated):
     """One timeline: service days, device installs and serial date codes.
 
@@ -48,7 +91,15 @@ def timeline(world, kinds, dated):
     install; an optic serving a later circuit is made before that circuit
     (its own port's install), else before its host's install.
     Returns (service_day per site, install date per device), ISO strings.
+
+    The service day is frozen at first generation in the append-only
+    ``site-in-service/<site>`` ledger (one entry, the day's ordinal). A circuit
+    appended by growth that would predate a frozen day it terminates at is
+    brought into service on that day instead, so growth can never move an
+    existing device's install date, journal or serial date code, and the graph
+    still reads the frozen day as its earliest circuit.
     """
+    _freeze_service_days(world, kinds)
     # A circuit not yet in service has no install date and dates nothing.
     circuit_day = {term["key"]: world.obj(term["refs"]["circuit"])["attrs"]["install_date"]
                    for term in kinds["circuit_termination"]

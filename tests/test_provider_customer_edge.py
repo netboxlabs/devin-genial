@@ -71,14 +71,17 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
         for site in tagged & pops:
             carriers = {self.o[t["refs"]["circuit"]]["refs"]["provider"] for t in self.of("circuit_termination")
                         if t["refs"]["termination"] == site
-                        and self.o[t["refs"]["circuit"]]["refs"]["type"] != "circuit-type/out-of-band"
+                        and self.o[t["refs"]["circuit"]]["refs"]["type"] != "circuit-type/cellular-oob"
                         and self.o[t["refs"]["circuit"]]["refs"]["provider"] != "provider/operator"}
             self.assertGreaterEqual(len(carriers), 2, site)
 
     # --- Customers bring their own LAN space; the carrier owns only the CE --
 
     def ce_only(self):
-        return sorted(s["key"].removeprefix("site/") for s in self.of("site") if s["key"].startswith("site/ce-"))
+        """Private-L3 premises whose CE hands the customer's own LAN off (no managed LAN)."""
+        l3 = {c["key"] for c in self.plan["recipe"]["customers"] if c["service"] == "private-l3" and not c["lan_endpoints"]}
+        return sorted(s["key"].removeprefix("site/") for s in self.of("site") if s["key"].startswith("site/ce-")
+                      and any(s["key"].startswith(f"site/ce-{key}-") for key in l3))
 
     def test_customer_lans_are_customer_space_reused_across_vrfs(self):
         lans = [self.o[f"prefix/{sid}/lan"] for sid in self.ce_only()]
@@ -102,16 +105,18 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
         self.assertFalse([r for r in self.of("ip_range") if "/ce-" in r["key"]])
         self.assertFalse([p for p in self.of("prefix") if "orkstation" in p["attrs"].get("description", "")])
 
-    def test_ce_only_premises_hold_no_carrier_rack_or_power(self):
+    def test_ce_only_premises_hold_the_kit_in_an_mpoe_cabinet_on_customer_power(self):
         for sid in self.ce_only():
             site = f"site/{sid}"
             edge = self.o[f"device/{sid}/edge-01"]
-            self.assertNotIn("rack", edge["refs"])
+            # The carrier's NID(s) and CE stand in its MPOE wall cabinet.
+            self.assertEqual(edge["refs"]["rack"], f"rack/{sid}/network-01")
+            self.assertEqual(self.o[edge["refs"]["rack"]]["refs"]["rack_type"], "rack-type/mpoe-cabinet")
             self.assertEqual(edge["refs"]["location"], f"location/{sid}")
-            for kind in ("rack", "power_panel"):
-                self.assertFalse([x for x in self.of(kind) if x["refs"].get("site") == site])
-            self.assertFalse([d for d in self.of("device") if d["refs"]["site"] == site and d["key"] != edge["key"]])
-            supplies = [p for p in self.of("power_port") if p["refs"]["device"] == edge["key"]]
+            self.assertFalse([x for x in self.of("power_panel") if x["refs"].get("site") == site])
+            self.assertEqual({d["refs"]["role"] for d in self.of("device") if d["refs"]["site"] == site},
+                             {"role/customer-edge", "role/nid"})
+            supplies = [p for p in self.of("power_port") if self.o[p["refs"]["device"]]["refs"]["site"] == site]
             self.assertTrue(supplies and all(p["attrs"]["mark_connected"] for p in supplies))
 
     def test_customer_lan_counterexamples_are_refused(self):
@@ -121,18 +126,19 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
             self.o[f"prefix/{sid}/lan"]["attrs"]["prefix"] = "10.1.0.0/24"
 
         def vlan_back():
-            self.o[f"device/{sid}/edge-01/if/port1"]["attrs"]["mode"] = "access"
+            port = next(k for k in self.o if k.startswith(f"ip/device/{sid}/edge-01/if/") and
+                        self.o[k]["attrs"]["address"].startswith(self.o[f"prefix/{sid}/lan"]["attrs"]["prefix"].rsplit(".", 2)[0]))
+            self.o[self.o[port]["refs"]["assigned_object"]]["attrs"]["mode"] = "access"
 
-        def racked():
-            rack = next(r for r in self.of("rack"))
-            self.o[f"device/{sid}/edge-01"]["refs"]["rack"] = rack["key"]
+        def unracked():
+            self.o[f"device/{sid}/edge-01"]["refs"].pop("rack")
 
         def cabled_power():
             port = next(p for p in self.of("power_port") if p["refs"]["device"] == f"device/{sid}/edge-01")
             port["attrs"].pop("mark_connected")
 
         for mutate, code in ((carrier_pool, "provider-customer-lan"), (vlan_back, "provider-customer-lan"),
-                             (racked, "provider-rack-placement"), (cabled_power, "provider-rack-placement")):
+                             (unracked, "provider-customer-edge"), (cabled_power, "provider-customer-edge")):
             with self.subTest(mutate.__name__):
                 self.setUp()
                 mutate()
@@ -143,16 +149,14 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
     def test_hubs_take_two_circuits_into_both_pes(self):
         hubs = {t["refs"]["interface"].split("/")[1] for t in self.of("virtual_circuit_termination")
                 if t["attrs"]["role"] == "hub"}
-        self.assertEqual(len(hubs), len(self.plan["recipe"]["customers"]))
-        cabled = {}
-        for cable in self.of("cable"):
-            cabled[cable["refs"]["a"]], cabled[cable["refs"]["b"]] = cable["refs"]["b"], cable["refs"]["a"]
+        self.assertEqual(len(hubs), sum(c["service"] == "private-l3" for c in self.plan["recipe"]["customers"]))
         for sid in hubs:
             pes = set()
             for key in (f"circuit/customer/{sid}", f"circuit/customer/{sid}/b"):
                 self.assertIn(key, self.o)
-                pes.add(self.o[cabled[f"{key}/Z"]]["refs"]["device"])
-                self.assertIn(f"bgp-session/{key.removeprefix('circuit/')}", self.o)
+                # The PE end of each attachment is its home side's PE (the session's device).
+                session = self.o[f"bgp-session/{key.removeprefix('circuit/')}"]
+                pes.add(session["refs"]["device"])
             self.assertEqual(len(pes), 2, sid)
             self.assertEqual(self.o[f"virtual-circuit-termination/{sid}/b"]["attrs"]["role"], "hub")
             tagged = "tag/dual-homed" in self.o[f"site/{sid}"]["refs"].get("tags", [])
@@ -178,14 +182,15 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
             port = self.o[ip["refs"]["assigned_object"]]
             if port.get("refs", {}).get("device") in pes:
                 self.assertEqual(port["attrs"]["type"], "virtual", port["key"])
-                self.assertTrue(port["attrs"]["name"].endswith(".0"), port["key"])
                 parent = self.o[port["refs"]["parent"]]
-                self.assertEqual(port["attrs"]["name"], parent["attrs"]["name"] + ".0")
+                # A physical port is addressed on unit 0; the access LAG on its ae1.<vid> service units.
+                expected = parent["attrs"]["name"] + (".0" if parent["attrs"]["type"] != "lag" else "")
+                self.assertTrue(port["attrs"]["name"].startswith(expected), port["key"])
                 self.assertNotIn("vrf", parent["refs"])
         # Customer handoff units carry the customer VRF; BGP cites the unit address.
         session = self.o["bgp-session/customer/ce-lakeshore-health-cleveland-flats-001/b"]
         unit = self.o[self.o[session["refs"]["local_address"]]["refs"]["assigned_object"]]
-        self.assertTrue(unit["attrs"]["name"].startswith("xe-0/1/") and unit["attrs"]["name"].endswith(".0"))
+        self.assertTrue(unit["attrs"]["name"].startswith("ae1."))
         self.assertEqual(unit["refs"]["vrf"], "vrf/customer/lakeshore-health")
 
     def test_bare_port_address_is_refused(self):
@@ -221,9 +226,14 @@ class LifecycleEquipmentTests(unittest.TestCase):
         self.o = {obj["key"]: obj for obj in self.plan["objects"]}
 
     def pe_port(self, sid):
-        circuit = f"circuit/customer/{sid}/Z"
-        return next(c["refs"]["a" if c["refs"]["b"] == circuit else "b"] for c in self.plan["objects"]
-                    if c["kind"] == "cable" and circuit in (c["refs"]["a"], c["refs"]["b"]))
+        """The serving aggregation UNI: the circuit's PoP end lands on a panel rear whose front reaches it."""
+        peers = {}
+        for c in self.plan["objects"]:
+            if c["kind"] == "cable":
+                peers[c["refs"]["a"]], peers[c["refs"]["b"]] = c["refs"]["b"], c["refs"]["a"]
+        rear = peers[f"circuit/customer/{sid}/Z"]
+        front = next(k for k, o in self.o.items() if o["kind"] == "front_port" and o["refs"].get("rear_port") == rear)
+        return peers[front]
 
     def test_pending_handoffs_are_shut_and_their_optics_not_installed(self):
         self.assertEqual(validate(self.plan), [])
@@ -265,7 +275,7 @@ class LifecycleEquipmentTests(unittest.TestCase):
         def no_disconnect():
             self.o["circuit/customer/ce-harbor-logistics-cleveland-east-001"]["attrs"].pop("termination_date")
 
-        for mutate, code in ((enabled, "provider-port-mode"), (installed_optic, "provider-lifecycle-equipment"),
+        for mutate, code in ((enabled, "provider-attachment"), (installed_optic, "provider-lifecycle-equipment"),
                              (shipped_ce, "provider-lifecycle-equipment"), (no_disconnect, "provider-lifecycle-equipment")):
             with self.subTest(mutate.__name__):
                 self.setUp()

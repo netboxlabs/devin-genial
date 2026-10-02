@@ -1125,17 +1125,21 @@ def grid_point(anchor, cell):
     return round(lat, 6), round(lon, 6)
 
 
-def grid_place(site_id, anchors, placed):
+def grid_place(site_id, anchors, placed, accept=None):
     """First free grid point on the first anchor (in the caller's order) with room.
 
     Free means at least MIN_PREMISES_SPACING_M from every point in ``placed``
     (every earlier premises, in allocation-slot order), so growth never moves
-    an earlier site. Returns (anchor, (lat, lon)) or None when all are full.
+    an earlier site; ``accept`` may also refuse a point (a provider premises
+    must stay in its serving PoP's area after the grid offset). Returns
+    (anchor, (lat, lon)) or None when all are full.
     """
     cells = grid_cells(site_id)
     for anchor in anchors:
         for cell in cells:
             point = grid_point(anchor, cell)
+            if accept is not None and not accept(point):
+                continue
             if all(abs(point[0] - p[0]) > 0.01 or _km(point, p) * 1000 > MIN_PREMISES_SPACING_M - 1 for p in placed):
                 return anchor, point
     return None

@@ -79,7 +79,7 @@ def _medium(kind, port_type):
         return "stack"
     if port_type in {"8p8c", "rj-45", "110-punch"} or "base-t" in port_type:
         return "copper"
-    if port_type in {"lc", "sc", "st", "mpo", "mpo-12", "mpo-24"} or any(s in port_type for s in ("sfpp", "sfp28", "sfp", "qsfp", "base-x")):
+    if port_type in {"lc", "sc", "st", "mpo", "mpo-12", "mpo-24", "splice"} or any(s in port_type for s in ("sfpp", "sfp28", "sfp", "qsfp", "base-x")):
         return "fiber"
     return None
 
@@ -379,7 +379,10 @@ def _validate(plan):
                 if kind(key) != typ:
                     continue
                 data = attrs(key)
-                if typ == "interface" and data.get("type") in {"virtual", "lag", "bridge"}:
+                if (typ == "interface" and data.get("type") in {"virtual", "lag", "bridge"}
+                        and data.get("name") not in expected):
+                    # Logical interfaces are free unless the model declares one
+                    # (a NID's virtual Management), which must then exist.
                     continue
                 name = data.get("name")
                 actual[name] = key
@@ -1329,6 +1332,10 @@ def _validate(plan):
                     virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access", "role/nid"})
                 if attrs(primary).get("type") == "virtual" and refs(device).get("role") in virtual_management_roles:
                     continue
+                if attrs(primary).get("type") == "virtual" and kind(refs(primary).get("parent")) == "interface":
+                    # A Junos logical unit (AGG em0.0) is addressed; the cable
+                    # and the mgmt_only flag sit on its physical parent port.
+                    primary = refs(primary)["parent"]
                 peer = terminal_peers.get(primary)
                 manager = refs(peer).get("device")
                 if (not attrs(primary).get("mgmt_only") or manager not in management or

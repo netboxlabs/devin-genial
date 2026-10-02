@@ -597,6 +597,8 @@ def validate(plan, catalog=None):
         if attrs(key).get("encryption_algorithm") != "aes-256-cbc" or attrs(key).get("authentication_algorithm") != "hmac-sha256" or attrs(key).get("sa_lifetime_seconds") != 3600:
             report("ipsec-proposal", key, "Recovery ESP proposal must preserve its authored algorithms and lifetime.")
     for key in by_kind["l2vpn"]:
+        if attrs(key).get("type") == "epl":
+            continue  # a carrier EPL is the provider's Q-in-Q service (validate_provider)
         terms = children[("l2vpn", key)]
         ports = [refs(term).get("assigned_object") for term in terms]
         vids = [attrs(refs(port).get("untagged_vlan")).get("vid") for port in ports]

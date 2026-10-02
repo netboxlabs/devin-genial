@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from estates.operations_context import allocation_ledgers
 from estates.__main__ import main
 from estates.generate import generate
 from estates.model import DesignError, canonical, resolve_recipe
@@ -117,7 +118,7 @@ class EnterpriseTests(unittest.TestCase):
         self.assertEqual(validate(variant), [])
         self.assertNotEqual(canonical(variant), canonical(self.baseline))
         self.assertEqual(variant["allocations"], self.baseline["allocations"])
-        self.assertEqual(variant["reservations"], self.baseline["reservations"])
+        self.assertEqual(allocation_ledgers(variant), allocation_ledgers(self.baseline))
         self.assertEqual(canonical(generate(variant["recipe"])), canonical(variant))
 
     def test_previous_plan_cannot_hide_retirements_or_policy_remaps(self):

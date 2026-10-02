@@ -83,7 +83,8 @@ class ShowcaseText(unittest.TestCase):
                             for o in self.of(self.bank, "circuit")))
         descriptions = {o["attrs"]["description"] for o in self.of(self.provider, "device")}
         self.assertFalse([d for d in descriptions if re.match(r"[a-z-]+ at ", d)])
-        self.assertIn("Provider edge router at Chicago West Exchange", descriptions)
+        # The PE also states the MX204 port ceiling and its MX304 growth path.
+        self.assertTrue([d for d in descriptions if d.startswith("Provider edge router at Chicago West Exchange; ")])
         for plan in (self.provider, self.bank):
             for vlan in self.of(plan, "vlan"):
                 self.assertNotRegex(vlan["attrs"].get("description", ""), r"^[a-z]+ segment$")

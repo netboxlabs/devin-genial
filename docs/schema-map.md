@@ -25,7 +25,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `bgp_session` | `netbox_bgp.bgpsession` | `/api/plugins/bgp/session/` | device, export_policies, import_policies, local_address, local_as, peer_group, remote_address, remote_as, remote_prefix, site, tenant | — | REST, loader-only |
 | `cable` | `dcim.cable` | `/api/dcim/cables/` | a, b, bundle | SDK default | TB |
 | `cable_bundle` | `dcim.cablebundle` | `/api/dcim/cable-bundles/` | owner | name | TB |
-| `circuit` | `circuits.circuit` | `/api/circuits/circuits/` | owner, provider, provider_account, tenant, type | cid (in provider) | TB |
+| `circuit` | `circuits.circuit` | `/api/circuits/circuits/` | owner, provider, provider_account, tags, tenant, type | cid (in provider) | TB |
 | `circuit_group` | `circuits.circuitgroup` | `/api/circuits/circuit-groups/` | owner, tenant | name | TB |
 | `circuit_group_assignment` | `circuits.circuitgroupassignment` | `/api/circuits/circuit-group-assignments/` | group, member | the pair (in group, member) | TB |
 | `circuit_termination` | `circuits.circuittermination` | `/api/circuits/circuit-terminations/` | circuit, termination | term_side (in circuit) | TB |

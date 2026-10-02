@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from estates.operations_context import allocation_ledgers
 from estates.validate_optics import analyze as analyze_optics
 from estates.validate_poe import analyze as analyze_poe
 
@@ -106,7 +107,7 @@ class SchoolTests(unittest.TestCase):
             self.assertEqual(validate(variant), [])
             sites = [o for o in variant["objects"] if o["kind"] == "site"]
             self.assertEqual(len({o["refs"]["region"] for o in sites}),1)
-            self.assertEqual(variant["reservations"],plan["reservations"])
+            self.assertEqual(allocation_ledgers(variant),allocation_ledgers(plan))
             self.assertEqual(canonical(generate(variant["recipe"])),canonical(variant))
             self.assertNotEqual(canonical(variant),canonical(plan))
 

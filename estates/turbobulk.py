@@ -563,7 +563,7 @@ SUPPORTED_REFS = {
     "asn": {"rir", "tenant"},
     "asn_range": {"rir", "tenant"},
     "cable": {"a", "b", "bundle"},
-    "circuit": {"owner", "provider", "provider_account", "tenant", "type"},
+    "circuit": {"owner", "provider", "provider_account", "tags", "tenant", "type"},
     "circuit_termination": {"circuit", "termination"},
     "circuit_type": set(),
     "cluster": {"group", "owner", "scope_site", "tenant", "type"},

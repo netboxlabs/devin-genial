@@ -287,11 +287,18 @@ class OpticsValidationTests(unittest.TestCase):
         """Owned spans pick the shortest reviewed reach that covers them; a carrier
         handoff stops at the local demarcation, so leased spans keep LR4."""
         def owned_link(plan, objects, model):
-            for cable in (o for o in objects.values() if o["kind"] == "cable" and o["attrs"].get("type") == "smf"):
-                ends = [objects[cable["refs"][s]] for s in "ab"]
-                port = next((e for e in ends if e["kind"] == "interface"), None)
-                term = next((e for e in ends if e["kind"] == "circuit_termination"), None)
-                if port and term and objects[port["refs"]["module"]]["refs"]["module_type"].endswith("/" + model):
+            # A PoP handoff lands on a panel rear port; its mapped front reaches the port.
+            peers = {}
+            for cable in (o for o in objects.values() if o["kind"] == "cable"):
+                peers[cable["refs"]["a"]], peers[cable["refs"]["b"]] = cable["refs"]["b"], cable["refs"]["a"]
+            front_of = {o["refs"]["rear_port"]: k for k, o in objects.items() if o["kind"] == "front_port"}
+            for term in (o for o in objects.values() if o["kind"] == "circuit_termination" and o["key"] in peers):
+                end = peers[term["key"]]
+                if objects[end]["kind"] == "rear_port":
+                    end = peers.get(front_of.get(end))
+                port = objects.get(end, {})
+                if (port.get("kind") == "interface" and "module" in port["refs"]
+                        and objects[port["refs"]["module"]]["refs"]["module_type"].endswith("/" + model)):
                     return port, objects[port["refs"]["module"]], objects[term["refs"]["circuit"]]
             self.fail(f"Fixture needs an installed {model} on an owned circuit")
         plan, objects = self.fixture(self.provider)

@@ -333,5 +333,70 @@ class OperationsContextTests(unittest.TestCase):
             self.assertTrue(all("created_by" not in journal for journal in journals))
 
 
+class FrozenServiceDay(unittest.TestCase):
+    """Growth can never move an existing site's service day (site-in-service ledger)."""
+
+    def world(self, circuits, reservations=None):
+        from types import SimpleNamespace
+        objects = {key: {"key": key, "kind": "circuit", "attrs": {"install_date": day}, "refs": {}}
+                   for key, day in circuits.items()}
+        terms = [{"key": f"{key}/A", "refs": {"circuit": key, "termination": "site/a"}} for key in circuits]
+        world = SimpleNamespace(objects=objects, obj=objects.__getitem__,
+                                reservations=reservations if reservations is not None else {})
+        return world, {"circuit_termination": terms}
+
+    def test_first_generation_records_the_day_and_moves_nothing(self):
+        from estates.operations_context import _freeze_service_days
+        world, kinds = self.world({"c/1": "2024-05-01", "c/2": "2024-03-01"})
+        _freeze_service_days(world, kinds)
+        self.assertEqual(world.reservations["site-in-service/site/a"],
+                         {"day": date(2024, 3, 1).toordinal()})
+        self.assertEqual([world.obj(k)["attrs"]["install_date"] for k in ("c/1", "c/2")],
+                         ["2024-05-01", "2024-03-01"])
+
+    def test_an_appended_earlier_circuit_enters_service_on_the_frozen_day(self):
+        from estates.operations_context import _freeze_service_days
+        ledger = {"site-in-service/site/a": {"day": date(2024, 3, 1).toordinal()}}
+        world, kinds = self.world({"c/1": "2024-03-01", "c/new": "2023-11-20"}, ledger)
+        _freeze_service_days(world, kinds)
+        self.assertEqual(world.obj("c/new")["attrs"]["install_date"], "2024-03-01")
+        self.assertEqual(ledger["site-in-service/site/a"]["day"], date(2024, 3, 1).toordinal())
+
+    def test_without_the_ledger_an_appended_circuit_would_move_existing_installs(self):
+        # Failing mutation: the same growth with the ledger dropped re-derives an
+        # earlier service day, which re-dates every existing device at the site.
+        from estates.operations_context import _freeze_service_days
+        world, kinds = self.world({"c/1": "2024-03-01", "c/new": "2023-11-20"})
+        _freeze_service_days(world, kinds)
+        self.assertEqual(world.obj("c/new")["attrs"]["install_date"], "2023-11-20")
+        self.assertNotEqual(world.reservations["site-in-service/site/a"]["day"],
+                            date(2024, 3, 1).toordinal())
+
+    def test_grown_plan_keeps_every_frozen_day_and_existing_journal(self):
+        old = generate({"profile": "enterprise-data-center"})
+        recipe = deepcopy(old["recipe"])
+        recipe["data_centers"] += 1
+        recipe["wan_peak_mbps"] += 1000
+        grown = generate(recipe, previous=old)
+        self.assertEqual(validate(grown), [])
+        frozen = {scope: items for scope, items in old["reservations"].items()
+                  if scope.startswith("site-in-service/")}
+        self.assertTrue(frozen)
+        for scope, items in frozen.items():
+            self.assertEqual(grown["reservations"][scope], items, scope)
+        current = {o["key"]: o for o in grown["objects"]}
+        for obj in old["objects"]:
+            if obj["kind"] == "journal_entry":
+                self.assertEqual(obj, current[obj["key"]], obj["key"])
+
+
+class IsoYearDateCode(unittest.TestCase):
+    def test_two_digit_date_code_is_an_iso_year(self):
+        # 30 December 2019 is ISO 2020-W01: redate_serial prints "20", which the
+        # independent serial check must accept (it compares ISO years).
+        from estates.model import redate_serial
+        self.assertEqual(redate_serial("{yy}@######@", "19L183237Q", date(2019, 12, 30))[:2], "20")
+
+
 if __name__ == "__main__":
     unittest.main()

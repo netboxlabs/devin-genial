@@ -107,9 +107,10 @@ class ShowcasePolishTests(unittest.TestCase):
         self.assertNotIn("role/access", self.objects)  # a role no device holds is not emitted
 
         def idle(objects, plan):
-            objects["config-context/switching"]["refs"]["roles"].append("role/patch-panel")
-            plan["objects"].append({"key": "role/patch-panel", "kind": "device_role",
-                                    "attrs": {"name": "Patch Panel", "slug": "inland-fiber-patch-panel", "color": "9e9e9e"},
+            # A role no device holds (the PoP panels hold Patch Panel since 0.17).
+            objects["config-context/switching"]["refs"]["roles"].append("role/wall-outlet")
+            plan["objects"].append({"key": "role/wall-outlet", "kind": "device_role",
+                                    "attrs": {"name": "Wall Outlet", "slug": "inland-fiber-wall-outlet", "color": "b0bec5"},
                                     "refs": {}, "meta": {}})
         self.assertIn("automation-context", codes(validate(self.mutate(idle))))
 
