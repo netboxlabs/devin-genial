@@ -146,7 +146,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for room, (space_type, origin) in rooms.items():
             if (kind(room) != "location" or meta(room).get("space_type") != space_type or
                     meta(room).get("floor") != 1 or meta(room).get("position_m") != origin or
-                    refs(room).get("parent") != f"location/{sid}/floor-01" or attrs(room).get("status") != "active"):
+                    refs(room).get("parent") is not None or attrs(room).get("status") != "active"):
                 report("retail-room-placement", room, "Retail rooms must occupy their fixed active ground-floor locations.")
         if (kind(closet) != "location" or meta(closet).get("space_type") != "equipment_room" or
                 meta(closet).get("floor") != 1):

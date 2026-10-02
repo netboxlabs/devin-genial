@@ -444,11 +444,15 @@ def validate_resolved(plan, catalog, *, sites, workloads, peak, reserve, strict_
     return findings
 
 
-def validate_power(objects, catalog, devices, children, cable_peer, cable_key, *, poe_watts=None, optics_watts=None):
+def validate_power(objects, catalog, devices, children, cable_peer, cable_key, *, poe_watts=None, optics_watts=None,
+                   single_feed=frozenset()):
     """Check racked equipment supply paths using the caller's physical indexes.
 
     Profile adapters select infrastructure independently of contracts; actual
     PD paths and installed optics add separate independently derived allowances.
+    ``single_feed`` names the sites the caller's own policy designs on one branch
+    circuit (a single-CE premises): there every supply still needs its own active
+    local path, but one PDU and panel satisfy the room.
     """
     findings = []
 
@@ -507,7 +511,7 @@ def validate_power(objects, catalog, devices, children, cable_peer, cable_key, *
                 report("dc-power-failover", port, "Every supply must reserve the complete synthetic device allowance.")
             pdus.add(pdu)
             panels.add(panel)
-        required = min(2, len(model["power_ports"]))
+        required = min(1 if site in single_feed else 2, len(model["power_ports"]))
         if len(pdus) < required or len(panels) < required:
             report("dc-power-diversity", device, f"Installed supplies require {required} distinct PDUs and upstream panels.")
     return findings

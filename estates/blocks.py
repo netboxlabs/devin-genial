@@ -1,6 +1,5 @@
 """Reusable sites, equipment, attachment pools, addressing, patching and power."""
 
-import hashlib
 import ipaddress
 import math
 import re
@@ -43,6 +42,16 @@ ZONE_PITCH_M = CABINETS_PER_ROW * CABINET_WIDTH_M + ZONE_AISLE_M
 # three quarters empty by construction.
 RACK_LANE_DEVICES = 10
 RACK_U_HEIGHT = 24
+# A single-CE premises (one edge, one switch) gets the small-room kit: a 13U
+# Panduit R2P26 two-post rack, one 1U 120 V APC AP9563 on one 120 V / 20 A
+# branch circuit and no console server. Both lane devices still fit below it.
+SMALL_RACK = (13, "2-post-frame", "Two-post equipment rack")
+# Feed electrics by country: US cabinets take 208 V / 20 A single-phase
+# circuits (the AP9572 is a 16 A 208/230 V PDU, the 80% continuous load of a
+# 20 A breaker); a small US room takes one 120 V / 20 A circuit. Other
+# countries keep the 230 V / 16 A single-phase planning feed.
+FEED_ELECTRICS = {("US", False): (208, 20), ("US", True): (120, 20)}
+DEFAULT_FEED = (230, 16)
 
 
 def trunk(site, interfaces, networks):
@@ -92,6 +101,10 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
         # The equipment builder sizes each room's console server from its own
         # serial demand, so both Opengear sizes belong to any estate that has one.
         selected.add("console-server-48")
+    if selected is not None and "provider-edge" in selected:
+        # Provider customer premises take the small-room 120 V PDU; PoP cages
+        # carry a fibre enclosure per PE cabinet.
+        selected |= {"pdu-120", "fibre-panel"}
     manufacturers = set()
     for alias, spec in w.catalog["models"].items():
         if selected is not None and alias not in selected:
@@ -157,6 +170,9 @@ class Site:
         self.rack_grid = (kind == "dc" and w.recipe["profile"] in {"enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone", "retail-chain", "university-campus", "msp", "manufacturing", "utility"}
                           or kind == "pop" and w.recipe["profile"] == "provider-backbone")
         self.rack_domains = self.rack_grid
+        # A provider customer premises is one CE and one switch: no redundant
+        # pair needs a second feed, PDU or console server (SMALL_RACK).
+        self.small_kit = kind == "customer"
         self.network_prefixlen = {"regional-bank": 24, "enterprise-data-center": 20, "school-district": 20,
                                   "hospital-clinics": 20, "provider-backbone": 20 if kind == "dc" else 26,
                                   "retail-chain": 20 if kind == "dc" else 24,
@@ -292,20 +308,27 @@ class Site:
         room = self.room_prefix(location)
         key = f"rack/{self.id}/{room}{group}-{ordinal+1:02}"
         if key not in self.racks:
-            height = RACK_U_HEIGHT
-            asset_tag = f"{self.name}-{room}{group}-{ordinal+1:02}"
-            if len(asset_tag) > 50:
-                # Native Rack.asset_tag is globally unique and limited to 50.
-                # Keep accepted short tags; retain full room scope in the digest.
-                asset_tag = asset_tag[:33] + "-" + hashlib.sha256(asset_tag.encode()).hexdigest()[:16]
+            if self.rack_grid and ordinal >= 64:
+                raise DesignError(f"{self.id}: data hall supports 64 rack positions per equipment zone; extend the reviewed layout")
+            row, column = divmod(ordinal, CABINETS_PER_ROW) if self.rack_grid else (0, ordinal)
+            # facility_id is the room-scoped cabinet code stencilled on the
+            # cabinet: room tag ("DH", "MDF", "IDF02", the cage "C12"), row,
+            # zone letter and bay. Unique per room, stable because lanes are.
+            room_name = self.w.obj(location)["attrs"]["name"]
+            tag = room_name.removeprefix("Cage ") if room_name.startswith("Cage ") else "".join(
+                word if word.isupper() or word[0].isdigit() else word[0].upper() for word in room_name.split())
+            # Asset tags are short and sequential in purchase order: the
+            # namespace (at most 20 characters) is the cross-estate separator
+            # NetBox's global uniqueness needs, the permanent ledger the number.
+            asset_tag = f"{self.w.recipe['namespace'].upper()}-{self.w.reserve('asset-tags', key, 100000) + 1:05}"
+            # Enclosed four-post 24U cabinet (APC AR3104) everywhere a room
+            # holds rack lanes; a single-CE premises takes the small-room kit.
+            height, form, description = (SMALL_RACK if self.small_kit else
+                                         (RACK_U_HEIGHT, "4-post-cabinet", f"{group.title()} equipment cabinet"))
             self.w.add("rack", key, {"name": f"{'N' if group == 'network' else 'C'}{ordinal+1:02}", "u_height": height,
-                  "width": 19, "status": "active", "asset_tag": asset_tag,
-                  # Enclosed four-post cabinet: the enclosure these equipment
-                  # rooms are authored around. facility_id is the locally
-                  # assigned label stencilled on the cabinet, unique per room.
-                  "form_factor": "4-post-cabinet",
-                  "facility_id": f"{room}{group[0].upper()}{ordinal+1:02}",
-                  "description": f"{group.title()} equipment cabinet"},
+                  "width": 19, "status": "active", "asset_tag": asset_tag, "form_factor": form,
+                  "facility_id": f"{tag}-{row+1:02}-{group[0].upper()}{column+1:02}",
+                  "description": description},
                   {"site": self.key, "location": location, "tenant": self.tenant,
                    "role": f"rack-role/{group}"})
             self.racks[key] = True
@@ -313,9 +336,6 @@ class Site:
             if self.rack_grid:
                 # Two bounded cabinet zones share a synthetic data hall. Lane
                 # ordinals retain positions during growth; unused lanes are space.
-                if ordinal >= 64:
-                    raise DesignError(f"{self.id}: data hall supports 64 rack positions per equipment zone; extend the reviewed layout")
-                row, column = divmod(ordinal, CABINETS_PER_ROW)
                 zone = 0 if group == "network" else 1
                 # Rounded so a coordinate is exact in the plan, in the
                 # independent checks and after the geometry sidecar's
@@ -586,34 +606,45 @@ class Site:
 
     def power(self):
         self.contract["power_redundancy"] = []
+        # A single-CE premises is one branch circuit; every other room keeps
+        # separate A and B panels, feeds and PDUs.
+        sides = ("a",) if self.small_kit else ("a", "b")
+        country = self.w.obj(self.key)["meta"].get("geography", {}).get("country")
+        voltage, amperage = FEED_ELECTRICS.get((country, self.small_kit), DEFAULT_FEED)
+        pdu_alias = "pdu-120" if self.small_kit and country == "US" else "pdu"
+        pdu_spec = self.w.hardware(pdu_alias)
         for location in self.contract["placement"]["equipment_locations"].values():
             room = self.room_prefix(location)
-            for side in ("a", "b"):
+            for side in sides:
                 # Panel names are unique per site, so the room prefix and side
                 # are enough: the namespaced site stem only truncated to
                 # indistinguishable node labels in the visualization layer.
                 self.w.add("power_panel", f"panel/{self.id}/{room}{side}",
-                           {"name": f"{titleize(room.rstrip('-')) + ' ' if room else ''}Supply {side.upper()}"},
+                           {"name": f"{titleize(room.rstrip('-')) + ' ' if room else ''}"
+                                    f"{'Panel' if len(sides) == 1 else 'Supply ' + side.upper()}"},
                            {"site": self.key, "location": location})
         for rack, members in self.rack_members.items():
             location = self.w.obj(rack)["refs"]["location"]
             room = self.room_prefix(location)
             outlets = {}
-            for side in ("a", "b"):
+            for side in sides:
                 label = f"pdu-{rack.split('/')[-1]}-{side}"
-                pdu = self.device("pdu", label, "pdu", racked=False)
+                pdu = self.device(pdu_alias, label, "pdu", racked=False)
                 self.w.obj(pdu)["refs"].update(rack=rack, location=location)
+                if pdu_spec["u_height"]:
+                    # The 1U horizontal PDU takes the top unit, above the lane.
+                    self.w.obj(pdu)["attrs"].update(position=self.w.obj(rack)["attrs"]["u_height"], face="front")
                 self.w.obj(pdu)["meta"]["failure_domain"] = f"{self.id}-{room}supply-{side}"
                 # NetBox keys a feed on (panel, name) and a panel is already
                 # per site, room and side, so the cabinet label and side are
                 # enough. Same reason as the panel above: the namespaced site
                 # stem truncated to indistinguishable node labels.
+                stem = titleize(rack.split('/')[-1].removeprefix(room))
                 feed = self.w.add("power_feed", f"feed/{rack}/{side}",
-                                 {"name": f"{titleize(rack.split('/')[-1].removeprefix(room))} {side.upper()}", "status": "active",
+                                 {"name": stem if len(sides) == 1 else f"{stem} {side.upper()}", "status": "active",
                                   "type": "primary" if side == "a" else "redundant", "supply": "ac", "phase": "single-phase",
-                                  "voltage": 230, "amperage": 16, "max_utilization": 80},
+                                  "voltage": voltage, "amperage": amperage, "max_utilization": 80},
                                  {"power_panel": f"panel/{self.id}/{room}{side}", "rack": rack})
-                pdu_spec = self.w.hardware("pdu")
                 inlet = f"{pdu}/power/{pdu_spec['power_ports'][0]['name']}"
                 self.cable(feed, inlet, "power")
                 outlets[side] = []
@@ -622,18 +653,26 @@ class Site:
                     outlets[side].append(outlet)
             for device in members:
                 # Rack slots persist across growth; emission order need not.
-                # One outlet per lane member, indexed by its mounting unit.
+                # One outlet per supply, indexed by the member's mounting unit:
+                # with one PDU a member's supplies take adjacent outlets.
                 i = self.w.obj(device)["attrs"]["position"] - 1
                 ports = self.w.catalog["models"][self.w.obj(device)["meta"]["hardware"]]["power_ports"]
                 allowance = PLANNED_WATTS.get(self.w.obj(device)["meta"]["hardware"], 0)
                 for j, port in enumerate(ports):
-                    side = "a" if j % 2 == 0 else "b"
+                    side = sides[j % len(sides)]
+                    index = i if len(sides) == 2 else len(ports) * i + j
+                    if index >= len(outlets[side]):
+                        raise DesignError(f"{rack}: {pdu_alias} has no outlet left for {device}; extend the reviewed room kit")
                     inlet = f"{device}/power/{port['name']}"
                     self.w.obj(inlet)["attrs"].update(allocated_draw=allowance // len(ports), maximum_draw=allowance,
-                         description="Draw split across the A and B feeds; maximum covers single-feed failover")
-                    self.cable(outlets[side][i], inlet, "power")
+                         description="Draw split across the A and B feeds; maximum covers single-feed failover" if len(sides) == 2
+                         else "Draw split across both supplies on the one PDU; maximum covers single-supply failover")
+                    self.cable(outlets[side][index], inlet, "power")
                 if ports:
                     self.w.obj(device)["meta"]["planned_watts"] = allowance
-                    self.contract["power_redundancy"].append(dict(device=device, min_distinct_pdus=min(2, len(ports)), planned_watts=allowance))
-        self.contract["assumptions"].append("Power checks cover racked infrastructure and separate modeled A/B panels; facility independence and endpoint wall power are not claimed.")
+                    self.contract["power_redundancy"].append(dict(device=device, min_distinct_pdus=min(len(sides), len(ports)), planned_watts=allowance))
+        self.contract["assumptions"].append(
+            "Power checks cover racked infrastructure on one modeled branch circuit; a single-CE premises has no second feed."
+            if self.small_kit else
+            "Power checks cover racked infrastructure and separate modeled A/B panels; facility independence and endpoint wall power are not claimed.")
         self.contract["assumptions"].append("Inlet draws are authored chassis planning allocations plus connected PD reservations with a 1.25 upstream AC allowance, split in normal operation with full per-device failover allowance on each supply. Endpoint wall power is excluded; no measured or vendor-certified consumption is claimed.")

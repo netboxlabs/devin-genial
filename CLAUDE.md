@@ -96,7 +96,11 @@ plainly-named Generic parts; serials follow vendor formats instead of `SYN-`;
 network devices carry vendor platforms; every prefix and VLAN carries one of
 sixteen authored IPAM roles; descriptions use operator wording with material
 limitations moved to `comments`; provider hostnames, customer VLANs, rates and
-contact phones read like a production network. Identities, names and the
+contact phones read like a production network. Physical sites read real too:
+real-street addresses, per-metro and CLLI-style facility codes, flat location
+trees (a PoP is a suite holding a cage), room-scoped cabinet codes, short
+sequential asset tags, 208 V US feeds and a small-room kit for single-CE
+premises. Identities, names and the
 hardware digest move across every profile, so 0.15 plans reject growth by
 version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
@@ -572,9 +576,17 @@ for the separately recorded pinned-target live qualification.
   intersecting 0.6 × 1.07 m footprints and disproportionate room layouts, not
   just duplicate coordinates; coordinates are rounded so the plan, the checks
   and the geometry sidecar's centimetre conversion all agree. Cabinets are
-  enclosed four-post 24U with a room-scoped `facility_id`, sized to the ten-device
-  lane that mounts contiguously from the bottom rail; 0U equipment is racked
-  without a position, exactly as NetBox models it. Device types carry `airflow`
+  sized to content: enclosed four-post 24U (AR3104) for the ten-device lane that
+  mounts contiguously from the bottom rail — 42U would read three-quarters
+  empty — and the small-room kit (13U Panduit R2P26 two-post, one 1U 120 V
+  AP9563 at the top unit, one 120 V / 20 A circuit, no console server) for a
+  single-CE premises (`Site.small_kit`, provider customers). PoP cabinets add
+  real passive content, one FCE1U fibre enclosure per PE cabinet — never
+  padding. `facility_id` is a room-scoped cabinet code (`DH-02-C03`,
+  `G09-01-N02`); 0U equipment is racked
+  without a position, exactly as NetBox models it. US feeds are 208 V / 20 A
+  single-phase (the AP9572 is a 16 A PDU); only the provider validator's own
+  premises list may pass `single_feed` to `validate_power`. Device types carry `airflow`
   only where the pinned source declares it (Cisco C9200L-24P-4X and FortiGate
   100F declare none); our own reference designs state it as authored fiction.
 - Hospital wards occupy permanent reserved floors; beds and desks are installed
@@ -720,9 +732,11 @@ for the separately recorded pinned-target live qualification.
   Preserve failed receipts; do not clear logs or manually repair estate records.
 - Short device names require site/tenant in every Diode reference; DNS retains
   the full namespace. Serial numbers are not a replacement for matching identity.
-- Rack asset tags retain accepted short labels; longer labels use a readable
-  prefix and stable digest of the full site/room identity to fit native 50-character
-  limits. Validate global tag uniqueness before export; site names are unchanged.
+- Rack asset tags (since 0.16) are `<NAMESPACE>-<nnnnn>`: the uppercase
+  namespace (at most 20 characters) keeps NetBox's global uniqueness across
+  coexisting estates and the permanent `asset-tags` ledger numbers racks in
+  creation order, so growth appends. Room scope lives in the `facility_id`
+  cabinet code. Validate global tag uniqueness before export.
 - Display naming (`estates/naming.py` is the single policy home since 0.12.0;
   the sweep became exhaustive in 0.15.0): every object family emits an authored,
   namespace-free `name`; identities — slugs, object keys, device names, circuit
@@ -783,7 +797,13 @@ for the separately recorded pinned-target live qualification.
   `.invalid` webhook and disabled rule remain enforced.
 - Site naming: authored display names, facility codes and anchor-placed
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0;
-  anchors since 0.16). Coordinates sit at most ~400 m from an authored
+  anchors since 0.16). Addresses (0.16) use a real street of the site's anchor
+  (`places.ADDRESS_STREETS`) and a site-id-hashed number — Chicago's grid numbers
+  it from the coordinate — never a sequential street. Facility codes are per
+  metro from a permanent ledger (`CHI01`); provider PoPs and the NOC carry
+  fictional CLLI-style codes (`CHCGILCR`). Rooms of single-floor kinds
+  (`places.FLAT_KINDS`) hang from the site without pass-through building/floor
+  levels; a PoP is `Suite NNN` → `Cage X00`. Coordinates sit at most ~400 m from an authored
   `places.ANCHORS` point or street run that was verified on land in its
   municipality; a site named after a neighbourhood, suburb or street sits there
   and its address names that municipality. Never reintroduce free metro-wide
@@ -815,7 +835,7 @@ for the separately recorded pinned-target live qualification.
   normalized interface names are a labeled deviation, never a vendor claim.
 - HQ staff demand determines office floors and equipment rooms. Allocate access,
   management and power locally; check the actual copper paths and fiber backbone.
-  Rack names may repeat across rooms; rack references and asset tags retain room scope.
+  Rack names may repeat across rooms; rack references and `facility_id` retain room scope.
 - Keep ordinary growth stable; changing headquarters_staff needs a new baseline
   until an explicit building-remodel transition is implemented.
 - WAN CIR is purchased capacity; the physical handoff is separate. Choose tiers

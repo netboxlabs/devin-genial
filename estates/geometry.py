@@ -39,6 +39,10 @@ API = "/api/plugins/physical-geometry/"
 # rooms are immune: their coordinates come from meta.position_m, not ordering.
 RACK_WIDTH = 60
 RACK_DEPTH = 107
+# Footprint by rack form factor (centimeters): the small-room kit's Panduit
+# R2P26 two-post rack is 516 x 279 mm (pinned devicetype-library rack type);
+# every other rack is the 600 x 1070 mm cabinet the grid is authored around.
+FOOTPRINTS = {"2-post-frame": (52, 28)}
 ROW_CAPACITY = 8
 AISLE = 122
 MARGIN = 100
@@ -93,12 +97,13 @@ def _floorplans(plan):
                 # confirmed against live OPTIONS metadata at seed time; the
                 # artifact records the intent only.
                 orientation = 180 if row % 2 else 0
+            width, depth = FOOTPRINTS.get(rack["attrs"].get("form_factor"), (RACK_WIDTH, RACK_DEPTH))
             shapes.append({
                 "rack_name": rack["attrs"]["name"],
                 "asset_tag": rack["attrs"].get("asset_tag"),
                 "type": "rack",
                 "x": x, "y": y,
-                "width": RACK_WIDTH, "depth": RACK_DEPTH,
+                "width": width, "depth": depth,
                 "orientation_intent": orientation,
             })
         name = f"{site['attrs']['name']} — {location['attrs']['name']}"

@@ -124,7 +124,7 @@ def resolve(raw):
         if c["service"] != "private-l3":
             raise DesignError("Customer service supports private-l3; Internet and L2VPN are separate future designs")
         _integer(c["site_peak_mbps"],f"Customer {key} site_peak_mbps",1,800)
-        _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",1,12)
+        _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",0,12)
         _integer(c["hub_commit_mbps"],f"Customer {key} hub_commit_mbps",1,1000)
         if c["hub_commit_mbps"] not in r["wan_tiers_mbps"]:
             raise DesignError(f"Customer {key}: hub_commit_mbps must be one of wan_tiers_mbps")
@@ -411,6 +411,8 @@ def _pop(w,item):
     for number,side in enumerate(("a","b")):
         device = site.device("provider-edge",f"pe-{side}","provider-edge",rack_domain=number)
         routers.append(device)
+        # One 1U fibre enclosure per PE cabinet terminates its building fibre.
+        site.device("fibre-panel",f"odf-{side}","patch-panel",rack_domain=number)
         for n in range(4):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
         for n in range(8):
@@ -494,7 +496,8 @@ def _customer(w,sid,c,pop,number,pop_sites):
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     _site_network(site,"management",26,0,10); _site_network(site,"clients",25,128,20)
-    room = places.provider_office(site)
+    # A premises with no LAN seats is a CPE and its managed switch: no office pod.
+    room = places.provider_office(site) if c["lan_endpoints"] else None
     edge = site.device("edge","edge-01","customer-edge")
     switch = site.device("access","access-01","access")
     access_ports = w.hardware("access")["access_ports"]

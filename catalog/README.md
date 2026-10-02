@@ -197,6 +197,8 @@ library commit above, each source carrying its URL, SHA-256 and CC0-1.0 license.
 | --- | --- | --- |
 | `server` | Supermicro SuperServer 1029U-E1CRTP2 | [`Supermicro/SYS-1029U-E1CRTP2.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Supermicro/SYS-1029U-E1CRTP2.yaml) (`a7c2c39a…dc873`): `BMC` management; onboard `eth1`, `eth2` 10G SFP+ (the `data_ports` the DC builder cables) and `eth3`, `eth4` 1GbE left spare; DE-9 `Serial`. Two installed PWS-751P-1R supplies in bays `PSU1`/`PSU2` materialize C14 inlets `PSU1`/`PSU2` |
 | `pdu` | APC AP9572 | [`APC/AP9572.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9572.yaml) (`251027449…72c8472`): Basic Rack PDU, Zero U, 16A 208/230V; C20 `Power Port 1`; C13 `Outlet 1`–`Outlet 15`; no network management |
+| `pdu-120` | APC AP9563 | [`APC/AP9563.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9563.yaml) (`7e46d35c…84ff`): Basic Rack PDU, 1U, 20A 120V; NEMA 5-20P `Source`; NEMA 5-20R `Outlet 1`–`Outlet 10`; no network management. The small-room kit's PDU (provider customer premises), mounted at the rack's top unit |
+| `fibre-panel` | Panduit FCE1U (Opticom Rack Mount Fiber Enclosure, 1 RU, 4 Ports) | [`Panduit/FCE1U.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/FCE1U.yaml) (`95162477…14d4`): 1U passive, unpowered fibre enclosure. Its four adapter-panel module bays and `subdevice_role` are not emitted (no adapter panels are modeled); one per provider PoP cabinet |
 | `patch-panel` | Panduit DP24688TGY (Cat 6 Punchdown Patch Panel, 24 Ports, 1 RU) | [`Panduit/DP24688TGY.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/DP24688TGY.yaml) (`b5299f24…ccd5`): front `01`–`24` 8P8C, rear `01`–`24` 110 punchdown, mapped one-to-one |
 | `wall-outlet` | Generic "Wall box, 1 UTP plug" | [`Generic/wall-box-1-utp-plug.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/wall-box-1-utp-plug.yaml) (`8138ca1f…bcaa1`): front and rear `Port 1`, 8P8C |
 | `console-server` | Opengear CM8116 | [`Opengear/CM8116.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/CM8116.yaml) (`ae6718cc…de174`): RJ45 `Port 1`–`Port 16`; `NET1`/`NET2` management; own `Console` plus `USB A`/`USB B`; C14 `PS1`/`PS2` |
@@ -242,7 +244,7 @@ Declared deviations and selections:
   (`generic-design-v1`), not a vendor product.
 
 `airflow` is carried only where a source states it: `front-to-rear` on the
-Arista, Juniper and Supermicro chassis and `passive` on the AP9572 and CM8148,
+Arista, Juniper and Supermicro chassis and `passive` on the AP9572, AP9563, FCE1U and CM8148,
 copied unchanged. The pinned Cisco C9200L, C9120, Fortinet 100F, CM8116,
 Panduit and wall-box sources declare none, so none is invented. The generic
 liquid-cooled enclosure states `front-to-rear` as an authored assumption.
@@ -260,7 +262,11 @@ Cabinets reference rack type APC **AR3104** (NetShelter SX 24U, 600 mm wide x
 around. The pinned library has no 24U SX rack type; the model and dimensions
 come from APC's
 [AR3104 product page](https://www.se.com/us/en/product/AR3104/netshelter-sx-server-rack-enclosure-24u-600mm-wide-x-1070mm-deep-with-sides-black/)
-(checked 2026-10-01).
+(checked 2026-10-01). A provider customer premises takes the small-room kit's
+Panduit **R2P26** two-post rack (13RU, 516 x 279 mm), pinned to
+[`rack-types/Panduit/R2P26.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/rack-types/Panduit/R2P26.yaml)
+(`d6c46294…c8e7`). The bank's rack-type records (`operations.RACK_TYPES`) carry
+both.
 
 ## Serial numbers
 

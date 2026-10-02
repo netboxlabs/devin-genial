@@ -171,6 +171,130 @@ ANCHORS = {
         (("Burleigh",), "Milwaukee", 43.0753, -88.0002, 43.0748, -87.9101),
     ),
 }
+# Street-address pools, keyed (locality, first anchor name). A street run is
+# addressed on its own street; a point anchor uses real streets inside its
+# neighbourhood or suburb — the road OpenStreetMap Nominatim reverse-geocoded at
+# the anchor centre (build/geo-verify, 2026-10-01) plus well-known main streets
+# checked the same way. A site hashes its id onto one street and a house number;
+# inside Chicago a directional street takes its grid number from the site's own
+# coordinate (800 numbers a mile from State and Madison), so the number agrees
+# with the map pin. Numbers are synthetic: never a surveyed or real premises.
+ADDRESS_STREETS = {
+    ("Chicago", "Loop"): ("South LaSalle Street", "West Adams Street"),
+    ("Chicago", "Fulton Market"): ("West Fulton Market", "West Lake Street"),
+    ("Chicago", "Pilsen"): ("West 18th Street", "West 18th Place"),
+    ("Chicago", "Cermak"): ("East Cermak Road", "South Indiana Avenue"),
+    ("Chicago", "Ravenswood"): ("North Ravenswood Avenue",),
+    ("Chicago", "Bridgeport"): ("South Halsted Street", "South Keeley Street"),
+    ("Chicago", "Logan Square"): ("West Belden Avenue", "North Milwaukee Avenue"),
+    ("Chicago", "Wicker Park"): ("North Hoyne Avenue", "North Damen Avenue"),
+    ("Chicago", "Garfield Park"): ("West Madison Street",),
+    ("Chicago", "Bronzeville"): ("East 43rd Street",),
+    ("Chicago", "Hyde Park"): ("South Woodlawn Avenue", "South Greenwood Avenue"),
+    ("Chicago", "Lincoln Square"): ("West Foster Avenue",),
+    ("Chicago", "Chatham"): ("South Vernon Avenue",),
+    ("Chicago", "Lakeview"): ("West Belmont Avenue",),
+    ("Chicago", "Portage Park"): ("West Hutchinson Street",),
+    ("Chicago", "Little Village"): ("West 26th Street",),
+    ("Chicago", "Austin"): ("North Central Avenue",),
+    ("Elk Grove Village", "Elk Grove"): ("Arthur Avenue", "Morse Avenue"),
+    ("Franklin Park", "Franklin Park"): ("Franklin Avenue",),
+    ("Northlake", "Northlake"): ("East Dickens Avenue",),
+    ("Oak Park", "Oak Park"): ("South Ridgeland Avenue",),
+    ("Schaumburg", "Schaumburg"): ("North Pleasant Drive",),
+    ("Skokie", "Skokie"): ("Kolmar Avenue",),
+    ("Chicago", "Wabash"): ("South Wabash Avenue",),
+    ("Chicago", "Halsted"): ("South Halsted Street",),
+    ("Chicago", "Clark"): ("North Clark Street",),
+    ("Chicago", "Ashland"): ("South Ashland Avenue",),
+    ("Chicago", "Damen"): ("South Damen Avenue",),
+    ("Chicago", "Kedzie"): ("South Kedzie Avenue",),
+    ("Chicago", "Montrose"): ("West Montrose Avenue",),
+    ("Chicago", "Archer"): ("South Archer Avenue",),
+    ("Detroit", "Downtown"): ("Woodward Avenue",),
+    ("Detroit", "Corktown"): ("Michigan Avenue",),
+    ("Detroit", "Eastern Market"): ("Alfred Street",),
+    ("Detroit", "New Center"): ("West Grand Boulevard",),
+    ("Detroit", "Midtown"): ("Cass Avenue",),
+    ("Detroit", "Southwest Detroit"): ("Bivouac Street",),
+    ("Detroit", "Palmer Park"): ("West 7 Mile Road",),
+    ("Detroit", "Rosedale Park"): ("Archdale Street",),
+    ("Detroit", "East English Village"): ("Chatsworth Street",),
+    ("Detroit", "Boston Edison"): ("Chicago Boulevard",),
+    ("Detroit", "Woodbridge"): ("Trumbull Street",),
+    ("Detroit", "Mexicantown"): ("Bagley Street",),
+    ("Highland Park", "Highland Park"): ("Gerald Street",),
+    ("Dearborn", "Dearborn"): ("Michigan Avenue",),
+    ("Southfield", "Southfield"): ("West 10 Mile Road",),
+    ("Troy", "Troy"): ("Livernois Road",),
+    ("Warren", "Warren"): ("Campbell Avenue",),
+    ("Livonia", "Livonia"): ("Merriman Road",),
+    ("Royal Oak", "Royal Oak"): ("South Main Street",),
+    ("Novi", "Novi"): ("Novi Road",),
+    ("Detroit", "Woodward"): ("Woodward Avenue",),
+    ("Detroit", "Gratiot"): ("Gratiot Avenue",),
+    ("Detroit", "Cass"): ("Cass Avenue",),
+    ("Detroit", "Livernois"): ("Livernois Avenue",),
+    ("Detroit", "Vernor"): ("West Vernor Highway",),
+    ("Detroit", "Bagley"): ("Bagley Street",),
+    ("Detroit", "Grand River"): ("Grand River Avenue",),
+    ("Detroit", "Mack"): ("Mack Avenue",),
+    ("Cleveland", "Downtown"): ("Eagle Avenue",),
+    ("Cleveland", "Flats East"): ("West 3rd Street",),
+    ("Cleveland", "Midtown"): ("Euclid Avenue",),
+    ("Cleveland", "University Circle"): ("Mayfield Road",),
+    ("Cleveland", "Ohio City"): ("Chatham Avenue",),
+    ("Cleveland", "Tremont"): ("West 11th Street",),
+    ("Cleveland", "Slavic Village"): ("Warsaw Avenue",),
+    ("Cleveland", "West Park"): ("West 144th Street",),
+    ("Cleveland", "Buckeye Shaker"): ("East 126th Street",),
+    ("Cleveland", "Old Brooklyn"): ("Tate Avenue",),
+    ("Cleveland", "Fairfax"): ("East 88th Street",),
+    ("Lakewood", "Lakewood"): ("Warren Road",),
+    ("Westlake", "Westlake"): ("Beechwood Drive",),
+    ("Independence", "Independence"): ("Brecksville Road",),
+    ("Parma", "Parma"): ("Snow Road",),
+    ("Beachwood", "Beachwood"): ("Chagrin Boulevard",),
+    ("Brooklyn", "Brooklyn"): ("Ridge Road",),
+    ("Shaker Heights", "Shaker Heights"): ("South Woodland Road",),
+    ("Cleveland", "Euclid"): ("Euclid Avenue",),
+    ("Cleveland", "Broadway"): ("Broadway Avenue",),
+    ("Cleveland", "Lorain"): ("Lorain Avenue",),
+    ("Cleveland", "Prospect"): ("Prospect Avenue East",),
+    ("Cleveland", "Carnegie"): ("Carnegie Avenue",),
+    ("Cleveland", "Woodland"): ("Woodland Avenue",),
+    ("Cleveland", "Fleet"): ("Fleet Avenue",),
+    ("Cleveland", "Denison"): ("Denison Avenue",),
+    ("Milwaukee", "Downtown"): ("West Wells Street",),
+    ("Milwaukee", "Third Ward"): ("North Broadway",),
+    ("Milwaukee", "Menomonee Valley"): ("West Canal Street",),
+    ("Milwaukee", "Walkers Point"): ("West National Avenue",),
+    ("Milwaukee", "Bay View"): ("South Kinnickinnic Avenue",),
+    ("Milwaukee", "East Side"): ("North Newhall Street",),
+    ("Milwaukee", "Sherman Park"): ("West Burleigh Street",),
+    ("Milwaukee", "Washington Heights"): ("North 53rd Street",),
+    ("Milwaukee", "Lincoln Village"): ("South 10th Street",),
+    ("Milwaukee", "Riverwest"): ("North Weil Street",),
+    ("Milwaukee", "Harambee"): ("West Center Street",),
+    ("Milwaukee", "Clarke Square"): ("South 23rd Street",),
+    ("West Allis", "West Allis"): ("West Greenfield Avenue",),
+    ("Wauwatosa", "Wauwatosa"): ("Harwood Avenue",),
+    ("Oak Creek", "Oak Creek"): ("South Howell Avenue",),
+    ("Brookfield", "Brookfield"): ("West North Avenue",),
+    ("Glendale", "Glendale"): ("West Brantwood Avenue",),
+    ("Milwaukee", "Brady"): ("East Brady Street",),
+    ("Milwaukee", "Kilbourn"): ("West Kilbourn Avenue",),
+    ("Milwaukee", "Wells"): ("West Wells Street",),
+    ("Milwaukee", "Vliet"): ("West Vliet Street",),
+    ("Milwaukee", "Locust"): ("West Locust Street",),
+    ("Milwaukee", "Greenfield"): ("West Greenfield Avenue",),
+    ("Milwaukee", "Mitchell"): ("West Mitchell Street",),
+    ("Milwaukee", "Burleigh"): ("West Burleigh Street",),
+}
+# Chicago's address grid: zero at State Street and Madison Street, 800 numbers
+# to the mile (55,200 per degree of latitude; 41,200 per degree of longitude
+# at 41.9 degrees north).
+CHICAGO_GRID = (41.8819, -87.6278, 55200, 41200)
 # Jitter half-widths in degrees (~390 m north-south, ~370 m east-west at these
 # latitudes): separates sites sharing an anchor without leaving its area.
 JITTER_LAT, JITTER_LON = 0.0035, 0.0045
@@ -182,6 +306,9 @@ GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers
           "office": "Managed customer offices", "plant": "Manufacturing plants",
           "substation": "Substations"}
 MAX_CHANNEL_M = 80
+# Site kinds whose authored grammar is a single ground floor (or one data hall):
+# their rooms hang directly from the site, with no pass-through building/floor.
+FLAT_KINDS = {"branch", "store", "distribution", "office", "plant", "substation", "customer", "pop", "dc"}
 FLOOR_HEIGHT_M = 4
 OFFICE_DESKS = 12
 # Authored university building grammar. Eight rooms per academic or library
@@ -210,6 +337,7 @@ SPACE_DESCRIPTIONS = {
     "building": "Banking and business operations premises",
     "floor": "Customer or staff floor with assigned equipment-room service",
     "equipment_room": "Restricted network equipment and cable termination",
+    "suite": "Leased carrier-hotel suite holding the provider cage",
     "atm_lobby": "Public self-service banking lobby",
     "teller_hall": "Customer-facing teller and service counters",
     "office": "Private staff work area with twelve desk positions",
@@ -390,29 +518,102 @@ def _anchor(site, city, name):
     return general[int.from_bytes(hashlib.sha256(f"anchor/{site.id}".encode()).digest()[:4], "big") % len(general)]
 
 
-def _display_site(site, node, city):
-    """Apply the naming policy: authored identity, overrides, facility, geo.
+def street_address(site_id, anchor, latitude, longitude):
+    """Street line for one site: a real street at its anchor, a synthetic number.
 
-    Returns the address locality: the anchor's municipality when authored,
-    otherwise the metro city (legacy naming emits no coordinates).
+    The street and number hash the site id alone, so growth and seeds never
+    readdress a site. Inside Chicago a North/South street is numbered from the
+    site's latitude and an East/West street from its longitude on the city grid.
+    """
+    pool = ADDRESS_STREETS[(anchor[1], anchor[0][0])]
+    digest = hashlib.sha256(f"address/{site_id}".encode()).digest()
+    street = pool[digest[0] % len(pool)]
+    direction, _, rest = street.partition(" ")
+    if anchor[1] == "Chicago" and direction in {"North", "South", "East", "West"}:
+        lat0, lon0, per_lat, per_lon = CHICAGO_GRID
+        north_south = direction in {"North", "South"}
+        offset = (latitude - lat0) * per_lat if north_south else (longitude - lon0) * per_lon
+        direction = ("North" if offset >= 0 else "South") if north_south else ("East" if offset >= 0 else "West")
+        # Even or odd side of the street is the only hashed part of the number.
+        return f"{max(1, int(abs(offset)) // 2 * 2 + digest[1] % 2)} {direction} {rest}"
+    return f"{100 + int.from_bytes(digest[1:3], 'big') % 9800} {street}"
+
+
+def clli_place(locality, state_code):
+    """Six-character CLLI-style place: city initial plus its next three consonants, then state."""
+    letters = locality.upper().replace(" ", "")
+    return (letters[0] + "".join(c for c in letters[1:] if c not in "AEIOU") + letters[1:])[:4] + state_code
+
+
+def _clli_building(w, site_id, locality):
+    """Two-letter building code from the PoP's own place words ('new-center' -> 'NC').
+
+    None when the words only repeat the municipality ('lakewood' in Lakewood):
+    the caller then numbers the building instead of stuttering the place code.
+    """
+    if not site_id.startswith("pop-"):
+        return "NC"  # the provider's own NOC building
+    words = site_id.removeprefix("pop-").split("-")
+    if len(words) > 1 and words[0] == w.provider_metros[site_id]:
+        words = words[1:]
+    if "".join(words) == locality.lower().replace(" ", ""):
+        return None
+    if len(words) > 1:
+        return (words[0][0] + words[1][0]).upper()
+    word = words[0].upper()
+    return word[0] + next((c for c in word[1:] if c not in "AEIOU"), word[-1])
+
+
+def _facility(site, city, state_code, locality):
+    """Per-metro site code, or a CLLI-style code for the provider's own buildings.
+
+    Both ride permanent ledgers in creation order, so growth appends a code and
+    never renumbers an existing site.
     """
     w = site.w
+    if w.recipe["profile"] == "provider-backbone" and site.contract["kind"] in {"pop", "dc"}:
+        place = clli_place(locality, state_code)
+        scope = f"clli/{place}"
+        w.reserve(scope, site.id, 100)
+        taken = set()
+        # A clash with an earlier building in the same place takes its slot
+        # number instead; letters and digits never collide.
+        for other, slot in sorted(w.reservations[scope].items(), key=lambda item: item[1]):
+            code = _clli_building(w, other, locality)
+            code = f"{slot + 1:02}" if code is None or code in taken else code
+            if other == site.id:
+                return place + code
+            taken.add(code)
+    # One estate-wide ledger (its scope must not name a seed-chosen metro);
+    # the number counts only the earlier entries in the same metro.
+    # ponytail: O(sites^2) recount per site; fine at the reviewed few thousand
+    # sites. Cache per-metro counts on the World if a profile grows past that.
+    slot = w.reserve("facility-codes", site.id, 10000)
+    number = 1 + sum(1 for other, earlier in w.reservations["facility-codes"].items()
+                     if earlier < slot and _metro(w, other)[0] == city)
+    return f"{city[:3].upper()}{number:02}"
+
+
+def _display_site(site, node, row):
+    """Apply the naming policy: authored identity, overrides, facility, geo.
+
+    Returns the address locality and street line: the anchor's municipality and
+    one of its real streets when authored, otherwise the metro city and no
+    street (legacy naming emits no coordinates).
+    """
+    w = site.w
+    city, state_code = row[0], row[1]
     authored = w.recipe.get("naming", "authored") == "authored"
     name = _authored_identity(site, city) if authored else node["attrs"]["name"]
-    # Facility codes ride the stable address-allocation slot: short, unique,
-    # and unchanged by growth (site ids can exceed the native 50-char limit).
-    facility = (f"{city[:3].upper()}{getattr(w, 'allocations', {}).get(site.id, 0):04}"
-                if authored else None)
-    override = w.recipe.get("site_names", {}).get(site.id)
+    override = w.recipe.get("site_names", {}).get(site.id) or {}
     if override:
         name = override.get("name", name)
-        facility = override.get("facility", facility)
         w.consumed_site_names.add(site.id)
     node["attrs"]["name"] = name
-    if facility:
-        node["attrs"]["facility"] = facility
     if not authored:
-        return city
+        if override.get("facility"):
+            node["attrs"]["facility"] = override["facility"]
+        return city, None
     # Anchor-relative synthetic positions: on land in the named neighbourhood,
     # suburb or street run, never a claim about a real premises. The site id
     # alone drives the offset, so growth and seeds cannot move a site.
@@ -420,11 +621,11 @@ def _display_site(site, node, city):
     jitter = hashlib.sha256(f"geo/{site.id}".encode()).digest()
     along = jitter[2] / 255
     start, end = anchor[2:4], anchor[-2:]
-    node["attrs"]["latitude"] = round(start[0] + along * (end[0] - start[0])
-                                      + (jitter[0] / 255 - 0.5) * 2 * JITTER_LAT, 6)
-    node["attrs"]["longitude"] = round(start[1] + along * (end[1] - start[1])
-                                       + (jitter[1] / 255 - 0.5) * 2 * JITTER_LON, 6)
-    return anchor[1]
+    latitude = round(start[0] + along * (end[0] - start[0]) + (jitter[0] / 255 - 0.5) * 2 * JITTER_LAT, 6)
+    longitude = round(start[1] + along * (end[1] - start[1]) + (jitter[1] / 255 - 0.5) * 2 * JITTER_LON, 6)
+    node["attrs"].update(latitude=latitude, longitude=longitude,
+                         facility=override.get("facility", _facility(site, city, state_code, anchor[1])))
+    return anchor[1], street_address(site.id, anchor, latitude, longitude)
 
 
 def foundation(w, *, site_kinds=None):
@@ -486,6 +687,11 @@ def _location(site, suffix, name, space_type, floor, position, parent=None, capa
 
 
 def _floor(site, number):
+    """The floor location rooms on ``number`` hang from; None on a flat site."""
+    if site.contract["kind"] in FLAT_KINDS:
+        if number != 1:
+            raise DesignError(f"{site.id}: {site.contract['kind']} premises have one authored floor")
+        return None
     key = f"location/{site.id}/floor-{number:02}"
     if key not in site.w.objects:
         _location(site, f"floor-{number:02}", f"Floor {number:02}", "floor", number,
@@ -493,33 +699,33 @@ def _floor(site, number):
     return key
 
 
-def locate(site):
-    """Place an existing site and retain location/<site id> for its equipment."""
-    if site.w.recipe["profile"] == "provider-backbone":
-        return provider_locate(site)
-    kind = site.contract["kind"]
-    if kind not in GROUPS:
-        raise DesignError(f"{site.id}: no building layout for site kind {kind!r}")
-    # Site IDs, unlike a global enumeration or RNG, survive mixed estate growth.
-    if site.w.recipe["profile"] == "school-district":
-        metro_index = site.w.choose("district", "metro", range(len(METROS)))
-    elif site.w.recipe["profile"] == "hospital-clinics":
-        metro_index = site.w.choose("health-system", "metro", range(len(METROS)))
-    elif site.w.recipe["profile"] == "university-campus":
+def _metro(w, site_id):
+    """A site's metro row; site IDs, unlike a global enumeration or RNG, survive growth."""
+    profile = w.recipe["profile"]
+    if profile == "provider-backbone":
+        return next(row for row in METROS if row[0].lower() == w.provider_metros[site_id])
+    if profile == "school-district":
+        return METROS[w.choose("district", "metro", range(len(METROS)))]
+    if profile == "hospital-clinics":
+        return METROS[w.choose("health-system", "metro", range(len(METROS)))]
+    if profile == "university-campus":
         # One campus, one metro: every building, hall, library and the campus
         # DC share it. This is a single-site estate, not a multi-metro fleet.
-        metro_index = site.w.choose("campus", "metro", range(len(METROS)))
-    elif site.id in {"dc-01", "dc-02"}:
-        metro_index = int(site.id[-2:]) - 1
-    else:
-        metro_index = int.from_bytes(hashlib.sha256(site.id.encode()).digest()[:4], "big") % len(METROS)
-    city, state_code, state, zone, _, _ = METROS[metro_index]
-    node = site.w.obj(site.key)
+        return METROS[w.choose("campus", "metro", range(len(METROS)))]
+    if site_id in {"dc-01", "dc-02"}:
+        return METROS[int(site_id[-2:]) - 1]
+    return METROS[int.from_bytes(hashlib.sha256(site_id.encode()).digest()[:4], "big") % len(METROS)]
+
+
+def _legacy_street(site):
+    """The pre-0.16 sequential street line, kept only for ``naming = "legacy"``."""
+    w, kind = site.w, site.contract["kind"]
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
-    if kind in {"school", "hospital", "clinic", "store", "distribution",
-                "academic", "residence", "library", "office", "plant", "substation"}:
-        number = 100 + 4 * site.w.allocations[site.id]
+    if w.recipe["profile"] == "provider-backbone" or kind in {
+            "school", "hospital", "clinic", "store", "distribution", "academic", "residence",
+            "library", "office", "plant", "substation"}:
+        number = 100 + 4 * w.allocations[site.id]
     streets = {"br-s": "Market Street", "br-m": "Commerce Drive", "br-l": "Harbor Avenue",
                "hq": "Lakefront Boulevard", "dc": "Technology Way", "school-": "Learning Way",
                "hospital-": "Care Avenue", "clinic-": "Community Way",
@@ -527,51 +733,63 @@ def locate(site):
                "di-": "Distribution Parkway", "bldg-": "University Quadrangle",
                "hall-": "Residence Row", "library-": "Library Green",
                "noc-": "Operations Parkway", "off-": "Enterprise Parkway",
-               "pl-": "Industrial Parkway", "sub-": "Switchyard Road"}
-    street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
-    locality = _display_site(site, node, city)
-    node["attrs"].update(time_zone=zone,
-                         physical_address=f"{number} {street}\n{locality}, {state}\nUnited States")
-    node["refs"].update(region=f"region/{site.w.recipe['namespace']}/us/{state_code.lower()}",
-                        group=f"site-group/{site.w.recipe['namespace']}/{kind}")
+               "pl-": "Industrial Parkway", "sub-": "Switchyard Road",
+               "pop-": "Exchange Avenue", "ce-": "Business Way"}
+    return f"{number} {next((name for prefix, name in streets.items() if site.id.startswith(prefix)), 'Commerce Way')}"
+
+
+def carrier_suite(site_id):
+    """Authored carrier-hotel suite and cage names for one provider PoP.
+
+    Both hash the site id alone, so growth never renames a PoP's space.
+    """
+    digest = hashlib.sha256(f"suite/{site_id}".encode()).digest()
+    return (f"Suite {2 + digest[0] % 8}{10 + digest[1] % 40:02}",
+            f"Cage {'ABCDEFGH'[digest[2] % 8]}{1 + digest[3] % 24:02}")
+
+
+def locate(site):
+    """Place an existing site and retain location/<site id> for its equipment.
+
+    Site kinds whose authored grammar is one ground floor (FLAT_KINDS) place
+    their rooms directly under the site: a single building and floor would only
+    be pass-through levels. A provider PoP is a leased carrier-hotel suite
+    holding the provider's cage. Multi-floor kinds keep building and floors.
+    """
+    w, kind = site.w, site.contract["kind"]
+    if kind not in GROUPS:
+        raise DesignError(f"{site.id}: no building layout for site kind {kind!r}")
+    row = _metro(w, site.id)
+    city, state_code, state, zone, _, _ = row
+    node = w.obj(site.key)
+    locality, street = _display_site(site, node, row)
+    node["attrs"].update(time_zone=zone, physical_address=(
+        f"{street or _legacy_street(site)}\n{locality}, {state}\nUnited States"))
+    node["refs"].update(region=f"region/{w.recipe['namespace']}/us/{state_code.lower()}",
+                        group=f"site-group/{w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = {"country": "US", "state": state_code, "city": city, "synthetic": True}
-    building = _location(site, "building", "Main building", "building", 0, (0, 0, 0))
-    ground = _floor(site, 1)
-    equipment = _location(site, "", "Data hall" if kind == "dc" else "MDF",
-                          "equipment_room", 1, (24, 18, 0), ground)
+    building, parent, name = None, None, "Data hall" if kind == "dc" else "MDF"
+    if kind == "pop":
+        suite, name = carrier_suite(site.id)
+        parent = _location(site, "suite", suite, "suite", 1, (0, 0, 0))
+    elif kind not in FLAT_KINDS:
+        building = _location(site, "building", "Main building", "building", 0, (0, 0, 0))
+        parent = _floor(site, 1)
+    equipment = _location(site, "", name, "equipment_room", 1, (24, 18, 0), parent)
     site.equipment_location = equipment
     site.contract["placement"] = {"equipment_location": equipment, "building": building,
                                   "equipment_locations": {"1": equipment},
                                   "max_access_channel_m": MAX_CHANNEL_M, "floor_height_m": FLOOR_HEIGHT_M}
     site.contract["assumptions"].append(
+        "Metro and time-zone names are real; addresses, premises and local metre routes are authored. "
+        "Carrier span routes and duct diversity are unknown." if w.recipe["profile"] == "provider-backbone" else
         "Geography names and time zones are real; premises and room geometry are synthetic. "
         "Access routes use local metres and an authored 80 m channel ceiling, not a surveyed cabling or RF design.")
     return equipment
 
 
-def provider_locate(site):
-    """Provider sites use explicit metro attachments; geometry stays local."""
-    kind, w = site.contract["kind"], site.w
-    metro = w.provider_metros[site.id]
-    city, code, state, zone, _, _ = next(row for row in METROS if row[0].lower() == metro)
-    street = {"pop": "Exchange Avenue", "customer": "Business Way", "dc": "Technology Way"}[kind]
-    node = w.obj(site.key)
-    locality = _display_site(site, node, city)
-    node["attrs"].update(time_zone=zone, physical_address=f"{100+4*w.allocations[site.id]} {street}\n{locality}, {state}\nUnited States")
-    node["refs"].update(region=f"region/{w.recipe['namespace']}/us/{code.lower()}",
-                        group=f"site-group/{w.recipe['namespace']}/{kind}")
-    node["meta"]["geography"] = dict(country="US", state=code, city=city, synthetic=True)
-    building = _location(site,"building","Main building","building",0,(0,0,0))
-    floor = _floor(site,1)
-    equipment = _location(site,"","Data hall" if kind == "dc" else "MDF","equipment_room",1,(24,18,0),floor)
-    site.contract["placement"] = dict(equipment_location=equipment,building=building,equipment_locations={"1":equipment},
-                                      max_access_channel_m=MAX_CHANNEL_M,floor_height_m=FLOOR_HEIGHT_M)
-    site.contract["assumptions"].append("Metro and time-zone names are real; addresses, premises and local metre routes are authored. Carrier span routes and duct diversity are unknown.")
-    return equipment
-
-
 def provider_office(site):
-    return _location(site,"office-01","Customer office pod","office",1,(8,18,0),_floor(site,1),{"workstations":12})
+    return _location(site,"office-01","Customer office pod","office",1,(8,18,0),None,{"workstations":12})
 
 
 def provider_endpoint(site,key,room,ordinal):
