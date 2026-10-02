@@ -189,7 +189,8 @@ class LivedInPlant(unittest.TestCase):
     def test_growth_never_moves_history(self):
         grown = deepcopy(self.recipe)
         grown["pops"].append(dict(key="milwaukee-bay-view", metro="milwaukee"))
-        template = next(c for c in grown["customers"] if any(s["pop"] == "chicago-cermak" for s in c["sites"]))
+        template = next(c for c in grown["customers"] if c.get("service", "private-l3") == "private-l3"
+                        and any(s["pop"] == "chicago-cermak" for s in c["sites"]))
         next(s for s in template["sites"] if s["pop"] == "chicago-cermak")["count"] += 1
         added = deepcopy(next(c for c in grown["customers"] if c.get("service") == "dia"))
         added["key"] = "lakeview-traders"

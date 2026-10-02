@@ -1,7 +1,9 @@
 # NetBox Labs community showcase: one Great Lakes regional carrier seeded ALONE
 # onto a dedicated tenant's main (a second estate cannot pass the fresh-load
-# occupancy gate). 12 PoPs, three per metro, and 108 customers on 275 premises
-# (v0.17 regional-carrier footprint): 36 private-L3 VPN customers (2-12 sites,
+# occupancy gate). 12 PoPs, three per metro, and 108 customers on 305 premises
+# (v0.17 regional-carrier footprint, plus v0.18's 30 more private-L3 branches
+# at the four founding PoPs and ten former customers at the end of this file):
+# 36 private-L3 VPN customers (2-12 sites,
 # each hub dual-homed on two NIDs; one still onboarding, one closing a branch),
 # 40 unmanaged and 20 managed dedicated-internet customers (four large DIA on
 # the 10G NID tier), and 12 two-ended Ethernet private lines. Every premises is
@@ -11,6 +13,8 @@
 # few street-grid anchors serve fewer premises. Dual-stack (DIA stays
 # IPv4-only); Juniper access beside the MX204 PEs, Arista
 # leaf/spine kept. Customer names are authored; fictional design inputs.
+# Recipe order is onboarding order: five unmanaged 1G DIA/EPL customers sit
+# early so their pre-2016 premises keep the first NID generation (v0.18 P1-14).
 # Runbook: .claude/skills/showcase-tenant/SKILL.md.
 profile = "provider-backbone"
 namespace = "inland-fiber"
@@ -97,6 +101,13 @@ sites = [
 ]
 
 [[customers]]
+key = "jetstream-cargo"
+name = "Jetstream Air Cargo"
+service = "dia"
+commit_mbps = 100
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
 key = "great-lakes-credit"
 name = "Great Lakes Credit Union"
 branch = "branch"
@@ -110,6 +121,13 @@ sites = [
   # Branch closing: its access circuit is deprovisioning, its CE decommissioning.
   { pop = "milwaukee-west-allis", count = 1, status = "decommissioning" },
 ]
+
+[[customers]]
+key = "great-plains-grain"
+name = "Great Plains Grain Exchange"
+service = "epl"
+rate_mbps = 100
+sites = [{ pop = "chicago-loop" }, { pop = "detroit-corktown" }]
 
 [[customers]]
 key = "harbor-logistics"
@@ -127,6 +145,13 @@ sites = [
 ]
 
 [[customers]]
+key = "quill-publishing"
+name = "Quill and Ink Publishing"
+service = "dia"
+commit_mbps = 50
+sites = [{ pop = "chicago-cermak" }]
+
+[[customers]]
 key = "riverbend-schools"
 name = "Riverbend Schools"
 branch = "school"
@@ -140,6 +165,13 @@ sites = [
 ]
 
 [[customers]]
+key = "kingfisher-capital"
+name = "Kingfisher Capital"
+service = "dia"
+commit_mbps = 200
+sites = [{ pop = "chicago-loop" }]
+
+[[customers]]
 key = "northpoint-retail"
 name = "Northpoint Retail"
 branch = "store"
@@ -148,9 +180,16 @@ lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "chicago-pilsen", count = 3 },
-  { pop = "milwaukee-menomonee", count = 2 },
+  { pop = "milwaukee-menomonee", count = 4 },
   { pop = "cleveland-westlake", count = 1 },
 ]
+
+[[customers]]
+key = "delta-river-casino"
+name = "Delta River Casino"
+service = "dia"
+commit_mbps = 500
+sites = [{ pop = "chicago-cermak" }]
 
 [[customers]]
 key = "summit-legal"
@@ -473,7 +512,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
-  { pop = "chicago-cermak", count = 5 },
+  { pop = "chicago-cermak", count = 3 },
   { pop = "chicago-pilsen", count = 3 },
   { pop = "detroit-new-center", count = 2, site_peak_mbps = 100 },
 ]
@@ -539,8 +578,8 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 500
 sites = [
-  { pop = "chicago-cermak", count = 5 },
-  { pop = "cleveland-flats", count = 3 },
+  { pop = "chicago-cermak", count = 3 },
+  { pop = "cleveland-flats", count = 5 },
 ]
 
 [[customers]]
@@ -627,20 +666,6 @@ commit_mbps = 200
 sites = [{ pop = "detroit-new-center" }]
 
 [[customers]]
-key = "jetstream-cargo"
-name = "Jetstream Air Cargo"
-service = "dia"
-commit_mbps = 100
-sites = [{ pop = "chicago-cermak" }]
-
-[[customers]]
-key = "kingfisher-capital"
-name = "Kingfisher Capital"
-service = "dia"
-commit_mbps = 200
-sites = [{ pop = "chicago-loop" }]
-
-[[customers]]
 key = "lumen-ridge-ai"
 name = "Lumen Ridge AI"
 service = "dia"
@@ -674,13 +699,6 @@ name = "Pinnacle Esports Arena"
 service = "dia"
 commit_mbps = 2000
 sites = [{ pop = "cleveland-lakewood" }]
-
-[[customers]]
-key = "quill-publishing"
-name = "Quill and Ink Publishing"
-service = "dia"
-commit_mbps = 50
-sites = [{ pop = "chicago-cermak" }]
 
 [[customers]]
 key = "rookery-research"
@@ -751,13 +769,6 @@ name = "Cornerstone Community Church"
 service = "dia"
 commit_mbps = 50
 sites = [{ pop = "detroit-corktown" }]
-
-[[customers]]
-key = "delta-river-casino"
-name = "Delta River Casino"
-service = "dia"
-commit_mbps = 500
-sites = [{ pop = "chicago-cermak" }]
 
 [[customers]]
 key = "evergreen-cowork"
@@ -1044,13 +1055,6 @@ name = "Forge Post-Production"
 service = "epl"
 rate_mbps = 200
 sites = [{ pop = "detroit-new-center" }, { pop = "cleveland-flats" }]
-
-[[customers]]
-key = "great-plains-grain"
-name = "Great Plains Grain Exchange"
-service = "epl"
-rate_mbps = 100
-sites = [{ pop = "chicago-loop" }, { pop = "detroit-corktown" }]
 
 [[customers]]
 key = "heritage-health"

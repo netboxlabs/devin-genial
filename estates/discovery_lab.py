@@ -69,7 +69,8 @@ def resolve(raw):
 def select(objects, order, size):
     """``size`` production PEs and the routed /31 links among them, from the finished graph."""
     pes = {k for k, o in objects.items()
-           if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"}
+           if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"
+           and o["attrs"].get("status", "active") == "active"}  # not a relic or a planned successor
     pop_of = {k: objects[k]["refs"]["site"].removeprefix("site/pop-") for k in pes}
     # Routed adjacency from the addresses themselves: a /31 with one PE
     # interface on each end, independent of how cables or circuits model it.

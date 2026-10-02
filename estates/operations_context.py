@@ -228,11 +228,39 @@ def provider_customer(world, tenant):
 #: [A] The day the NOC began journaling third-party maintenance notices
 #: (DESIGN §4.1): no maintenance notice predates it.
 NOTICE_JOURNALING = history.NOTICES_BEGIN
-#: Circuit types whose third-party provider sends maintenance notices: leased
-#: waves, transit and NOC private lines. Owned dark fibre, cellular
-#: best-effort service and exchange ports carry none.
-NOTICE_TYPES = frozenset({"circuit-type/backbone", "circuit-type/transit", "circuit-type/noc-access"})
+#: Circuit types a third-party provider sends maintenance notices for: leased
+#: waves, transit, NOC private lines, the cellular out-of-band service and
+#: exchange ports. Owned dark fibre and owned access tails carry none.
+NOTICE_TYPES = frozenset({"circuit-type/backbone", "circuit-type/transit", "circuit-type/noc-access",
+                          "circuit-type/cellular-oob", "circuit-type/ix-port"})
 NOTICE_ONE_IN, CIR_ONE_IN, CIR_MIN_YEARS = 3, 2, 5
+#: [A] Leased service term in months, every third-party service alike.
+TERM_MONTHS = 36
+
+
+def _add_months(day, months):
+    year, month = divmod(day.month - 1 + months, 12)
+    return date(day.year + year, month + 1, min(day.day, 28))
+
+
+def _pop_audits(world, change, journal):
+    """[A] The annual cage audit at each PoP with its colo's remote hands, on the
+    PoP's launch anniversary. Journaled from NOTICE_JOURNALING, the day the NOC
+    began journaling third-party site work; earlier audits are not on record."""
+    as_of = date.fromisoformat(world.recipe["as_of"])
+    for site in [o for o in world.objects.values() if o["kind"] == "site" and o["key"].startswith("site/pop-")]:
+        pop = site["key"].removeprefix("site/pop-")
+        launched = history.of(world).launch.get(pop)
+        city = site["meta"].get("geography", {}).get("city")
+        if launched is None or city not in COLOCATION:
+            continue
+        for year in range(NOTICE_JOURNALING.year, as_of.year + 1):
+            when = launched.replace(year=year, day=min(launched.day, 28))
+            if NOTICE_JOURNALING <= when < as_of and when > launched:
+                journal(site["key"], f"cage-audit-{year}", when.isoformat(), "Cage audit",
+                        f"Annual cage audit with {COLOCATION[city][0]} remote hands under change "
+                        f"{change(site['key'], f'-audit-{year}')}: cabinet labels, blanking and power cords "
+                        "walked against this record.")
 
 
 def _initials(name):
@@ -292,6 +320,18 @@ def _carrier_paperwork(world, circuit, dated, change, journal):
             journal(key, f"cir-upgrade-{n + 1}", when.isoformat(), "Committed rate raised",
                     f"Committed rate raised from {bandwidth(before)} to {bandwidth(after)} under change "
                     f"{change(key, f'-cir-{n + 1}')}, on the same {speed} handoff.")
+    if refs.get("type") in NOTICE_TYPES and refs.get("provider") != OPERATOR:
+        # Leased service renews on its term: one renewal per full term in
+        # service, on the install anniversary. The record keeps its rate.
+        provider = world.obj(refs["provider"])["attrs"]["name"]
+        months = TERM_MONTHS
+        for n in range(1, 64):
+            when = _add_months(installed, n * months)
+            if when >= as_of:
+                break
+            journal(key, f"term-renewal-{n}", when.isoformat(), "Term renewed",
+                    f"{provider} service term renewed for {months} months under change {change(key, f'-term-{n}')}; "
+                    "service and handoff unchanged.")
     if refs.get("type") in NOTICE_TYPES and refs.get("provider") != OPERATOR and pick("maintenance") % NOTICE_ONE_IN == 0:
         first = max(NOTICE_JOURNALING, installed + timedelta(days=30))
         room = (as_of - first).days - 1
@@ -485,8 +525,10 @@ def enrich(world):
             _carrier_paperwork(world, circuit, dated, change, journal)
     if world.recipe["profile"] == "provider-backbone" and as_of > NOTICE_JOURNALING.isoformat() and "site/dc-01" in world.objects:
         journal("site/dc-01", "notice-journaling", NOTICE_JOURNALING.isoformat(), "Provider notices journaled",
-                "From today the NOC journals each completed third-party maintenance notice on the circuit it touched: "
-                "provider, maintenance ID, account, window and stated impact, as the provider sent them.")
+                "From today the NOC journals each completed third-party maintenance notice on the circuit it touched "
+                "(provider, maintenance ID, account, window and stated impact, as the provider sent them) and each "
+                "PoP's annual cage audit.")
+        _pop_audits(world, change, journal)
 
     service_desks, anchors = {}, {}
     for vm in sorted(kinds["virtual_machine"], key=lambda obj: obj["key"]):
@@ -531,6 +573,8 @@ def enrich(world):
             equipment_anchors[rack] = device
     for rack_key, device in sorted(equipment_anchors.items()):
         key = device["key"]
+        if f"journal/{key}/installed" in world.objects:
+            continue  # the plant's own history already records this install (estates/fibre.py)
         desk = world.obj(f"contact/{device['refs']['site']}")["attrs"]["name"]
         journal(key, "equipment-record", installed_on[key], "Installed",
             f"Racked and cabled under change {change(key)}; the visit was booked through {desk}.", "success")

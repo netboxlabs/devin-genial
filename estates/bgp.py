@@ -36,6 +36,13 @@ because the reflectors are chosen from permanent ordinals.
 Dual-stack: when the estate carries ``ipv6_pool``, every peering above gains an
 IPv6 twin over the same endpoints' IPv6 companions — loopback /128s for iBGP,
 the /127 link addresses for customer eBGP and the /127 prefix for transit.
+
+Exchanges (v0.18): each in-service IX port carries two route-server sessions
+in the "IX route servers" peer group, over the exchange's IPv6-only peering
+LAN, to route servers that share the exchange's single AS (the IX provider's
+one ASN). Sessions only — the kind set is unchanged — and none without
+``ipv6_pool``. Only in-service PEs peer: a decommissioning relic or a planned
+successor carries no session.
 """
 
 from collections import defaultdict
@@ -147,7 +154,9 @@ def enrich(world):
     order = world.reservations.get("provider-pop-order", {})
     routers = []
     for key, entry in objects.items():
-        if entry["kind"] != "device" or entry["refs"].get("role") != PE_ROLE:
+        # Only an in-service PE peers: a decommissioning relic or a planned
+        # successor carries no intended session (v0.18 PE generations).
+        if entry["kind"] != "device" or entry["refs"].get("role") != PE_ROLE or entry["attrs"].get("status") != "active":
             continue
         site = entry["refs"]["site"]
         pop = site.removeprefix("site/pop-")

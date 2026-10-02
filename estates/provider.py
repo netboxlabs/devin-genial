@@ -1225,8 +1225,11 @@ IX_PORT, IX_PORT_MBPS = "xe-0/1/5", 10000
 # documentation range.
 IX_ASNS = (65536, 65551)
 IX_ROUTE_SERVERS = bgp.IX_ROUTE_SERVERS
-IX_IPV4_NOTE = "IPv4 peering not modelled: documentation IPv4 space is consumed by the DIA allocation ceiling."
-IX_NO_POOL_NOTE = "Route-server sessions omitted: the peering LAN is IPv6-only and this estate carries no ipv6_pool."
+# DESIGN [D]: the IPv4 declaration sits on the ProviderNetwork and the IX
+# circuit, in operational words (records carry no disclaimers, naming.DISCLAIMER):
+# the documentation-space reason itself is stated in docs/modeling.md.
+IX_IPV4_NOTE = "No IPv4 peering: the IPv4 blocks are committed to dedicated internet customer assignments."
+IX_NO_POOL_NOTE = "No route-server sessions: the peering LAN is IPv6-only and this network holds no IPv6 allocation."
 # The Milwaukee exchange moved buildings (shape-only mirror of MKE-IX's 2025
 # move): the old port at the metro's second PoP is being withdrawn.
 IX_RELOCATED = "milwaukee"
@@ -1248,6 +1251,9 @@ def _ix(w, pop_sites, ready):
     """
     tl, ns, as_of = timeline.of(w), w.recipe["namespace"], date.fromisoformat(w.recipe["as_of"])
     kind = fibre.circuit_type(w, "ix-port", "IX Port").removeprefix("circuit-type/")
+    # The exchanges' route-server ASNs sit in their own declared range.
+    w.add("asn_range", "asn-range/exchanges", dict(name="Exchange routing domains", slug=f"{ns}-exchange-routing",
+          start=IX_ASNS[0], end=IX_ASNS[1], description="Internet exchange route-server AS numbers"), {"rir": "rir/arin"})
     for metro in IX_METROS:
         hosts = [p for p in tl.order if tl.metro[p] == metro]
         if not hosts:
@@ -1270,8 +1276,11 @@ def _ix(w, pop_sites, ready):
             site = pop_sites[pop][0]
             port = site.interface(f"device/{site.id}/pe-a", IX_PORT)
             if installed is None:
-                installed = min(ready[pop] + timedelta(days=w.choose(f"{metro}/{pop}", "ix-install", range(60, 401))),
-                                (moved or as_of) - timedelta(days=60))
+                # An MX80 has four XFP ports, all in the aggregation LAG: an
+                # exchange port arrives with the MX204 (launch or cut-over).
+                pe_day = date.fromisoformat(w.obj(f"device/{site.id}/pe-a")["meta"].get("installed") or ready[pop].isoformat())
+                installed = min(max(ready[pop], pe_day) + timedelta(days=w.choose(f"{metro}/{pop}", "ix-install", range(30, 181))),
+                                (moved or as_of) - timedelta(days=30))
             key = f"circuit/ix/{metro}" + ("/former" if moved else "")
             _circuit(w, key, provider, account, kind, site, port, lan, None, None, handoff_mbps=IX_PORT_MBPS,
                      cid=f"{stem}-P{1000 + (_hash(ns, key, 'ix-port') % 9000):04d}", installed=installed,
@@ -1298,6 +1307,22 @@ def _ix(w, pop_sites, ready):
                                     other["attrs"]["status"] = "decommissioning"
             else:
                 w.obj(port)["attrs"]["description"] = f"{name} peering port"
+            # On the router itself, only once that router was in the rack: an
+            # older port moved onto it at its cut-over, which the plant's
+            # cut-over journal records.
+            pe = f"device/{site.id}/pe-a"
+            if installed.isoformat() >= w.obj(pe)["meta"].get("installed", ""):
+                from .operations_context import entry
+                entry(w, pe, f"ix-port-{metro}" + ("-former" if moved else ""), installed.isoformat(), "IX port turned up",
+                      f"{short} port {w.obj(key)['attrs']['cid']} turned up on {IX_PORT} under change "
+                      f"{timeline.change(w, key, '-turn-up')}" + (f", replacing the {pop_sites[hosts[1]][0].display} port after the exchange relocated."
+                                                                   if relocation and len(hosts) > 1 and not moved else "."))
+            if moved:
+                from .operations_context import entry
+                entry(w, pe, f"ix-port-{metro}-shut", moved.isoformat(), "IX port shut",
+                      f"{short} port {w.obj(key)['attrs']['cid']} shut on {IX_PORT} after the exchange relocated to "
+                      f"{pop_sites[hosts[0]][0].display}; disconnect ordered under change {timeline.change(w, key, '-disconnect')}.",
+                      "warning")
 
 
 # PoP services (DESIGN v0.18 §2, K7, K9, K16) and the second NID generation
@@ -1309,13 +1334,13 @@ TIME_SERVER_HOST, DDOS_HOST = 20, 21
 # A premises installed before this day on an unmanaged single-NID service
 # (unmanaged DIA or EPL, 1G handoff) still runs the first NID generation.
 LEGACY_NID_BEFORE = date(2016, 1, 1)
-DDOS_DESCRIPTION = ("DDoS mitigation appliance, staged for the MX304 refresh; chassis capacity exceeds current DIA demand; "
-                    "licensed mitigation capacity not modelled")
-TIME_DESCRIPTION = ("PoP time server on the management LAN; GPS antenna via the colo roof riser, not modelled. "
+DDOS_DESCRIPTION = ("DDoS mitigation appliance, staged for the MX304 refresh; chassis capacity well above current DIA commit; "
+                    "licence tier not on record")
+TIME_DESCRIPTION = ("PoP time server on the management LAN; GPS antenna via the colo roof riser. "
                     "Discontinued; successor LANTIME M320, per vendor page")
 CONTROLLER = "ddos-detection"
 CONTROLLER_DESCRIPTION = ("Flow-based DDoS detection and mitigation controller "
-                          "(Sightline-class; labelled fiction, no vendor product claimed)")
+                          "(Sightline-class)")
 
 
 def _service_role(w, role):
@@ -1433,6 +1458,29 @@ def _ddos(w, pop_sites):
               "budget is exhausted (PIC0 is limited to 3x100G while all eight 10G SFP+ ports are in use).")
 
 
+def _stage_optics(w):
+    """Optics pre-installed in a chassis not yet in service share its state.
+
+    The staged TMS and the planned or staged MX304 hold their AOC ends and
+    pluggables on ``planned`` cables: a module there is ``staged`` (on site)
+    or ``planned`` (not yet shipped: no serial), never an in-service part.
+    """
+    # An AOC's two captive ends are one assembly: it is on site (staged, with
+    # its serial) if either end's chassis is.
+    states, members = {}, defaultdict(list)
+    for module in (o for o in w.objects.values() if o["kind"] == "module" and o["key"].startswith("optics-module/")):
+        status = w.obj(module["refs"]["device"])["attrs"].get("status")
+        identity = module["attrs"]["serial"] if module["attrs"].get("description", "").startswith("Captive end") else module["key"]
+        members[identity].append(module)
+        if status in ("planned", "staged"):
+            states[identity] = "staged" if "staged" in (status, states.get(identity)) else "planned"
+    for identity, status in states.items():
+        for module in members[identity]:
+            module["attrs"]["status"] = status
+            if status == "planned":
+                module["attrs"].pop("serial", None)
+
+
 def _ddos_controllers(w):
     """The detection controller VM pair (K7): ordinary NOC workload grammar, authored description."""
     for vm in (o for o in w.objects.values() if o["kind"] == "virtual_machine" and o["key"].startswith(f"vm/dc-01/{CONTROLLER}/")):
@@ -1468,7 +1516,7 @@ def _ix_addresses(w):
         port = f"device/{site.removeprefix('site/')}/pe-a/if/{IX_PORT}"
         member = 0x100 + _hash(w.recipe["namespace"], metro, "ix-member") % 0xfe00
         w.add("ip_address", f"ix/{metro}/member", dict(address=f"{lan[member]}/64", status="active"),
-              dict(assigned_object=port, tenant="tenant"))
+              dict(assigned_object=port))  # assigned by the exchange from its LAN: no tenant, like the LAN
 
 
 def _ix_route_servers(w):
@@ -2095,7 +2143,7 @@ def _generate(recipe,previous=None):
     dc.contract["provider"]=dict(pop_count=len(pop_sites),customer_count=len(recipe["customers"]),customer_premises=len(entries),
         transport_spans=len(spans),capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
         management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
-    equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); _ix_addresses(w); networking.macs(w); _ix_route_servers(w)
+    equipment.enrich(w); optics.enrich(w); _stage_optics(w); poe.enrich(w); ipv6.enrich(w); _ix_addresses(w); networking.macs(w); _ix_route_servers(w)
     _apply_lifecycle(w,entries)
     _junos_units(w)
     operations.supporting_records(w)

@@ -89,7 +89,7 @@ def main_scoped_name(recipe, label):
 
 # Tokens whose conventional casing a naive .title() would destroy.
 _ACRONYMS = {
-    "ap": "AP", "atm": "ATM", "nid": "NID", "bgp": "BGP", "ce": "CE", "csv": "CSV", "dc": "DC",
+    "ap": "AP", "atm": "ATM", "nid": "NID", "bgp": "BGP", "ce": "CE", "csv": "CSV", "dc": "DC", "ddos": "DDoS",
     "api": "API", "db": "DB", "dhcp": "DHCP", "dns": "DNS", "ems": "EMS", "erp": "ERP",
     "hmi": "HMI", "hq": "HQ", "idf": "IDF",
     "ike": "IKE", "ip": "IP", "ipam": "IPAM", "ipsec": "IPsec", "it": "IT",
