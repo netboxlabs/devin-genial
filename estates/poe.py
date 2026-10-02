@@ -115,7 +115,10 @@ def enrich(world):
                          if optical_loads.get(key) else 0)
         allowance = PLANNED_WATTS[alias] + extra + optical_extra
         ports = hardware["power_ports"]
-        if not ports or key not in power_contracts:
+        # Equipment on customer power (every inlet mark_connected, such as a
+        # provider NID in a customer MPOE) budgets its draw with no PDU contract.
+        customer_power = bool(ports) and all(objects[f"{key}/power/{port['name']}"]["attrs"].get("mark_connected") for port in ports)
+        if not ports or (key not in power_contracts and not customer_power):
             raise DesignError(f"{key}: installed component load needs actual infrastructure inlets and a power contract")
         description = ("Budgeted draw: chassis and PoE; each supply sized for the full load"
                        if not optical_extra else
@@ -125,9 +128,10 @@ def enrich(world):
         for index, port in enumerate(ports):
             inlet = objects[f"{key}/power/{port['name']}"]
             inlet["attrs"].update(allocated_draw=quotient + (index < remainder), maximum_draw=allowance,
-                description=description)
+                description=description + ("; customer-provided power" if customer_power else ""))
         device["meta"]["planned_watts"] = allowance
-        power_contracts[key]["planned_watts"] = allowance
+        if key in power_contracts:
+            power_contracts[key]["planned_watts"] = allowance
     for contract in world.contracts:
         if any(entry["device"] in optical_loads for entry in contract.get("power_redundancy", [])) and "assumptions" in contract:
             contract["assumptions"] = [text.replace(

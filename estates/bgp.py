@@ -41,6 +41,7 @@ the /127 link addresses for customer eBGP and the /127 prefix for transit.
 from collections import defaultdict
 from ipaddress import ip_interface
 
+from . import fibre
 from .model import DesignError
 
 
@@ -130,8 +131,8 @@ def enrich(world):
             raise DesignError(f"BGP inventory needs exactly one routing identity on {site}")
         return asns[0]
 
-    def add(kind, key, attrs, refs=None):
-        return world.add(kind, key, attrs, refs or {}, {"bgp": True})
+    def add(kind, key, attrs, refs=None, mirror=False):
+        return world.add(kind, key, attrs, refs or {}, {"bgp": True, **({"mirror": True} if mirror else {})})
 
     for slug, name, weight, description in POLICIES:
         add("bgp_routing_policy", f"bgp-routing-policy/{slug}",
@@ -165,7 +166,7 @@ def enrich(world):
             {"name": name, "description": description}, refs)
 
     def session(key, local, local_address, remote_as, group, description,
-                *, remote_address=None, remote_prefix=None, tenant=None, remote_label, status="active"):
+                *, remote_address=None, remote_prefix=None, tenant=None, remote_label, status="active", mirror=False):
         local_site = obj(local)["refs"]["site"]
         refs = {"device": local, "site": local_site, "local_address": local_address,
                 "local_as": site_asn(local_site), "remote_as": remote_as,
@@ -178,7 +179,7 @@ def enrich(world):
             refs["tenant"] = tenant
         add("bgp_session", key,
             {"name": f"{obj(local)['attrs']['name']} to {remote_label}",
-             "status": status, "description": description}, refs)
+             "status": status, "description": description}, refs, mirror)
 
     def loopback(router, family):
         port = interfaces.get((router, LOOPBACK))
@@ -197,33 +198,43 @@ def enrich(world):
     reflectors = [first, second]
     clients = [entry for entry in routers if entry not in reflectors]
 
-    def ibgp(local, remote, description):
+    def ibgp(local, remote, description, mirror=False):
         for family in families:
             _, local_address = loopback(local, family)
             _, remote_address = loopback(remote, family)
             session(f"bgp-session/ibgp/{local.removeprefix('device/')}/"
                     f"{remote.removeprefix('device/')}{suffix(family)}",
                     local, local_address, site_asn(obj(remote)["refs"]["site"]), "ibgp-core",
-                    description, remote_address=remote_address,
+                    description, remote_address=remote_address, mirror=mirror,
                     remote_label=f"{obj(remote)['attrs']['name']} iBGP{label(family)}")
 
+    # Every peering is recorded from both ends (the mirror carries meta
+    # "mirror"), so each loopback in the BGP view belongs to a named device
+    # rather than rendering as a bare address.
     ibgp(reflectors[0][1], reflectors[1][1],
          "Internal peering between the two backbone route reflectors")
+    ibgp(reflectors[1][1], reflectors[0][1],
+         "Internal peering between the two backbone route reflectors", mirror=True)
     for _, client, _site in clients:
         for _, reflector, reflector_site in reflectors:
             ibgp(client, reflector,
                  "Route-reflector client peering to the backbone reflector at "
                  f"{obj(reflector_site)['attrs']['name']}")
+            ibgp(reflector, client,
+                 f"Route-reflector peering to client {obj(client)['attrs']['name']}", mirror=True)
 
-    # --- eBGP: attributed from each circuit's own terminations and cables. ---
+    # Passive plant: a circuit lands on a patch panel's rear port and leaves by
+    # the front port mapped to it, so a handoff is traced through panels.
+    def trace(term):
+        port = fibre.far_end(objects, peers[term], peers) if term in peers else None
+        return port if objects.get(port, {}).get("kind") == "interface" else None
+
+    # --- eBGP transit: attributed from each circuit's own terminations and cables. ---
     for circuit in sorted(key for key, entry in objects.items() if entry["kind"] == "circuit"):
         entry = obj(circuit)
-        ends = {side: peers[term] for side, term in terminations[circuit].items()
-                if term in peers}
-        roles = {port: obj(obj(port)["refs"]["device"])["refs"].get("role")
-                 for port in ends.values()}
         cid = entry["attrs"]["cid"]
         if entry["refs"].get("type") == "circuit-type/transit":
+            ends = {side: trace(term) for side, term in terminations[circuit].items() if trace(term)}
             if len(ends) != 1:
                 raise DesignError(f"{circuit}: transit needs exactly one local handoff")
             port = next(iter(ends.values()))
@@ -243,19 +254,42 @@ def enrich(world):
                         asns[0], "transit",
                         f"External transit peering over {cid}",
                         remote_prefix=link, remote_label=f"{upstream['attrs']['name']} transit{label(family)}")
-            continue
-        customer = [port for port, role in roles.items() if role == CE_ROLE]
-        provider = [port for port, role in roles.items() if role == PE_ROLE]
-        if len(customer) != 1 or len(provider) != 1:
-            continue  # backbone spans and the operator's own NOC handoffs
-        local, remote = provider[0], customer[0]
-        remote_device = obj(remote)["refs"]["device"]
+
+    # --- Customer eBGP: one session per private-L3 attachment, all from the
+    # finished graph. The CE's VPN subinterface names its access port; that
+    # port's /31 names the PE service subinterface holding the other address;
+    # the access port's cable reaches the NID whose network port is cabled to
+    # the access circuit (its CID and lifecycle status).
+    holders = defaultdict(list)
+    for key, entry in objects.items():
+        if entry["kind"] == "ip_address" and entry["refs"].get("assigned_object"):
+            value = ip_interface(entry["attrs"]["address"])
+            holders[(entry["refs"].get("vrf"), value.network)].append(key)
+    circuit_of = {}
+    for circuit, terms in terminations.items():
+        for term in terms.values():
+            if term in peers and objects[peers[term]]["kind"] == "interface":
+                circuit_of.setdefault(obj(peers[term])["refs"]["device"], set()).add(circuit)
+    for term in sorted(key for key, entry in objects.items() if entry["kind"] == "virtual_circuit_termination"):
+        remote = obj(obj(term)["refs"]["interface"])["refs"].get("parent")
+        remote_device = obj(remote)["refs"]["device"] if remote else None
+        nid_port = peers.get(remote)
+        circuits = circuit_of.get(obj(nid_port)["refs"].get("device"), set()) if nid_port in objects else set()
+        if remote_device is None or obj(remote_device)["refs"].get("role") != CE_ROLE or len(circuits) != 1:
+            raise DesignError(f"{term}: a VPN attachment needs its CE access port, cabled NID and one access circuit")
+        circuit = next(iter(circuits))
+        entry = obj(circuit)
+        cid = entry["attrs"]["cid"]
         for family in families:
-            session(f"bgp-session/{circuit.removeprefix('circuit/')}{suffix(family)}", obj(local)["refs"]["device"],
-                    address(local, f"the {cid} provider handoff", family),
-                    site_asn(obj(remote_device)["refs"]["site"]), "customer",
+            remote_address = address(remote, f"the {cid} customer handoff", family)
+            ip = obj(remote_address)
+            others = [k for k in holders[(ip["refs"].get("vrf"), ip_interface(ip["attrs"]["address"]).network)] if k != remote_address]
+            local_ports = [obj(k)["refs"]["assigned_object"] for k in others]
+            if len(local_ports) != 1 or obj(obj(local_ports[0])["refs"]["device"])["refs"].get("role") != PE_ROLE:
+                raise DesignError(f"{circuit}: the customer /31 needs exactly one provider-edge end")
+            session(f"bgp-session/{circuit.removeprefix('circuit/')}{suffix(family)}", obj(local_ports[0])["refs"]["device"],
+                    others[0], site_asn(obj(remote_device)["refs"]["site"]), "customer",
                     f"Private-L3 customer edge peering over {cid}",
-                    remote_address=address(remote, f"the {cid} customer handoff", family),
-                    tenant=entry["refs"].get("tenant"),
+                    remote_address=remote_address, tenant=entry["refs"].get("tenant"),
                     remote_label=f"{obj(remote_device)['attrs']['name']} customer{label(family)}",
                     status=SESSION_STATUS[entry["attrs"]["status"]])

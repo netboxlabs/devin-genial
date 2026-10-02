@@ -651,7 +651,11 @@ def _validate(plan):
                 report("ip-tenant", address, "Assigned address and its containing segment must have the same tenant.")
             if generated and kind(owner) == "vm_interface" and refs(address).get("tenant") != refs(refs(owner).get("virtual_machine")).get("tenant"):
                 report("ip-tenant", address, "A generated VM's address must belong to its actual VM tenant.")
-            if site(containing) and site(owner) and site(containing) != site(owner):
+            # A provider NID is managed in-band from its PoP's NID-management
+            # segment: the one address that legitimately lives off-site.
+            remote_nid = (str(containing).endswith("/nid-management") and
+                          refs(refs(owner).get("device")).get("role") == "role/nid")
+            if site(containing) and site(owner) and site(containing) != site(owner) and not remote_nid:
                 report("ip-site", address, "Containing prefix and assigned interface belong to different sites.")
             vlan = refs(containing).get("vlan")
             owner_vlans = set(refs(owner).get("tagged_vlans", []))
@@ -708,7 +712,8 @@ def _validate(plan):
         for vlan in vlans:
             if kind(vlan) != "vlan":
                 report("vlan-reference", interface, "VLAN references must target VLAN objects.")
-            elif site(vlan) and site(interface) and site(vlan) != site(interface):
+            elif (site(vlan) and site(interface) and site(vlan) != site(interface) and not
+                  (str(vlan).endswith("/nid-management") and refs(rel.get("device")).get("role") == "role/nid")):
                 report("vlan-scope", interface, f"VLAN {vlan} belongs to a different site.")
 
     def carried_vlans(interface):
@@ -1321,7 +1326,7 @@ def _validate(plan):
                 if recipe.get("profile") == "provider-backbone":
                     # The independent provider check requires exact loopback/SVI
                     # ownership and real uplinks for this in-band composition.
-                    virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access"})
+                    virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access", "role/nid"})
                 if attrs(primary).get("type") == "virtual" and refs(device).get("role") in virtual_management_roles:
                     continue
                 peer = terminal_peers.get(primary)
