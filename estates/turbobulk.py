@@ -1468,9 +1468,27 @@ def _prefix_hierarchy(rows):
     return {key: (result[key], children[(vrf, network)]) for key, vrf, network in networks}
 
 
-def _plan_prefix_hierarchy(objects):
-    return _prefix_hierarchy([(obj["key"], obj["refs"].get("vrf"), obj["attrs"]["prefix"])
-                              for obj in objects.values() if obj["kind"] == "prefix"])
+def _plan_prefix_hierarchy(objects, ids=None, existing=()):
+    """Hierarchy of the plan's prefixes, counted among ``existing`` target rows too.
+
+    ``existing`` is the target's current ``/api/ipam/prefixes/`` rows (VRF by
+    target ID, so ``ids`` must resolve the plan's VRFs). A foreign container
+    already on the target deepens the plan's rows exactly as NetBox's signal
+    would; that container's own ``_children`` is not rewritten, because the
+    loader never writes rows the plan does not own.
+    """
+    vrf = ((lambda obj: obj["refs"].get("vrf")) if ids is None else
+           (lambda obj: ids[obj["refs"]["vrf"]] if "vrf" in obj["refs"] else None))
+    rows = [(obj["key"], vrf(obj), obj["attrs"]["prefix"])
+            for obj in objects.values() if obj["kind"] == "prefix"]
+    # A row with a plan prefix's own (VRF, prefix) identity is that prefix,
+    # already loaded by an earlier batch or attempt — not a second row.
+    owned = {(vrf_id, ipaddress.ip_network(prefix, strict=False)) for _, vrf_id, prefix in rows}
+    rows += [(("existing", row["id"]), _nested_id(row.get("vrf")), row["prefix"])
+             for row in existing
+             if (_nested_id(row.get("vrf")), ipaddress.ip_network(row["prefix"], strict=False))
+             not in owned]
+    return _prefix_hierarchy(rows)
 
 
 def _render(obj, objects, ids, content_types, service_shape="protocol_ports", hierarchy=None):
@@ -2120,6 +2138,9 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                         base_settings, *, upload_format):
     """Submit deterministic model batches and checkpoint IDs after each one."""
     batches = _batches(candidates, max_job_rows)
+    hierarchy = (_plan_prefix_hierarchy(
+        objects, ids, client.all(SPECS["prefix"][1] + "?fields=id,prefix,vrf"))
+        if kind == "prefix" else None)
     for number, batch in enumerate(batches, 1):
         batch_purpose = _batch_purpose(purpose, number, len(batches))
         settings = _batch_request_settings(base_settings, kind)
@@ -2137,7 +2158,6 @@ def _load_model_batches(client, branch_name, kind, candidates, objects, ids, con
                     _write_receipt(receipt_path, receipt)
         if prior is None and not all(obj["key"] in ids for obj in batch):
             pending = [obj for obj in batch if obj["key"] not in ids]
-            hierarchy = _plan_prefix_hierarchy(objects) if kind == "prefix" else None
             rows = [_render(obj, objects, ids, content_types, service_shape, hierarchy)
                     for obj in pending]
             _submit(client, branch_name, SPECS[kind][0], rows, batch_purpose,

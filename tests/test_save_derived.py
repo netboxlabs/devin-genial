@@ -60,6 +60,18 @@ class PrefixHierarchy(unittest.TestCase):
         # depth: COUNT(DISTINCT prefix) of containers; children: COUNT(prefix).
         self.assertEqual(_prefix_hierarchy(rows), {"a": (0, 1), "b": (0, 1), "c": (1, 0)})
 
+    def test_existing_target_containers_count_but_already_loaded_rows_do_not(self):
+        objects = {o["key"]: o for o in (
+            obj("vrf:1", "vrf"),
+            obj("p:site", "prefix", {"prefix": "10.1.0.0/16"}),
+            obj("p:lan", "prefix", {"prefix": "10.1.2.0/24"}, {"vrf": "vrf:1"}),
+        )}
+        existing = [{"id": 1, "prefix": "10.0.0.0/8", "vrf": None},       # foreign container
+                    {"id": 2, "prefix": "10.1.0.0/16", "vrf": None},      # p:site, loaded earlier
+                    {"id": 3, "prefix": "10.1.2.0/24", "vrf": {"id": 7}}]  # p:lan, loaded earlier
+        hierarchy = _plan_prefix_hierarchy(objects, {"vrf:1": 7}, existing)
+        self.assertEqual((hierarchy["p:site"], hierarchy["p:lan"]), ((1, 0), (0, 0)))
+
     def test_render_compiles_counters_and_scope_cache(self):
         objects = {o["key"]: o for o in (
             obj("region:p", "region"), obj("region:c", "region", refs={"parent": "region:p"}),
