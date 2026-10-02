@@ -432,6 +432,8 @@ def _history_journals(site, devices):
                      f"Replaced Juniper MX80 {predecessor} under {change}; services cut over "
                      f"{tl.refresh[pop]:%Y-%m}. Spans re-lit at 100G (the MX80 has only 10G XFP).", "success")
             if old in devices:
+                w.obj(devices[old])["attrs"]["description"] = (
+                    f"Retired MX80, replaced by {name(f'pe-{side}')} {tl.refresh[pop]:%Y-%m}; uncabled, de-rack scheduled")
                 _journal(w, devices[old], "installed", tl.launch[pop], "Installed",
                          f"Racked as the launch PE of {site.display} under {timeline.change(w, devices[old])}.", "success")
                 _journal(w, devices[old], "cut-over", tl.refresh[pop], "Cut over",
