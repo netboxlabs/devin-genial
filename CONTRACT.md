@@ -416,8 +416,9 @@ Types have no replicated interface templates. Installed ownership and compatible
 bay types are native references; descriptive type attributes are not validation
 authority. Selection reads actual cage name, configured speed and local media.
 
-An AOC is one `aoc` cable with two captive modules. Their shared `AOC-` plus
-24-hex serial derives from namespace/cable key. The original cable key/label
+An AOC is one `aoc` cable with two captive modules. Their shared serial, in
+the maker's `optics.serial_formats` label shape, derives from namespace/cable key
+(a transceiver's from namespace/interface key). The original cable key/label
 remain stable; native comments expose the assembly serial. There is no invented
 module-to-cable FK, duplicated module asset tag, detachable AOC end or remote
 carrier optic. Independent checks bind both endpoint modules through the actual
@@ -478,7 +479,20 @@ legacy bank operations-contract gate. Emitted metadata cannot suppress them.
 
 v0.9 applies primary MAC identities to eligible addressed physical/VM interfaces
 in all profiles; virtual/bridge interfaces are excluded. Independent checks
-require missing identities and their stable namespace/interface-derived values.
+require missing identities and their stable values: since 0.16 the maker's IEEE
+OUI (`mac_ouis`; QEMU/KVM `52:54:00` for VMs) plus a tail from the append-only
+`mac/<OUI>` reservation ledger, or a namespace/interface-derived locally
+administered address for makers without a declared OUI.
+
+v0.16 adds shared list-view hygiene to every profile (`operations._shared`
+and `operations.finalize`, run by `World.finish` after every builder):
+tenant/circuit/rack/cluster groups, rack types, per-role VM types, the site
+service-tier field, fixed-geometry IP ranges (`networking.address_ranges`),
+graph-derived tags (`naming.TAGS`), unused-taxonomy pruning, unused
+access/leaf ports disabled, a planned next compute cabinet per gridded room,
+platform SVI names, fabric MTU, interface-qualified DNS names and loopback IP
+roles. `validate_operations._shared` re-derives each independently; see
+[docs/modeling.md](docs/modeling.md#list-view-hygiene).
 Direct technical assignments on infrastructure roles use the device's actual
 tenant desk. Bank WAN accounts distinguish permanent procurement lineages through
 actual circuit A-side sites and retained design assignments. Acquiring or

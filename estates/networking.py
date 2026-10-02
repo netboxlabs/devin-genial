@@ -80,8 +80,8 @@ def ipam_roles(w):
             chosen[obj["key"]] = prefix_role(obj["key"], obj["attrs"]["prefix"], refs.get("vrf"), refs.get("vlan"))
         elif obj["kind"] == "vlan":
             chosen[obj["key"]] = segment_role(obj["key"].rsplit("/", 1)[-1])
-        elif obj["kind"] == "ip_range" and obj["attrs"].get("status") == "reserved":
-            chosen[obj["key"]] = "reserved"
+        elif obj["kind"] == "ip_range":
+            chosen[obj["key"]] = "reserved" if obj["attrs"].get("status") == "reserved" else "dhcp"
     used = set(chosen.values())
     for weight, (role, (name, description)) in enumerate(IPAM_ROLES.items(), 1):
         if role in used:
@@ -89,6 +89,61 @@ def ipam_roles(w):
                   "description": description})
     for key, role in chosen.items():
         w.obj(key)["refs"]["role"] = f"ip-role/{role}"
+
+
+# Site.address allocates endpoint hosts upward from .10 (blocks.py), so the
+# addresses between the gateways and .10 are held for infrastructure.
+ENDPOINT_FLOOR = 10
+# Segments whose endpoints take addresses dynamically (IPAM role keys).
+DHCP_ROLES = frozenset({"users", "wireless", "guest", "voice"})
+# A DHCP scope takes the top quarter of a client segment, at most 128 hosts,
+# so a typical scope sits well clear of the static allocations growing from .10.
+DHCP_SCOPE_MAX = 128
+
+
+def address_ranges(w):
+    """Infrastructure, DHCP and headroom ranges inside every VLAN-bound IPv4 LAN.
+
+    Every boundary is a fixed function of the prefix size and the recipe's
+    reserve fraction, so growth never moves a range; a held range is emitted
+    only while no assigned address occupies it.
+    """
+    fraction = float(w.recipe["reserve_fraction"])
+    taken = defaultdict(set)
+    for obj in w.objects.values():
+        if obj["kind"] == "ip_address":
+            address = ipaddress.ip_interface(obj["attrs"]["address"])
+            if address.version == 4:
+                taken[obj["refs"].get("vrf")].add(int(address.ip))
+    prefixes = sorted((o for o in w.objects.values() if o["kind"] == "prefix" and o["attrs"].get("status") == "active"
+                       and o["refs"].get("vlan") and ipaddress.ip_network(o["attrs"]["prefix"]).version == 4),
+                      key=lambda o: o["key"])
+    for prefix in prefixes:
+        net = ipaddress.ip_network(prefix["attrs"]["prefix"])
+        size, base = net.num_addresses, int(net.network_address)
+        if size < 64:
+            continue
+        refs = {name: prefix["refs"][name] for name in ("vrf", "tenant") if name in prefix["refs"]}
+        used = {value - base for value in taken[refs.get("vrf")] if base < value < base + size - 1}
+        stem = prefix["key"].removeprefix("prefix/")
+        purpose = naming.segment_purpose(prefix["refs"]["vlan"].rsplit("/", 1)[-1]).lower()
+
+        def held(key, first, last, description, status="reserved"):
+            if last - first < 1 or (status == "reserved" and any(first <= host <= last for host in used)):
+                return
+            w.add("ip_range", f"ip-range/{stem}/{key}", {"start_address": f"{net[first]}/{net.prefixlen}",
+                  "end_address": f"{net[last]}/{net.prefixlen}", "status": status, "mark_populated": False,
+                  "description": description}, dict(refs))
+
+        gateways = max((host for host in used if host < ENDPOINT_FLOOR), default=0)
+        held("infrastructure", gateways + 1, ENDPOINT_FLOOR - 1, "Held for network infrastructure below the endpoint range")
+        if naming.segment_role(prefix["refs"]["vlan"].rsplit("/", 1)[-1]) in DHCP_ROLES:
+            scope = min(size // 4, DHCP_SCOPE_MAX)
+            headroom = max(2, math.ceil(scope * fraction))
+            top = size - 2
+            held("dhcp", top - scope + 1, top - headroom, f"DHCP scope for {purpose}", status="active")
+            held("headroom", top - headroom + 1, top,
+                 f"Held back from the DHCP scope as {fraction:.0%} growth headroom")
 
 
 def registry(w, sites):
@@ -125,13 +180,6 @@ def registry(w, sites):
         site["refs"]["asns"] = ["asn/birch" if site["meta"].get("lineage") == "birch" else "asn/bank"]
         w.add("vlan_group", f"vlan-group/{sid}", {"name": _site_display(w, sid) or titleize(sid), "slug": f"{ns}-{sid}",
               "description": "Site-local VLAN allocation"}, {"scope_site": site["key"], "tenant": tenant})
-        prefix = w.objects.get(f"prefix/{sid}/users")
-        if prefix:
-            net = ipaddress.ip_network(prefix["attrs"]["prefix"])
-            w.add("ip_range", f"ip-range/{sid}/reserve", {"start_address": f"{net[220]}/{net.prefixlen}",
-                  "end_address": f"{net[239]}/{net.prefixlen}", "status": "reserved", "mark_populated": False,
-                  "description": "Twenty user addresses held for local onboarding"},
-                  {"vrf": prefix["refs"]["vrf"], "tenant": tenant})
     for obj in list(w.objects.values()):
         if obj["kind"] == "vlan":
             sid = obj["refs"]["site"].split("/", 1)[1]
@@ -372,6 +420,31 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
               {"interface_a": ports[0], "interface_b": ports[1], "tenant": tenant})
 
 
+MAC_TAIL_MULTIPLIER = 0x5BD1E9  # odd, so slot -> tail is a bijection mod 2**24
+
+
+def mac_oui(catalog, w, port):
+    """The public IEEE OUI for this interface's maker, or None (locally administered).
+
+    VM interfaces take the conventional QEMU/KVM prefix; makers the catalog
+    does not list (generic endpoints, lab simulators) keep a locally
+    administered address rather than borrowing someone else's block.
+    """
+    ouis = catalog["mac_ouis"]
+    obj = w.obj(port)
+    if obj["kind"] == "vm_interface":
+        return ouis["virtual_machine"]
+    device_type = w.obj(w.obj(obj["refs"]["device"])["refs"]["device_type"])
+    return ouis["manufacturers"].get(w.obj(device_type["refs"]["manufacturer"])["attrs"]["name"])
+
+
+def mac_tail(namespace, prefix, slot):
+    """A stable, scattered 24-bit tail for one ledger slot under one OUI."""
+    offset = int.from_bytes(sha256(f"{namespace}/{prefix}/mac-tail".encode()).digest()[:3], "big")
+    value = (slot * MAC_TAIL_MULTIPLIER + offset) % (1 << 24)
+    return ":".join(f"{(value >> shift) & 255:02X}" for shift in (16, 8, 0))
+
+
 def macs(w):
     ns = w.recipe["namespace"]
     used = set()
@@ -380,11 +453,17 @@ def macs(w):
         obj = w.obj(port)
         if obj["kind"] not in {"interface", "vm_interface"} or obj["attrs"].get("type") in {"virtual", "bridge"}:
             continue
-        raw = bytearray(sha256(f"{ns}/{port}/mac".encode()).digest()[:6])
-        raw[0] = (raw[0] | 2) & 254
-        mac = ":".join(f"{v:02X}" for v in raw)
+        oui = mac_oui(w.catalog, w, port)
+        if oui:
+            # An append-only ledger per OUI keeps every tail unique and stable
+            # under growth; a bare 24-bit hash would collide at estate scale.
+            mac = f"{oui}:{mac_tail(ns, oui, w.reserve(f'mac/{oui}', port, 1 << 24))}"
+        else:
+            raw = bytearray(sha256(f"{ns}/{port}/mac".encode()).digest()[:6])
+            raw[0] = (raw[0] | 2) & 254
+            mac = ":".join(f"{v:02X}" for v in raw)
         if mac in used:
             raise DesignError("Generated MAC collision; choose a new namespace")
         used.add(mac)
-        key = w.add("mac_address", f"mac/{port}", {"mac_address": mac, "description": "Locally administered interface identity"}, {"assigned_object": port})
+        key = w.add("mac_address", f"mac/{port}", {"mac_address": mac}, {"assigned_object": port})
         obj["refs"]["primary_mac_address"] = key

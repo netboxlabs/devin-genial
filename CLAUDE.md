@@ -118,6 +118,23 @@ every gap. Whole-goal reviewer verdicts and completion audit are in
 
 Shared MAC policy covers addressed device/VM interfaces except virtual/bridge
 interfaces. Every profile must validate missing identities independently.
+MACs start with the maker's public IEEE OUI (`catalog/hardware.json` `mac_ouis`,
+QEMU/KVM `52:54:00` for VMs) and take their tail from the append-only `mac/<OUI>`
+ledger; never borrow an OUI for a maker the catalog does not declare.
+List-view hygiene (0.16, `operations.finalize`, run first by `World.finish` after
+every builder): tags, taxonomy pruning, unused-port state, planned cabinets, DNS,
+MTU and loopback roles are derived from the finished graph and re-derived by
+`validate_operations._shared`. A tag must be discriminating (never on every
+candidate of its kinds) and land only on `naming.TAGS` kinds. Prune only roles
+and passive cabling types: device types, platforms and makers are a fixed library
+because growth and scenario snapshots must never delete one. Statuses other than
+`active` come only from ledgers (IP-range geometry, unused ports, the next grid
+cabinet), never invented events; required paths stay `active`.
+Journals are short operational lines whose kind follows the event (completed
+success, open action warning, else info); never restate the record's own
+fields; dates follow the site's service day (its first circuit's install date,
+read from the graph). Contact priority follows desk order (technical primary, local or
+commercial secondary, specialist tertiary).
 WAN procurement accounts retain bank design lineage across acquisition/refresh;
 provider customer/NOC/transport accounts keep their separate authored policy.
 Direct technical assignments follow equipment role and actual tenant. Biomedical
@@ -380,7 +397,9 @@ for the separately recorded pinned-target live qualification.
   `validate_utility.py`: independent bay-ledger, endpoint, zone-isolation and
   conduit checks.
 - `estates/places.py`: authored geography, building/room placement and cable routes.
-- `estates/equipment.py`, `networking.py`, `operations.py`: connected model families.
+- `estates/equipment.py`, `networking.py`, `operations.py`: connected model families;
+  `operations.finalize` is the graph-wide list-view hygiene pass
+  ([modeling](docs/modeling.md#list-view-hygiene)), pinned by `tests/test_estate_hygiene.py`.
 - `estates/optics.py`: reviewed installed optical parts and captive AOC ends;
   [optics policy](docs/modeling.md#installed-optics-policy), offline/SDK evidence in
   GOAL.md; pinned local qualification in `lab/README.md`.

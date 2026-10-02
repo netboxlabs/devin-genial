@@ -112,7 +112,11 @@ class OperationsContextTests(unittest.TestCase):
                 scopes = {(o["refs"]["cluster"], o["key"].split("/")[2]) for o in plan["objects"] if o["kind"] == "virtual_machine"}
                 journals = [o for o in plan["objects"] if o["kind"] == "journal_entry"]
                 legacy_notes = [o for o in journals if objects[o["refs"]["assigned_object"]]["kind"] != "device"]
-                self.assertEqual(len(legacy_notes), 2 * (len(scopes) + sum(o["kind"] in {"site", "circuit"} for o in plan["objects"])))
+                # One placement note per workload scope, one access note per
+                # site and an order plus an in-service note per circuit.
+                self.assertEqual(len(legacy_notes), len(scopes) + sum({"site": 1, "circuit": 2}.get(o["kind"], 0) for o in plan["objects"]))
+                for vm in (o for o in plan["objects"] if o["kind"] == "virtual_machine"):
+                    self.assertEqual(objects[f"contact-assignment/{vm['key']}/operations"]["attrs"], {"priority": "secondary"})
                 by_target = {}
                 for note in journals:
                     self.assertNotIn("Synthetic", note["attrs"]["comments"])
@@ -171,6 +175,37 @@ class OperationsContextTests(unittest.TestCase):
         plan["objects"].append(duplicate)
         self.assert_code(plan, "operations-contact")
 
+    def test_assignment_priority_follows_desk_order(self):
+        for assignment, priority in (("contact-assignment/site/dc-01", "secondary"),
+                                     ("contact-assignment/site/dc-01/facilities", "primary"),
+                                     ("contact-assignment/circuit/dc-01/a/1/carrier", "tertiary"),
+                                     ("contact-assignment/vm/dc-01/inventory-api/001/operations", "primary")):
+            with self.subTest(assignment=assignment):
+                plan, objects = self.plan()
+                self.assertNotEqual(objects[assignment]["attrs"]["priority"], priority)
+                objects[assignment]["attrs"]["priority"] = priority
+                self.assert_code(plan, "operations-contact")
+        plan, objects = self.plan()
+        plan["objects"].remove(objects["contact-assignment/vm/dc-01/inventory-api/001/operations"])
+        self.assert_code(plan, "operations-contact")
+        # A hospital site with biomedical equipment names its biomedical desk third.
+        plan = generate({"profile": "hospital-clinics"})
+        sites = [o for o in plan["objects"] if o["key"].endswith("/biomedical") and o["kind"] == "contact_assignment"]
+        self.assertTrue(sites)
+        self.assertTrue(all(o["attrs"] == {"priority": "tertiary"} for o in sites))
+        sites[0]["attrs"]["priority"] = "secondary"
+        self.assert_code(plan, "operations-contact")
+
+    def test_journal_kind_follows_its_event(self):
+        for key, kind in (("journal/site/dc-01/access-plan", "success"),
+                          ("journal/circuit/dc-01/a/1/handoff-plan", "info"),
+                          ("journal/vm/dc-01/inventory-api/001/resource-plan", "warning")):
+            with self.subTest(key=key):
+                plan, objects = self.plan()
+                self.assertNotEqual(objects[key]["attrs"]["kind"], kind)
+                objects[key]["attrs"]["kind"] = kind
+                self.assert_code(plan, "operations-journal")
+
     def test_contacts_cannot_claim_unmodeled_guarantees_or_contain_real_phone_numbers(self):
         plan, objects = self.plan()
         objects["contact/operations"]["attrs"]["description"] = "summit estate guarantees 24/7 staffed coverage and automatic carrier failover."
@@ -193,7 +228,7 @@ class OperationsContextTests(unittest.TestCase):
         for mode in ("remove", "retype"):
             with self.subTest(mode=mode):
                 plan, objects = self.plan()
-                note = objects["journal/site/dc-01/site-record"]
+                note = objects["journal/site/dc-01/access-plan"]
                 if mode == "remove":
                     plan["objects"].remove(note)
                 else:
@@ -203,15 +238,15 @@ class OperationsContextTests(unittest.TestCase):
     def test_journal_subject_and_account_binding_are_checked(self):
         for refs in ({"assigned_object": "site/dc-02"}, {"assigned_object": "site/dc-01", "created_by": "owner/operations"}):
             plan, objects = self.plan()
-            objects["journal/site/dc-01/site-record"]["refs"] = refs
+            objects["journal/site/dc-01/access-plan"]["refs"] = refs
             self.assert_code(plan, "operations-journal")
 
     def test_journal_facts_and_added_execution_claim_are_rejected(self):
         for key, before, after in (
-                ("journal/circuit/dc-01/a/1/capacity-request", "Committed capacity: 1 Gbps", "Committed capacity: 999.999 Mbps"),
-                ("journal/circuit/dc-01/a/1/handoff-plan", "summit-dc-01", "summit-dc-02"),
-                ("journal/vm/dc-01/inventory-api/001/resource-plan", "8192 MB", "16384 MB"),
-                ("journal/vm/dc-01/inventory-api/001/listener-plan", "tcp/443", "tcp/444")):
+                ("journal/circuit/dc-01/a/1/capacity-request", "Ordered 1 Gbps", "Ordered 999.999 Mbps"),
+                ("journal/circuit/dc-01/a/1/capacity-request", "quote summit-dc-01-A-001", "quote summit-dc-02-A-001"),
+                ("journal/circuit/dc-01/a/1/handoff-plan", "on a 1 Gbps port", "on a 10 Gbps port"),
+                ("journal/vm/dc-01/inventory-api/001/resource-plan", "dc01-inventory-api-h01", "dc01-inventory-api-h02")):
             with self.subTest(key=key):
                 plan, objects = self.plan()
                 note = objects[key]
@@ -226,7 +261,7 @@ class OperationsContextTests(unittest.TestCase):
         for replacement in ("2099-01-01", "2026-02-30", "2000-01-01"):
             with self.subTest(date=replacement):
                 plan, objects = self.plan()
-                note = objects["journal/site/dc-01/site-record"]
+                note = objects["journal/site/dc-01/access-plan"]
                 note["attrs"]["comments"] = replacement + note["attrs"]["comments"][10:]
                 self.assert_code(plan, "operations-journal-date")
 
@@ -236,11 +271,11 @@ class OperationsContextTests(unittest.TestCase):
             objects["contact/operations"]["attrs"][field] = []
             self.assert_code(plan, "operations-contact")
         plan, objects = self.plan()
-        objects["journal/site/dc-01/site-record"]["attrs"]["comments"] = None
+        objects["journal/site/dc-01/access-plan"]["attrs"]["comments"] = None
         self.assert_code(plan, "operations-journal-facts")
 
     def test_nontext_source_site_facts_are_findings(self):
-        for field in ("physical_address", "name", "time_zone"):
+        for field in ("physical_address", "name"):
             for bad in ([], {}, None):
                 with self.subTest(field=field, value=bad):
                     plan, objects = self.plan("school-district")

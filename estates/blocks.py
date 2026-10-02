@@ -54,6 +54,25 @@ FEED_ELECTRICS = {("US", False): (208, 20), ("US", True): (120, 20)}
 DEFAULT_FEED = (230, 16)
 
 
+def svi_name(w, device, name):
+    """The routed-VLAN interface name ``device``'s platform uses for ``VlanN``.
+
+    The catalog platform declares ``svi_format`` where it differs from the
+    ``VlanN`` convention (Junos: ``irb.N``). Non-SVI names pass through.
+    Exposed for builders outside this module (provider.py keys its own SVIs).
+    """
+    match = re.fullmatch(r"Vlan(\d+)", name)
+    if not match:
+        return name
+    spec = w.catalog["models"][w.obj(device)["meta"]["hardware"]]
+    return spec.get("platform", {}).get("svi_format", "Vlan{vid}").format(vid=match[1])
+
+
+def dns_label(name):
+    """An interface name as one DNS label: xe-0/1/1 -> xe-0-1-1."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
 def trunk(site, interfaces, networks):
     vlans = [site.network(n)[0] for n in dict.fromkeys(networks)]
     for key in interfaces:
@@ -68,27 +87,17 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
     if inherited:
         w.add("tenant", "tenant/inherited", {"name": "Birch Bank", "slug": f"{ns}-birch",
               "description": "Acquisition candidate with retained naming, addressing and carrier contracts"})
-    # Every site, device and VM carries it, so it reads as an operations scope
-    # ("in the managed estate"), not a provenance marker. Nothing selects rows
-    # by it: retirement and teardown match plan identities, never this tag.
-    w.add("tag", "tag/estate", {"name": "Managed", "slug": f"{ns}-managed", "color": "607d8b",
-          "description": "Inventory maintained by the network operations team"})
+    # Tags are graph-derived once the estate is finished (operations.finalize):
+    # a blanket "everything is managed" tag carried no information.
     places.foundation(w, site_kinds=site_kinds)
-    colors = {"wan-edge": "e65100", "distribution": "6a1b9a", "access": "1565c0",
-              "spine": "4a148c", "leaf": "7b1fa2", "server": "2e7d32", "management": "546e7a",
-              "patch-panel": "78909c", "pdu": "c62828", "workstation": "00838f",
-              "atm": "f9a825", "ap": "00acc1", "camera": "795548", "wall-outlet": "78909c",
-              "medical-device": "d81b60", "imaging-device": "8e24aa",
-              "pos-terminal": "ef6c00", "scanner": "5d4037",
-              "plc": "bf360c", "hmi": "ff8f00", "field-device": "827717",
-              "rtu": "00695c", "protection-relay": "ad1457", "station-gateway": "4527a0",
-              "provider-edge": "5e35b1", "customer-edge": "00838f"}
+    # Every candidate role is declared here; operations.finalize drops the ones
+    # nothing references, so an estate's role list is exactly what it uses.
     for role in device_roles if device_roles is not None else ("wan-edge", "distribution", "access", "spine", "leaf", "server", "management", "patch-panel",
                  "pdu", "workstation", "atm", "ap", "camera", "wall-outlet"):
-        w.add("device_role", f"role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}", "color": colors[role]})
-    for role, color in (("application", "2e7d32"), ("database", "6a1b9a"), ("backup-service", "546e7a")):
+        w.add("device_role", f"role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}", "color": naming.ROLE_COLORS[role]})
+    for role in ("application", "database", "backup-service"):
         w.add("device_role", f"role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}",
-              "color": color, "vm_role": True})
+              "color": naming.ROLE_COLORS[role], "vm_role": True})
     w.add("platform", "platform/services", {"name": "Service Linux", "slug": f"{ns}-service-linux",
           "description": "Linux server build for service VMs"})
     for group in ("network", "compute"):
@@ -134,11 +143,13 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
             manufacturers.add(part["manufacturer"])
     for name in networks:
         w.add("vrf", f"vrf/{name}", {"name": titleize(name), "enforce_unique": True}, {"tenant": "tenant"})
-        # A one-site pool is already represented by the scoped site reservation.
-        # Emitting an equal global root would duplicate the same VRF/prefix.
-        if w.pool.prefixlen < w.site_prefixlen:
-            w.add("prefix", f"root/{name}", {"prefix": w.recipe["address_pool"], "status": "container",
-                  "description": f"{titleize(name)} site allocations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
+    # One global container for the whole pool, directly under its aggregate.
+    # A global container parents prefixes in every VRF, so repeating the same
+    # pool once per VRF only multiplied identical rows. A one-site pool is
+    # already represented by the scoped site reservation.
+    if w.pool.prefixlen < w.site_prefixlen:
+        w.add("prefix", "root/pool", {"prefix": w.recipe["address_pool"], "status": "container",
+              "description": "Site allocation pool"}, {"tenant": "tenant"})
     for side, provider in (("a", "Northstar Transit"), ("b", "Meridian Carrier")) if include_carriers else ():
         w.add("provider", f"provider/{side}", {"name": provider, "slug": f"{ns}-carrier-{side}",
               "comments": f"Minimum private access commitment {50 if side == 'a' else 100} Mbps."})
@@ -218,7 +229,7 @@ class Site:
                              required_connections=[], compute=[], assumptions=[])
         w.contracts.append(self.contract)
         w.add("site", self.key, {"name": self.name, "slug": self.name, "status": "active",
-              "description": description}, {"tenant": self.tenant, "tags": ["tag/estate"]})
+              "description": description}, {"tenant": self.tenant})
         self.equipment_location = places.locate(self)
 
     @property
@@ -256,7 +267,7 @@ class Site:
                      # Reference the emitted display name (authored or legacy);
                      # device identities themselves stay keyed on stable ids.
                      description=f"{naming.role_label(role)} at {self.w.obj(self.key)['attrs']['name']}")
-        refs = dict(site=self.key, device_type=f"hardware/{alias}", role=f"role/{role}", tenant=self.tenant, tags=["tag/estate"])
+        refs = dict(site=self.key, device_type=f"hardware/{alias}", role=f"role/{role}", tenant=self.tenant)
         if "platform" in spec:
             refs["platform"] = f"platform/{spec['platform']['slug']}"
         metadata = dict(hardware=alias, purpose=role, **(meta or {}))
@@ -352,7 +363,10 @@ class Site:
     def virtual_interface(self, device, name, network):
         key = f"{device}/if/{name}"
         vlan, _ = self.network(network)
-        self.w.add("interface", key, {"name": name, "type": "virtual", "enabled": True, "mode": "access"},
+        # Builders key gateway interfaces "VlanN"; the emitted name follows the
+        # device's own platform (Junos routes a VLAN on irb.N, EOS/IOS XE on
+        # VlanN). The key stays stable so growth and checks address one record.
+        self.w.add("interface", key, {"name": svi_name(self.w, device, name), "type": "virtual", "enabled": True, "mode": "access"},
                    {"device": device, "vrf": self.vrf(network), "untagged_vlan": vlan})
         return key
 
@@ -449,9 +463,14 @@ class Site:
         key = f"ip/{interface}"
         node = self.w.obj(interface)
         owner = device or node["refs"].get("device") or node["refs"].get("virtual_machine")
+        # No description: the assigned interface and VRF already say what it
+        # is. The DNS name is final here only for a primary; operations
+        # .finalize rewrites every other one to its interface-qualified form
+        # once all primaries in the estate are known.
         dns_name = self.w.obj(owner)["attrs"]["name"] if owner else self.code
+        if not primary and node["kind"] == "interface":
+            dns_name = f"{dns_label(node['attrs']['name'])}.{dns_name}"
         attrs = dict(address=f"{net.network_address + host}/{net.prefixlen}", status="active",
-                     description=f"{network.title()} / {dns_name} / {node['attrs']['name']}",
                      dns_name=f"{dns_name}.{self.w.recipe['namespace']}.example")
         self.w.add("ip_address", key, attrs, {"assigned_object": interface, "vrf": self.vrf(network), "tenant": self.tenant})
         if node["kind"] in {"interface", "vm_interface"}:

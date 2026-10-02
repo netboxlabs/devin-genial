@@ -16,6 +16,7 @@ Generated `build/` artifacts and qualification receipts are local outputs, not i
 - [Optional IPv6](#optional-ipv6)
 - [Wireless demand and PoE](#wireless-demand-and-poe)
 - [Installed optics policy](#installed-optics-policy)
+- [List-view hygiene](#list-view-hygiene)
 - [Contact and journal context](#contact-and-journal-context)
   - [Automation records](#automation-records)
 - [Provider backbone geography and numbering](#provider-backbone-geography-and-numbering)
@@ -330,14 +331,28 @@ VLAN names unique per group (`unique_group_name`, pinned 4.7.2
 
 Every prefix and VLAN carries an IPAM role (`ipam.Role`) so the Role column,
 prefix heatmap and IPAM radial map colour by purpose. One authored set lives in
-`naming.IPAM_ROLES` — Backbone, Transit, Loopbacks, Management, Users, Voice,
-Wireless, Guest, Servers, Storage, Security, Payments, Clinical, Operational
-technology, Customer and Reserved, weighted in that order — and an estate emits
+`naming.IPAM_ROLES` — Allocation pools, Backbone, Transit, Loopbacks, Management,
+Users, Voice, Wireless, Guest, Servers, Storage, Security, Payments, Clinical,
+Operational technology, Customer, DHCP pools and Reserved, weighted in that order — and an estate emits
 only the roles it uses. `naming.prefix_role` derives each prefix's role from
 the finished graph: host routes are Loopbacks and /31 or /127 links Transit;
 a prefix bound to a VLAN shares that segment's role (`SEGMENT_ROLES`); any
 other prefix follows its VRF (a provider customer VPN is Customer, a
-per-segment context its segment). Bank onboarding IP ranges are Reserved.
+per-segment context its segment; the one VRF-less pool container is
+Allocation pools). IP ranges are DHCP pools when active and Reserved when held.
+
+The address pool is one global container under its aggregate; a global
+container parents prefixes in every VRF, so the per-VRF copies of the pool are
+gone (site-block containers stay per VRF, since each VRF holds a slot of it).
+`networking.address_ranges` fills every VLAN-bound IPv4 LAN of /26 or larger
+with fixed-geometry ranges: a Reserved infrastructure block between the
+gateways and `.10` (where `Site.address` starts endpoints), and on client
+segments (Users, Wireless, Guest, Voice roles) a DHCP scope over the top
+quarter (at most 128 hosts) whose last `reserve_fraction` is a Reserved
+headroom range. Boundaries depend only on prefix size and the recipe's reserve
+fraction, so growth never moves a range; a held range is emitted only while no
+assigned address occupies it. WLAN capacity (`wireless_context`) treats a DHCP
+scope as client capacity and held ranges as consumed.
 `validate_networking` re-derives and enforces every assignment (`ipam-role`).
 Role names are namespace-free like device roles; Role is a branch-scoped
 OrganizationalModel and the loader's occupancy gate keeps two estates out of
@@ -357,9 +372,9 @@ per-record disclaimers the loudest synthetic tell). `naming.DISCLAIMER` backs a
 verified", "no … is claimed", "documentation inventory", "fictional",
 "placeholder", "planning intent" or "unknown". Endpoint descriptions read in sentence case with
 acronyms intact — `Classroom AP`, `Point-of-sale lane`, `Station HMI`,
-`Bedside monitor`. The estate-wide tag is `Managed`
-(slug `<namespace>-managed`); nothing selects rows by it. Journals state rates
-in operator units (`Committed capacity: 100 Gbps`, `naming.rate_kbps`), WAN
+`Bedside monitor`. Tags are graph-derived (see
+[list-view hygiene](#list-view-hygiene)); nothing selects rows by them.
+Journals state rates in operator units (`Ordered 100 Gbps from …`, `naming.rate_kbps`), WAN
 circuit comments name their procurement cohort in words (`Standard branch
 order: …`, `naming.COHORT_LABELS`), service desks name their workload
 (`Teller API service desk`), and sites carry no boilerplate comment — bank
@@ -494,7 +509,7 @@ complete simulations:
 | IPAM and HA | Private ASN ranges and site/provider ASNs, aggregates, roles, route targets, reserved ranges, and one valid VRRPv3 gateway pair with its shared address |
 | Wireless | Site-scoped staff WLAN groups, actual radio interfaces and tagged user-VLAN access paths; a separate routed diagnostic hop |
 | Carrier and recovery services | Virtual circuits over real WAN handoffs; planned IKE/IPsec tunnel and translated VXLAN recovery segment between the DCs |
-| Operations | Contacts/owners, commercial accounts, restoration groups, VM disks/types, cabinet types/groups/reservations, a typed custom choice, journal entry and contextual link |
+| Operations | Contacts/owners, commercial accounts, tenant groups, A/B circuit groups, cluster groups, per-role VM types and disks, cabinet types/groups, the site service-tier field, journal entries and the site-equipment link — every profile; the bank adds its DC01 rack reservation and cable bundle |
 | Automation | A global config context carrying this estate's own service endpoints and a role-weighted switching context; CSV export templates for devices and cables; an inert `.invalid` webhook with its disabled device-change event rule (loader-only: no Diode entity exists for these four kinds) |
 
 `report.md` gives graph-derived starting questions. `coverage.json` lists every
@@ -639,20 +654,83 @@ from conservative authored reservations; each AOC end reserves 3.5W rather than
 claiming a verified whole-assembly power split. This is planning reserve, not
 measured consumption or an efficiency calculation.
 
-Optical preparation journals use a fixed catalog cage on each rack's permanent
-equipment anchor. They identify the installed part and stable facilities desk;
+Optic replacement notes use a fixed catalog cage on each rack's permanent
+equipment anchor. They identify the installed part, serial and bay;
 new occupied ports do not rewrite older journal text. Native
 [`Interface.module` ownership](https://github.com/netbox-community/netbox/blob/v4.7.0/netbox/dcim/models/device_components.py)
 uses cascading deletion. Preserve these records during growth: no module removal,
 hot-swap or executed optic replacement is modeled.
+
+## List-view hygiene
+
+A list view should tell an engineer something. Since 0.16.0 every profile's
+finished graph passes through `operations.finalize` (registered by the shared
+operations builders and run first by `World.finish`, after BGP and the lab),
+and `validate_operations` re-derives each rule independently with a failing
+mutation in `tests/test_estate_hygiene.py`.
+
+- **Statuses follow the ledgers.** Infrastructure keeps `active` (independent
+  checks never count an inactive path as healthy capacity), but the estate now
+  shows the states its own plan implies: DHCP scopes (`active`) and held
+  infrastructure/headroom ranges (`reserved`) in every LAN; unused access and
+  leaf switch ports `enabled: false`, matching the switch baseline context's
+  `disable_unused` (a cabled port is always up); and one `planned` cabinet at
+  the next compute position of every gridded equipment room. That cabinet takes
+  the key, name, facility ID and grid coordinate the next compute lane will
+  use, so growth turns the same record `active`; nothing is installed in it or
+  powered. Journals carry `success`/`warning`/`info` by event and contact
+  assignments `primary`/`secondary`/`tertiary` by desk order
+  ([below](#contact-and-journal-context)). Devices, sites and circuits stay
+  `active`: no baseline ledger implies a staged or decommissioning device —
+  those states belong to the acquisition/refresh, power and span-maintenance
+  snapshots.
+- **Tags name properties the graph shows** (`naming.TAGS`): `Hub site` (hosts a
+  cluster or a private-WAN hub), `Dual-homed` (active circuits from two
+  carriers), `Acquired` (Birch lineage sites and devices), `Route reflector`
+  (the remote end of iBGP client sessions), `Transit edge`, `Managed CE`, and
+  `PCI scope`, `Clinical` and `OT zone` on the payment, clinical and
+  operational-technology VLANs, their prefixes and every device that carries or
+  attaches to them. A tag lands only on its declared kinds, every emitted tag
+  is used, and a tag that would label every candidate of its kinds is dropped
+  as uninformative. NetBox's `Tag.object_types` restriction is declared in
+  `naming.TAGS` and enforced offline; it is not yet written to the target (the
+  TurboBulk path cannot carry that many-to-many).
+- **Taxonomy lists only what is used.** Device and rack roles nothing references
+  are dropped, as are the passive cabling types (patch panel, wall outlet) a
+  direct-patching estate never installs; every device role has its own colour
+  (`naming.ROLE_COLORS`). Other device types, platforms and makers stay a fixed
+  library so growth and scenario snapshots never delete one.
+- **Groups and types on every profile.** Tenant groups (provider customers join
+  `Customers`), A/B circuit pairs keyed from the builders' `…/a` and `…/b`
+  circuits plus a provider `Backbone spans` group, rack groups by room kind,
+  rack types by height, a cluster group, one VM type per VM role, and the site
+  `Service tier` custom field (tier 1 hosts shared services, tier 2 has two
+  carriers, tier 3 one) with the site-equipment custom link.
+- **Interfaces read like the platform.** A gateway interface keyed `VlanN`
+  takes the platform's routed-VLAN name (`irb.N` on Junos via the catalog's
+  `svi_format`, `VlanN` on EOS/IOS XE; `blocks.svi_name`). Like-for-like
+  optical links carry their cage rate as `speed`, and links between core roles
+  (spine, leaf, core, distribution, provider edge) and over backbone spans carry
+  jumbo MTU (9192 on Junos, 9216 elsewhere).
+- **Addresses don't repeat their interface.** IP addresses carry no
+  description; DNS names stay on primaries (`<device>.<domain>`), VM addresses
+  and loopbacks keep their host's name, and every other device address is
+  interface-qualified (`xe-0-1-1.<device>.<domain>`). Loopback addresses carry
+  the `loopback` IP role.
+- **Fingerprints look like hardware.** Vendor-OUI MACs (above), optic serials in
+  the maker's label shape (`optics.serial_formats`, authored fiction), and
+  optic module types carrying only datasheet facts — provenance and the
+  planning power reservation stay in the catalog.
 
 ## Contact and journal context
 
 All five profiles derive operational context from the same rules. Technical
 desks follow tenant ownership; site facilities desks handle local access and
 power-work coordination; carrier desks follow each circuit's provider; service
-desks follow the VM's workload and tenant. Distinct responsibilities have separate
-primary assignments. The directory uses descriptive `.example` mailboxes and
+desks follow the VM's workload and tenant. Assignment priority follows desk
+order: the technical (or service) desk is primary, the site facilities desk,
+carrier desk and a VM's tenant technical desk are secondary, and a hospital
+site's biomedical desk is tertiary. The directory uses descriptive `.example` mailboxes and
 fictional phone lines: the real area code of the metro the desk serves (site
 desks) or of the estate's first allocated site (tenant, carrier and service
 desks), with a line in the 555-0100..0199 block reserved for fiction, picked by
@@ -663,29 +741,44 @@ the endpoint is unreachable by construction and the rule is disabled.
 Network infrastructure, APs and hosts expose their actual tenant's technical desk
 directly on the device. Hospital medical/imaging equipment retains its distinct
 site biomedical responsibility. Addressed physical and VM interfaces receive
-stable primary MAC identities; virtual/bridge interfaces are excluded.
+stable primary MAC identities; virtual/bridge interfaces are excluded. A MAC
+starts with its maker's public IEEE OUI (`catalog/hardware.json` `mac_ouis`;
+VM interfaces use the QEMU/KVM `52:54:00` prefix) followed by a tail scattered
+from an append-only per-OUI ledger slot, so tails stay unique and stable under
+growth; makers without a declared OUI (generic endpoints, lab simulators) keep
+a locally administered address. MACs carry no description.
 
 Every circuit has its appropriate provider account. Bank procurement distinguishes
 the retained Birch portfolio even after acquisition or access-hardware refresh;
 provider customers, NOC, transit and transport retain separate accounts. Changing
 technical ownership does not silently renew a commercial contract.
 
-Each site has a dated site record and access-coordination note; each circuit has
-a capacity-request and handoff-plan note; the first VM in each site/workload has
-resource and listener plans. Facts come from the actual address, provider,
-capacity, host and service records. The dates describe authored planning history;
-NetBox's native journal creation timestamps describe ingestion. No entry asserts
-that a change, acceptance test or application health check was executed.
+Journals are short operational lines, not restatements of the record they sit
+on, and their kind follows the event: completed events are `success`, an open
+action is `warning`, everything else `info`. Each site has a `Site access` note
+(book visits through the facilities desk, info); each circuit an `Order placed`
+note (rate, carrier and cid, info) and an `In service` note (carrier, site and
+port rate on the recorded service date, success — the provider backbone keeps
+its two-ended `Circuit handoff plan`); the first VM in each site/workload a
+`First instance placed` note naming its host (success). Facts come from the
+actual site, provider, circuit, host and module records. The dates describe
+authored history; NetBox's native journal creation timestamps describe
+ingestion. No entry asserts an acceptance test or application health check.
 
 The first eligible infrastructure device by permanent U position in each rack
-has an installation record and maintenance plan. Where that device has an
-installed PSU module, a third entry identifies its model, serial, bay and owned
-power port for replacement preparation. These records refer to stable placement
-and the site facilities desk; the current technical owner and upstream power
-paths are consulted when work is planned. They do not invent a spare or promise
-hot replacement. New racks gain stories without rewriting existing rack history.
-When that device's first fixed optical cage is occupied, a separate optical
-preparation entry names its interface, installed part, serial and bay. The fixed
+has an `Installed` note (model, serial, room, cabinet, U position and its
+management interface; success). Where that device has an installed PSU module,
+a `Keep a spare PSU` note asks for a like-for-like part on hand for that bay
+(warning); it does not claim a spare does or does not exist, since the
+lifecycle sidecar may stock one. New racks gain stories without rewriting
+existing rack history. When that device's first fixed optical cage is
+occupied, an `Optic replacement note` names its interface, bay, installed part
+and serial, and whether a failure replaces the transceiver or the whole AOC
+assembly. Dates follow each site's own timeline, read from the graph: a
+site's service day is its first circuit's install date (a PoP's first span, a
+premises' access circuit), the `Installed` note falls 7–37 days before it, and
+site, VM, spare-PSU and optic notes never predate it; a site without circuits
+keeps the `as_of`-anchored window. The fixed
 cage is chosen before occupancy; later port growth cannot change the note's
 subject. See [installed optics](#installed-optics-policy) for the assembly and
 native deletion limits.
@@ -698,7 +791,7 @@ does not imply Diode will retire the former contact assignment in place.
 
 `report.md` includes a bounded contact/journal tour with actual object references.
 Open a site's Contacts and Journal views, follow a circuit to its carrier desk,
-then inspect a workload VM's service desk and resource/listener notes. The full
+then inspect a workload VM's service desk and placement note. The full
 directory and notes remain in the canonical plan and normal Diode package.
 
 ### Automation records

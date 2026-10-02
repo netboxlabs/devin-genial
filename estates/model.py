@@ -262,6 +262,9 @@ class World:
         self.reservations = {}
         self.design_assignments = {}
         self.consumed_site_names = set()
+        # Graph-wide passes that must see the finished estate (tags, unused
+        # taxonomy, unused-port state) register here; finish() runs them first.
+        self.finishers = []
         if previous is not None:
             if previous.get("schema_version") != 1 or previous.get("generator_version") != __version__:
                 raise DesignError("Previous plan has a different schema/generator version; explicit rebaseline required")
@@ -378,6 +381,9 @@ class World:
         return ipaddress.ip_network((int(self.pool.network_address) + self.allocations[site_id] * (1 << (32-self.site_prefixlen)), self.site_prefixlen))
 
     def finish(self):
+        hooks, self.finishers = getattr(self, "finishers", []), []
+        for hook in hooks:
+            hook(self)
         unused = set(self.recipe.get("site_names", {})) - self.consumed_site_names
         if unused:
             valid = sorted(self.allocations)

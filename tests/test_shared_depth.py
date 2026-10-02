@@ -122,14 +122,14 @@ class SharedDepthTests(unittest.TestCase):
                 self.assertEqual(len(racks), len(subjects))
                 optical = [o for o in notes if o["key"].endswith("/optic-replacement-plan")]
                 legacy = [o for o in notes if o not in optical]
-                self.assertGreater(len(legacy), 2 * len(racks))  # Still includes a PSU story.
-                self.assertLessEqual(len(legacy), 3 * len(racks))
+                self.assertGreater(len(legacy), len(racks))  # Still includes a PSU story.
+                self.assertLessEqual(len(legacy), 2 * len(racks))
                 self.assertTrue(optical)
                 self.assertLessEqual(len(optical), len(racks))
                 self.assertEqual(len(optical), len({o["refs"]["assigned_object"] for o in optical}))
-                self.assertLessEqual(len(notes), 4 * len(racks))
+                self.assertLessEqual(len(notes), 3 * len(racks))
                 self.assertEqual(operations_findings(plan), [])
-                for event in ("equipment-record", "maintenance-plan", "psu-replacement-plan", "optic-replacement-plan"):
+                for event in ("equipment-record", "psu-replacement-plan", "optic-replacement-plan"):
                     key = next(o["key"] for o in notes if o["key"].endswith('/'+event))
                     broken = deepcopy(plan)
                     broken["objects"] = [o for o in broken["objects"] if o["key"] != key]
@@ -138,7 +138,7 @@ class SharedDepthTests(unittest.TestCase):
                         broken = deepcopy(plan)
                         note = next(o for o in broken["objects"] if o["key"] == key)
                         if mutation == "false-fact":
-                            note["attrs"]["comments"] = note["attrs"]["comments"].replace("Device: ", "Device: wrong-", 1)
+                            note["attrs"]["comments"] = note["attrs"]["comments"].replace("serial ", "serial wrong-", 1)
                         elif mutation == "wrong-subject":
                             note["refs"]["assigned_object"] = "site/dc-01"
                         elif mutation == "executed":

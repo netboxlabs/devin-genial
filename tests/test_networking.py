@@ -63,7 +63,7 @@ class NetworkingTests(unittest.TestCase):
         self.mutation(lambda o, p: o["vlan/br-s0001/users"]["refs"].update(group="vlan-group/dc-01"), "vlan-group-scope")
 
     def test_reserved_range_overlap(self):
-        self.mutation(lambda o, p: o["ip-range/br-s0001/reserve"]["attrs"].update(
+        self.mutation(lambda o, p: o["ip-range/br-s0001/users/headroom"]["attrs"].update(
             start_address=o["ip/device/br-s0001/desk-001/if/eth0"]["attrs"]["address"]), "ip-range-occupied")
 
     def test_vrrp_duplicate_owner(self):
@@ -139,7 +139,7 @@ class NetworkingTests(unittest.TestCase):
         objects = [{o["key"]: o for o in plan["objects"]} for plan in snapshots.values()]
         for key in ("asn/birch", "fhrp/dc-01/applications", "mac/device/br-s0001/ap-001/if/eth0"):
             self.assertTrue(all(index[key] == objects[0][key] for index in objects))
-        for key in ("ip/device/br-s0001/ap-001/if/wlan1", "ip-range/br-s0001/reserve"):
+        for key in ("ip/device/br-s0001/ap-001/if/wlan1", "ip-range/br-s0001/users/headroom"):
             self.assertTrue(all(index[key]["attrs"] == objects[0][key]["attrs"] for index in objects))
 
 

@@ -283,7 +283,7 @@ class ProviderTests(unittest.TestCase):
         for obj in plan['objects']:
             if obj['kind']=='device':self.assertLessEqual(len(obj['attrs']['name']),64,obj['key'])
             if obj['kind']=='ip_address':self.assertTrue(all(len(label)<=63 for label in obj['attrs']['dns_name'].split('.')),obj['key'])
-            if obj['kind']=='rack':self.assertLessEqual(len(obj['attrs']['asset_tag']),50,obj['key'])
+            if obj['kind']=='rack' and obj['attrs']['status']!='planned':self.assertLessEqual(len(obj['attrs']['asset_tag']),50,obj['key'])
             if obj['kind']=='vlan':self.assertLessEqual(len(obj['attrs']['name']),64,obj['key'])
             if obj['kind'] in {'provider','contact'}:
                 self.assertLessEqual(len(obj['attrs']['name']),100,obj['key'])

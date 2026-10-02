@@ -224,7 +224,7 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             vm = w.add("virtual_machine", f"vm/{site.id}/{name}/{i+1:03}",
                        {"name": site.display_name(f"{name}-{i+1:03}"), "status": "active", "vcpus": cpus, "memory": memory,
                         "disk": disk, "description": description, "comments": comments},
-                       {"cluster": cluster, "device": pool[host_index], "tenant": "tenant", "tags": ["tag/estate"],
+                       {"cluster": cluster, "device": pool[host_index], "tenant": "tenant",
                         "role": "role/database" if network == "database" else "role/backup-service" if network == "backup" else "role/application",
                         "platform": "platform/services"},
                        metadata)

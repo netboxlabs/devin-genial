@@ -5,7 +5,7 @@ import hashlib
 import unittest
 
 from estates.generate import generate
-from estates.model import hardware_catalog
+from estates.model import hardware_catalog, vendor_serial
 from estates.validate_optics import analyze
 
 
@@ -206,6 +206,16 @@ class OpticsValidationTests(unittest.TestCase):
         owner = deepcopy(objects[ports[0]["refs"]["device"]])
         owner["key"] = "fixture/lc-panel"
         owner["refs"]["device_type"] = "hardware/patch-panel"
+        if "hardware/patch-panel" not in objects:
+            # Direct-patching estates drop the unused passive type; restore it.
+            spec = hardware_catalog()["models"]["patch-panel"]
+            maker = dict(key=f"manufacturer/{spec['manufacturer']}", kind="manufacturer",
+                         attrs=dict(name=spec["manufacturer"], slug=spec["manufacturer"].lower()), refs={})
+            panel = dict(key="hardware/patch-panel", kind="device_type",
+                         attrs={k: spec[k] for k in ("model", "slug", "u_height", "is_full_depth") if k in spec},
+                         refs=dict(manufacturer=maker["key"]))
+            plan["objects"].extend(item for item in (maker, panel) if item["key"] not in objects)
+            objects.update({item["key"]: item for item in (maker, panel)})
         front = dict(key="fixture/lc-front", kind="front_port",
                      attrs=dict(name="F01", type="lc", rear_port_position=1),
                      refs=dict(device=owner["key"], rear_port="fixture/lc-rear"))
@@ -338,7 +348,10 @@ class OpticsValidationTests(unittest.TestCase):
         for segment in (cable, second):
             segment["attrs"].update(type="aoc", length=1.5)
         objects[front["refs"]["device"]]["refs"]["site"] = objects[aoc_ports[0]["refs"]["device"]]["refs"]["site"]
-        serial = "AOC-" + hashlib.sha256(f"{plan['recipe']['namespace']}/{cable['key']}".encode()).hexdigest()[:24]
+        formats = hardware_catalog()["optics"]["serial_formats"]
+        maker = objects[objects[aoc_modules[0]["refs"]["module_type"]]["refs"]["manufacturer"]]["attrs"]["name"]
+        serial = vendor_serial(formats.get(maker, formats["Generic"]), int.from_bytes(
+            hashlib.sha256(f"{plan['recipe']['namespace']}/{cable['key']}".encode()).digest()[:8], "big"))
         for module in aoc_modules:
             module["attrs"]["serial"] = serial
         self.assertIn("optics-assembly", self.codes(plan))

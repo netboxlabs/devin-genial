@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 
 from .model import SERIAL_SPACE, vendor_serial
+from . import naming
 from .naming import titleize
 
 
@@ -28,7 +29,7 @@ def enrich_site(site, *, demonstrations=True):
     for role in ("console-server", "laboratory", "stack") if demonstrations else ("console-server",):
         if f"role/{role}" not in w.objects:
             w.add("device_role", f"role/{role}",
-                  {"name": titleize(role), "slug": f"{ns}-{role}", "color": "455a64"})
+                  {"name": titleize(role), "slug": f"{ns}-{role}", "color": naming.ROLE_COLORS[role]})
     if demonstrations and site.contract["kind"] == "dc":
         _laboratory(site)
         spec = w.hardware("access")

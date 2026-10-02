@@ -172,6 +172,54 @@ def role_label(role):
     return ROLE_LABELS.get(role, titleize(role))
 
 
+# One distinct colour per device role (NetBox renders it as the role badge and
+# the rack-elevation fill), so no two roles read alike in a list or a rack.
+# ``tests/test_estate_hygiene.py`` pins uniqueness; an estate emits only the
+# roles something references (estates/operations.py ``finalize``).
+ROLE_COLORS = {
+    "wan-edge": "e65100", "distribution": "6a1b9a", "access": "1565c0",
+    "spine": "4a148c", "leaf": "7b1fa2", "server": "2e7d32", "management": "546e7a",
+    "patch-panel": "78909c", "pdu": "c62828", "workstation": "00838f",
+    "atm": "f9a825", "ap": "00acc1", "camera": "795548", "wall-outlet": "b0bec5",
+    "medical-device": "d81b60", "imaging-device": "8e24aa",
+    "pos-terminal": "ef6c00", "scanner": "5d4037",
+    "plc": "bf360c", "hmi": "ff8f00", "field-device": "827717",
+    "rtu": "00695c", "protection-relay": "ad1457", "station-gateway": "4527a0",
+    "provider-edge": "5e35b1", "customer-edge": "0097a7",
+    "console-server": "455a64", "laboratory": "37474f", "stack": "283593", "lab-router": "ff6f00",
+    # VM roles
+    "application": "43a047", "database": "3949ab", "backup-service": "8d6e63",
+}
+
+
+# Graph-derived tags (estates/operations.py ``_tags``). Each is applied only
+# where the finished graph shows the property and an estate emits only the
+# tags it applies. ``object_types`` is the native-model scope a tag is meant
+# for; independent checks refuse a tag on any other kind. Order is display order.
+TAGS = {
+    "hub-site": ("Hub site", "1565c0", ("site",),
+                 "Hosts shared services or private-WAN hubs that other sites depend on"),
+    "dual-homed": ("Dual-homed", "2e7d32", ("site",),
+                   "Active WAN access from two different carriers"),
+    "acquired": ("Acquired", "8d6e63", ("site", "device"),
+                 "Carried over from an acquired network with its retained design"),
+    "route-reflector": ("Route reflector", "5e35b1", ("device",),
+                        "iBGP route reflector for the backbone"),
+    "transit-edge": ("Transit edge", "ff6f00", ("device",),
+                     "Terminates an upstream transit handoff"),
+    "managed-ce": ("Managed CE", "0097a7", ("device",),
+                   "Customer-premises edge operated by the service provider"),
+    "pci-scope": ("PCI scope", "c62828", ("device", "vlan", "prefix"),
+                  "Payment-card segment, or equipment that carries or attaches to one"),
+    "clinical": ("Clinical", "d81b60", ("device", "vlan", "prefix"),
+                 "Clinical or medical-device segment, or equipment that carries or attaches to one"),
+    "ot-zone": ("OT zone", "bf360c", ("device", "vlan", "prefix"),
+                "Operational-technology segment, or equipment that carries or attaches to one"),
+    "multi-site": ("Multi-site service", "3949ab", ("virtual_machine",),
+                   "Workload with replicas in more than one site"),
+}
+
+
 # What each addressed segment carries, in the words an engineer puts on a VLAN.
 # The role key stays the identity; this is description only.  Keep entries
 # under 50 characters: prefix descriptions append a site name of up to 100.
@@ -238,6 +286,7 @@ def rate_kbps(kbps):
 # unique) and branch-scoped, and the loader's fresh-load occupancy gate already
 # keeps a second estate out of one scope.
 IPAM_ROLES = {
+    "pools": ("Allocation pools", "Global containers that hold site blocks across routing contexts"),
     "backbone": ("Backbone", "Provider backbone and PoP infrastructure"),
     "transit": ("Transit", "Routed transit and point-to-point links"),
     "loopbacks": ("Loopbacks", "Router loopback addresses"),
@@ -253,6 +302,7 @@ IPAM_ROLES = {
     "clinical": ("Clinical", "Clinical workstations, imaging and medical devices"),
     "ot": ("Operational technology", "Plant-floor and substation equipment segments"),
     "customer": ("Customer", "Address space allocated to customer VPNs"),
+    "dhcp": ("DHCP pools", "Dynamic client address scopes"),
     "reserved": ("Reserved", "Addresses held for onboarding and growth"),
 }
 
@@ -297,6 +347,8 @@ def prefix_role(key, prefix, vrf, vlan):
         return "loopbacks" if key.endswith("/loopbacks") else "transit"
     if vlan:
         return segment_role(vlan.rsplit("/", 1)[-1])
+    if not vrf:
+        return "pools"  # a global container parents site blocks in every VRF
     parts = str(vrf).split("/")
     if parts[:2] == ["vrf", "customer"] and len(parts) == 3:
         return "customer"

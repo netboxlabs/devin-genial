@@ -108,7 +108,8 @@ class AcquisitionRefreshTests(unittest.TestCase):
                                 obj["refs"].get("site") == "site/br-s0001" and obj["meta"].get("endpoint"))
                 address = next(obj for obj in result["objects"] if obj["key"] == endpoint["refs"]["primary_ip4"])
                 network = ip_interface(address["attrs"]["address"]).network
-                address["attrs"]["address"] = f"{network[-2]}/{network.prefixlen}"
+                # A free host below the DHCP scope, outside every held range.
+                address["attrs"]["address"] = f"{network[100]}/{network.prefixlen}"
                 self.assertEqual(validate(result), [], "Mutation should pass standalone graph validation")
             return result
 
@@ -148,12 +149,12 @@ class AcquisitionRefreshTests(unittest.TestCase):
                             role = next(obj for obj in result["objects"] if obj["key"] == "role/access")
                             role["attrs"]["description"] = "Unrelated shared annotation"
                         elif operation == "create":
-                            result["objects"].append({"key": "role/unrelated", "kind": "device_role",
+                            result["objects"].append({"key": "manufacturer/Unrelated", "kind": "manufacturer",
                                                       "attrs": {"name": "Unrelated", "slug": "unrelated"},
                                                       "refs": {}, "meta": {}})
                             result["objects"].sort(key=lambda obj: obj["key"])
                         else:
-                            result["objects"] = [obj for obj in result["objects"] if obj["key"] != "role/patch-panel"]
+                            result["objects"] = [obj for obj in result["objects"] if obj["key"] != "hardware/console-server-48"]
                         self.assertEqual(validate(result), [], "Mutation must pass standalone validation")
                     return result
 

@@ -44,18 +44,19 @@ class GenerationTests(unittest.TestCase):
                 for obj in (a, b):
                     if obj["kind"] == "device":
                         self.assertRegex(obj["attrs"].pop("serial"), r"^[0-9A-Z]{8,20}$")
-                    if obj["kind"] == "module":
-                        self.assertRegex(obj["attrs"].pop("serial"), (r"^(OPT|AOC)-[0-9a-f]{24}$"
-                            if obj["key"].startswith("optics-module/") else r"^[0-9A-Z]{8,20}$"))
+                    # Optic serials hash the namespace and interface/cable
+                    # identity, never the seed, so they stay in the comparison.
+                    if obj["kind"] == "module" and not obj["key"].startswith("optics-module/"):
+                        self.assertRegex(obj["attrs"].pop("serial"), r"^[0-9A-Z]{8,20}$")
                     if obj["kind"] == "circuit":
                         obj["attrs"].pop("install_date")
                     if obj["kind"] == "journal_entry":
                         obj["attrs"]["comments"] = re.sub(r"\d{4}-\d{2}-\d{2}", "<authored-date>", obj["attrs"]["comments"])
                         if obj["key"].endswith("/equipment-record"):
-                            obj["attrs"]["comments"], count = re.subn(r"(?m)^Serial: [0-9A-Z]{8,20}$", "Serial: <device-serial>", obj["attrs"]["comments"])
+                            obj["attrs"]["comments"], count = re.subn(r" serial [0-9A-Z]{8,20} racked in ", " serial <device-serial> racked in ", obj["attrs"]["comments"])
                             self.assertEqual(count, 1)
                         if obj["key"].endswith("/psu-replacement-plan"):
-                            obj["attrs"]["comments"], count = re.subn(r"(?m)^Installed PSU serial: [0-9A-Z]{8,20}$", "Installed PSU serial: <module-serial>", obj["attrs"]["comments"])
+                            obj["attrs"]["comments"], count = re.subn(r" \(installed serial [0-9A-Z]{8,20}\) ", " (installed serial <module-serial>) ", obj["attrs"]["comments"])
                             self.assertEqual(count, 1)
                     if "lifecycle_cohort" in obj["meta"]:
                         self.assertIn(obj["meta"].pop("lifecycle_cohort"),

@@ -35,6 +35,14 @@ REST_CREATE_SCHEMAS = {
     "/api/extras/event-rules/": (
         "action_object_id action_object_type action_type conditions custom_fields description "
         "enabled event_types name object_types owner tags"),
+    # Every profile now carries the site service-tier field and its shortcut.
+    "/api/extras/custom-fields/": (
+        "choice_set default description group_name label name object_types owner related_object_type "
+        "required search_weight type ui_editable ui_visible validation_maximum validation_minimum weight"),
+    "/api/extras/custom-field-choice-sets/": (
+        "base_choices description extra_choices name order_alphabetically owner"),
+    "/api/extras/custom-links/": (
+        "button_class enabled group_name link_text link_url name new_window object_types owner weight"),
 }
 
 
@@ -95,9 +103,9 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         cls.plan = generate(recipe_from_file(ROOT / "profiles/enterprise-dc.toml"))
         cls.objects = _index(cls.plan)
 
-    def test_all_58_kinds_and_references_have_declarative_compilers(self):
+    def test_all_68_kinds_and_references_have_declarative_compilers(self):
         kinds = {obj["kind"] for obj in self.objects.values()}
-        self.assertEqual(len(kinds), 58)
+        self.assertEqual(len(kinds), 68)
         self.assertFalse(kinds - SPECS.keys())
         unsupported = {(obj["kind"], ref) for obj in self.objects.values()
                        for ref in set(obj["refs"]) - SUPPORTED_REFS[obj["kind"]]}
@@ -109,7 +117,8 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
                           "power_feed", "power_outlet", "power_port"})
         result = _schema_preflight(SchemaClient(self.objects), self.objects)
         self.assertEqual(result["rest_create_fields"],
-                         {"config_context": 22, "event_rule": 12, "export_template": 11,
+                         {"config_context": 22, "custom_field": 17, "custom_field_choice_set": 6,
+                          "custom_link": 10, "event_rule": 12, "export_template": 11,
                           "module_bay_type": 4, "provider_account": 5, "webhook": 14})
         ids = {key: position for position, key in enumerate(self.objects, 1)}
         content_types = {kind: position for position, kind in

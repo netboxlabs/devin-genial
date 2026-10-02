@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from collections import defaultdict
+import re
 import unittest
 
 from estates.generate import generate
@@ -10,6 +11,12 @@ from estates.validate_operations import validate
 
 
 PROFILES = ("regional-bank", "enterprise-data-center", "school-district", "hospital-clinics", "provider-backbone")
+NOTE = re.compile(r"(?P<interface>.+) \((?P<bay>.+)\) holds (?P<part>.+) serial (?P<serial>\S+); "
+                  r"if it fails, swap in a like-for-like part and replace (?P<replace>the whole cable assembly|the transceiver)\.")
+
+
+def note_fields(note):
+    return NOTE.fullmatch(note["attrs"]["comments"].split("\n", 1)[1])
 
 
 class OpticsContextTests(unittest.TestCase):
@@ -33,11 +40,17 @@ class OpticsContextTests(unittest.TestCase):
                 self.assertTrue(notes)
                 self.assertLessEqual(len(notes), sum(o["kind"] == "rack" for o in plan["objects"]))
                 for note in notes:
-                    self.assertEqual(objects[note["refs"]["assigned_object"]]["kind"], "device")
-                    self.assertTrue(note["attrs"]["comments"].endswith("Preserve the interface and its dependent records."))
+                    device = note["refs"]["assigned_object"]
+                    self.assertEqual(objects[device]["kind"], "device")
+                    self.assertEqual(note["attrs"]["kind"], "info")
+                    fields = note_fields(note)
+                    self.assertIsNotNone(fields, note["attrs"]["comments"])
+                    port = next(o for o in plan["objects"] if o["kind"] == "interface"
+                                and o["refs"].get("device") == device and o["attrs"]["name"] == fields["interface"])
+                    self.assertEqual(objects[port["refs"]["module"]]["attrs"]["serial"], fields["serial"])
 
     def test_note_facts_subject_chronology_and_execution_claims_rejected(self):
-        for change in ("part", "serial", "interface", "contact", "date", "execution", "missing", "subject"):
+        for change in ("part", "serial", "interface", "bay", "replace", "date", "execution", "missing", "subject"):
             with self.subTest(change=change):
                 plan, objects = self.bare()
                 note = next(o for o in plan["objects"] if o["key"].endswith("/optic-replacement-plan"))
@@ -46,16 +59,18 @@ class OpticsContextTests(unittest.TestCase):
                 elif change == "subject":
                     note["refs"]["assigned_object"] = "site/dc-01"
                 else:
-                    lines = note["attrs"]["comments"].splitlines()
+                    head, body = note["attrs"]["comments"].split("\n", 1)
                     if change == "date":
-                        lines[0] = "2099-01-01" + lines[0][10:]
+                        head = "2099-01-01" + head[10:]
                     elif change == "execution":
-                        lines.append("Replacement was executed successfully.")
+                        body += "\nReplacement was executed successfully."
                     else:
-                        field = {"part": "Installed part:", "serial": "Installed serial:",
-                                 "interface": "Interface:", "contact": "Facilities contact:"}[change]
-                        lines = [field + " wrong" if line.startswith(field) else line for line in lines]
-                    note["attrs"]["comments"] = "\n".join(lines)
+                        fields = note_fields(note)
+                        start, end = fields.span(change)
+                        wrong = ("the whole cable assembly" if fields["replace"] == "the transceiver"
+                                 else "the transceiver") if change == "replace" else "wrong"
+                        body = body[:start] + wrong + body[end:]
+                    note["attrs"]["comments"] = f"{head}\n{body}"
                 self.assertTrue(any(f["code"].startswith("operations-journal") for f in validate(plan)))
 
     def test_missing_or_wrong_device_module_cannot_waive_note_obligation(self):
@@ -64,7 +79,7 @@ class OpticsContextTests(unittest.TestCase):
                 plan, objects = self.bare()
                 note = next(o for o in plan["objects"] if o["key"].endswith("/optic-replacement-plan"))
                 device = note["refs"]["assigned_object"]
-                interface_name = next(line.removeprefix("Interface: ") for line in note["attrs"]["comments"].splitlines() if line.startswith("Interface: "))
+                interface_name = note_fields(note)["interface"]
                 port = next(o for o in plan["objects"] if o["kind"] == "interface" and o["refs"].get("device") == device and o["attrs"]["name"] == interface_name)
                 module = objects[port["refs"]["module"]]
                 if change == "missing-module":

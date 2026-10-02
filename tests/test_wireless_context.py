@@ -131,7 +131,8 @@ class WirelessContextTests(unittest.TestCase):
                 continue
             if obj["kind"] == "ip_address":
                 available.discard(ip_interface(obj["attrs"]["address"]).ip)
-            elif obj["kind"] == "ip_range":
+            elif obj["kind"] == "ip_range" and obj["refs"].get("role") != "ip-role/dhcp":
+                # A DHCP scope is client capacity; held ranges consume it.
                 first, last = (ip_interface(obj["attrs"][field]).ip for field in ("start_address", "end_address"))
                 available = {address for address in available if not first <= address <= last}
         self.assertEqual(self.entry(updated, "wireless-lan/br-s0001/staff")["available_ipv4"], len(available))
@@ -150,6 +151,10 @@ class WirelessContextTests(unittest.TestCase):
                     entry = self.entry(plan, wlan)
                     prefix = next(obj for obj in plan["objects"] if obj["key"] == entry["prefix"])
                     net = ip_network(prefix["attrs"]["prefix"])
+                    # Only this test's held range shapes what remains free.
+                    plan["objects"] = [obj for obj in plan["objects"] if not (
+                        obj and obj.get("kind") == "ip_range" and obj["refs"].get("vrf") == prefix["refs"]["vrf"]
+                        and ip_interface(obj["attrs"]["start_address"]).ip in net)]
                     plan["objects"].append(dict(key=f"range/test/{site}/held", kind="ip_range", meta={},
                         attrs=dict(start_address=f"{net[1]}/{net.prefixlen}",
                                    end_address=f"{net[-2-remaining]}/{net.prefixlen}", status="reserved"),
