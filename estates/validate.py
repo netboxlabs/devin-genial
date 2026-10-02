@@ -58,6 +58,9 @@ BANK_BRANCH_ENDPOINTS = {"s": (12, 2, 2, 2), "m": (36, 4, 4, 4), "l": (84, 6, 8,
 BRANCH_DESIGNS = {"modern": ("access", 2), "inherited": ("inherited-access", 1), "refreshed": ("access", 2)}
 # Endpoint families whose devices are wall-powered and never racked.
 ENDPOINT_FAMILIES = ("endpoint", "atm", "ap")
+# Device statuses that carry no live management path: not yet in service
+# (ordered, staged, a boxed or racked cold spare) or being retired.
+OUT_OF_SERVICE = frozenset({"planned", "staged", "inventory", "decommissioning", "offline"})
 
 
 def _full_catalog():
@@ -1328,6 +1331,8 @@ def _validate(plan):
                 hardware = catalog.get(meta(device).get("hardware"), {})
                 if not any(port.get("mgmt_only") for port in hardware.get("interfaces", [])):
                     continue
+                if attrs(device).get("status", "active") in OUT_OF_SERVICE:
+                    continue  # a chassis on order, staged, spare or retired is managed by nobody yet (or any longer)
                 primary = refs(refs(device).get("primary_ip4")).get("assigned_object")
                 virtual_management_roles = {"role/distribution", "role/leaf", "role/wan-edge", "role/management"}
                 if recipe.get("profile") == "provider-backbone":
