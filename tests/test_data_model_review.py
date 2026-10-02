@@ -120,13 +120,16 @@ class DataModelReviewTests(unittest.TestCase):
         self.assertIn("interface-svi-mode", codes(validate(self.mutate(self.bank, switchport))))
 
     def test_junos_loopback_addresses_sit_on_unit_zero(self):
-        for pe in (d for d in self.of(self.provider, "device") if d["refs"]["role"] == "role/provider-edge"):
+        # In-service PEs: an MX80 relic or a planned or staged MX304 holds no address.
+        for pe in (d for d in self.of(self.provider, "device") if d["refs"]["role"] == "role/provider-edge"
+                   and d["attrs"]["status"] == "active"):
             primary = self.provider_obj(pe["refs"]["primary_ip4"])
             unit = self.provider_obj(primary["refs"]["assigned_object"])
             self.assertEqual((unit["attrs"]["name"], unit["refs"]["parent"]), ("lo0.0", f"{pe['key']}/if/lo0"))
 
         def bare(objects, plan):
-            pe = next(o for o in objects.values() if o["kind"] == "device" and o["refs"]["role"] == "role/provider-edge")
+            pe = next(o for o in objects.values() if o["kind"] == "device" and o["refs"]["role"] == "role/provider-edge"
+                      and o["attrs"]["status"] == "active")
             objects[pe["refs"]["primary_ip4"]]["refs"]["assigned_object"] = f"{pe['key']}/if/lo0"
 
         self.assertIn("provider-loopback", codes(validate(self.mutate(self.provider, bare))))

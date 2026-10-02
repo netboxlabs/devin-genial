@@ -264,7 +264,10 @@ def analyze(plan, catalog=None):
 
     for module, part in module_parts.items():
         # One assembly, one state: a captive AOC end follows both chassis it joins.
+        # An optic facing a circuit keeps that handoff's lifecycle instead (above).
         ports = bindings[module][:1]
+        if ports and any(kind(peer) != "interface" for _, peer in cables[ports[0]]):
+            continue
         if part.get("assembly") and ports and len(cables[ports[0]]) == 1:
             ports = [*ports, cables[ports[0]][0][1]]
         states = {attrs(refs(p).get("device")).get("status") for p in ports} & set(not_in_service)

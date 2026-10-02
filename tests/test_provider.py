@@ -31,7 +31,9 @@ def objects_of(plan):
 def physical_router_graph(plan):
     """Derive edges through actual cables and Circuit A/Z, without contracts."""
     objects = {o["key"]:o for o in plan["objects"]}
-    routers = {k for k,o in objects.items() if o["kind"]=="device" and o["refs"].get("role")=="role/provider-edge"}
+    # In-service PEs only: an MX80 relic or MX304 successor is racked, never routed.
+    routers = {k for k,o in objects.items() if o["kind"]=="device" and o["refs"].get("role")=="role/provider-edge"
+               and o["attrs"]["status"]=="active"}
     owner = {k:o["refs"].get("device") for k,o in objects.items() if o["kind"]=="interface"}
     peers,edges = {},set()
     for o in objects.values():
@@ -119,8 +121,10 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(kinds["virtual_circuit_termination"],4)
         # Two diverse spans per metro adjacency (Chicago-Detroit, Detroit-Cleveland),
         # three customer access circuits, two NOC handoffs, two transit ports
-        # and one out-of-band broadband circuit per PoP; the hub has two access circuits.
-        self.assertEqual(kinds["circuit"],15)
+        # and one out-of-band broadband circuit per PoP; the hub has two access circuits;
+        # one exchange port per metro (v0.18).
+        self.assertEqual(kinds["circuit"],18)
+        self.assertEqual(sum(k.startswith("circuit/ix/") for k in objects_of(plan)),3*3)
         # The NOC sits in Chicago: its Detroit handoff is a leased private line.
         self.assertEqual(objects_of(plan)["circuit/noc/b"]["refs"]["provider"],"provider/transport-b")
         self.assertEqual(objects_of(plan)["circuit/noc/a"]["refs"]["provider"],"provider/operator")
@@ -225,7 +229,7 @@ class ProviderTests(unittest.TestCase):
             self.assertFalse(any(net.subnet_of(ipaddress.ip_network(o['attrs']['prefix']))
                                  for o in p['objects'] if o['kind']=='prefix' and o['key'].startswith(('prefix/public/','prefix/dia/'))))
         for o in p['objects']:
-            if o['kind']=='device' and o['refs'].get('role')=='role/provider-edge':
+            if o["kind"]=="device" and o["refs"].get("role")=="role/provider-edge" and o["attrs"]["status"]=="active":
                 primary=objects[o['refs']['primary_ip4']]
                 # Junos addresses the loopback on unit 0, a child of lo0.
                 self.assertEqual(primary['refs']['assigned_object'],o['key']+'/if/lo0.0')

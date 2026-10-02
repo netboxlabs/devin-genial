@@ -137,7 +137,9 @@ class ProviderValidationTests(unittest.TestCase):
     def test_direct_and_panel_customer_backbones_are_valid(self):
         self.assertEqual(validate(self.plan), [])
         self.assertEqual(validate(generate(self.plan["recipe"] | {"patching": "panels"})), [])
-        self.assertEqual(sum(o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge" for o in self.plan["objects"]), 6)
+        # Six PEs in service; MX80 relics and MX304 successors carry their own statuses.
+        self.assertEqual(sum(o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"
+                             and o["attrs"]["status"] == "active" for o in self.plan["objects"]), 6)
         self.assertEqual(sum(o["kind"] == "virtual_circuit_termination" for o in self.plan["objects"]), 4)
 
     def test_missing_noc_circuit_cannot_hide_behind_shared_wan_mode(self):
@@ -178,10 +180,14 @@ class ProviderValidationTests(unittest.TestCase):
                 self.assertIn("provider-circuit-path", self.codes())
 
     def test_router_mode_and_active_status_are_obligations(self):
+        # An unused SFP+ position on either PE: a founding PoP's PE-A may have
+        # none left (exchange, NOC and transit handoffs: the MX304 trigger).
+        spare = next(port for pe in (self.pe, self.pe[:-1] + "b") for n in range(4, 8)
+                     if self.objects[port := f"{pe}/if/xe-0/1/{n}"]["attrs"].get("enabled") is False)
         for key, field, value in ((f"{self.pe}/if/et-0/0/3", "enabled", True),
                                   (f"{self.pe}/if/et-0/0/0", "speed", 200000000),
                                   (f"{self.pe}/if/xe-0/1/0", "speed", 1000000),
-                                  (f"{self.pe}/if/xe-0/1/5", "enabled", True)):
+                                  (spare, "enabled", True)):
             with self.subTest(key=key, field=field):
                 self.setUp()
                 self.objects[key]["attrs"][field] = value

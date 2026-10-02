@@ -138,12 +138,13 @@ class ShowcaseServices(unittest.TestCase):
         customers = Counter(c["service"] for c in self.plan["recipe"]["customers"])
         self.assertEqual(customers, {"private-l3": 36, "dia": 60, "epl": 12})
         self.assertEqual(sum(c["service"] == "dia" and c["managed"] for c in self.plan["recipe"]["customers"]), 20)
-        self.assertEqual(len(provider.premises(self.plan["recipe"])), 275)
+        # v0.17 footprint plus v0.18's thirty branches at the founding PoPs.
+        self.assertEqual(len(provider.premises(self.plan["recipe"])), 305)
         access = [c for c in of(self.o, "circuit") if c["key"].startswith("circuit/customer/ce-")]
         # One attachment per premises, plus the second of each dual-homed VPN hub.
-        self.assertEqual(len(access), 275 + 36)
+        self.assertEqual(len(access), 305 + 36)
         self.assertEqual(Counter(c["refs"]["type"] for c in access),
-                         {"circuit-type/private-l3-access": 191 + 36, "circuit-type/dia-access": 60, "circuit-type/epl-access": 24})
+                         {"circuit-type/private-l3-access": 221 + 36, "circuit-type/dia-access": 60, "circuit-type/epl-access": 24})
         self.assertLessEqual(len(self.plan["objects"]), 40000)
         large = [d for d in of(self.o, "device") if d["refs"]["device_type"] == "hardware/nid-10g"]
         self.assertEqual(len(large), 4)
@@ -218,7 +219,9 @@ class ShowcaseServices(unittest.TestCase):
 
     def test_bgp_customer_sessions_and_mirrored_ibgp(self):
         sessions = [x for x in of(self.o, "bgp_session") if x["refs"].get("peer_group") == "bgp-peer-group/customer"]
-        vpn = [c for c in of(self.o, "circuit") if c["refs"]["type"] == "circuit-type/private-l3-access"]
+        # In-service and pending attachments; a former customer's decommissioned circuit peers with nothing.
+        vpn = [c for c in of(self.o, "circuit") if c["refs"]["type"] == "circuit-type/private-l3-access"
+               and c["key"].startswith("circuit/customer/")]
         self.assertEqual(len(sessions), 2 * len(vpn))
         self.assertTrue(all(self.o[x["refs"]["device"]]["refs"]["role"] == "role/provider-edge" and
                             self.o[self.o[x["refs"]["local_address"]]["refs"]["assigned_object"]]["attrs"]["name"].startswith("ae1.")
