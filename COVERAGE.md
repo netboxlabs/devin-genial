@@ -754,3 +754,42 @@ operator docs change. The "no other teams" gate remains closed. Live gates
 apply to new code paths and target versions; already-qualified paths on demo
 targets run once per load with no repeat gate (see CLAUDE.md verification-depth
 policy).
+
+## Community showcase build, 2026-10-01/02 (v0.16)
+
+Built the `profiles/showcase-provider.toml` estate onto the dedicated
+`crsk8600` tenant through four critic/fix rounds (carrier-engineer and NetBox
+data-model reviewers; see the v0.16 paragraph in CLAUDE.md). Final verdicts
+before round five: engineer "mostly", data model "good, not yet beautiful".
+
+**Reviewed backlog, deliberately not built yet** (architectural; each needs its
+own design pass and touches every provider builder):
+
+1. **Access/aggregation layer.** Customer fibre lands directly on MX204 SFP+
+   ports with no premises NID, so 24 PEs serve ~60 sites and PE density caps
+   the estate. A per-PoP aggregation pair (ACX/EX) plus a premises NID would
+   let the customer count grow to a believable carrier scale.
+2. **Hostname convention.** Names mix `chicago-cermak-pe-a`, `dc01-cp01-lf-a`
+   and `cedar-regional-bank-chi11-gw01`; CLLI-style facility codes exist but no
+   hostname uses them. Identities move, so it is a rebaseline.
+3. **NOC VRF set.** The NOC inherits the enterprise DC's
+   Applications/Database/Backup/Storage VRFs; a carrier NOC would collapse them
+   into one services VRF and use Carrier Management for management.
+4. **Cabinet height.** DC/PoP cabinets stay 24U sized to content; 42U needs
+   denser rack lanes across profiles.
+
+**Product findings (ours to report, not generator defects):**
+
+- Validation 1.14.1: results of a check are attributed to the *first* rule
+  using that check in a policy (each rule's parameters still apply); graph
+  checks ignore rule-level role scoping; `runs/` POST requires `status` though
+  the official skill omits it; several graph checks
+  (`site_redundant_paths`, `dual_homed_circuits`, `device_single_point_of_failure`,
+  `shared_failure_domain`) report results that contradict the graph — reasons
+  are recorded per excluded check in `estates/validation.py`.
+- Asset Lifecycle 0.3.1: BOM/PO creates require `status` and shipments require
+  `courier_account` despite the schema marking them optional.
+- Visual Explorer: the WAN map opens at globe zoom and never fits to data;
+  at site scope the BGP topology force layout stacks every node on one point.
+- Diode SDK 1.14.0 has no `created` on JournalEntry, so dated journals reach a
+  target only through `just load`.
