@@ -33,7 +33,8 @@ Nothing here is hand-made, so anyone with the recipe reproduces the same lab.
 - **Wiring.** Lab links follow the routed /31 adjacencies among exactly those
   routers in the plan. 100G production ports map to D2L QSFP28 ports 49–56.
 - **Records.** `lab-slice.json` is a copy of the plan's own lab records. There
-  is a `Network Lab` room and rack `L01` at the NOC site. Devices use device
+  is a `Network Lab` room at the NOC site; the routers stand there unracked
+  (a container occupies no rack unit). Devices use device
   type `Nokia 7220 IXR-D2L` (catalog `lab-router`, pinned devicetype-library
   source), platform `NOKIA_SRL v26.7.2` and role `Lab Router`. Each device has
   all 58 front-panel ports plus `mgmt0`, `system0`, subinterfaces, MACs and

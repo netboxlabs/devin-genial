@@ -63,7 +63,7 @@ def from_plan(plan):
     """Nodes and links as the renderers below need them, read from the plan's lab records."""
     objects = {o["key"]: o for o in plan["objects"]}
     devices = sorted((o for o in objects.values() if o["kind"] == "device" and o["refs"].get("role") == LAB_ROLE),
-                     key=lambda o: o["attrs"]["position"])
+                     key=lambda o: o["meta"]["lab_index"])
     require(devices, "plan has no network lab; set discovery_lab = true in the provider recipe and regenerate")
     ports = {(o["refs"]["device"], o["attrs"]["name"]): o for o in objects.values() if o["kind"] == "interface"}
     address = {o["refs"]["assigned_object"]: o["attrs"]["address"]

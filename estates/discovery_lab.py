@@ -1,8 +1,8 @@
 """Provider-only network lab: a staging replica that a real orb-agent discovers.
 
 Enabled by the ``discovery_lab`` recipe key (off by default). The lab is a
-small, clearly labelled slice of the estate — a ``Network Lab`` room and rack
-at the provider NOC holding Nokia 7220 IXR-D2L records — that mirrors the
+small, clearly labelled slice of the estate — a ``Network Lab`` room at the
+provider NOC holding Nokia 7220 IXR-D2L records — that mirrors the
 wiring of the first PoP in the permanent ``provider-pop-order`` ledger: its PE
 pair plus PE A's first-ordered backbone neighbour (``nodes = 4`` adds PE B's).
 ``lab/discovery/render.py`` reads these records from the plan and renders the
@@ -21,7 +21,9 @@ addresses come only from RFC 2544 benchmarking space ``198.18.0.0/15``
 (reserved for device-test labs, disjoint from every estate pool), lab devices
 carry no VRF, circuit, BGP session or production cable, and they draw no
 modeled power. The lab is documentation of a container lab, not a production
-claim: no physical hardware, optics or customer traffic.
+claim: no physical hardware, optics or customer traffic. The routers stand in
+the lab room unracked: a container occupies no rack unit, and they stay
+devices (not VMs) so Orb device discovery matches them by primary IP.
 """
 
 import hashlib
@@ -110,7 +112,7 @@ def add_discovery_lab(world):
     prod_nodes, prod_links = select(objects, world.reservations["provider-pop-order"], setting["nodes"])
     site = "site/dc-01"
     stem = "dc-01"
-    room, rack = f"location/{stem}/network-lab", f"rack/{stem}/network-lab/lab-01"
+    room = f"location/{stem}/network-lab"
     spec = world.catalog["models"][ALIAS]
     manufacturer, platform = f"manufacturer/{spec['manufacturer']}", f"platform/{spec['platform']['slug']}"
     salt = int(hashlib.sha256(f"genial-discovery/{ns}".encode()).hexdigest(), 16) % 256
@@ -133,10 +135,6 @@ def add_discovery_lab(world):
     add("location", room, {"name": "Network Lab", "slug": f"{ns}-{stem}-network-lab", "status": "active",
                            "description": "Isolated software-staging lab; containerised network OS, no production links"},
         {"site": site, "tenant": "tenant"}, {"floor": 1, "space_type": "lab"})
-    add("rack", rack, {"name": "L01", "facility_id": "NL-01-L01", "status": "active", "u_height": 24,
-                       "asset_tag": f"{ns.upper()}-{world.reserve('asset-tags', rack, 100000) + 1:05}",
-                       "description": "Lab server cabinet hosting the containerlab VM"},
-        {"site": site, "location": room, "role": "rack-role/network", "tenant": "tenant"})
     add("prefix", "prefix/lab/pool", {"prefix": str(LAB_POOL), "status": "container",
                                       "description": "RFC 2544 benchmarking space reserved for the network lab"},
         {"tenant": "tenant"})
@@ -193,11 +191,10 @@ def add_discovery_lab(world):
 
         prod_name = objects[node["prod"]]["attrs"]["name"]
         add("device", dev, {"name": node["name"], "status": "active", "serial": spec["serial_format"],
-                            "face": "front", "position": 1 + node["index"],
                             "description": f"Lab replica of {prod_name} (SR Linux container)",
                             "comments": comments(prod_name)},
             {"device_type": f"hardware/{ALIAS}", "role": ROLE, "platform": platform, "site": site,
-             "location": room, "rack": rack, "tenant": "tenant",
+             "location": room, "tenant": "tenant",
              "primary_ip4": f"ip/{dev}/if/mgmt0.0"},
             {"hardware": ALIAS, "purpose": "lab-router", "mirrors": node["prod"], "lab_index": node["index"]})
         speeds = {}

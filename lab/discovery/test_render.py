@@ -53,7 +53,7 @@ class DiscoveryLabRenderTests(unittest.TestCase):
         self.assertEqual(slice_, [o for o in plan["objects"] if o["meta"].get("discovery_lab")])
         nodes = json.loads((self.out / "manifest.json").read_text())["nodes"]
         self.assertEqual([n["name"] for n in nodes], [o["attrs"]["name"] for o in sorted(
-            (o for o in slice_ if o["kind"] == "device"), key=lambda o: o["attrs"]["position"])])
+            (o for o in slice_ if o["kind"] == "device"), key=lambda o: o["meta"]["lab_index"])])
 
     def test_a_plan_without_the_lab_is_refused(self):
         bare = Path(self.tmp.name) / "bare.json"

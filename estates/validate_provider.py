@@ -1385,13 +1385,15 @@ def discovery_lab(plan, catalog):
                and ip_interface(objects[ip]["attrs"]["address"]).network.prefixlen < 32):
             report("lab-address", device, "Every lab router address sits in an active lab prefix.")
 
-    # Placement: a dedicated room and rack at the NOC holding only lab routers.
+    # Placement: the NOC's Network Lab room, unracked — a container occupies
+    # no rack unit, so a rack or U position would claim hardware.
     for room in sorted(rooms):
         if objects[room]["refs"].get("site") != "site/dc-01" or objects[room]["attrs"].get("name") != "Network Lab":
             report("lab-placement", room, "Lab routers stand in the NOC's Network Lab room.")
-    for rack in sorted(racks):
-        if objects[rack]["refs"].get("location") not in rooms:
-            report("lab-placement", rack, "The lab rack stands in the Network Lab room.")
+    for device in sorted(devices):
+        if (objects[device]["refs"].get("rack") or objects[device]["attrs"].get("position") is not None
+                or not objects[device]["refs"].get("location")):
+            report("lab-placement", device, "A lab router is a container: located in the Network Lab room, never racked.")
 
     # Mirror: lab-<name> of the first PoP's PE pair plus backbone neighbours, wired
     # exactly as their routed /31 adjacencies in the production graph.
