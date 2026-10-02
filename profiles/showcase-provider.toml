@@ -1,11 +1,16 @@
 # NetBox Labs community showcase: one Great Lakes regional carrier seeded ALONE
 # onto a dedicated tenant's main (a second estate cannot pass the fresh-load
-# occupancy gate). 12 PoPs, three per metro, and 13 private-L3 enterprise
-# customers whose names echo the other industry profiles, one still onboarding
-# and one closing a branch; each premises is the carrier's CE alone, handing the
-# LAN to customer-owned gear (lan_endpoints = 0: a carrier does not inventory
-# its customers' desktops); dual-stack; Juniper
-# access beside the MX204 PEs, Arista leaf/spine kept. Fictional design inputs.
+# occupancy gate). 12 PoPs, three per metro, and 108 customers on 275 premises
+# (v0.17 regional-carrier footprint): 36 private-L3 VPN customers (2-12 sites,
+# each hub dual-homed on two NIDs; one still onboarding, one closing a branch),
+# 40 unmanaged and 20 managed dedicated-internet customers (four large DIA on
+# the 10G NID tier), and 12 two-ended Ethernet private lines. Every premises is
+# the carrier's demarcation (NID, plus a CE in an MPOE wall cabinet where the
+# carrier manages one) handing off to customer-owned gear (lan_endpoints = 0:
+# a carrier does not inventory its customers' desktops). Suburban PoPs with
+# few street-grid anchors serve fewer premises. Dual-stack (DIA and NID
+# management stay IPv4); Juniper access beside the MX204 PEs, Arista
+# leaf/spine kept. Customer names are authored; fictional design inputs.
 # Runbook: .claude/skills/showcase-tenant/SKILL.md.
 profile = "provider-backbone"
 namespace = "inland-fiber"
@@ -241,9 +246,8 @@ sites = [
   { pop = "chicago-pilsen", count = 1 },
 ]
 
-# Onboarding: contract signed, nothing in service yet. Sites, CEs, access
+# Onboarding: contract signed, nothing in service yet. Sites, NIDs, CEs, access
 # circuits and BGP sessions are planned and its addresses reserved.
-
 [[customers]]
 key = "harvest-retail"
 name = "Harvest Market"
@@ -348,7 +352,7 @@ site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
   { pop = "chicago-pilsen", count = 3 },
-  { pop = "detroit-corktown", count = 2 },
+  { pop = "detroit-corktown", count = 2, site_peak_mbps = 100 },
   { pop = "milwaukee-menomonee", count = 3 },
 ]
 
@@ -376,7 +380,7 @@ hub_commit_mbps = 1000
 sites = [
   { pop = "chicago-pilsen", count = 3 },
   { pop = "cleveland-flats", count = 3 },
-  { pop = "milwaukee-west-allis", count = 2 },
+  { pop = "milwaukee-west-allis", count = 2, site_peak_mbps = 100 },
 ]
 
 [[customers]]
@@ -443,7 +447,7 @@ hub_commit_mbps = 1000
 sites = [
   { pop = "cleveland-lakewood", count = 3 },
   { pop = "detroit-corktown", count = 2 },
-  { pop = "milwaukee-menomonee", count = 2 },
+  { pop = "milwaukee-menomonee", count = 2, site_peak_mbps = 100 },
 ]
 
 [[customers]]
@@ -471,7 +475,7 @@ hub_commit_mbps = 1000
 sites = [
   { pop = "chicago-cermak", count = 3 },
   { pop = "chicago-pilsen", count = 3 },
-  { pop = "detroit-new-center", count = 2 },
+  { pop = "detroit-new-center", count = 2, site_peak_mbps = 100 },
 ]
 
 [[customers]]
@@ -561,7 +565,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
-  { pop = "chicago-loop", count = 2 },
+  { pop = "chicago-loop", count = 2, site_peak_mbps = 100 },
   { pop = "milwaukee-menomonee", count = 3 },
   { pop = "milwaukee-west-allis", count = 3 },
 ]
