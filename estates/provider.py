@@ -462,9 +462,9 @@ def generate(recipe,previous=None):
                         raise DesignError(f"Customer {before['key']} at {entry['pop']}: moving premises from {move[0]} "
                                           f"to {move[1]} requires a new baseline; supported growth is {FORWARD_TEXT}")
             counts = {e["pop"]:e["count"] for e in after["sites"]}
-            if after["lan_endpoints"] < before["lan_endpoints"] or any(counts.get(e["pop"],0) < e["count"] for e in before["sites"]):
+            if after.get("lan_endpoints",0) < before.get("lan_endpoints",0) or any(counts.get(e["pop"],0) < e["count"] for e in before["sites"]):
                 raise DesignError("Reducing customer premises or LAN endpoint demand requires a new baseline")
-            if before["lan_endpoints"] == 0 < after["lan_endpoints"]:
+            if before.get("lan_endpoints") == 0 < after.get("lan_endpoints",0):
                 raise DesignError(f"Customer {before['key']}: adding a managed LAN to CE-only premises moves CE management "
                                   "from its loopback to a switched segment and requires a new baseline")
     return _generate(recipe,previous)

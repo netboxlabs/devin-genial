@@ -1085,7 +1085,9 @@ def locate(site):
     node["refs"].update(region=metro_region(w.recipe['namespace'], state_code, city),
                         group=f"site-group/{w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = {"country": "US", "state": state_code, "city": city, "synthetic": True}
-    building, parent, name = None, None, "Data hall" if kind == "dc" else "MDF"
+    # A provider premises' carrier equipment stands in the building's minimum point
+    # of entry, where the carrier's demarcation (and any MPOE cabinet) lives.
+    building, parent, name = None, None, "Data hall" if kind == "dc" else "MPOE" if kind == "customer" else "MDF"
     if kind == "pop":
         suite, name = carrier_suite(site.id)
         parent = _location(site, "suite", suite, "suite", 1, (0, 0, 0))
