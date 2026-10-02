@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from estates.generate import generate
 from estates.model import canonical
-from estates.validation import (EXCLUDED, LoadError, ValidationError, build, check, compare, create,
+from estates.validation import (EXCLUDED, _Graph, LoadError, ValidationError, build, check, compare, create,
                                 seed, unseed, verify)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,12 +73,28 @@ class Provider(unittest.TestCase):
         self.assertRegex("xe-0/1/0", naming["parameters"]["pattern_by_type"]["10gbase-x-sfpp"])
         self.assertNotRegex("Ethernet1", naming["parameters"]["pattern_by_type"]["10gbase-x-sfpp"])
 
-    def test_single_homed_premises_are_predicted_findings(self):
-        customers = {o["attrs"]["name"] for o in self.plan["objects"]
-                     if o["kind"] == "site" and o["refs"].get("group", "").endswith("/customer")}
-        circuits = _rules(self.artifact, "Customer premises resilience", "site_connectivity_redundancy")
-        self.assertEqual({e["subject"] for e in circuits["expected"]}, customers)
-        self.assertEqual(_rules(self.artifact, "Provider PoPs resilience", "power_feed_blast_radius")["expected"], [])
+    def test_premises_are_scored_on_what_their_design_can_satisfy(self):
+        base = _rules(self.artifact, "Customer premises resilience", "site_connectivity_redundancy")
+        self.assertEqual(base["parameters"], {"min_circuits": 1, "min_providers": 1})
+        self.assertEqual(base["expected"], [])
+        hubs = next(p for p in self.artifact["policies"] if p["name"].endswith("dual-homed resilience"))
+        designed = {o["attrs"]["slug"] for o in self.plan["objects"] if o["kind"] == "site"
+                    and "tag/dual-homed" in o["refs"].get("tags", [])
+                    and o["refs"].get("group", "").endswith("/customer")}
+        self.assertLessEqual(designed, set(hubs["sites"]))
+        diversity = next(r for r in hubs["rules"] if r["check_name"] == "circuit_path_diversity")
+        # Two circuits into one CE: the CE is the remaining single point.
+        self.assertTrue(diversity["expected"])
+        self.assertTrue(all(e["cause"] == "all circuits on one device" for e in diversity["expected"]))
+
+    def test_a_hub_losing_an_active_circuit_is_predicted(self):
+        plan = copy.deepcopy(self.plan)
+        hub = next(p for p in self.artifact["policies"] if p["name"].endswith("dual-homed resilience"))
+        site = next(o for o in plan["objects"] if o["kind"] == "site" and o["attrs"]["slug"] == hub["sites"][0])
+        circuit, _ = _Graph(plan).site_circuits(site["key"])[0]
+        circuit["attrs"]["status"] = "deprovisioning"
+        rule = _rules(create(plan), "dual-homed resilience", "site_connectivity_redundancy")
+        self.assertEqual([e["subject"] for e in rule["expected"]], [site["attrs"]["name"]])
 
     def test_uncabling_a_supply_is_predicted(self):
         plan = copy.deepcopy(self.plan)
