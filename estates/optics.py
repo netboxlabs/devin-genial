@@ -9,7 +9,23 @@ import hashlib
 import json
 import re
 
-from .model import DesignError
+from .model import DesignError, vendor_serial
+
+
+# Datasheet fields a pluggable's module type carries (name, JSON type).
+SPEC_FIELDS = (("protocol", "string"), ("medium", "string"), ("connector", "string"),
+               ("rate_kbps", "integer"), ("reach_m", "integer"))
+
+
+def optic_serial(catalog, part, identity):
+    """A label-shaped serial from the maker's authored format and a stable hash.
+
+    One serial per identity: a transceiver's interface, or an AOC's cable, so
+    both captive ends of one assembly share it.
+    """
+    formats = catalog["optics"]["serial_formats"]
+    fmt = formats.get(part["manufacturer"], formats["Generic"])
+    return vendor_serial(fmt, int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "big"))
 
 
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
@@ -92,20 +108,16 @@ def enrich(world):
         if module_type not in objects:
             profile = "module-profile/installed-optics"
             if profile not in objects:
-                fields = {field: {"type": kind} for field, kind in (
-                    ("protocol", "string"), ("medium", "string"), ("connector", "string"),
-                    ("rate_kbps", "integer"), ("reach_m", "integer"),
-                    ("power_reservation_mw", "integer"), ("power_basis", "string"),
-                    ("source", "string"))}
+                fields = {field: {"type": kind} for field, kind in SPEC_FIELDS}
                 world.add("module_type_profile", profile,
                           {"name": "Installed pluggable optic",
                            "description": "Field-replaceable pluggable transceiver",
                            "schema": json.dumps({"type": "object", "properties": fields,
                                                  "required": sorted(fields)}, sort_keys=True)})
-            attributes = {field: part[field] for field in (
-                "protocol", "medium", "connector", "rate_kbps", "reach_m",
-                "power_reservation_mw", "power_basis")}
-            attributes["source"] = "\n".join(catalog["sources"][key]["url"] for key in part["source_ids"])
+            # Datasheet facts only. Provenance (source URLs) and the planning
+            # power reservation stay in catalog/hardware.json, where the checks
+            # read them; a module type in NetBox reads like a vendor spec sheet.
+            attributes = {field: part[field] for field, _ in SPEC_FIELDS}
             world.add("module_type", module_type,
                       {"model": part["model"], "attributes": json.dumps(attributes, sort_keys=True)},
                       {"manufacturer": f"manufacturer/{part['manufacturer']}",
@@ -122,8 +134,7 @@ def enrich(world):
                         {"device": device["key"], "module_bay_types": [bay_type]})
         assembly = part.get("assembly", False)
         identity = cable["key"] if assembly else key
-        serial = ("AOC-" if assembly else "OPT-") + hashlib.sha256(
-            f"{world.recipe['namespace']}/{identity}".encode()).hexdigest()[:24]
+        serial = optic_serial(catalog, part, f"{world.recipe['namespace']}/{identity}")
         if assembly:
             cable["attrs"]["comments"] = (f"Assembly serial: {serial}\n"
                 "One active optical cable assembly with two captive ends; replace the complete assembly.")

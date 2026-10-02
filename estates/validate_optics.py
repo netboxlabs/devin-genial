@@ -11,7 +11,7 @@ import json
 import math
 import re
 
-from .model import hardware_catalog
+from .model import hardware_catalog, serial_pattern, vendor_serial
 
 
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
@@ -56,6 +56,11 @@ def analyze(plan, catalog=None):
         return findings, extra
     full = catalog if "models" in catalog else hardware_catalog()
     policy, sources = full.get("optics"), full.get("sources", {})
+
+    def aoc_format(part):
+        """The maker's authored serial label shape (transceivers and AOCs alike)."""
+        formats = policy.get("serial_formats", {}) if isinstance(policy, dict) else {}
+        return formats.get(part.get("manufacturer"), formats.get("Generic", ""))
     try:
         parts = policy["parts"]
         multiplier = Decimal(policy["upstream_ac_allowance_multiplier"])
@@ -148,17 +153,19 @@ def analyze(plan, catalog=None):
         module_parts[module] = part
         if module_type not in checked_types:
             checked_types.add(module_type)
-            fields = ("protocol", "medium", "connector", "rate_kbps", "reach_m", "power_reservation_mw", "power_basis")
+            # Datasheet facts only; provenance and the planning power
+            # reservation stay in the catalog, so the JSON must not carry them.
+            fields = ("protocol", "medium", "connector", "rate_kbps", "reach_m")
             try:
                 expected = {f: part[f] for f in fields}
-                expected["source"] = "\n".join(sources[s]["url"] for s in part["source_ids"])
                 details = json.loads(attrs(module_type).get("attributes", ""))
-                truthful = isinstance(details, dict) and all(type(details.get(f)) is type(v) and details.get(f) == v
-                                                            for f, v in expected.items())
+                truthful = (isinstance(details, dict) and set(details) == set(expected)
+                            and all(type(details.get(f)) is type(v) and details.get(f) == v
+                                    for f, v in expected.items()))
             except (KeyError, TypeError, ValueError):
                 truthful = False
             if not truthful:
-                report("optics-part-details", module_type, "Installed part's native JSON must accurately describe catalog protocol, media, reach, integer power reservation, basis and source URLs; those claims do not establish physical fit.")
+                report("optics-part-details", module_type, "Installed part's native JSON must state exactly the catalog protocol, media, connector, rate and reach; provenance stays in the catalog, and those claims do not establish physical fit.")
             expected_bays = set()
             for host, names in part["compatible_interfaces"].items():
                 # Cage definitions follow the estate's own device-type library:
@@ -177,11 +184,11 @@ def analyze(plan, catalog=None):
             if set(actual_bays) != expected_bays or len(actual_bays) != len(expected_bays):
                 report("optics-module", module_type, "Optical module type must advertise exactly its reviewed manufacturer/form-factor bay types, without unknown or duplicated fit claims.")
         serial = attrs(module).get("serial")
-        prefix = "AOC" if part.get("assembly") else "OPT"
-        if not isinstance(serial, str) or len(serial) > 50 or re.fullmatch(prefix + r"-[0-9a-f]{24}", serial) is None:
-            report("optics-serial", module, "Installed optical inventory requires its bounded OPT-/AOC- assembly serial; native serial fields are at most 50 characters.")
+        fmt = aoc_format(part)
+        if not isinstance(serial, str) or len(serial) > 50 or not fmt or re.fullmatch(serial_pattern(fmt), serial) is None:
+            report("optics-serial", module, "Installed optical inventory requires a serial in its maker's catalog label shape; native serial fields are at most 50 characters.")
         elif (not part.get("assembly") and isinstance(namespace, str) and len(bindings[module]) == 1 and
-              serial != "OPT-" + hashlib.sha256(f"{namespace}/{bindings[module][0]}".encode()).hexdigest()[:24]):
+              serial != vendor_serial(fmt, int.from_bytes(hashlib.sha256(f"{namespace}/{bindings[module][0]}".encode()).digest()[:8], "big"))):
             report("optics-serial", module, "Detachable optical serial must retain its actual interface and namespace identity.")
         if isinstance(serial, str):
             serials[serial].append(module)
@@ -318,11 +325,12 @@ def analyze(plan, catalog=None):
             serial = attrs(module).get("serial")
             if (len(route) != 1 or other is None or not other.get("assembly") or other != part or
                     length != part["assembly_length_m"] or part["connector"] != "captive" or
-                    not isinstance(serial, str) or re.fullmatch(r"AOC-[0-9a-f]{24}", serial) is None or
+                    not isinstance(serial, str) or re.fullmatch(serial_pattern(aoc_format(part)), serial) is None or
                     attrs(peer_module).get("serial") != serial or module == peer_module or
                     attrs(module).get("asset_tag") and attrs(module).get("asset_tag") == attrs(peer_module).get("asset_tag")):
                 report("optics-assembly", port, "AOC requires one exact-length cable, two matching captive modules and one shared assembly serial, with no duplicated asset tag or passive ports.")
-            elif isinstance(namespace, str) and serial != "AOC-" + hashlib.sha256(f"{namespace}/{route[0]}".encode()).hexdigest()[:24]:
+            elif isinstance(namespace, str) and serial != vendor_serial(aoc_format(part), int.from_bytes(
+                    hashlib.sha256(f"{namespace}/{route[0]}".encode()).digest()[:8], "big")):
                 report("optics-assembly", port, "AOC assembly serial must be bound to its actual cable identity and namespace.")
             if (attrs(route[0]).get("comments") != f"Assembly serial: {serial}\nOne active optical cable assembly with two captive ends; replace the complete assembly." or
                     any(attrs(refs(endpoint).get("module")).get("description") !=

@@ -46,8 +46,10 @@ class ProviderIntegrationTests(unittest.TestCase):
         # Export templates must target object types the estate populates.
         world.add("device", "device/pop-a", {"name": "pop-a-edge-01"})
         world.add("cable", "cable/pop-a", {"label": "POP-A-1", "type": "cat6"})
-        world.add("tenant", "tenant", {"name": "Operator"})
-        world.add("tenant", "tenant/cust-acme", {"name": "Acme"})
+        # Every estate tenant belongs to a tenant group (operations._shared).
+        world.add("tenant_group", "tenant-group/operator", {"name": "Network operator"})
+        world.add("tenant", "tenant", {"name": "Operator"}, {"group": "tenant-group/operator"})
+        world.add("tenant", "tenant/cust-acme", {"name": "Acme"}, {"group": "tenant-group/operator"})
         for key, name in (("site/a", "Chicago PoP"), ("site/z", "Detroit PoP")):
             world.add("site", key, {"name": name, "physical_address": name + " address", "time_zone": "America/Chicago"}, {"tenant": "tenant"},
                       {"geography": {"city": name.split()[0]}})

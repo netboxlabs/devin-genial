@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 import re
 
+from .model import hardware_catalog
 from .naming import IPAM_ROLES, prefix_role, segment_role
 
 
@@ -471,8 +472,8 @@ def validate(plan, catalog=None):
     seen_macs = set()
     for key in by_kind["mac_address"]:
         value = str(attrs(key).get("mac_address", ""))
-        if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", value) or value.lower() in seen_macs or int(value[:2], 16) & 3 != 2:
-            report("mac-identity", key, "MAC must be unique, locally administered and unicast.")
+        if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", value) or value.lower() in seen_macs or int(value[:2], 16) & 1:
+            report("mac-identity", key, "MAC must be a unique unicast address.")
         seen_macs.add(value.lower())
     for port in by_kind["interface"] + by_kind["vm_interface"]:
         primary = refs(port).get("primary_mac_address")
@@ -487,11 +488,29 @@ def validate(plan, catalog=None):
         addressed = {refs(key).get("assigned_object") for key in by_kind["ip_address"]}
         eligible = {key for key in addressed if kind(key) in {"interface", "vm_interface"}
                     and attrs(key).get("type") not in {"virtual", "bridge"}}
+        ouis = hardware_catalog().get("mac_ouis", {})
+        namespace = plan["recipe"].get("namespace")
+        ledgers = plan.get("reservations", {})
         for port in eligible:
             key = f"mac/{port}"
-            raw = bytearray(sha256(f"{plan['recipe'].get('namespace')}/{port}/mac".encode()).digest()[:6])
-            raw[0] = (raw[0] | 2) & 254
-            expected = ":".join(f"{value:02X}" for value in raw)
+            # The maker's public IEEE OUI (QEMU/KVM's for VM interfaces) plus a
+            # tail scattered from its append-only per-OUI ledger slot; makers
+            # without a declared OUI keep a locally administered address.
+            if kind(port) == "vm_interface":
+                oui = ouis.get("virtual_machine")
+            else:
+                maker = attrs(refs(refs(refs(port).get("device")).get("device_type")).get("manufacturer")).get("name")
+                oui = ouis.get("manufacturers", {}).get(maker)
+            if oui:
+                slot = ledgers.get(f"mac/{oui}", {}).get(port)
+                offset = int.from_bytes(sha256(f"{namespace}/{oui}/mac-tail".encode()).digest()[:3], "big")
+                value = (slot * 0x5BD1E9 + offset) % (1 << 24) if type(slot) is int else None
+                expected = (f"{oui}:" + ":".join(f"{(value >> shift) & 255:02X}" for shift in (16, 8, 0))
+                            if value is not None else None)
+            else:
+                raw = bytearray(sha256(f"{namespace}/{port}/mac".encode()).digest()[:6])
+                raw[0] = (raw[0] | 2) & 254
+                expected = ":".join(f"{value:02X}" for value in raw)
             if (kind(key) != "mac_address" or refs(key).get("assigned_object") != port
                     or attrs(key).get("mac_address") != expected):
                 report("mac-identity", port, "Every eligible addressed interface needs its stable, interface-scoped MAC identity.")

@@ -29,6 +29,7 @@ import ipaddress
 import re
 
 from .model import DesignError
+from .naming import ROLE_COLORS
 
 ALIAS = "lab-router"
 ROLE = "role/lab-router"
@@ -127,7 +128,7 @@ def add_discovery_lab(world):
     add("platform", platform, {"name": spec["platform"]["name"], "slug": f"{ns}-{spec['platform']['slug']}",
                                "description": "Nokia SR Linux, named exactly as Orb device discovery reports it"},
         {"manufacturer": manufacturer})
-    add("device_role", ROLE, {"name": "Lab Router", "slug": f"{ns}-lab-router", "color": "ff6f00",
+    add("device_role", ROLE, {"name": "Lab Router", "slug": f"{ns}-lab-router", "color": ROLE_COLORS["lab-router"],
                               "description": "Isolated staging router; never carries customer traffic"})
     add("location", room, {"name": "Network Lab", "slug": f"{ns}-{stem}-network-lab", "status": "active",
                            "description": "Isolated software-staging lab; containerised network OS, no production links"},
@@ -196,7 +197,7 @@ def add_discovery_lab(world):
                             "description": f"Lab replica of {prod_name} (SR Linux container)",
                             "comments": comments(prod_name)},
             {"device_type": f"hardware/{ALIAS}", "role": ROLE, "platform": platform, "site": site,
-             "location": room, "rack": rack, "tenant": "tenant", "tags": ["tag/estate"],
+             "location": room, "rack": rack, "tenant": "tenant",
              "primary_ip4": f"ip/{dev}/if/mgmt0.0"},
             {"hardware": ALIAS, "purpose": "lab-router", "mirrors": node["prod"], "lab_index": node["index"]})
         speeds = {}

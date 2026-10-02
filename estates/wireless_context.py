@@ -7,6 +7,10 @@ from ipaddress import ip_interface, ip_network
 
 from .model import DesignError
 
+# A DHCP scope is where wireless clients land, so it is client capacity, not
+# consumption; held (reserved) ranges and assigned addresses still count.
+DHCP_ROLE = "ip-role/dhcp"
+
 
 def enrich(world):
     objects = world.objects
@@ -27,7 +31,7 @@ def enrich(world):
                 prefixes[(refs.get("vlan"), refs.get("scope_site"), refs.get("tenant"))].append(obj)
         elif obj["kind"] == "contact_assignment" and refs.get("role") == "contact-role/operations" and attrs.get("priority") == "primary":
             contacts[refs["object"]].append(refs["contact"])
-        elif obj["kind"] in {"ip_address", "ip_range"}:
+        elif obj["kind"] in {"ip_address", "ip_range"} and refs.get("role") != DHCP_ROLE:
             start = ip_interface(attrs["address"] if obj["kind"] == "ip_address" else attrs["start_address"])
             end = start if obj["kind"] == "ip_address" else ip_interface(attrs["end_address"])
             if start.version == end.version == 4:

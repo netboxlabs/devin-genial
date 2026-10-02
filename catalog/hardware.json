@@ -377,6 +377,10 @@
       "checked": "2026-10-01",
       "representation": "observed-lab-output",
       "purpose": "ghcr.io/nokia/srlinux:26.7.2 (sha256:0096fe3ebcafabb7253492e2060425fe027a168e0e066766d1e85efbb0b48be8, arm64) under containerlab 0.79.0 reports chassis type 7220 IXR-D2L, serial 'Sim Serial No.' and, through the orb-agent 2.15.0 nokia_srl driver, platform 'NOKIA_SRL v26.7.2' (lab/discovery/README.md). The catalog keeps those strings verbatim so real discovery of the lab matches its records; the devicetype-library model string '7220 IXR-D2L 25/100GE' is the labelled deviation. The container emulates no power supply, fan or optic."
+    },
+    "ieee-oui": {
+      "url": "https://standards-oui.ieee.org/oui/oui.txt",
+      "license": "IEEE public registry listing"
     }
   },
   "hardware_lines": {
@@ -960,7 +964,8 @@
       "module_serial_format": "1ED@{yyww}###",
       "platform": {
         "name": "Juniper Junos",
-        "slug": "juniper-junos"
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
       }
     },
     "inherited-access": {
@@ -1205,7 +1210,8 @@
       "serial_format": "GG{yyww}######",
       "platform": {
         "name": "Juniper Junos",
-        "slug": "juniper-junos"
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
       }
     },
     "leaf": {
@@ -1937,7 +1943,8 @@
       "module_serial_format": "1GD@{yyww}###",
       "platform": {
         "name": "Juniper Junos",
-        "slug": "juniper-junos"
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
       }
     },
     "core": {
@@ -3085,7 +3092,8 @@
       "module_serial_format": "1GD@{yyww}###",
       "platform": {
         "name": "Juniper Junos",
-        "slug": "juniper-junos"
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
       }
     },
     "console-server-48": {
@@ -4024,6 +4032,29 @@
           ]
         }
       }
+    },
+    "serial_formats": {
+      "Cisco": "FNS{yyww}****",
+      "Juniper": "1A@{yyww}####",
+      "Arista": "XKT{yyww}####",
+      "Fortinet": "FNT{yyww}#####",
+      "Generic": "G{yy}@@######"
     }
+  },
+  "mac_ouis": {
+    "source_ids": [
+      "ieee-oui"
+    ],
+    "manufacturers": {
+      "Cisco": "00:00:0C",
+      "Juniper": "00:05:85",
+      "Arista": "00:1C:73",
+      "Fortinet": "00:09:0F",
+      "Supermicro": "AC:1F:6B",
+      "Opengear": "00:13:C6",
+      "APC": "00:C0:B7",
+      "HPE": "00:0B:86"
+    },
+    "virtual_machine": "52:54:00"
   }
 }

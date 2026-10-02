@@ -54,6 +54,8 @@ class PoEValidationTests(unittest.TestCase):
             new["attrs"]["name"] = f"ap-{n + 1}"
             new["refs"].pop("primary_ip4", None)
             new["refs"].pop("primary_ip6", None)
+            # Unused switch ports ship shut; cabling one brings it up.
+            objects[f"{pse['key']}/if/{ports[n]}"]["attrs"]["enabled"] = True
             plan["objects"].extend([new,
                 dict(key=f"{key}/eth0", kind="interface", attrs=dict(input_attrs, enabled=True), refs={"device": key}),
                 dict(key=f"fixture/cable-{n + 1}", kind="cable",

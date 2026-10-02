@@ -139,11 +139,15 @@ def analyze(plan, catalog):
             pds[actual[0]] = powered
             eligible[actual[0]] = "pd"
 
+    # An unused PSE port may be administratively shut (the switch baseline
+    # disables unused ports); a cabled PSE port and every PD input must be up.
+    cabled = {refs(cable).get(side) for cable in kinds["cable"] for side in ("a", "b")}
     for port in kinds["interface"] + kinds["vm_interface"]:
         expected = eligible.get(port)
         if expected:
             if (attrs(port).get("poe_mode") != expected or attrs(port).get("poe_type") != _TYPE or
-                    not str(attrs(port).get("type")).endswith("base-t") or attrs(port).get("enabled") is not True or
+                    not str(attrs(port).get("type")).endswith("base-t") or
+                    (attrs(port).get("enabled") is not True and (expected == "pd" or port in cabled)) or
                     attrs(port).get("mgmt_only", False) or attrs(refs(port).get("device")).get("status") != "active"):
                 report("poe-port", port, "Catalog PoE port needs its correct Type 2 mode, enabled BASE-T copper interface and active owner.")
         elif attrs(port).get("poe_mode") or attrs(port).get("poe_type"):

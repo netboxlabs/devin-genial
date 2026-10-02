@@ -83,7 +83,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `power_outlet` | `dcim.poweroutlet` | `/api/dcim/power-outlets/` | device, power_port | name (in device) | TB |
 | `power_panel` | `dcim.powerpanel` | `/api/dcim/power-panels/` | location, site | name (in site) | TB |
 | `power_port` | `dcim.powerport` | `/api/dcim/power-ports/` | device, module | name (in device) | TB |
-| `prefix` | `ipam.prefix` | `/api/ipam/prefixes/` | role, scope_site, tenant, vlan, vrf | prefix (in vrf) | TB |
+| `prefix` | `ipam.prefix` | `/api/ipam/prefixes/` | role, scope_site, tags, tenant, vlan, vrf | prefix (in vrf) | TB |
 | `provider` | `circuits.provider` | `/api/circuits/providers/` | asns | name (in parent) | TB |
 | `provider_account` | `circuits.provideraccount` | `/api/circuits/provider-accounts/` | owner, provider | account (in provider) | REST |
 | `provider_network` | `circuits.providernetwork` | `/api/circuits/provider-networks/` | provider | name (in provider) | TB |
@@ -112,7 +112,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `virtual_disk` | `virtualization.virtualdisk` | `/api/virtualization/virtual-disks/` | owner, virtual_machine | name (in virtual_machine) | TB |
 | `virtual_machine` | `virtualization.virtualmachine` | `/api/virtualization/virtual-machines/` | cluster, device, platform, primary_ip4, primary_ip6, role, tags, tenant, virtual_machine_type | name (in cluster, device, tenant) | TB |
 | `virtual_machine_type` | `virtualization.virtualmachinetype` | `/api/virtualization/virtual-machine-types/` | default_platform, owner | name | TB |
-| `vlan` | `ipam.vlan` | `/api/ipam/vlans/` | group, role, site, tenant | SDK default | TB |
+| `vlan` | `ipam.vlan` | `/api/ipam/vlans/` | group, role, site, tags, tenant | SDK default | TB |
 | `vlan_group` | `ipam.vlangroup` | `/api/ipam/vlan-groups/` | scope_site, tenant | name (in scope_site, scope_location) | TB |
 | `vlan_translation_policy` | `ipam.vlantranslationpolicy` | `/api/ipam/vlan-translation-policies/` | — | name | TB |
 | `vlan_translation_rule` | `ipam.vlantranslationrule` | `/api/ipam/vlan-translation-rules/` | policy | local_vid (in policy) | TB |

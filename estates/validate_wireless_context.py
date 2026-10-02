@@ -61,7 +61,7 @@ def validate(plan):
                 addresses[key] = ip_interface(attrs(key).get("address"))
                 if addresses[key].version == 4:
                     allocated[refs(key).get("vrf")].append((int(addresses[key].ip), int(addresses[key].ip)))
-            elif obj["kind"] == "ip_range":
+            elif obj["kind"] == "ip_range" and refs(key).get("role") != "ip-role/dhcp":
                 first, last = (ip_interface(attrs(key).get(field)) for field in ("start_address", "end_address"))
                 if first.version == last.version == 4 and first.ip <= last.ip:
                     allocated[refs(key).get("vrf")].append((int(first.ip), int(last.ip)))

@@ -232,7 +232,7 @@ def _context(plan, objects, kinds):
              "service": ("Service support", "Service teams")}
     if recipe.get("profile") == "hospital-clinics":
         roles["biomedical"] = ("Biomedical support", "Biomedical engineering")
-    contacts, assignments, notes = {}, {}, {}
+    contacts, assignments, notes, priorities = {}, {}, {}, {}
     external_handoffs = set()
     infrastructure_roles = {f"role/{role}" for role in (
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
@@ -248,9 +248,10 @@ def _context(plan, objects, kinds):
         city = lines.split("\n")[1].split(",")[0] if isinstance(lines, str) and lines.count("\n") >= 1 else None
         return AREA_CODES.get(city)
 
-    def expect_assignment(target, contact, role, suffix=""):
+    def expect_assignment(target, contact, role, suffix="", priority="primary"):
         assignments[f"contact-assignment/{target}{suffix}"] = {
             "object": target, "contact": contact, "role": f"contact-role/{role}"}
+        priorities[f"contact-assignment/{target}{suffix}"] = priority
 
     def scheduled(key, event, anchor, minimum, spread):
         try:
@@ -259,8 +260,8 @@ def _context(plan, objects, kinds):
         except (KeyError, TypeError, ValueError):
             return None
 
-    def expect_note(key, event, when, facts):
-        notes[f"journal/{key}/{event}"] = (key, event, when, tuple(map(str, facts)))
+    def expect_note(key, event, when, facts, kind="info"):
+        notes[f"journal/{key}/{event}"] = (key, event, when, tuple(map(str, facts)), kind)
 
     for tenant in kinds["tenant"]:
         key = tenant["key"]
@@ -286,6 +287,7 @@ def _context(plan, objects, kinds):
         contact = expect_contact(f"contact/biomedical/{site}", f"{name} biomedical desk", "biomedical", name,
                                  f"{site.removeprefix('site/')}.biomedical", site_area(site))
         expect_assignment(obj["key"], contact, "biomedical")
+        expect_assignment(site, contact, "biomedical", "/biomedical", "tertiary")
     for site in kinds["site"]:
         key, data = site["key"], site["attrs"]
         name = data.get("name", "")
@@ -296,10 +298,8 @@ def _context(plan, objects, kinds):
         contact_name = f"{name} facilities desk"
         contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, f"{key.removeprefix('site/')}.facilities",
                                  site_area(key))
-        expect_assignment(key, contact, "facilities", "/facilities")
-        expect_note(key, "site-record", scheduled(key, "site-record", recipe.get("as_of"), 150, 31),
-                    (name, address.replace("\n", ", "), data.get("time_zone", "")))
-        expect_note(key, "access-plan", scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), (name, contact_name))
+        expect_assignment(key, contact, "facilities", "/facilities", "secondary")
+        expect_note(key, "access-plan", scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), (contact_name,))
     terms = defaultdict(list)
     far_terms = defaultdict(list)
     for term in kinds["circuit_termination"]:
@@ -325,9 +325,9 @@ def _context(plan, objects, kinds):
                 fail("operations-provider-account", key, "WAN procurement must retain its actual provider and procurement lineage; acquisition does not renew the account.")
         provider_name = attrs(provider).get("name", "")
         contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name, f"carrier-{provider.removeprefix('provider/')}.support")
-        expect_assignment(key, contact, "carrier", "/carrier")
+        expect_assignment(key, contact, "carrier", "/carrier", "secondary")
         expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
-                    (data.get("cid"), provider_name, _rate(data.get("commit_rate"))))
+                    (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
         local = terms[key]
         if len(local) != 1 or objects.get(local[0]["refs"].get("termination"), {}).get("kind") != "site":
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
@@ -346,7 +346,8 @@ def _context(plan, objects, kinds):
                         facts + (() if external else (_rate(far["attrs"].get("port_speed")),)) + (data.get("install_date"),))
         else:
             expect_note(key, "handoff-plan", data.get("install_date"),
-                        (data.get("cid"), attrs(term["refs"].get("termination")).get("name"), _rate(term["attrs"].get("port_speed")), data.get("install_date")))
+                        (provider_name, attrs(term["refs"].get("termination")).get("name"), _rate(term["attrs"].get("port_speed"))),
+                        "success")
     listeners = defaultdict(list)
     for service in kinds["service"]:
         listeners[service["refs"].get("virtual_machine")].append(service)
@@ -366,20 +367,15 @@ def _context(plan, objects, kinds):
         contact_name = f"{tenant_label} {titleize(workload)} service desk"
         contact = expect_contact(f"contact/service/{tenant}/{workload}", contact_name, "service", f"{titleize(workload)} within {tenant_label}", f"{mailbox}{workload}.service")
         expect_assignment(key, contact, "service")
+        expect_assignment(key, f"contact/operations{'' if tenant == 'tenant' else f'/{tenant}'}", "operations",
+                          "/operations", "secondary")
         scope = (refs.get("cluster"), workload)
         if scope not in anchors or int(parts[3]) < int(anchors[scope]["key"].rsplit("/", 1)[1]):
             anchors[scope] = vm
     for vm in anchors.values():
-        key, data, refs = vm["key"], vm["attrs"], vm["refs"]
+        key, refs = vm["key"], vm["refs"]
         expect_note(key, "resource-plan", scheduled(key, "resource-plan", recipe.get("as_of"), 120, 31),
-                    (data.get("name"), attrs(refs.get("device")).get("name"), data.get("vcpus"), data.get("memory"), data.get("disk")))
-        entries = []
-        for service in sorted(listeners[key], key=lambda obj: obj["key"]):
-            service_attrs = service["attrs"]
-            entries.append(f"{service_attrs.get('name')}: {service_attrs.get('protocol')}/{','.join(map(str, service_attrs.get('ports', [])))}")
-        contact_name = contacts[assignments[f"contact-assignment/{key}"]["contact"]][0]
-        expect_note(key, "listener-plan", scheduled(key, "listener-plan", recipe.get("as_of"), 30, 31),
-                    (data.get("name"), "; ".join(entries), contact_name))
+                    (attrs(refs.get("device")).get("name"),), "success")
 
     equipment_anchors, supplies, interfaces = {}, defaultdict(list), defaultdict(dict)
     catalog_cages = {}
@@ -412,12 +408,9 @@ def _context(plan, objects, kinds):
         access = objects.get(refs.get("primary_ip4"), {}).get("refs", {}).get("assigned_object")
         if objects.get(access, {}).get("refs", {}).get("device") != key:
             fail("operations-journal-facts", key, "Installation history must name the device's own primary inventory interface.")
-        facilities = attrs(f"contact/{refs.get('site')}").get("name")
         expect_note(key, "equipment-record", scheduled(key, "equipment-record", recipe.get("as_of"), 100, 20),
-                    (data.get("name"), attrs(refs.get("device_type")).get("model"), data.get("serial"),
-                     site, room, rack, data.get("position"), attrs(access).get("name")))
-        expect_note(key, "maintenance-plan", scheduled(key, "maintenance-plan", recipe.get("as_of"), 20, 20),
-                    (data.get("name"), site, room, rack, facilities))
+                    (attrs(refs.get("device_type")).get("model"), data.get("serial"),
+                     room, rack, data.get("position"), attrs(access).get("name")), "success")
         if supplies[key]:
             port = min(supplies[key], key=lambda obj: obj["key"])
             module = objects.get(port["refs"].get("module"), {})
@@ -426,8 +419,8 @@ def _context(plan, objects, kinds):
             if module.get("kind") != "module" or module_refs.get("device") != key or bay.get("refs", {}).get("device") != key:
                 fail("operations-journal-facts", key, "Replacement planning must follow the installed supply through its own module and bay.")
             expect_note(key, "psu-replacement-plan", scheduled(key, "psu-replacement-plan", recipe.get("as_of"), 1, 19),
-                        (data.get("name"), attrs(module_refs.get("module_type")).get("model"), module.get("attrs", {}).get("serial"),
-                         bay.get("attrs", {}).get("name"), port["attrs"].get("name"), facilities))
+                        (attrs(module_refs.get("module_type")).get("model"), bay.get("attrs", {}).get("name"),
+                         module.get("attrs", {}).get("serial")), "warning")
         dtype = objects.get(refs.get("device_type"), {})
         maker = attrs(dtype.get("refs", {}).get("manufacturer")).get("name")
         cage = catalog_cages.get((maker, dtype.get("attrs", {}).get("model")))
@@ -442,9 +435,12 @@ def _context(plan, objects, kinds):
                     or bay.get("kind") != "module_bay" or bay.get("refs", {}).get("device") != key
                     or module_type.get("kind") != "module_type"):
                 fail("operations-journal-facts", key, "Optical planning must follow the fixed cage through its own installed module, bay and type.")
+            assembly = any(part.get("manufacturer") == maker and part.get("model") == module_type.get("attrs", {}).get("model")
+                           and part.get("assembly") for part in hardware_catalog()["optics"]["parts"].values())
             expect_note(key, "optic-replacement-plan", scheduled(key, "optic-replacement-plan", recipe.get("as_of"), 40, 20),
-                        (data.get("name"), port["attrs"].get("name"), f"{maker} {module_type.get('attrs', {}).get('model')}",
-                         module.get("attrs", {}).get("serial"), bay.get("attrs", {}).get("name"), facilities))
+                        (port["attrs"].get("name"), bay.get("attrs", {}).get("name"),
+                         f"{maker} {module_type.get('attrs', {}).get('model')}", module.get("attrs", {}).get("serial"),
+                         "the whole cable assembly" if assembly else "the transceiver"))
 
     for role, (title, group) in roles.items():
         # The role carries an authored display name with a namespaced slug; the
@@ -496,25 +492,25 @@ def _context(plan, objects, kinds):
         if objects.get(key, {}).get("kind") != "contact":
             fail("operations-contact", key, "Required scoped service desk is missing.")
     for obj in kinds["contact_assignment"]:
-        if assignments.get(obj["key"]) != obj["refs"] or obj["attrs"] != {"priority": "primary"}:
-            fail("operations-contact", obj["key"], "Assignment must use the actual tenant, site, provider or workload desk and its distinct primary responsibility.")
+        if assignments.get(obj["key"]) != obj["refs"] or obj["attrs"] != {"priority": priorities.get(obj["key"])}:
+            fail("operations-contact", obj["key"], "Assignment must use the actual tenant, site, provider or workload desk at its "
+                 "priority: technical desk primary, local or commercial desk secondary, specialist tertiary.")
     for key, refs in assignments.items():
         if objects.get(key, {}).get("kind") != "contact_assignment" or objects.get(refs["contact"], {}).get("kind") != "contact":
             fail("operations-contact", key, "Required contact assignment or scoped contact is missing.")
 
     # Finite note forms admit only these claims. Captured values below are checked
     # against the graph; the emitter and its metadata are not validation inputs.
+    # One short, human operational line per event; the record itself already
+    # shows its fields, so a note states only what happened or what to do.
     forms = {
-        "equipment-record": ("Equipment installation record", r"Device: ([^\n]+)\nModel: ([^\n]+)\nSerial: ([^\n]+)\nSite: ([^\n]+)\nRoom: ([^\n]+)\nRack: ([^\n]+) / U ([0-9.]+)\nInventory access interface: ([^\n]+)\nUse this record to identify the chassis and its initial placement\."),
-        "maintenance-plan": ("Equipment maintenance plan", r"Device: ([^\n]+)\nSite: ([^\n]+)\nRoom: ([^\n]+)\nRack: ([^\n]+)\nFacilities contact: ([^\n]+)\nArrange equipment-room access with this desk and consult the device's current technical contact before scheduling work\."),
-        "psu-replacement-plan": ("PSU replacement preparation", r"Device: ([^\n]+)\nInstalled PSU model: ([^\n]+)\nInstalled PSU serial: ([^\n]+)\nBay: ([^\n]+)\nSupply port: ([^\n]+)\nFacilities contact: ([^\n]+)\nPlan a like-for-like replacement using this installed component record\. Trace current power paths and confirm isolation requirements with the technical owner before scheduling work; no replacement is recorded as executed\."),
-        "optic-replacement-plan": ("Optical replacement preparation", r"Device: ([^\n]+)\nInterface: ([^\n]+)\nInstalled part: ([^\n]+)\nInstalled serial: ([^\n]+)\nBay: ([^\n]+)\nFacilities contact: ([^\n]+)\nUse the installed part and current device technical contact to review a like-for-like replacement\. For a captive AOC end, replace the complete assembly\. Preserve the interface and its dependent records; no module deletion, hot-swap or replacement is recorded as executed\."),
-        "site-record": ("Site record", r"Site: ([^\n]+)\nAddress: ([^\n]+)\nTime zone: ([^\n]+)\nUse this record when arranging a site visit\."),
-        "access-plan": ("Access coordination", r"Site: ([^\n]+)\nFacilities contact: ([^\n]+)\nCoordinate equipment-room access and planned power work with this local desk\."),
-        "capacity-request": ("WAN capacity request", r"Circuit: ([^\n]+)\nProvider: ([^\n]+)\nCommitted capacity: ([^\n]+)\nUse the circuit identifier and committed rate when discussing the access order\."),
-        "handoff-plan": ("WAN handoff plan", r"Circuit: ([^\n]+)\nCustomer site: ([^\n]+)\nPhysical handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nThis handoff plan describes the inventory connection; it does not record an acceptance test\."),
-        "resource-plan": ("Service resource plan", r"VM: ([^\n]+)\nHost: ([^\n]+)\nCapacity: ([0-9.]+) vCPU; ([0-9]+) MB memory; ([0-9]+) MB disk\nThis is the initial placement and resource budget for this service instance\."),
-        "listener-plan": ("Service listener plan", r"VM: ([^\n]+)\nListeners: ([^\n]+)\nSupport contact: ([^\n]+)\nUse the modeled listeners to scope configuration review; no application health check is recorded\.")}
+        "equipment-record": ("Installed", r"([^\n]+) serial ([^\n]+) racked in ([^\n]+), cabinet ([^\n]+) at U([0-9.]+); managed through ([^\n]+)\."),
+        "psu-replacement-plan": ("Keep a spare PSU", r"Confirm a like-for-like ([^\n]+) is on hand for ([^\n]+) \(installed serial ([^\n]+)\) before the next maintenance window\."),
+        "optic-replacement-plan": ("Optic replacement note", r"([^\n]+) \(([^\n]+)\) holds ([^\n]+) serial ([^\n]+); if it fails, swap in a like-for-like part and replace (the whole cable assembly|the transceiver)\."),
+        "access-plan": ("Site access", r"Equipment-room visits are booked through ([^\n]+); give two working days' notice and flag any planned power work\."),
+        "capacity-request": ("Order placed", r"Ordered ([^\n]+) from ([^\n]+); quote ([^\n]+) on every call to the carrier\."),
+        "handoff-plan": ("In service", r"([^\n]+) handed the circuit over at ([^\n]+) on a ([^\n]+) port\."),
+        "resource-plan": ("First instance placed", r"Placed on ([^\n]+); later replicas follow the same sizing\.")}
     if recipe.get("profile") == "provider-backbone":
         forms["handoff-plan"] = ("Circuit handoff plan", r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ termination: ([^\n]+)\nA handoff: ([^\n]+)\nZ handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nUse both termination records to coordinate the local handoffs\.")
     for obj in kinds["journal_entry"]:
@@ -522,7 +518,7 @@ def _context(plan, objects, kinds):
         if key not in notes:
             fail("operations-journal", key, "Journal has no required immutable site, circuit, workload or equipment event.")
             continue
-        target, event, when, facts = notes[key]
+        target, event, when, facts, expected_kind = notes[key]
         title, body = forms[event]
         if event == "handoff-plan" and target in external_handoffs:
             body = (r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ network boundary: ([^\n]+)\n"
@@ -530,8 +526,9 @@ def _context(plan, objects, kinds):
                     r"Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary\.")
         comments = obj["attrs"].get("comments", "")
         match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
-        if obj["refs"] != {"assigned_object": target} or obj["attrs"].get("kind") != "info" or set(obj["attrs"]) != {"kind", "comments"}:
-            fail("operations-journal", key, "Journal must retain its actual subject, information kind and no account binding.")
+        if obj["refs"] != {"assigned_object": target} or obj["attrs"].get("kind") != expected_kind or set(obj["attrs"]) != {"kind", "comments"}:
+            fail("operations-journal", key, "Journal must retain its actual subject, its event's kind (completed events success, "
+                 "open spares warning, otherwise info) and no account binding.")
         if not match or match.groups()[1:] != facts:
             fail("operations-journal-facts", key, "Journal claims must match the subject's actual address, contact, circuit, resource or listener facts.")
         try:
@@ -552,46 +549,47 @@ def _rate(kbps):
     return rate_kbps(kbps) if type(kbps) is int and kbps > 0 else kbps
 
 
-def validate(plan):
-    """Check finished records, including unoccupied reservations and disk totals."""
-    objects = {o["key"]: o for o in plan["objects"]}
-    kinds = defaultdict(list)
-    for obj in objects.values():
-        kinds[obj["kind"]].append(obj)
-    findings = _context(plan, objects, kinds)
-    if not any(c.get("operations") for c in plan.get("contracts", [])):
-        return sorted(findings, key=lambda f: (f["code"], f["object"]))
+# Restated, not imported from the builder: the tag vocabulary's label scope
+# and the switch roles a baseline config context governs.
+_TAG_KINDS = {"hub-site": {"site"}, "dual-homed": {"site"}, "acquired": {"site", "device"},
+              "route-reflector": {"device"}, "transit-edge": {"device"}, "managed-ce": {"device"},
+              "pci-scope": {"device", "vlan", "prefix"}, "clinical": {"device", "vlan", "prefix"},
+              "ot-zone": {"device", "vlan", "prefix"},
+              "multi-site": {"virtual_machine"}}
+_SWITCH_ROLES = {"role/access", "role/leaf"}
+_TAXONOMY = ("device_role", "rack_role")
 
-    def report(code, key, message):
-        findings.append({"code": code, "object": key, "message": message})
+
+def _shared(plan, objects, kinds, report):
+    """Grouping, typing, tagging and taxonomy obligations every estate carries."""
+    ns = plan.get("recipe", {}).get("namespace", "")
 
     def related(obj, field):
         return objects.get(obj.get("refs", {}).get(field), {})
 
-    expected = {"circuit_group", "circuit_group_assignment", "cluster_group", "contact", "contact_group", "contact_role",
-                "contact_assignment", "provider_account", "rack_type", "rack_group", "tenant_group", "virtual_disk",
-                "virtual_machine_type", "custom_field", "custom_field_choice_set", "journal_entry", "custom_link",
-                "owner", "owner_group", "cable_bundle",
-                "config_context", "export_template", "webhook", "event_rule"}
-    for kind in sorted(expected - kinds.keys()):
-        report("operations-coverage", kind, "Operations coverage requires a connected example of this kind.")
     for kind, field, target in (("tenant", "group", "tenant_group"), ("cluster", "group", "cluster_group"),
                                 ("rack", "group", "rack_group"), ("owner", "group", "owner_group")):
         for obj in kinds[kind]:
             if related(obj, field).get("kind") != target:
                 report("operations-group", obj["key"], f"{kind} must reference its {target}.")
-    for circuit in kinds["circuit"]:
-        account = related(circuit, "provider_account")
-        if account.get("kind") != "provider_account" or account.get("refs", {}).get("provider") != circuit["refs"].get("provider"):
-            report("operations-provider-account", circuit["key"], "Circuit and commercial account must belong to the same provider.")
-    members = {obj["refs"].get("member"): obj for obj in kinds["circuit_group_assignment"]}
-    for side, priority in (("a", "primary"), ("b", "secondary")):
-        circuit = f"circuit/dc-01/{side}/1"
-        assignment = members.get(circuit, {})
-        if assignment.get("attrs", {}).get("priority") != priority or related(assignment, "group").get("kind") != "circuit_group":
-            report("operations-circuit-group", circuit, "The DC01 restoration group needs the real A/B pair with distinct inventory priorities.")
+    # A circuit group is either a real primary/secondary pair or the set of
+    # backbone spans; it never mixes the two or carries an invented member.
+    members = defaultdict(list)
+    for assignment in kinds["circuit_group_assignment"]:
+        members[assignment["refs"].get("group")].append(assignment)
+        if related(assignment, "member").get("kind") != "circuit":
+            report("operations-circuit-group", assignment["key"], "Group members must be actual circuits.")
+    for group in kinds["circuit_group"]:
+        entries = members[group["key"]]
+        priorities = sorted(entry["attrs"].get("priority", "") for entry in entries)
+        spans = all(related(entry, "member").get("refs", {}).get("type") == "circuit-type/backbone" for entry in entries)
+        pair = (priorities == ["primary", "secondary"]
+                and len({entry["refs"].get("member") for entry in entries}) == 2)
+        if not entries or not (pair or (spans and priorities == [""] * len(entries))):
+            report("operations-circuit-group", group["key"],
+                   "A circuit group is one primary/secondary pair of real circuits, or the backbone spans without priorities.")
     for assignment in kinds["contact_assignment"]:
-        if (related(assignment, "object").get("kind") not in {"site", "cluster", "circuit", "virtual_machine", "device"}
+        if (related(assignment, "object").get("kind") not in {"site", "cluster", "circuit", "virtual_machine", "device", "virtual_circuit"}
                 or related(assignment, "contact").get("kind") != "contact" or related(assignment, "role").get("kind") != "contact_role"):
             report("operations-contact", assignment["key"], "Escalation assignment must join real supported infrastructure to a contact and role.")
     for contact in kinds["contact"]:
@@ -609,17 +607,135 @@ def validate(plan):
         template = related(vm, "virtual_machine_type")
         if template.get("kind") != "virtual_machine_type" or template.get("refs", {}).get("default_platform") != vm["refs"].get("platform"):
             report("operations-vm-type", vm["key"], "VM type and VM must use the same modeled service platform.")
+    for rack in kinds["rack"]:
+        template = related(rack, "rack_type")
+        if template.get("kind") != "rack_type" or any(template.get("attrs", {}).get(field) != rack["attrs"].get(field)
+                                                      for field in ("u_height", "width", "form_factor")):
+            report("operations-rack-type", rack["key"], "Rack type must match the actual cabinet height, width and form factor.")
+
+    # Service tier: re-derived from the graph (hosted cluster or private-WAN
+    # hub; else active circuits from two providers; else one).
+    hubs, carriers = set(), defaultdict(set)
+    for obj in kinds["cluster"]:
+        hubs.add(obj["refs"].get("scope_site"))
+    for obj in kinds["virtual_circuit_termination"]:
+        if obj["attrs"].get("role") == "hub":
+            hubs.add(related(related(obj, "interface"), "device").get("refs", {}).get("site"))
+    for term in kinds["circuit_termination"]:
+        circuit = related(term, "circuit")
+        if str(term["refs"].get("termination", "")).startswith("site/") and circuit.get("attrs", {}).get("status") == "active":
+            carriers[term["refs"]["termination"]].add(circuit.get("refs", {}).get("provider"))
+    for field in kinds["custom_field"]:
+        choices = related(field, "choice_set")
+        values = {choice.split(":", 1)[0] for choice in choices.get("attrs", {}).get("extra_choices", [])}
+        consumers = [obj for obj in kinds["site"] if field["attrs"].get("name") in obj["attrs"].get("custom_fields", {})]
+        if choices.get("kind") != "custom_field_choice_set" or not consumers or "dcim.site" not in field["attrs"].get("object_types", []):
+            report("operations-custom-field", field["key"], "Operations field must have real choices and a compatible site consumer.")
+        for obj in consumers:
+            selected = obj["attrs"]["custom_fields"][field["attrs"]["name"]].get("selection")
+            tier = ("tier-1" if obj["key"] in hubs else "tier-2" if len(carriers[obj["key"]]) >= 2 else "tier-3")
+            if selected not in values or selected != tier:
+                report("operations-custom-field", obj["key"], "Service tier must be the declared choice the site's actual "
+                       "hub role and carrier count imply.")
+    for link in kinds["custom_link"]:
+        if link["attrs"].get("object_types") != ["dcim.site"] or link["attrs"].get("link_url") != "/dcim/devices/?site_id={{ object.pk }}":
+            report("operations-custom-link", link["key"], "Site equipment shortcut must stay on the target's own device inventory.")
+
+    # Tags: each lands only on its declared kinds, every emitted tag is used,
+    # and none blankets every candidate of its kinds.
+    population = defaultdict(int)
+    for obj in objects.values():
+        population[obj["kind"]] += 1
+    usage = defaultdict(lambda: defaultdict(int))
+    for obj in objects.values():
+        for tag in obj["refs"].get("tags", []) if isinstance(obj["refs"].get("tags"), list) else []:
+            slug = tag.removeprefix("tag/")
+            if objects.get(tag, {}).get("kind") != "tag" or obj["kind"] not in _TAG_KINDS.get(slug, ()):
+                report("operations-tag", obj["key"], f"{tag} is not a reviewed tag for a {obj['kind']}.")
+            usage[tag][obj["kind"]] += 1
+    for tag in kinds["tag"]:
+        counts = usage[tag["key"]]
+        if not counts:
+            report("operations-tag", tag["key"], "An emitted tag must label at least one object.")
+        elif all(counts[kind] >= population[kind] for kind in _TAG_KINDS.get(tag["key"].removeprefix("tag/"), ())):
+            report("operations-tag", tag["key"], "A tag on every candidate of its kinds carries no information.")
+        if tag["attrs"].get("slug") != f"{ns}-{tag['key'].removeprefix('tag/')}":
+            report("operations-tag", tag["key"], "Tag slug must keep the estate namespace.")
+
+    # Taxonomy lists show only what the estate uses, each role in its own colour.
+    referenced = {target for obj in objects.values() for value in obj["refs"].values()
+                  for target in (value if isinstance(value, list) else [value]) if isinstance(target, str)}
+    passive = {(model.get("manufacturer"), model.get("model")) for model in hardware_catalog()["models"].values()
+               if model.get("front_ports")}
+    for kind in _TAXONOMY + ("device_type",):
+        for obj in kinds[kind]:
+            if obj["key"] in referenced:
+                continue
+            # The device-type library is otherwise fixed (growth and scenario
+            # snapshots must not delete one); only passive cabling types follow use.
+            maker = objects.get(obj["refs"].get("manufacturer"), {}).get("attrs", {}).get("name")
+            if kind != "device_type" or (maker, obj["attrs"].get("model")) in passive:
+                report("operations-taxonomy", obj["key"], f"Unreferenced {kind} must not be emitted.")
+    colours = defaultdict(list)
+    for role in kinds["device_role"]:
+        colours[role["attrs"].get("color")].append(role["key"])
+    for colour, roles in colours.items():
+        if len(roles) > 1:
+            report("operations-taxonomy", roles[1], f"Device roles {', '.join(roles)} share colour {colour}.")
+
+    # The switch baseline context disables unused ports: an uncabled data port
+    # on a governed switch must be shut.
+    cabled = {cable["refs"].get(side) for cable in kinds["cable"] for side in ("a", "b")}
+    governed = {obj["key"] for obj in kinds["device"] if obj["refs"].get("role") in _SWITCH_ROLES}
+    for port in kinds["interface"]:
+        if (port["refs"].get("device") in governed and port["key"] not in cabled and port["attrs"].get("enabled") is not False
+                and port["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
+                and not str(port["attrs"].get("type")).startswith("ieee802.11") and not port["attrs"].get("mgmt_only")):
+            report("operations-unused-port", port["key"], "The switch baseline disables unused ports; this uncabled port is still enabled.")
+
+
+def validate(plan):
+    """Check finished records, including unoccupied reservations and disk totals."""
+    objects = {o["key"]: o for o in plan["objects"]}
+    kinds = defaultdict(list)
+    for obj in objects.values():
+        kinds[obj["kind"]].append(obj)
+    findings = _context(plan, objects, kinds)
+
+    def report(code, key, message):
+        findings.append({"code": code, "object": key, "message": message})
+
+    if "owner/operations" in objects:
+        _shared(plan, objects, kinds, report)
+    if not any(c.get("operations") for c in plan.get("contracts", [])):
+        return sorted(findings, key=lambda f: (f["code"], f["object"]))
+
+    def related(obj, field):
+        return objects.get(obj.get("refs", {}).get(field), {})
+
+    expected = {"circuit_group", "circuit_group_assignment", "cluster_group", "contact", "contact_group", "contact_role",
+                "contact_assignment", "provider_account", "rack_type", "rack_group", "tenant_group", "virtual_disk",
+                "virtual_machine_type", "custom_field", "custom_field_choice_set", "journal_entry", "custom_link",
+                "owner", "owner_group", "cable_bundle",
+                "config_context", "export_template", "webhook", "event_rule"}
+    for kind in sorted(expected - kinds.keys()):
+        report("operations-coverage", kind, "Operations coverage requires a connected example of this kind.")
+    for circuit in kinds["circuit"]:
+        account = related(circuit, "provider_account")
+        if account.get("kind") != "provider_account" or account.get("refs", {}).get("provider") != circuit["refs"].get("provider"):
+            report("operations-provider-account", circuit["key"], "Circuit and commercial account must belong to the same provider.")
+    members = {obj["refs"].get("member"): obj for obj in kinds["circuit_group_assignment"]}
+    for side, priority in (("a", "primary"), ("b", "secondary")):
+        circuit = f"circuit/dc-01/{side}/1"
+        assignment = members.get(circuit, {})
+        if assignment.get("attrs", {}).get("priority") != priority or related(assignment, "group").get("kind") != "circuit_group":
+            report("operations-circuit-group", circuit, "The DC01 restoration group needs the real A/B pair with distinct inventory priorities.")
     occupied = defaultdict(set)
     for device in kinds["device"]:
         position = device["attrs"].get("position")
         if position is not None:
             height = related(device, "device_type").get("attrs", {}).get("u_height", 0)
             occupied[device["refs"].get("rack")].update(range(math.floor(position), math.ceil(position+height)))
-    for rack in kinds["rack"]:
-        template = related(rack, "rack_type")
-        if template.get("kind") != "rack_type" or any(template.get("attrs", {}).get(field) != rack["attrs"].get(field)
-                                                      for field in ("u_height", "width", "form_factor")):
-            report("operations-rack-type", rack["key"], "Rack type must match the actual cabinet height, width and form factor.")
     username = plan["recipe"].get("reservation_user", "")
     reservations = kinds["rack_reservation"]
     if bool(username) != bool(reservations):
@@ -639,18 +755,9 @@ def validate(plan):
         if user.get("meta", {}).get("external") is not True or set(user["attrs"]) != {"username"}:
             report("operations-external-user", user["key"], "Only a username reference to an existing account is allowed.")
     for field in kinds["custom_field"]:
-        choices = related(field, "choice_set")
-        values = {choice.split(":", 1)[0] for choice in choices.get("attrs", {}).get("extra_choices", [])}
-        consumers = [obj for obj in kinds["site"] if field["attrs"].get("name") in obj["attrs"].get("custom_fields", {})]
-        if choices.get("kind") != "custom_field_choice_set" or not consumers or "dcim.site" not in field["attrs"].get("object_types", []):
-            report("operations-custom-field", field["key"], "Operations field must have real choices and a compatible site consumer.")
-        for obj in consumers:
-            selected = obj["attrs"]["custom_fields"][field["attrs"]["name"]].get("selection")
-            if selected not in values or field["key"] not in obj.get("meta", {}).get("requires", []):
-                report("operations-custom-field", obj["key"], "Field value must match a declared choice and depend on its definition before export.")
-    for link in kinds["custom_link"]:
-        if link["attrs"].get("object_types") != ["dcim.site"] or link["attrs"].get("link_url") != "/dcim/devices/?site_id={{ object.pk }}":
-            report("operations-custom-link", link["key"], "Site equipment shortcut must stay on the target's own device inventory.")
+        for obj in kinds["site"]:
+            if field["attrs"].get("name") in obj["attrs"].get("custom_fields", {}) and field["key"] not in obj.get("meta", {}).get("requires", []):
+                report("operations-custom-field", obj["key"], "A field value must depend on its definition before export.")
     bundles = defaultdict(list)
     for cable in kinds["cable"]:
         if cable["refs"].get("bundle"):

@@ -60,8 +60,10 @@ def enrich(world):
                    "email": f"{mailbox}@{ns}.example", "description": description},
                    {"groups": [f"contact-group/{role}"]})
 
-    def assign(target, contact_key, role, suffix=""):
-        add("contact_assignment", f"contact-assignment/{target}{suffix}", {"priority": "primary"},
+    def assign(target, contact_key, role, suffix="", priority="primary"):
+        # Where an object has several desks the technical desk answers first,
+        # the local or commercial desk second and a specialist third.
+        add("contact_assignment", f"contact-assignment/{target}{suffix}", {"priority": priority},
             {"object": target, "contact": contact_key, "role": f"contact-role/{role}"})
 
     tenant_desks = {}
@@ -104,19 +106,20 @@ def enrich(world):
         except OverflowError as exc:
             raise DesignError(f"{target}: as_of is too early for the authored operations chronology") from exc
 
-    def journal(target, event, when, title, body):
-        add("journal_entry", f"journal/{target}/{event}", {"kind": "info", "comments": f"{when} — {title}\n{body}"}, {"assigned_object": target})
+    def journal(target, event, when, title, body, kind="info"):
+        add("journal_entry", f"journal/{target}/{event}", {"kind": kind, "comments": f"{when} — {title}\n{body}"}, {"assigned_object": target})
 
     as_of = world.recipe["as_of"]
     for site in kinds["site"]:
         key, attrs = site["key"], site["attrs"]
         desk = contact(f"contact/{key}", f"{attrs['name']} facilities desk", "facilities", f"{key.removeprefix('site/')}.facilities",
             f"Equipment-room access, cabinet visits and planned power-work coordination at {attrs['name']}.", city[key])
-        assign(key, desk, "facilities", "/facilities")
-        journal(key, "site-record", dated(key, "site-record", as_of, 150, 31), "Site record",
-            f"Site: {attrs['name']}\nAddress: {attrs['physical_address'].replace(chr(10), ', ')}\nTime zone: {attrs['time_zone']}\nUse this record when arranging a site visit.")
-        journal(key, "access-plan", dated(key, "access-plan", as_of, 60, 31), "Access coordination",
-            f"Site: {attrs['name']}\nFacilities contact: {world.obj(desk)['attrs']['name']}\nCoordinate equipment-room access and planned power work with this local desk.")
+        assign(key, desk, "facilities", "/facilities", "secondary")
+        if key in biomedical_desks:
+            assign(key, biomedical_desks[key], "biomedical", "/biomedical", "tertiary")
+        journal(key, "access-plan", dated(key, "access-plan", as_of, 60, 31), "Site access",
+            f"Equipment-room visits are booked through {world.obj(desk)['attrs']['name']}; "
+            "give two working days' notice and flag any planned power work.")
 
     provider_desks = {}
     terms = {obj["refs"]["circuit"]: obj for obj in kinds["circuit_termination"] if obj["attrs"]["term_side"] == "A"}
@@ -130,11 +133,11 @@ def enrich(world):
                 (f"Capacity and handoff coordination for {name}. Tenant technical desks handle local troubleshooting."
                  if world.recipe["profile"] == "provider-backbone" else
                  f"Circuit identifiers, contracted capacity and handoff coordination for {name}; customer-side troubleshooting stays with the tenant technical desk."))
-        assign(key, provider_desks[provider], "carrier", "/carrier")
+        assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
         term = terms[key]
         site_name = world.obj(term["refs"]["termination"])["attrs"]["name"]
-        journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "WAN capacity request",
-            f"Circuit: {attrs['cid']}\nProvider: {name}\nCommitted capacity: {rate_kbps(attrs['commit_rate'])}\nUse the circuit identifier and committed rate when discussing the access order.")
+        journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "Order placed",
+            f"Ordered {rate_kbps(attrs['commit_rate'])} from {name}; quote {attrs['cid']} on every call to the carrier.")
         if world.recipe["profile"] == "provider-backbone":
             far = far_terms[key]
             far_target = world.obj(far["refs"]["termination"])
@@ -148,14 +151,11 @@ def enrich(world):
                 body = f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ termination: {far_name}\nA handoff: {rate_kbps(term['attrs']['port_speed'])}\nZ handoff: {rate_kbps(far['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nUse both termination records to coordinate the local handoffs."
             journal(key, "handoff-plan", attrs["install_date"], "Circuit handoff plan", body)
         else:
-            journal(key, "handoff-plan", attrs["install_date"], "WAN handoff plan",
-                f"Circuit: {attrs['cid']}\nCustomer site: {site_name}\nPhysical handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nThis handoff plan describes the inventory connection; it does not record an acceptance test.")
+            journal(key, "handoff-plan", attrs["install_date"], "In service",
+                f"{name} handed the circuit over at {site_name} on a {rate_kbps(term['attrs']['port_speed'])} port.",
+                "success")
 
     service_desks, anchors = {}, {}
-    listeners = defaultdict(list)
-    for service in kinds["service"]:
-        if vm := service["refs"].get("virtual_machine"):
-            listeners[vm].append(service)
     for vm in sorted(kinds["virtual_machine"], key=lambda obj: obj["key"]):
         key, refs = vm["key"], vm["refs"]
         workload = key.split("/")[2]
@@ -171,16 +171,14 @@ def enrich(world):
             service_desks[scope] = contact(f"contact/service/{refs['tenant']}/{workload}", f"{tenant_label} {service} service desk", "service", f"{mailbox}{workload}.service",
                 f"Resource sizing and listener configuration for {service} within {tenant_label}; coordinate host incidents with the cluster technical desk.")
         assign(key, service_desks[scope], "service")
+        assign(key, tenant_desks[refs["tenant"]], "operations", "/operations", "secondary")
         anchors.setdefault((refs["cluster"], workload), vm)
-    # ponytail: two records per workload/site, not per replica; append-only VM
+    # ponytail: one record per workload/site, not per replica; append-only VM
     # ordinals keep the anchor stable. A future retirement workflow needs review.
     for vm in anchors.values():
-        key, attrs, refs = vm["key"], vm["attrs"], vm["refs"]
-        journal(key, "resource-plan", dated(key, "resource-plan", as_of, 120, 31), "Service resource plan",
-            f"VM: {attrs['name']}\nHost: {world.obj(refs['device'])['attrs']['name']}\nCapacity: {attrs['vcpus']} vCPU; {attrs['memory']} MB memory; {attrs['disk']} MB disk\nThis is the initial placement and resource budget for this service instance.")
-        entries = [f"{service['attrs']['name']}: {service['attrs']['protocol']}/{','.join(map(str, service['attrs']['ports']))}" for service in sorted(listeners[key], key=lambda obj: obj["key"])]
-        journal(key, "listener-plan", dated(key, "listener-plan", as_of, 30, 31), "Service listener plan",
-            f"VM: {attrs['name']}\nListeners: {'; '.join(entries)}\nSupport contact: {world.obj(service_desks[(refs['tenant'], key.split('/')[2])])['attrs']['name']}\nUse the modeled listeners to scope configuration review; no application health check is recorded.")
+        key, refs = vm["key"], vm["refs"]
+        journal(key, "resource-plan", dated(key, "resource-plan", as_of, 120, 31), "First instance placed",
+            f"Placed on {world.obj(refs['device'])['attrs']['name']}; later replicas follow the same sizing.", "success")
 
     # Permanent U allocation makes this local selection stable when a new
     # workload sorts before existing workloads. New racks receive new stories.
@@ -211,18 +209,17 @@ def enrich(world):
         rack, room, site = (world.obj(refs[field])["attrs"]["name"] for field in ("rack", "location", "site"))
         model = world.obj(refs["device_type"])["attrs"]["model"]
         access = world.obj(world.obj(refs["primary_ip4"])["refs"]["assigned_object"])["attrs"]["name"]
-        facilities = world.obj(f"contact/{refs['site']}")["attrs"]["name"]
-        journal(key, "equipment-record", dated(key, "equipment-record", as_of, 100, 20), "Equipment installation record",
-            f"Device: {attrs['name']}\nModel: {model}\nSerial: {attrs['serial']}\nSite: {site}\nRoom: {room}\nRack: {rack} / U {attrs['position']}\nInventory access interface: {access}\nUse this record to identify the chassis and its initial placement.")
-        journal(key, "maintenance-plan", dated(key, "maintenance-plan", as_of, 20, 20), "Equipment maintenance plan",
-            f"Device: {attrs['name']}\nSite: {site}\nRoom: {room}\nRack: {rack}\nFacilities contact: {facilities}\nArrange equipment-room access with this desk and consult the device's current technical contact before scheduling work.")
+        journal(key, "equipment-record", dated(key, "equipment-record", as_of, 100, 20), "Installed",
+            f"{model} serial {attrs['serial']} racked in {room}, cabinet {rack} at U{attrs['position']}; "
+            f"managed through {access}.", "success")
         if supplies[key]:
             port = min(supplies[key], key=lambda obj: obj["key"])
             module = world.obj(port["refs"]["module"])
             bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
             model = world.obj(module["refs"]["module_type"])["attrs"]["model"]
-            journal(key, "psu-replacement-plan", dated(key, "psu-replacement-plan", as_of, 1, 19), "PSU replacement preparation",
-                f"Device: {attrs['name']}\nInstalled PSU model: {model}\nInstalled PSU serial: {module['attrs']['serial']}\nBay: {bay}\nSupply port: {port['attrs']['name']}\nFacilities contact: {facilities}\nPlan a like-for-like replacement using this installed component record. Trace current power paths and confirm isolation requirements with the technical owner before scheduling work; no replacement is recorded as executed.")
+            journal(key, "psu-replacement-plan", dated(key, "psu-replacement-plan", as_of, 1, 19), "Keep a spare PSU",
+                f"Confirm a like-for-like {model} is on hand for {bay} (installed serial "
+                f"{module['attrs']['serial']}) before the next maintenance window.", "warning")
         dtype = world.obj(refs["device_type"])
         manufacturer = world.obj(dtype["refs"]["manufacturer"])["attrs"]["name"]
         # Select a fixed catalog cage before considering occupancy. Later ports
@@ -234,7 +231,11 @@ def enrich(world):
             module_type = world.obj(module["refs"]["module_type"])
             maker = world.obj(module_type["refs"]["manufacturer"])["attrs"]["name"]
             bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
-            journal(key, "optic-replacement-plan", dated(key, "optic-replacement-plan", as_of, 40, 20), "Optical replacement preparation",
-                f"Device: {attrs['name']}\nInterface: {port['attrs']['name']}\nInstalled part: {maker} {module_type['attrs']['model']}\nInstalled serial: {module['attrs']['serial']}\nBay: {bay}\nFacilities contact: {facilities}\nUse the installed part and current device technical contact to review a like-for-like replacement. For a captive AOC end, replace the complete assembly. Preserve the interface and its dependent records; no module deletion, hot-swap or replacement is recorded as executed.")
+            assembly = any(part["manufacturer"] == maker and part["model"] == module_type["attrs"]["model"] and part.get("assembly")
+                           for part in world.catalog["optics"]["parts"].values())
+            replace = "the whole cable assembly" if assembly else "the transceiver"
+            journal(key, "optic-replacement-plan", dated(key, "optic-replacement-plan", as_of, 40, 20), "Optic replacement note",
+                f"{port['attrs']['name']} ({bay}) holds {maker} {module_type['attrs']['model']} serial {module['attrs']['serial']}; "
+                f"if it fails, swap in a like-for-like part and replace {replace}.")
     wireless_context(world)
     automation_records(world)

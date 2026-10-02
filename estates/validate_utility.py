@@ -24,7 +24,7 @@ perimeter or NERC CIP state is checked, claimed or claimable from these findings
 
 from collections import Counter, defaultdict
 from decimal import Decimal
-from ipaddress import ip_network
+from ipaddress import ip_interface, ip_network
 import math
 import re
 
@@ -630,6 +630,10 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if kind_of(vrf) != "vrf" or attrs(vrf).get("enforce_unique") is not True:
             report("utl-zone-isolation", vrf, "Each station segment needs its own uniqueness-enforcing "
                                               "routing context.")
+    segment_prefixes = defaultdict(list)
+    for key, obj in objects.items():
+        if obj["kind"] == "prefix" and refs(key).get("vlan") and refs(key).get("vrf") in ot_vrfs:
+            segment_prefixes[refs(key)["vrf"]].append(key)
     for key, obj in objects.items():
         network = ot_vrfs.get(refs(key).get("vrf"))
         if network is None:
@@ -650,6 +654,19 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 continue
         elif obj["kind"] == "vrf":
             continue
+        elif obj["kind"] == "ip_range":
+            # A held or pooled range wholly inside the zone's own segment prefix.
+            try:
+                ends = [ip_interface(attrs(key).get(field)).ip for field in ("start_address", "end_address")]
+            except (TypeError, ValueError):
+                ends = []
+            sites = {f"site/{sid}" for sid, _ in premises}
+            if ends and any(kind_of(prefix) == "prefix" and refs(prefix).get("vrf") == refs(key).get("vrf")
+                            and refs(prefix).get("scope_site") in sites
+                            and refs(prefix).get("vlan") == f"vlan/{refs(prefix)['scope_site'].removeprefix('site/')}/{network}"
+                            and all(end in ip_network(attrs(prefix).get("prefix")) for end in ends)
+                            for prefix in segment_prefixes.get(refs(key).get("vrf"), ())):
+                continue
         report("utl-zone-isolation", key, "Only a substation's own station segments and the records owned by that "
                                           "substation's station equipment may use a station routing context.")
 
