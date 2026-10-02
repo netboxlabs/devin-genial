@@ -173,128 +173,376 @@ ANCHORS = {
 }
 # Street-address pools, keyed (locality, first anchor name). A street run is
 # addressed on its own street; a point anchor uses real streets inside its
-# neighbourhood or suburb — the road OpenStreetMap Nominatim reverse-geocoded at
-# the anchor centre (build/geo-verify, 2026-10-01) plus well-known main streets
-# checked the same way. A site hashes its id onto one street and a house number;
-# inside Chicago a directional street takes its grid number from the site's own
-# coordinate (800 numbers a mile from State and Madison), so the number agrees
-# with the map pin. Numbers are synthetic: never a surveyed or real premises.
+# neighbourhood or suburb: the road OpenStreetMap Nominatim reverse-geocoded at
+# the anchor centre plus the streets (with a house number, in that locality)
+# that reverse geocoding returned at eight more points inside the anchor's
+# jitter box (build/r3a/samples.json, 2026-10-02). A site hashes its id onto one
+# street; its house number follows its position (see street_number), never a
+# hash, so two nearby sites on one street get nearby numbers. Numbers are
+# synthetic: never a surveyed or real premises.
 ADDRESS_STREETS = {
-    ("Chicago", "Loop"): ("South LaSalle Street", "West Adams Street"),
-    ("Chicago", "Fulton Market"): ("West Fulton Market", "West Lake Street"),
-    ("Chicago", "Pilsen"): ("West 18th Street", "West 18th Place"),
-    ("Chicago", "Cermak"): ("East Cermak Road", "South Indiana Avenue"),
-    ("Chicago", "Ravenswood"): ("North Ravenswood Avenue",),
-    ("Chicago", "Bridgeport"): ("South Halsted Street", "South Keeley Street"),
-    ("Chicago", "Logan Square"): ("West Belden Avenue", "North Milwaukee Avenue"),
-    ("Chicago", "Wicker Park"): ("North Hoyne Avenue", "North Damen Avenue"),
-    ("Chicago", "Garfield Park"): ("West Madison Street",),
-    ("Chicago", "Bronzeville"): ("East 43rd Street",),
-    ("Chicago", "Hyde Park"): ("South Woodlawn Avenue", "South Greenwood Avenue"),
-    ("Chicago", "Lincoln Square"): ("West Foster Avenue",),
-    ("Chicago", "Chatham"): ("South Vernon Avenue",),
-    ("Chicago", "Lakeview"): ("West Belmont Avenue",),
-    ("Chicago", "Portage Park"): ("West Hutchinson Street",),
-    ("Chicago", "Little Village"): ("West 26th Street",),
-    ("Chicago", "Austin"): ("North Central Avenue",),
-    ("Elk Grove Village", "Elk Grove"): ("Arthur Avenue", "Morse Avenue"),
-    ("Franklin Park", "Franklin Park"): ("Franklin Avenue",),
-    ("Northlake", "Northlake"): ("East Dickens Avenue",),
-    ("Oak Park", "Oak Park"): ("South Ridgeland Avenue",),
-    ("Schaumburg", "Schaumburg"): ("North Pleasant Drive",),
-    ("Skokie", "Skokie"): ("Kolmar Avenue",),
-    ("Chicago", "Wabash"): ("South Wabash Avenue",),
-    ("Chicago", "Halsted"): ("South Halsted Street",),
-    ("Chicago", "Clark"): ("North Clark Street",),
-    ("Chicago", "Ashland"): ("South Ashland Avenue",),
-    ("Chicago", "Damen"): ("South Damen Avenue",),
-    ("Chicago", "Kedzie"): ("South Kedzie Avenue",),
-    ("Chicago", "Montrose"): ("West Montrose Avenue",),
-    ("Chicago", "Archer"): ("South Archer Avenue",),
-    ("Detroit", "Downtown"): ("Woodward Avenue",),
-    ("Detroit", "Corktown"): ("Michigan Avenue",),
-    ("Detroit", "Eastern Market"): ("Alfred Street",),
-    ("Detroit", "New Center"): ("West Grand Boulevard",),
-    ("Detroit", "Midtown"): ("Cass Avenue",),
-    ("Detroit", "Southwest Detroit"): ("Bivouac Street",),
-    ("Detroit", "Palmer Park"): ("West 7 Mile Road",),
-    ("Detroit", "Rosedale Park"): ("Archdale Street",),
-    ("Detroit", "East English Village"): ("Chatsworth Street",),
-    ("Detroit", "Boston Edison"): ("Chicago Boulevard",),
-    ("Detroit", "Woodbridge"): ("Trumbull Street",),
-    ("Detroit", "Mexicantown"): ("Bagley Street",),
-    ("Highland Park", "Highland Park"): ("Gerald Street",),
-    ("Dearborn", "Dearborn"): ("Michigan Avenue",),
-    ("Southfield", "Southfield"): ("West 10 Mile Road",),
-    ("Troy", "Troy"): ("Livernois Road",),
-    ("Warren", "Warren"): ("Campbell Avenue",),
-    ("Livonia", "Livonia"): ("Merriman Road",),
-    ("Royal Oak", "Royal Oak"): ("South Main Street",),
-    ("Novi", "Novi"): ("Novi Road",),
-    ("Detroit", "Woodward"): ("Woodward Avenue",),
-    ("Detroit", "Gratiot"): ("Gratiot Avenue",),
-    ("Detroit", "Cass"): ("Cass Avenue",),
-    ("Detroit", "Livernois"): ("Livernois Avenue",),
-    ("Detroit", "Vernor"): ("West Vernor Highway",),
-    ("Detroit", "Bagley"): ("Bagley Street",),
-    ("Detroit", "Grand River"): ("Grand River Avenue",),
-    ("Detroit", "Mack"): ("Mack Avenue",),
-    ("Cleveland", "Downtown"): ("Eagle Avenue",),
-    ("Cleveland", "Flats East"): ("West 3rd Street",),
-    ("Cleveland", "Midtown"): ("Euclid Avenue",),
-    ("Cleveland", "University Circle"): ("Mayfield Road",),
-    ("Cleveland", "Ohio City"): ("Chatham Avenue",),
-    ("Cleveland", "Tremont"): ("West 11th Street",),
-    ("Cleveland", "Slavic Village"): ("Warsaw Avenue",),
-    ("Cleveland", "West Park"): ("West 144th Street",),
-    ("Cleveland", "Buckeye Shaker"): ("East 126th Street",),
-    ("Cleveland", "Old Brooklyn"): ("Tate Avenue",),
-    ("Cleveland", "Fairfax"): ("East 88th Street",),
-    ("Lakewood", "Lakewood"): ("Warren Road",),
-    ("Westlake", "Westlake"): ("Beechwood Drive",),
-    ("Independence", "Independence"): ("Brecksville Road",),
-    ("Parma", "Parma"): ("Snow Road",),
-    ("Beachwood", "Beachwood"): ("Chagrin Boulevard",),
-    ("Brooklyn", "Brooklyn"): ("Ridge Road",),
-    ("Shaker Heights", "Shaker Heights"): ("South Woodland Road",),
-    ("Cleveland", "Euclid"): ("Euclid Avenue",),
-    ("Cleveland", "Broadway"): ("Broadway Avenue",),
-    ("Cleveland", "Lorain"): ("Lorain Avenue",),
-    ("Cleveland", "Prospect"): ("Prospect Avenue East",),
-    ("Cleveland", "Carnegie"): ("Carnegie Avenue",),
-    ("Cleveland", "Woodland"): ("Woodland Avenue",),
-    ("Cleveland", "Fleet"): ("Fleet Avenue",),
-    ("Cleveland", "Denison"): ("Denison Avenue",),
-    ("Milwaukee", "Downtown"): ("West Wells Street",),
-    ("Milwaukee", "Third Ward"): ("North Broadway",),
-    ("Milwaukee", "Menomonee Valley"): ("West Canal Street",),
-    ("Milwaukee", "Walkers Point"): ("West National Avenue",),
-    ("Milwaukee", "Bay View"): ("South Kinnickinnic Avenue",),
-    ("Milwaukee", "East Side"): ("North Newhall Street",),
-    ("Milwaukee", "Sherman Park"): ("West Burleigh Street",),
-    ("Milwaukee", "Washington Heights"): ("North 53rd Street",),
-    ("Milwaukee", "Lincoln Village"): ("South 10th Street",),
-    ("Milwaukee", "Riverwest"): ("North Weil Street",),
-    ("Milwaukee", "Harambee"): ("West Center Street",),
-    ("Milwaukee", "Clarke Square"): ("South 23rd Street",),
-    ("West Allis", "West Allis"): ("West Greenfield Avenue",),
-    ("Wauwatosa", "Wauwatosa"): ("Harwood Avenue",),
-    ("Oak Creek", "Oak Creek"): ("South Howell Avenue",),
-    ("Brookfield", "Brookfield"): ("West North Avenue",),
-    ("Glendale", "Glendale"): ("West Brantwood Avenue",),
-    ("Milwaukee", "Brady"): ("East Brady Street",),
-    ("Milwaukee", "Kilbourn"): ("West Kilbourn Avenue",),
-    ("Milwaukee", "Wells"): ("West Wells Street",),
-    ("Milwaukee", "Vliet"): ("West Vliet Street",),
-    ("Milwaukee", "Locust"): ("West Locust Street",),
-    ("Milwaukee", "Greenfield"): ("West Greenfield Avenue",),
-    ("Milwaukee", "Mitchell"): ("West Mitchell Street",),
-    ("Milwaukee", "Burleigh"): ("West Burleigh Street",),
+    ('Chicago', 'Loop'): ('South LaSalle Street', 'West Adams Street', 'North Dearborn Street', 'North Franklin Street', 'West Jackson Boulevard', 'South Dearborn Street'),
+    ('Chicago', 'Fulton Market'): ('West Fulton Market', 'West Lake Street', 'North Green Street', 'North Aberdeen Street', 'North Racine Avenue', 'West Washington Boulevard'),
+    ('Chicago', 'Pilsen'): ('West 18th Street', 'West 18th Place', 'South Allport Street', 'West 17th Street', 'West 21st Street', 'West 19th Street'),
+    ('Chicago', 'Cermak'): ('East Cermak Road', 'South Indiana Avenue', 'South Wabash Avenue'),
+    ('Chicago', 'Ravenswood'): ('North Ravenswood Avenue', 'North Paulina Street', 'West Ainslie Street', 'West Lawrence Avenue', 'North Wolcott Avenue'),
+    ('Chicago', 'Bridgeport'): ('South Halsted Street', 'South Keeley Street', 'West 31st Street', 'South Poplar Avenue', 'South Bonfield Street', 'South Lituanica Avenue'),
+    ('Chicago', 'Logan Square'): ('West Belden Avenue', 'North Milwaukee Avenue', 'North Kedzie Boulevard', 'North Albany Avenue', 'North Spaulding Avenue', 'West Palmer Boulevard'),
+    ('Chicago', 'Wicker Park'): ('North Hoyne Avenue', 'North Damen Avenue', 'West North Avenue', 'North Leavitt Street', 'West Schiller Street', 'West Hirsch Street'),
+    ('Chicago', 'Garfield Park'): ('West Madison Street', 'West Wilcox Street'),
+    ('Chicago', 'Bronzeville'): ('East 43rd Street', 'South Calumet Avenue', 'South Indiana Avenue', 'East 44th Street'),
+    ('Chicago', 'Hyde Park'): ('South Woodlawn Avenue', 'South Greenwood Avenue', 'South Ingleside Avenue', 'East 53rd Street', 'South Drexel Avenue', 'East Hyde Park Boulevard'),
+    ('Chicago', 'Lincoln Square'): ('West Foster Avenue', 'West Berwyn Avenue', 'North Oakley Avenue', 'North Lincoln Avenue', 'North Western Avenue'),
+    ('Chicago', 'Chatham'): ('South Vernon Avenue', 'South Saint Lawrence Avenue', 'East 86th Street', 'East 85th Street', 'South Calumet Avenue', 'East 83rd Street'),
+    ('Chicago', 'Lakeview'): ('West Belmont Avenue', 'North Seminary Avenue', 'North Racine Avenue', 'North Kenmore Avenue'),
+    ('Chicago', 'Portage Park'): ('West Hutchinson Street', 'North Long Avenue', 'North Central Avenue', 'North Parkside Avenue', 'North Major Avenue', 'West Agatite Avenue'),
+    ('Chicago', 'Little Village'): ('West 26th Street', 'South Homan Avenue', 'South Millard Avenue', 'West 27th Street', 'South Saint Louis Avenue', 'South Drake Avenue'),
+    ('Chicago', 'Austin'): ('North Central Avenue', 'West Rice Street', 'North Waller Avenue', 'North Lotus Avenue', 'North Long Avenue', 'West Superior Street'),
+    ('Elk Grove Village', 'Elk Grove'): ('Pratt Boulevard', 'Lively Boulevard'),
+    ('Franklin Park', 'Franklin Park'): ('Edgington Street', 'Pacific Avenue', 'Schiller Boulevard', 'Belmont Avenue', 'Minneapolis Avenue', '25th Avenue'),
+    ('Northlake', 'Northlake'): ('East Dickens Avenue', 'East Dewey Avenue', 'Village Drive', 'East Lyndale Avenue'),
+    ('Oak Park', 'Oak Park'): ('South Ridgeland Avenue', 'South Harvey Avenue', 'Randolph Street', 'Lake Street'),
+    ('Schaumburg', 'Schaumburg'): ('North Pleasant Drive',),
+    ('Skokie', 'Skokie'): ('Kolmar Avenue', 'Dempster Street', 'Concord Lane', 'Cleveland Street', 'Kostner Avenue', 'Washington Street'),
+    ('Chicago', 'Wabash'): ('South Wabash Avenue',),
+    ('Chicago', 'Halsted'): ('South Halsted Street',),
+    ('Chicago', 'Clark'): ('North Clark Street',),
+    ('Chicago', 'Ashland'): ('South Ashland Avenue',),
+    ('Chicago', 'Damen'): ('South Damen Avenue',),
+    ('Chicago', 'Kedzie'): ('South Kedzie Avenue',),
+    ('Chicago', 'Montrose'): ('West Montrose Avenue',),
+    ('Chicago', 'Archer'): ('South Archer Avenue',),
+    ('Detroit', 'Downtown'): ('Woodward Avenue', 'West Montcalm Street', 'East Grand River Avenue', 'Grand River Avenue', 'Cass Avenue', 'East Montcalm Street'),
+    ('Detroit', 'Corktown'): ('Michigan Avenue', 'Cherry Street', '10th Street', 'Rosa Parks Boulevard'),
+    ('Detroit', 'Eastern Market'): ('Orleans Street', 'Russell Street', 'Rivard Street', 'Erskine Street'),
+    ('Detroit', 'New Center'): ('West Grand Boulevard', '2nd Avenue', 'West Baltimore Avenue', 'East Milwaukee Street', 'Lothrop Street'),
+    ('Detroit', 'Midtown'): ('Cass Avenue', 'Woodward Avenue', 'West Forest Avenue', 'West Alexandrine Street', 'West Willis Street', 'West Canfield Street'),
+    ('Detroit', 'Southwest Detroit'): ('Bivouac Street', 'Manson Street', 'Livernois Avenue', 'McMillan Street', 'Hammond Street'),
+    ('Detroit', 'Palmer Park'): ('West 7 Mile Road', 'Pontchartrain Boulevard'),
+    ('Detroit', 'Rosedale Park'): ('Southfield Road', 'Oakfield Avenue', 'Rosemont Avenue', 'Grand River Avenue', 'Penrod Street'),
+    ('Detroit', 'East English Village'): ('Chatsworth Street', 'Haverhill Street', 'Balfour Road', 'Nottingham Road', 'East Warren Avenue', 'Buckingham Avenue'),
+    ('Detroit', 'Boston Edison'): ('West Boston Boulevard', 'Hamilton Avenue', 'Atkinson Street', 'Longfellow Street', 'Edison Street'),
+    ('Detroit', 'Woodbridge'): ('Trumbull Street', 'Commonwealth Street', 'West Warren Avenue', 'Merrick Street'),
+    ('Detroit', 'Mexicantown'): ('Bagley Street', 'West Vernor Highway', 'Hubbard Street', 'Porter Street', 'Scotten Street', 'West Grand Boulevard'),
+    ('Highland Park', 'Highland Park'): ('Gerald Street', 'Victor Street', 'Woodward Avenue', '2nd Avenue', 'East Grand Avenue', 'Manchester Parkway'),
+    ('Dearborn', 'Dearborn'): ('Michigan Avenue', 'Bingham Street', 'Colson Street', 'Wellesley Street', 'Middlesex Street', 'Schaefer Road'),
+    ('Southfield', 'Southfield'): ('West 10 Mile Road', 'Jeanette Street', 'Catalina Drive', 'George Washington Drive', 'Filmore Street', 'New Hampshire Drive'),
+    ('Troy', 'Troy'): ('Livernois Road', 'Telford Drive', 'Niles Drive', 'Donaldson Drive'),
+    ('Warren', 'Warren'): ('Campbell Avenue', 'Greentree Drive', 'Meadowbrook Drive', 'Lorraine Avenue', 'Hoover Road', 'Olive Street'),
+    ('Livonia', 'Livonia'): ('Merriman Road', 'Denne Street', 'Elmira Street', 'Hubbell Street', 'Plymouth Road'),
+    ('Royal Oak', 'Royal Oak'): ('South Main Street', 'East University Avenue', 'Oakland Avenue', 'West 4th Street', 'North Main Street', 'West 5th Street'),
+    ('Novi', 'Novi'): ('Grand River Avenue', 'Flint Street', 'Stassen Avenue', 'West 11 Mile Road', 'Durson Street'),
+    ('Detroit', 'Woodward'): ('Woodward Avenue',),
+    ('Detroit', 'Gratiot'): ('Gratiot Avenue',),
+    ('Detroit', 'Cass'): ('Cass Avenue',),
+    ('Detroit', 'Livernois'): ('Livernois Avenue',),
+    ('Detroit', 'Vernor'): ('West Vernor Highway',),
+    ('Detroit', 'Bagley'): ('Bagley Street',),
+    ('Detroit', 'Grand River'): ('Grand River Avenue',),
+    ('Detroit', 'Mack'): ('Mack Avenue',),
+    ('Cleveland', 'Downtown'): ('Ontario Street', 'Bolivar Road', 'Canal Road', 'Carnegie Avenue', 'East 9th Street'),
+    ('Cleveland', 'Flats East'): ('West 3rd Street', 'Scranton Road'),
+    ('Cleveland', 'Midtown'): ('Euclid Avenue', 'Chester Avenue', 'Carnegie Avenue', 'East 65th Street', 'Cedar Avenue'),
+    ('Cleveland', 'University Circle'): ('Euclid Avenue', 'Bellflower Road'),
+    ('Cleveland', 'Ohio City'): ('York Avenue', 'West 33rd Street', 'West 26th Street', 'Carroll Avenue', 'Monroe Avenue'),
+    ('Cleveland', 'Tremont'): ('West 11th Street', 'Starkweather Avenue', 'West 14th Street'),
+    ('Cleveland', 'Slavic Village'): ('Warsaw Avenue', 'Lansing Avenue', 'East 68th Street', 'Harvard Avenue', 'Ottawa Road', 'Hege Avenue'),
+    ('Cleveland', 'West Park'): ('West 144th Street', 'Emery Avenue', 'Saint James Avenue', 'Liberty Avenue', 'West 150th Street', 'Albrus Avenue'),
+    ('Cleveland', 'Buckeye Shaker'): ('East 126th Street', 'East 130th Street', 'Buckingham Avenue', 'East 122nd Street', 'East 120th Street'),
+    ('Cleveland', 'Old Brooklyn'): ('Tate Avenue', 'Treadway Avenue', 'Searsdale Avenue', 'Broadview Road', 'Tampa Avenue', 'Saratoga Avenue'),
+    ('Cleveland', 'Fairfax'): ('East 88th Street', 'East 93rd Street', 'East 85th Street', 'Folsom Avenue', 'East 95th Street', 'East 89th Street'),
+    ('Lakewood', 'Lakewood'): ('Warren Road', 'Belle Avenue', 'Elmwood Avenue', 'Marlowe Avenue', 'Mars Avenue', 'Hilliard Road'),
+    ('Westlake', 'Westlake'): ('Beechwood Drive', 'Berkeley Drive', 'Dover Center Road', 'Sleepy Hollow Drive', 'Maple Drive'),
+    ('Independence', 'Independence'): ('Brecksville Road', 'Stone Road', 'Hemlock Road'),
+    ('Parma', 'Parma'): ('Snow Road', 'Krueger Avenue', 'Gilbert Avenue', 'Wilber Avenue', 'West 54th Street'),
+    ('Beachwood', 'Beachwood'): ('Chagrin Boulevard', 'Halburton Road', 'Letchworth Road'),
+    ('Brooklyn', 'Brooklyn'): ('Ridge Road', 'North Amber Drive', 'Wefel Avenue', 'Memphis Avenue'),
+    ('Shaker Heights', 'Shaker Heights'): ('South Woodland Road', 'Fayette Road', 'Falmouth Road', 'Almar Drive', 'Marchmont Road', 'Warrensville Center Road'),
+    ('Cleveland', 'Euclid'): ('Euclid Avenue',),
+    ('Cleveland', 'Broadway'): ('Broadway Avenue',),
+    ('Cleveland', 'Lorain'): ('Lorain Avenue',),
+    ('Cleveland', 'Prospect'): ('Prospect Avenue East',),
+    ('Cleveland', 'Carnegie'): ('Carnegie Avenue',),
+    ('Cleveland', 'Woodland'): ('Woodland Avenue',),
+    ('Cleveland', 'Fleet'): ('Fleet Avenue',),
+    ('Cleveland', 'Denison'): ('Denison Avenue',),
+    ('Milwaukee', 'Downtown'): ('West Wells Street', 'West Wisconsin Avenue', 'North Doctor Martin Luther King Junior Drive', 'West State Street', 'West Michigan Street', 'North James Lovell Street'),
+    ('Milwaukee', 'Third Ward'): ('North Broadway', 'East Buffalo Street', 'West Saint Paul Avenue', 'South Water Street', 'South 1st Street'),
+    ('Milwaukee', 'Menomonee Valley'): ('West Canal Street', 'West Greves Street', 'South Layton Boulevard'),
+    ('Milwaukee', 'Walkers Point'): ('West National Avenue', 'South 4th Street', 'West Bruce Street', 'West Washington Street', 'South 3rd Street', 'West Virginia Street'),
+    ('Milwaukee', 'Bay View'): ('South Kinnickinnic Avenue', 'South Logan Avenue', 'South Adams Avenue', 'South Herman Street', 'South Howell Avenue', 'South Lenox Street'),
+    ('Milwaukee', 'East Side'): ('North Newhall Street', 'North Bartlett Avenue', 'East Webster Place', 'North Dousman Street', 'East Park Place'),
+    ('Milwaukee', 'Sherman Park'): ('West Burleigh Street', 'West Auer Avenue', 'North 39th Street', 'North 38th Street', 'North 42nd Street'),
+    ('Milwaukee', 'Washington Heights'): ('North 53rd Street', 'West Washington Boulevard', 'North 55th Street', 'North 50th Street'),
+    ('Milwaukee', 'Lincoln Village'): ('South 10th Street', 'South 9th Street', 'South 12th Street', 'South 8th Street', 'South 13th Street', 'West Lincoln Avenue'),
+    ('Milwaukee', 'Riverwest'): ('North Weil Street', 'East Roadsmeet Street', 'North Fratney Street', 'North Pierce Street', 'East Chambers Street'),
+    ('Milwaukee', 'Harambee'): ('West Center Street', 'North 2nd Street', 'North Dr. William Finlayson Street', 'West Clarke Street', 'East Hadley Street', 'North Vel R. Phillips Avenue'),
+    ('Milwaukee', 'Clarke Square'): ('South 23rd Street', 'West Pierce Street', 'South 21st Street', 'South 25th Street', 'South 20th Street', 'West National Avenue'),
+    ('West Allis', 'West Allis'): ('West Greenfield Avenue', 'South 74th Street', 'South 78th Street', 'South 76th Street'),
+    ('Wauwatosa', 'Wauwatosa'): ('Harwood Avenue', 'Saint James Street', 'Milwaukee Avenue'),
+    ('Oak Creek', 'Oak Creek'): ('South Howell Avenue', 'South Sunnyview Drive', 'East Centennial Drive', 'West Sunnyview Drive'),
+    ('Brookfield', 'Brookfield'): ('West North Avenue', 'Pilgrim Parkway West', 'Pilgrim Road'),
+    ('Glendale', 'Glendale'): ('West Brantwood Avenue', 'North Pine Shore Drive', 'North Green Bay Avenue', 'North Atwahl Drive', 'West Mill Road'),
+    ('Milwaukee', 'Brady'): ('East Brady Street',),
+    ('Milwaukee', 'Kilbourn'): ('West Kilbourn Avenue',),
+    ('Milwaukee', 'Wells'): ('West Wells Street',),
+    ('Milwaukee', 'Vliet'): ('West Vliet Street',),
+    ('Milwaukee', 'Locust'): ('West Locust Street',),
+    ('Milwaukee', 'Greenfield'): ('West Greenfield Avenue',),
+    ('Milwaukee', 'Mitchell'): ('West Mitchell Street',),
+    ('Milwaukee', 'Burleigh'): ('West Burleigh Street',),
+}
+# Numbering references for streets outside the Chicago and Milwaukee County
+# grids: (latitude, longitude, house number) points OpenStreetMap Nominatim
+# returned for that street in that locality (reverse samples inside the anchor
+# boxes, plus forward lookups of a numbered address on each Detroit and
+# Cleveland street run; build/r3a/geo-cache.json). Two well-separated points
+# number a street linearly along the line through them; one point numbers it by
+# distance from the locality's address origin (ADDRESS_ORIGINS).
+STREET_REFS = {
+    ('Beachwood', 'Chagrin Boulevard'): ((41.46579, -81.50581, 24601), (41.4652, -81.51295, 23511)),
+    ('Beachwood', 'Halburton Road'): ((41.4666, -81.51139, 23748),),
+    ('Beachwood', 'Letchworth Road'): ((41.46795, -81.50874, 24184),),
+    ('Brookfield', 'Pilgrim Parkway West'): ((43.05812, -88.10959, 2115),),
+    ('Brookfield', 'Pilgrim Road'): ((43.06347, -88.10587, 2440),),
+    ('Brookfield', 'West North Avenue'): ((43.06085, -88.10284, 15300), (43.06068, -88.11055, 16005)),
+    ('Brooklyn', 'Memphis Avenue'): ((41.43974, -81.73885, 7619),),
+    ('Brooklyn', 'North Amber Drive'): ((41.4419, -81.73818, 4192),),
+    ('Brooklyn', 'Ridge Road'): ((41.44296, -81.73538, 4152), (41.43667, -81.73543, 4406)),
+    ('Brooklyn', 'Wefel Avenue'): ((41.43749, -81.73809, 7586),),
+    ('Cleveland', 'Albrus Avenue'): ((41.44514, -81.79509, 14401),),
+    ('Cleveland', 'Bellflower Road'): ((41.50805, -81.60875, 11038), (41.51149, -81.60491, 11424)),
+    ('Cleveland', 'Bolivar Road'): ((41.49805, -81.68353, 1020),),
+    ('Cleveland', 'Broadview Road'): ((41.43313, -81.69697, 4505),),
+    ('Cleveland', 'Broadway Avenue'): ((41.451954, -81.631576, 8000),),
+    ('Cleveland', 'Buckingham Avenue'): ((41.48516, -81.5977, 12191),),
+    ('Cleveland', 'Canal Road'): ((41.49389, -81.68863, 2335),),
+    ('Cleveland', 'Carnegie Avenue'): ((41.49638, -81.68179, 1101), (41.50154, -81.6473, 6312)),
+    ('Cleveland', 'Carroll Avenue'): ((41.48499, -81.70616, 2700),),
+    ('Cleveland', 'Cedar Avenue'): ((41.50047, -81.65001, 5798),),
+    ('Cleveland', 'Chester Avenue'): ((41.50589, -81.65273, 5499), (41.50653, -81.64997, 5768)),
+    ('Cleveland', 'Denison Avenue'): ((41.4514527, -81.7119644, 4000), (41.4617184, -81.7361156, 7000)),
+    ('Cleveland', 'East 120th Street'): ((41.48299, -81.59883, 2718),),
+    ('Cleveland', 'East 122nd Street'): ((41.4809, -81.5976, 2873),),
+    ('Cleveland', 'East 126th Street'): ((41.48615, -81.59554, 2653), (41.47983, -81.59502, 2908)),
+    ('Cleveland', 'East 130th Street'): ((41.48512, -81.592, 2670),),
+    ('Cleveland', 'East 65th Street'): ((41.50352, -81.64591, 6401), (41.45315, -81.64503, 3864)),
+    ('Cleveland', 'East 68th Street'): ((41.4479, -81.64226, 4064),),
+    ('Cleveland', 'East 85th Street'): ((41.49709, -81.62767, 2253),),
+    ('Cleveland', 'East 88th Street'): ((41.49494, -81.62529, 2301),),
+    ('Cleveland', 'East 89th Street'): ((41.49816, -81.62464, 2170),),
+    ('Cleveland', 'East 93rd Street'): ((41.49712, -81.6218, 2256),),
+    ('Cleveland', 'East 95th Street'): ((41.49502, -81.62079, 2366),),
+    ('Cleveland', 'East 9th Street'): ((41.4995, -81.68544, 2079),),
+    ('Cleveland', 'Emery Avenue'): ((41.44412, -81.7923, 14163), (41.44416, -81.79769, 14671)),
+    ('Cleveland', 'Euclid Avenue'): ((41.5038095, -81.6538212, 5000), (41.51053, -81.60253, 11610)),
+    ('Cleveland', 'Fleet Avenue'): ((41.455742, -81.655359, 5000), (41.4559366, -81.6479495, 6000)),
+    ('Cleveland', 'Folsom Avenue'): ((41.49254, -81.6223, 9221),),
+    ('Cleveland', 'Harvard Avenue'): ((41.44827, -81.64761, 6022),),
+    ('Cleveland', 'Hege Avenue'): ((41.4496, -81.64917, 5799),),
+    ('Cleveland', 'Lansing Avenue'): ((41.45243, -81.64771, 6072),),
+    ('Cleveland', 'Liberty Avenue'): ((41.44192, -81.79096, 14026),),
+    ('Cleveland', 'Lorain Avenue'): ((41.477581, -81.72146, 5000), (41.467061, -81.753379, 10000)),
+    ('Cleveland', 'Monroe Avenue'): ((41.47909, -81.70634, 3193),),
+    ('Cleveland', 'Ontario Street'): ((41.49609, -81.68513, 2401),),
+    ('Cleveland', 'Ottawa Road'): ((41.45027, -81.64101, 6920),),
+    ('Cleveland', 'Prospect Avenue East'): ((41.501118, -81.66696, 3000),),
+    ('Cleveland', 'Saint James Avenue'): ((41.4402, -81.79229, 14155), (41.4401, -81.7977, 14663)),
+    ('Cleveland', 'Saratoga Avenue'): ((41.43191, -81.7, 2548),),
+    ('Cleveland', 'Scranton Road'): ((41.4885, -81.69459, 2028),),
+    ('Cleveland', 'Searsdale Avenue'): ((41.43712, -81.7027, 2850),),
+    ('Cleveland', 'Starkweather Avenue'): ((41.47735, -81.68629, 929),),
+    ('Cleveland', 'Tampa Avenue'): ((41.43265, -81.7027, 2954),),
+    ('Cleveland', 'Tate Avenue'): ((41.43491, -81.69999, 2498), (41.43493, -81.69595, 2036)),
+    ('Cleveland', 'Treadway Avenue'): ((41.43681, -81.69731, 2042),),
+    ('Cleveland', 'Warsaw Avenue'): ((41.44963, -81.645, 6478),),
+    ('Cleveland', 'West 11th Street'): ((41.47184, -81.68923, 2983),),
+    ('Cleveland', 'West 144th Street'): ((41.44201, -81.79506, 4102), (41.43948, -81.79489, 4299)),
+    ('Cleveland', 'West 14th Street'): ((41.47697, -81.69191, 2592), (41.47329, -81.69115, 2871)),
+    ('Cleveland', 'West 150th Street'): ((41.44088, -81.79996, 4181),),
+    ('Cleveland', 'West 26th Street'): ((41.48129, -81.70222, 2259),),
+    ('Cleveland', 'West 33rd Street'): ((41.47955, -81.70853, 2168),),
+    ('Cleveland', 'West 3rd Street'): ((41.49, -81.68744, 2003),),
+    ('Cleveland', 'Woodland Avenue'): ((41.487942, -81.6485625, 6000), (41.488165, -81.623643, 9000)),
+    ('Cleveland', 'York Avenue'): ((41.47939, -81.70324, 2899),),
+    ('Dearborn', 'Bingham Street'): ((42.3244, -83.1737, 5067), (42.3202, -83.17357, 4374)),
+    ('Dearborn', 'Colson Street'): ((42.32463, -83.179, 13849),),
+    ('Dearborn', 'Michigan Avenue'): ((42.3211266, -83.1798482, 14000), (42.32234, -83.17638, 13620)),
+    ('Dearborn', 'Middlesex Street'): ((42.3223, -83.18039, 4846),),
+    ('Dearborn', 'Schaefer Road'): ((42.32543, -83.17644, 5141),),
+    ('Dearborn', 'Wellesley Street'): ((42.32031, -83.17903, 13937),),
+    ('Detroit', '10th Street'): ((42.32935, -83.06736, 1825),),
+    ('Detroit', '2nd Avenue'): ((42.37142, -83.07821, 7601), (42.36702, -83.07502, 6310)),
+    ('Detroit', 'Atkinson Street'): ((42.38105, -83.08935, 945), (42.38005, -83.09207, 1135)),
+    ('Detroit', 'Bagley Street'): ((42.32441, -83.081618, 3000), (42.32148, -83.09011, 3900)),
+    ('Detroit', 'Balfour Road'): ((42.40112, -82.94767, 5159),),
+    ('Detroit', 'Bivouac Street'): ((42.31773, -83.10997, 6170),),
+    ('Detroit', 'Buckingham Avenue'): ((42.40227, -82.94481, 5171),),
+    ('Detroit', 'Cass Avenue'): ((42.356227, -83.066675, 5000), (42.33653, -83.05499, 2130)),
+    ('Detroit', 'Chatsworth Street'): ((42.399, -82.94499, 4849),),
+    ('Detroit', 'Cherry Street'): ((42.33384, -83.06747, 1426),),
+    ('Detroit', 'Commonwealth Street'): ((42.35511, -83.08163, 5458), (42.34896, -83.07873, 4535)),
+    ('Detroit', 'East Grand River Avenue'): ((42.3345, -83.04814, 25), (42.33637, -83.04682, 311)),
+    ('Detroit', 'East Milwaukee Street'): ((42.36949, -83.07121, 60),),
+    ('Detroit', 'East Montcalm Street'): ((42.33967, -83.0507, 119),),
+    ('Detroit', 'East Warren Avenue'): ((42.39894, -82.94902, 15486),),
+    ('Detroit', 'Edison Street'): ((42.38283, -83.0879, 730),),
+    ('Detroit', 'Erskine Street'): ((42.35189, -83.0411, 1555),),
+    ('Detroit', 'Grand River Avenue'): ((42.33448, -83.05372, 511), (42.39918, -83.21371, 17420)),
+    ('Detroit', 'Gratiot Avenue'): ((42.3561031, -83.0293199, 3000), (42.378898, -83.014515, 8000)),
+    ('Detroit', 'Hamilton Avenue'): ((42.38491, -83.09483, 9851),),
+    ('Detroit', 'Hammond Street'): ((42.32138, -83.11001, 2500),),
+    ('Detroit', 'Haverhill Street'): ((42.40095, -82.94252, 4962), (42.39887, -82.94115, 4704)),
+    ('Detroit', 'Hubbard Street'): ((42.3235, -83.093, 2100),),
+    ('Detroit', 'Livernois Avenue'): ((42.3693669, -83.1387181, 10000), (42.31493, -83.11011, 1807)),
+    ('Detroit', 'Longfellow Street'): ((42.38122, -83.09482, 1317),),
+    ('Detroit', 'Lothrop Street'): ((42.3698, -83.07959, 726),),
+    ('Detroit', 'Mack Avenue'): ((42.3543003, -83.0393173, 2000), (42.366964, -83.005907, 8000)),
+    ('Detroit', 'Manson Street'): ((42.32032, -83.10742, 2340),),
+    ('Detroit', 'McMillan Street'): ((42.31804, -83.10596, 5921),),
+    ('Detroit', 'Merrick Street'): ((42.35316, -83.08312, 1801),),
+    ('Detroit', 'Michigan Avenue'): ((42.3316622, -83.0737382, 2000), (42.3312684, -83.1091863, 5000)),
+    ('Detroit', 'Nottingham Road'): ((42.39699, -82.94756, 4759),),
+    ('Detroit', 'Oakfield Avenue'): ((42.40159, -83.21437, 15319),),
+    ('Detroit', 'Orleans Street'): ((42.34999, -83.03805, 2900),),
+    ('Detroit', 'Penrod Street'): ((42.39949, -83.22154, 15072),),
+    ('Detroit', 'Pontchartrain Boulevard'): ((42.4285, -83.12394, 17877),),
+    ('Detroit', 'Porter Street'): ((42.31925, -83.08722, 3822),),
+    ('Detroit', 'Rivard Street'): ((42.34617, -83.04319, 2735),),
+    ('Detroit', 'Rosa Parks Boulevard'): ((42.32838, -83.06994, 1786),),
+    ('Detroit', 'Rosemont Avenue'): ((42.39738, -83.22025, 14900),),
+    ('Detroit', 'Russell Street'): ((42.34997, -83.04353, 3121),),
+    ('Detroit', 'Scotten Street'): ((42.31913, -83.09172, 1500),),
+    ('Detroit', 'Southfield Road'): ((42.39904, -83.21757, 15000),),
+    ('Detroit', 'Trumbull Street'): ((42.35325, -83.07965, 5101),),
+    ('Detroit', 'West 7 Mile Road'): ((42.4319193, -83.1284052, 2000),),
+    ('Detroit', 'West Alexandrine Street'): ((42.34998, -83.06228, 79),),
+    ('Detroit', 'West Baltimore Avenue'): ((42.36778, -83.07303, 65),),
+    ('Detroit', 'West Boston Boulevard'): ((42.38543, -83.08942, 701),),
+    ('Detroit', 'West Canfield Street'): ((42.35097, -83.06795, 674),),
+    ('Detroit', 'West Forest Avenue'): ((42.35309, -83.06672, 477), (42.35374, -83.06382, 91)),
+    ('Detroit', 'West Grand Boulevard'): ((42.37001, -83.07582, 3031), (42.32445, -83.09031, 532)),
+    ('Detroit', 'West Montcalm Street'): ((42.33882, -83.05344, 50),),
+    ('Detroit', 'West Vernor Highway'): ((42.3186696, -83.099994, 5000), (42.3237, -83.08766, 3554)),
+    ('Detroit', 'West Warren Avenue'): ((42.35146, -83.08194, 1776),),
+    ('Detroit', 'West Willis Street'): ((42.34917, -83.06652, 655),),
+    ('Detroit', 'Woodward Avenue'): ((42.3324368, -83.0471077, 1000), (42.357104, -83.064348, 5000)),
+    ('Elk Grove Village', 'Lively Boulevard'): ((42.00313, -87.97046, 1631), (41.99688, -87.97012, 2087)),
+    ('Elk Grove Village', 'Pratt Boulevard'): ((41.99802, -87.9673, 1265), (41.99795, -87.97271, 957)),
+    ('Franklin Park', '25th Avenue'): ((41.93792, -87.86579, 3234), (41.93215, -87.86544, 2962)),
+    ('Franklin Park', 'Belmont Avenue'): ((41.93598, -87.86221, 9451),),
+    ('Franklin Park', 'Edgington Street'): ((41.93741, -87.863, 3201),),
+    ('Franklin Park', 'Minneapolis Avenue'): ((41.93498, -87.86953, 9766),),
+    ('Franklin Park', 'Pacific Avenue'): ((41.93775, -87.86819, 9704),),
+    ('Franklin Park', 'Schiller Boulevard'): ((41.93313, -87.86276, 9499), (41.93319, -87.8683, 9718)),
+    ('Highland Park', '2nd Avenue'): ((42.40346, -83.09987, 13750),),
+    ('Highland Park', 'East Grand Avenue'): ((42.40553, -83.09282, 99),),
+    ('Highland Park', 'Gerald Street'): ((42.40557, -83.09688, 1),),
+    ('Highland Park', 'Manchester Parkway'): ((42.40546, -83.10067, 99),),
+    ('Highland Park', 'Victor Street'): ((42.40761, -83.09415, 97),),
+    ('Highland Park', 'Woodward Avenue'): ((42.40794, -83.09953, 14301), (42.4083, -83.09646, 14100)),
+    ('Independence', 'Brecksville Road'): ((41.37849, -81.63784, 6801),),
+    ('Independence', 'Hemlock Road'): ((41.37515, -81.63851, 7189),),
+    ('Independence', 'Stone Road'): ((41.38267, -81.6385, 7334),),
+    ('Lakewood', 'Belle Avenue'): ((41.48109, -81.79713, 1564), (41.47691, -81.79722, 2006)),
+    ('Lakewood', 'Elmwood Avenue'): ((41.48112, -81.80257, 1540), (41.47688, -81.80241, 2020)),
+    ('Lakewood', 'Hilliard Road'): ((41.48221, -81.80004, 14804),),
+    ('Lakewood', 'Marlowe Avenue'): ((41.479, -81.79574, 1814),),
+    ('Lakewood', 'Mars Avenue'): ((41.47899, -81.80384, 1726),),
+    ('Lakewood', 'Warren Road'): ((41.48179, -81.79997, 1500), (41.479, -81.80004, 1651)),
+    ('Livonia', 'Denne Street'): ((42.36628, -83.35026, 11178),),
+    ('Livonia', 'Elmira Street'): ((42.3663, -83.3554, 31644),),
+    ('Livonia', 'Hubbell Street'): ((42.36839, -83.34869, 11559),),
+    ('Livonia', 'Merriman Road'): ((42.3712, -83.35304, 11535), (42.36526, -83.35242, 10719)),
+    ('Livonia', 'Plymouth Road'): ((42.36829, -83.35722, 31735),),
+    ('Northlake', 'East Dewey Avenue'): ((41.91877, -87.89287, 320),),
+    ('Northlake', 'East Dickens Avenue'): ((41.9169, -87.8956, 250), (41.91698, -87.89152, 348)),
+    ('Northlake', 'East Lyndale Avenue'): ((41.91974, -87.89562, 254),),
+    ('Northlake', 'Village Drive'): ((41.91495, -87.89287, 307), (41.91497, -87.89832, 198)),
+    ('Novi', 'Durson Street'): ((42.47678, -83.48055, 43900),),
+    ('Novi', 'Flint Street'): ((42.47912, -83.47665, 43447),),
+    ('Novi', 'Grand River Avenue'): ((42.48249, -83.48275, 44020), (42.48046, -83.47591, 43407)),
+    ('Novi', 'Stassen Avenue'): ((42.47831, -83.48269, 44080),),
+    ('Novi', 'West 11 Mile Road'): ((42.48067, -83.48405, 44179),),
+    ('Oak Park', 'Lake Street'): ((41.88803, -87.7843, 333),),
+    ('Oak Park', 'Randolph Street'): ((41.88329, -87.78798, 501),),
+    ('Oak Park', 'South Harvey Avenue'): ((41.88289, -87.78138, 325),),
+    ('Oak Park', 'South Ridgeland Avenue'): ((41.88216, -87.78488, 331),),
+    ('Parma', 'Gilbert Avenue'): ((41.40722, -81.7256, 5845),),
+    ('Parma', 'Krueger Avenue'): ((41.40697, -81.7202, 5022),),
+    ('Parma', 'Snow Road'): ((41.40482, -81.71885, 4825), (41.40481, -81.72695, 6027)),
+    ('Parma', 'West 54th Street'): ((41.40794, -81.72267, 5667), (41.40166, -81.72287, 5922)),
+    ('Parma', 'Wilber Avenue'): ((41.40292, -81.7256, 5869),),
+    ('Royal Oak', 'East University Avenue'): ((42.49174, -83.14182, 303),),
+    ('Royal Oak', 'North Main Street'): ((42.49267, -83.14482, 423),),
+    ('Royal Oak', 'Oakland Avenue'): ((42.49147, -83.14727, 312),),
+    ('Royal Oak', 'South Main Street'): ((42.48964, -83.14468, 100),),
+    ('Royal Oak', 'West 4th Street'): ((42.48734, -83.14735, 316),),
+    ('Royal Oak', 'West 5th Street'): ((42.48634, -83.1446, 155),),
+    ('Schaumburg', 'North Pleasant Drive'): ((42.0330626, -88.0826975, 300),),
+    ('Shaker Heights', 'Almar Drive'): ((41.4714, -81.5343, 20677),),
+    ('Shaker Heights', 'Falmouth Road'): ((41.47601, -81.53925, 2978), (41.47745, -81.53706, 2811)),
+    ('Shaker Heights', 'Fayette Road'): ((41.47614, -81.5342, 20730),),
+    ('Shaker Heights', 'Marchmont Road'): ((41.47191, -81.53966, 19922),),
+    ('Shaker Heights', 'South Woodland Road'): ((41.47389, -81.53295, 20789), (41.47398, -81.54105, 19749)),
+    ('Shaker Heights', 'Warrensville Center Road'): ((41.47075, -81.53641, 3228),),
+    ('Skokie', 'Cleveland Street'): ((42.02997, -87.74422, 4664),),
+    ('Skokie', 'Concord Lane'): ((42.03037, -87.73892, 4448),),
+    ('Skokie', 'Dempster Street'): ((42.03691, -87.74, 4401),),
+    ('Skokie', 'Kolmar Avenue'): ((42.026828, -87.741563, 8000), (42.0324, -87.7414, 8328)),
+    ('Skokie', 'Kostner Avenue'): ((42.03242, -87.73756, 8331),),
+    ('Skokie', 'Washington Street'): ((42.03269, -87.74568, 4712),),
+    ('Southfield', 'Catalina Drive'): ((42.47527, -83.22472, 25314),),
+    ('Southfield', 'Filmore Street'): ((42.4769, -83.2219, 18133),),
+    ('Southfield', 'George Washington Drive'): ((42.47153, -83.21921, 17741), (42.47131, -83.22459, 18389)),
+    ('Southfield', 'Jeanette Street'): ((42.47534, -83.2192, 17698),),
+    ('Southfield', 'New Hampshire Drive'): ((42.47052, -83.2219, 18173),),
+    ('Southfield', 'West 10 Mile Road'): ((42.47371, -83.21751, 17418), (42.47336, -83.22596, 18540)),
+    ('Troy', 'Donaldson Drive'): ((42.60375, -83.14638, 5835),),
+    ('Troy', 'Livernois Road'): ((42.6061, -83.15009, 5977), (42.60326, -83.14971, 5783)),
+    ('Troy', 'Niles Drive'): ((42.60853, -83.15213, 6145),),
+    ('Troy', 'Telford Drive'): ((42.60849, -83.14741, 158),),
+    ('Warren', 'Campbell Avenue'): ((42.5145, -83.01471, 30024),),
+    ('Warren', 'Greentree Drive'): ((42.51653, -83.0117, 11377),),
+    ('Warren', 'Hoover Road'): ((42.51762, -83.00954, 30333),),
+    ('Warren', 'Lorraine Avenue'): ((42.51239, -83.01791, 29800),),
+    ('Warren', 'Meadowbrook Drive'): ((42.51232, -83.012, 11321),),
+    ('Warren', 'Olive Street'): ((42.5176, -83.0147, 11202),),
+    ('Wauwatosa', 'Harwood Avenue'): ((43.04956, -88.00761, 7613), (43.04945, -88.01033, 7720)),
+    ('Wauwatosa', 'Milwaukee Avenue'): ((43.05259, -88.00759, 7603),),
+    ('Wauwatosa', 'Saint James Street'): ((43.04964, -88.00355, 7318),),
+    ('Westlake', 'Beechwood Drive'): ((41.45527, -81.91742, 2334),),
+    ('Westlake', 'Berkeley Drive'): ((41.45815, -81.91519, 2032),),
+    ('Westlake', 'Dover Center Road'): ((41.45482, -81.92285, 2240),),
+    ('Westlake', 'Maple Drive'): ((41.45313, -81.91784, 26757),),
+    ('Westlake', 'Sleepy Hollow Drive'): ((41.45835, -81.9179, 26906),),
 }
 # Chicago's address grid: zero at State Street and Madison Street, 800 numbers
 # to the mile (55,200 per degree of latitude; 41,200 per degree of longitude
-# at 41.9 degrees north).
+# at 41.9 degrees north). South of Madison the grid is not uniform (twelve
+# hundred numbers to Roosevelt Road's single mile, then named streets), so
+# South numbers interpolate CHICAGO_SOUTH, read from the reverse samples.
 CHICAGO_GRID = (41.8819, -87.6278, 55200, 41200)
+CHICAGO_SOUTH = ((41.7378, 8617), (41.7969, 5432), (41.8190, 4139), (41.8360, 3200), (41.8424, 2702),
+                 (41.8509, 2300), (41.8586, 1641), (41.8819, 0))
+# Milwaukee County's grid (Milwaukee, West Allis, Wauwatosa, Oak Creek and
+# Glendale share it): signed North/South numbers by latitude and East/West by
+# longitude, interpolated through the reverse samples. North/South divides near
+# the Menomonee Valley and East/West at the Milwaukee River.
+MILWAUKEE_COUNTY = {"Milwaukee", "West Allis", "Wauwatosa", "Oak Creek", "Glendale"}
+MILWAUKEE_NS = ((42.8809, -8956), (42.9900, -2986), (43.0000, -2456), (43.0136, -1564), (43.0199, -1110),
+                (43.0288, -224), (43.0321, 172), (43.0419, 910), (43.0509, 1524), (43.0629, 2467),
+                (43.0782, 3252), (43.1331, 6369))
+MILWAUKEE_EW = ((-88.0110, -7909), (-87.9827, -5518), (-87.9690, -4409), (-87.9512, -3001), (-87.9250, -1004),
+                (-87.9150, -322), (-87.9109, 121), (-87.8992, 1014), (-87.8878, 1802))
+# Single-reference streets number outward from their locality's address origin
+# at a numbers-per-km rate fitted to the forward lookups: Detroit's Woodward at
+# the river (Dearborn's Michigan Avenue and Highland Park continue Detroit's
+# numbering) and Cleveland's Public Square. Any other suburb numbers from its
+# own anchor centre at 1,000 to the mile.
+ADDRESS_ORIGINS = {"Detroit": (42.3289, -83.0453, 1300), "Dearborn": (42.3289, -83.0453, 1300),
+                   "Highland Park": (42.3289, -83.0453, 1300), "Cleveland": (41.4995, -81.6937, 1500)}
+SUBURB_NUMBERS_PER_KM = 620
 # Jitter half-widths in degrees (~390 m north-south, ~370 m east-west at these
 # latitudes): separates sites sharing an anchor without leaving its area.
 JITTER_LAT, JITTER_LON = 0.0035, 0.0045
@@ -507,25 +755,88 @@ def _anchor(site, city, name):
     return general[int.from_bytes(hashlib.sha256(f"anchor/{site.id}".encode()).digest()[:4], "big") % len(general)]
 
 
-def street_address(site_id, anchor, latitude, longitude):
-    """Street line for one site: a real street at its anchor, a synthetic number.
+def _interpolate(table, value):
+    """Piecewise-linear lookup in an ascending (coordinate, number) table, extrapolating the end segments."""
+    pairs = list(zip(table, table[1:]))
+    (x0, y0), (x1, y1) = next(((a, b) for a, b in pairs if value <= b[0]), pairs[-1])
+    return y0 + (value - x0) * (y1 - y0) / (x1 - x0)
 
-    The street and number hash the site id alone, so growth and seeds never
-    readdress a site. Inside Chicago a North/South street is numbered from the
-    site's latitude and an East/West street from its longitude on the city grid.
+
+def _km(a, b):
+    return math.hypot((a[0] - b[0]) * 111.0, (a[1] - b[1]) * 111.0 * math.cos(math.radians(a[0])))
+
+
+def street_number(locality, street, latitude, longitude, anchor=None):
+    """Signed house number for a point on a street: a pure function of position.
+
+    Chicago and Milwaukee County directional streets read their grid (the sign
+    picks North/South or East/West); every other street interpolates its
+    STREET_REFS points. Nearby sites on one street get nearby numbers.
+    """
+    direction = street.partition(" ")[0]
+    if locality == "Chicago" and direction in {"North", "South", "East", "West"}:
+        lat0, lon0, per_lat, per_lon = CHICAGO_GRID
+        if direction in {"North", "South"}:
+            return (latitude - lat0) * per_lat if latitude >= lat0 else -_interpolate(CHICAGO_SOUTH, latitude)
+        return (longitude - lon0) * per_lon
+    if locality in MILWAUKEE_COUNTY and direction in {"North", "South", "East", "West"}:
+        return (_interpolate(MILWAUKEE_NS, latitude) if direction in {"North", "South"}
+                else _interpolate(MILWAUKEE_EW, longitude))
+    refs = STREET_REFS[(locality, street)]
+    point = (latitude, longitude)
+    if len(refs) == 2:
+        (a_lat, a_lon, a_n), (b_lat, b_lon, b_n) = refs
+        scale = math.cos(math.radians(a_lat))
+        ax, ay = (b_lon - a_lon) * scale, b_lat - a_lat
+        t = ((longitude - a_lon) * scale * ax + (latitude - a_lat) * ay) / (ax * ax + ay * ay)
+        return a_n + t * (b_n - a_n)
+    lat, lon, number = refs[0]
+    if locality in ADDRESS_ORIGINS:
+        o_lat, o_lon, rate = ADDRESS_ORIGINS[locality]
+    else:
+        (o_lat, o_lon), rate = anchor[2:4], SUBURB_NUMBERS_PER_KM
+    return number + rate * (_km(point, (o_lat, o_lon)) - _km((lat, lon), (o_lat, o_lon)))
+
+
+def street_address(site_id, anchor, latitude, longitude):
+    """Street line for one site: a real street at its anchor, numbered by position.
+
+    The street hashes the site id; the number follows the site's coordinates
+    along that street (street_number), with only the odd/even side hashed, so
+    growth and seeds never readdress a site and nearby sites read nearby.
+    Inside Chicago and Milwaukee County a directional street's prefix follows
+    the grid side the site is on. Workspace.finish makes full addresses unique.
     """
     pool = ADDRESS_STREETS[(anchor[1], anchor[0][0])]
     digest = hashlib.sha256(f"address/{site_id}".encode()).digest()
     street = pool[digest[0] % len(pool)]
+    number = street_number(anchor[1], street, latitude, longitude, anchor)
     direction, _, rest = street.partition(" ")
-    if anchor[1] == "Chicago" and direction in {"North", "South", "East", "West"}:
-        lat0, lon0, per_lat, per_lon = CHICAGO_GRID
+    if direction in {"North", "South", "East", "West"} and (anchor[1] == "Chicago" or anchor[1] in MILWAUKEE_COUNTY):
         north_south = direction in {"North", "South"}
-        offset = (latitude - lat0) * per_lat if north_south else (longitude - lon0) * per_lon
-        direction = ("North" if offset >= 0 else "South") if north_south else ("East" if offset >= 0 else "West")
-        # Even or odd side of the street is the only hashed part of the number.
-        return f"{max(1, int(abs(offset)) // 2 * 2 + digest[1] % 2)} {direction} {rest}"
-    return f"{100 + int.from_bytes(digest[1:3], 'big') % 9800} {street}"
+        street = f"{('North' if number >= 0 else 'South') if north_south else ('East' if number >= 0 else 'West')} {rest}"
+    # Even or odd side of the street is the only hashed part of the number.
+    return f"{max(1, int(abs(number)) // 2 * 2 + digest[1] % 2)} {street}"
+
+
+def unique_addresses(sites, allocations):
+    """Make every site's street line unique within its locality, in place.
+
+    An earlier-allocated site keeps its number; a later site on the same street
+    and side steps two numbers along until free. Allocation slots are permanent,
+    so growth never readdresses an existing site.
+    """
+    taken = set()
+    for site in sorted(sites, key=lambda s: (allocations.get(s["key"].removeprefix("site/"), 1 << 62), s["key"])):
+        lines = site["attrs"].get("physical_address", "").split("\n")
+        number, _, street = lines[0].partition(" ")
+        if not number.isdecimal():
+            continue
+        n = int(number)
+        while (n, street, tuple(lines[1:])) in taken:
+            n += 2
+        taken.add((n, street, tuple(lines[1:])))
+        site["attrs"]["physical_address"] = "\n".join([f"{n} {street}", *lines[1:]])
 
 
 def clli_place(locality, state_code):

@@ -1,5 +1,6 @@
 """Finite geography/placement contracts, independent of hardware generation."""
 
+from collections import defaultdict
 import math
 from pathlib import Path
 import tomllib
@@ -10,7 +11,7 @@ from zoneinfo import ZoneInfo
 from estates.generate import generate
 from estates.model import DesignError, World
 from estates.places import (ADDRESS_STREETS, ANCHORS, CAMPUSES, CHICAGO_GRID, FLAT_KINDS, JITTER_LAT,
-                            JITTER_LON, STREETS, arrange, clli_place, foundation, locate, place_endpoint)
+                            JITTER_LON, MILWAUKEE_COUNTY, STREETS, arrange, clli_place, foundation, locate, place_endpoint)
 
 # Conservative (lat, lon) exclusion polygons: Lake Michigan off Chicago and
 # Milwaukee, Lake Erie off Cleveland, and for Detroit Lake St. Clair, the
@@ -206,6 +207,7 @@ class SiteGeographyTests(unittest.TestCase):
         for path in sorted((Path(__file__).resolve().parent.parent / "profiles").glob("*.toml")):
             with open(path, "rb") as handle:
                 plan = generate(tomllib.load(handle))
+            streets = defaultdict(list)
             for site in (o for o in plan["objects"] if o["kind"] == "site"):
                 with self.subTest(recipe=path.name, site=site["key"]):
                     attrs, metro = site["attrs"], site["meta"]["geography"]["city"]
@@ -224,16 +226,47 @@ class SiteGeographyTests(unittest.TestCase):
                     self.assertTrue(number.isdecimal() and int(number) > 0, attrs["physical_address"])
                     direction, _, rest = street.partition(" ")
                     pools = {name for a in anchors for name in ADDRESS_STREETS[(a[1], a[0][0])]}
-                    if locality == "Chicago" and direction in {"North", "South", "East", "West"}:
+                    if ((locality == "Chicago" or locality in MILWAUKEE_COUNTY)
+                            and direction in {"North", "South", "East", "West"}):
                         self.assertTrue(any(name.partition(" ")[2] == rest for name in pools), street)
-                        lat0, lon0 = CHICAGO_GRID[:2]
-                        self.assertEqual(direction in {"North", "East"},
-                                         (lat >= lat0) if direction in {"North", "South"} else (lon >= lon0), street)
+                        lat0, lon0 = CHICAGO_GRID[:2] if locality == "Chicago" else (43.031, -87.911)
+                        # The grid side agrees with the coordinate (Milwaukee's
+                        # dividing lines restated: Menomonee Valley, Milwaukee River).
+                        offset = (lat - lat0) if direction in {"North", "South"} else (lon - lon0)
+                        if abs(offset) > 0.002:
+                            self.assertEqual(direction in {"North", "East"}, offset >= 0, street)
                     else:
                         self.assertIn(street, pools)
+                    streets[(locality, street)].append((lat, lon, int(number)))
             sites = [o for o in plan["objects"] if o["kind"] == "site"]
             facilities = [o["attrs"]["facility"] for o in sites]
             self.assertEqual(len(set(facilities)), len(facilities), path.name)
+            addresses = [o["attrs"]["physical_address"] for o in sites]
+            self.assertEqual(len(set(addresses)), len(addresses), path.name)
+            # Numbers follow position: two sites on one street within a few
+            # hundred metres never read thousands of numbers apart.
+            for (locality, street), points in streets.items():
+                for i, (la1, lo1, n1) in enumerate(points):
+                    for la2, lo2, n2 in points[i + 1:]:
+                        metres = math.hypot((la1 - la2) * 111000, (lo1 - lo2) * 111000 * math.cos(math.radians(la1)))
+                        with self.subTest(recipe=path.name, street=street):
+                            self.assertLessEqual(abs(n1 - n2), 4 * metres + 200, (n1, n2, round(metres)))
+
+    def test_a_shared_postal_address_is_a_finding_and_finish_steps_a_later_site(self):
+        from estates.places import street_number, unique_addresses
+        from estates.validate import validate
+        plan = generate({"profile": "school-district"})
+        sites = [o for o in plan["objects"] if o["kind"] == "site"]
+        self.assertNotIn("site-address-unique", {f["code"] for f in validate(plan)})
+        sites[1]["attrs"]["physical_address"] = sites[0]["attrs"]["physical_address"]
+        self.assertIn("site-address-unique", {f["code"] for f in validate(plan)})
+        # The finisher keeps the earlier allocation and steps the later one along.
+        unique_addresses(sites[:2], {sites[0]["key"].removeprefix("site/"): 0, sites[1]["key"].removeprefix("site/"): 1})
+        first, second = (int(s["attrs"]["physical_address"].partition(" ")[0]) for s in sites[:2])
+        self.assertEqual(second, first + 2)
+        # Position, not a hash, numbers a street: 100 m along reads ~100 numbers on the Chicago grid.
+        self.assertAlmostEqual(street_number("Chicago", "North Clark Street", 41.9200 + 0.0009, -87.6373)
+                               - street_number("Chicago", "North Clark Street", 41.9200, -87.6373), 49.7, places=0)
 
     def test_every_anchor_has_real_streets_and_codes_have_their_shape(self):
         keys = {(anchor[1], anchor[0][0]) for anchors in ANCHORS.values() for anchor in anchors}

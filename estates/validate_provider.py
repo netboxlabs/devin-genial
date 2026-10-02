@@ -18,7 +18,7 @@ from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
 from .naming import role_label, titleize
 # Authored address localities (suburbs map to their metro); geography data, not builder policy.
-from .places import ADDRESS_STREETS, LOCALITIES, carrier_suite
+from .places import ADDRESS_STREETS, LOCALITIES, MILWAUKEE_COUNTY, carrier_suite
 
 
 METROS = {"chicago": ("Chicago", "IL", "Illinois", "America/Chicago"),
@@ -503,7 +503,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         number, _, street = address_lines[0].partition(" ")
         direction, _, rest = street.partition(" ")
         streets = {name for (place, _), names in ADDRESS_STREETS.items() if place == locality for name in names}
-        if direction in {"North", "South", "East", "West"} and locality == "Chicago":
+        if direction in {"North", "South", "East", "West"} and (locality == "Chicago" or locality in MILWAUKEE_COUNTY):
             street = next((name for name in streets if name.partition(" ")[2] == rest), street)
         good_address = (len(address_lines) == 3 and number.isdecimal() and int(number) > 0 and street in streets and
                         address_lines[1:] == [f"{locality}, {state}", "United States"])
