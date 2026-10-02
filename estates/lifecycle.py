@@ -31,7 +31,9 @@ import math
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 from .model import canonical, digest
 from .turbobulk import Client, LoadError, _write_receipt
@@ -786,6 +788,57 @@ def _readback(writer, artifact, receipt, devices, sites, rooms, module_types):
             "pools": len(artifact["pools"]), "read_at": _now()}
 
 
+def _delete(client, path):
+    """DELETE one plugin row; True when it is gone (a 404 means already gone)."""
+    request = urllib.request.Request(client.base + API + path, headers=client.headers, method="DELETE")
+    try:
+        with client.opener.open(request, timeout=120):
+            return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return True
+        raise LoadError(f"DELETE {API}{path} returned HTTP {exc.code}: "
+                        f"{exc.read(2000).decode(errors='replace')}") from exc
+
+
+def unseed(receipt_path, *, url, token):
+    """Delete exactly the rows a seed receipt recorded, in protection order.
+
+    Allocations and spare items protect a pool, pools protect their site and
+    location, and BOM/PO children cascade with their parent, so: pool
+    contents -> pools -> shipments -> purchase orders -> BOMs (assets and
+    line items cascade) -> vendor accounts -> vendors -> courier. Rows the
+    receipt does not name are never touched; rerunning is safe.
+    """
+    if os.environ.get("LIFECYCLE_WRITES", "").strip().lower() not in ("1", "true", "yes", "on"):
+        raise LoadError("removing the procurement story requires LIFECYCLE_WRITES=1 in the environment")
+    receipt = json.loads(Path(receipt_path).read_text())
+    client = Client(url, token)
+    if receipt.get("target") != client.base:
+        raise LoadError(f"receipt {receipt_path} belongs to {receipt.get('target')}, not {client.base}")
+    pools = [row["pool"] for row in receipt.get("pools", {}).values()]
+    boms = list(receipt.get("boms", {}).values())
+    deleted = Counter()
+    for pool in pools:
+        for path in ("spare-item-allocations/", "spare-items/"):
+            for row in client.all(f"{API}{path}?pool_id={pool}"):
+                deleted[path] += _delete(client, f"{path}{row['id']}/")
+    plan = ([("spares-pools/", pool) for pool in pools]
+            + [("shipments/", i) for bom in boms for i in bom.get("shipments", {}).values()]
+            + [("purchase-orders/", i) for bom in boms for i in bom.get("purchase_orders", {}).values()]
+            + [("boms/", bom["bom"]) for bom in boms]
+            + [("vendor-accounts/", i) for i in receipt.get("vendor_accounts", {}).values()]
+            + [("vendors/", i) for i in receipt.get("vendors", {}).values()]
+            + ([("couriers/", receipt["courier"])] if receipt.get("courier") else []))
+    for path, row_id in plan:
+        deleted[path] += _delete(client, f"{path}{row_id}/")
+    survivors = [f"{path}{row_id}" for path, row_id in plan
+                 if client.request(f"{API}{path}?id={row_id}", branch=False)[1].get("count")]
+    if survivors:
+        raise LoadError(f"lifecycle rows survived removal: {survivors[:10]}")
+    return {"deleted": dict(sorted(deleted.items())), "receipt": str(receipt_path), "success": True}
+
+
 def default_receipt(artifact_dir, target):
     slug = Path(artifact_dir).name or "lifecycle"
     suffix = hashlib.sha256(f"{slug}\n{target.rstrip('/')}".encode()).hexdigest()[:12]
@@ -806,6 +859,9 @@ def main(argv=None):
     p.add_argument("directory", type=Path)
     p.add_argument("target")
     p.add_argument("--receipt", type=Path)
+    p = sub.add_parser("unseed", help="delete exactly the rows a seed receipt recorded (LIFECYCLE_WRITES=1)")
+    p.add_argument("receipt", type=Path)
+    p.add_argument("target")
     args = parser.parse_args(argv)
     try:
         if args.command in ("build", "check"):
@@ -816,6 +872,9 @@ def main(argv=None):
                   f"{result['spares_pools']} spares pools ({result['allocations']} allocations, "
                   f"{result['below_minimum']} below minimum, {result['damaged']} damaged)"
                   + (f" -> {result['output']}" if args.command == "build" else ""))
+        elif args.command == "unseed":
+            token = os.environ.get("NETBOX_TOKEN") or parser.error("NETBOX_TOKEN is required")
+            print(json.dumps(unseed(args.receipt, url=args.target, token=token), sort_keys=True))
         else:
             token = os.environ.get("NETBOX_TOKEN")
             if not token:

@@ -276,7 +276,9 @@ target by site/role scope rules, POs from two fictional vendors with null unit
 prices, deliveries dated from the equipment journals via a courier with no
 tracking URL (never the builtin UPS/FedEx/DHL), plugin-action installs, and
 spares pools in multi-cabinet rooms. Lifecycle rows protect sites and
-locations: remove them before `teardown-main`. See docs/loading.md.
+locations and geometry shapes protect racks: remove them first with
+`just unseed-lifecycle RECEIPT TARGET` / `just unseed-geometry RECEIPT TARGET`
+(receipt-scoped, `*_WRITES=1`), then `teardown-main`. See docs/loading.md.
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:

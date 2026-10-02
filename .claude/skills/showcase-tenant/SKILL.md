@@ -30,9 +30,9 @@ product skills to read per feature), `visual-review` (the acceptance pass),
 
 1. **Empty main.** For each previous artifact: `just teardown-main-explain`,
    then `ALLOW_MAIN_TEARDOWN=1 just teardown-main ARTIFACT $NETBOX_URL`.
-   Sidecar rows PROTECT the estate, so delete them first: physical-geometry
-   shapes → paths → zones → layers → floorplans; asset-lifecycle rows per
-   docs/loading.md ("Procurement history"). `seed-main-explain` must show only
+   Sidecar rows PROTECT the estate, so delete them first with their seed
+   receipts: `LIFECYCLE_WRITES=1 just unseed-lifecycle RECEIPT $NETBOX_URL`,
+   `GEOMETRY_WRITES=1 just unseed-geometry RECEIPT $NETBOX_URL`. `seed-main-explain` must show only
    allowlisted occupancy (builtin `module_type_profile`).
 2. **Generate.** `just generate profiles/showcase-provider.toml build/showcase`.
    The recipe sets `tenancy = "dedicated"` (solo-tenant mode): owner, export
