@@ -86,6 +86,19 @@ fields, with no object key and no identity attribute moved. Display names move
 across every estate, so 0.14 plans reject growth by version and must be
 regenerated, and the version bump rerolls procurement dates, serials and
 scenario selections as usual.
+v0.16 is a new baseline, "showcase realism", found by preparing a community
+showcase tenant: every change targets what an engineer would read as fake.
+Sites sit on land at real neighbourhood/street anchors (`places.ANCHORS`; about
+half used to plot in the Great Lakes); the fictional "Devin Reference Designs"
+manufacturer is gone — real devicetype-library models (Supermicro, APC, Panduit,
+Opengear 16/48-port sized by console demand, Cisco 9120AXI default AP) plus
+plainly-named Generic parts; serials follow vendor formats instead of `SYN-`;
+network devices carry vendor platforms; every prefix and VLAN carries one of
+sixteen authored IPAM roles; descriptions use operator wording with material
+limitations moved to `comments`; provider hostnames, customer VLANs, rates and
+contact phones read like a production network. Identities, names and the
+hardware digest move across every profile, so 0.15 plans reject growth by
+version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under

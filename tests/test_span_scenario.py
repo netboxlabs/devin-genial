@@ -267,8 +267,8 @@ class SpanScenarioTests(unittest.TestCase):
         # carry declared customer paths reshuffles per version: pick the span
         # that keeps the checked margin (empty resilience) under this version.
         # How many premises it touches is incidental to that property.
-        e = create(grown, "circuit/backbone/seed-01")
-        self.assertEqual(len(e["affected"]["premises"]), 8)
+        e = create(grown, "circuit/backbone/seed-03")
+        self.assertEqual(len(e["affected"]["premises"]), 2)
         self.assertEqual(e["resilience"], [])
         self.assertEqual(len(e["expected_findings"]), 3)
         self.assertTrue(verify(e)["checked_further_failure_margin_retained"])
