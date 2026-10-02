@@ -4284,10 +4284,6 @@
         {
           "name": "3",
           "type": "1000base-t"
-        },
-        {
-          "name": "Management",
-          "type": "virtual"
         }
       ],
       "power_ports": [
@@ -4314,7 +4310,7 @@
         "nid-chassis",
         "ciena-3903-datasheet"
       ],
-      "description": "Pinned Ciena 3903 AC service delivery NID: port 1 is the 1G SFP network-facing port, port 2 a spare SFP, port 3 the combo UNI in its RJ-45 1000BASE-T personality (declared deviation from the library's SFP type). In-band management is the virtual Management interface. Dual fixed C14 inlets.",
+      "description": "Pinned Ciena 3903 AC service delivery NID: port 1 is the 1G SFP network-facing port, port 2 a spare SFP, port 3 the combo UNI in its RJ-45 1000BASE-T personality (declared deviation from the library's SFP type). In-band management is the virtual interface named by management_interface, which the builder creates (virtual interfaces are not hardware inventory). Dual fixed C14 inlets.",
       "airflow": "front-to-rear",
       "serial_format": "M{yy}@######",
       "platform": {
@@ -4381,10 +4377,6 @@
           "name": "MNG-ETH",
           "type": "100base-tx",
           "mgmt_only": true
-        },
-        {
-          "name": "Management",
-          "type": "virtual"
         }
       ],
       "power_ports": [
@@ -4407,7 +4399,7 @@
         "rad-etx-2i-10g-datasheet",
         "rad-transceivers"
       ],
-      "description": "Pinned RAD ETX-2i-10G 10G-tier NID: ETH-1/1 is the 10G SFP+ network-facing port and ETH-1/2 the 10G SFP+ customer handoff; four 1G SFP and four 1000BASE-T ports stay spare. In-band management is the virtual Management interface; the MNG-ETH out-of-band port stays uncabled.",
+      "description": "Pinned RAD ETX-2i-10G 10G-tier NID: ETH-1/1 is the 10G SFP+ network-facing port and ETH-1/2 the 10G SFP+ customer handoff; four 1G SFP and four 1000BASE-T ports stay spare. In-band management is the virtual interface named by management_interface, which the builder creates (virtual interfaces are not hardware inventory); the MNG-ETH out-of-band port stays uncabled.",
       "airflow": "passive",
       "serial_format": "RD{yyww}#####"
     },

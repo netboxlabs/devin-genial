@@ -91,8 +91,8 @@ names. Deviations and evidence are in
 | Alias | Model | Ports the builders use |
 | --- | --- | --- |
 | `aggregation` | Juniper ACX5448-M, 1U | `xe-0/0/0`–`43` 10G SFP+ (1G UNIs keep the `xe-` name with `speed` 1000000); `uni_ports` = `xe-0/0/0`–`39`; `lag_ports` = `xe-0/0/40`–`43`; `et-0/1/0`–`5` 100G unused; `em0` mgmt; RJ45 `console0`; fixed C14 `power0`/`power1` |
-| `nid` | Ciena 3903 AC, 1U | `nni_port` `1` (1G SFP); `spare_port` `2` (1G SFP); `uni_port` `3` typed `1000base-t` (declared deviation); virtual `Management`; RJ45 `CONSOLE`; C14 `PSA`/`PSB` |
-| `nid-10g` | RAD ETX-2i-10G, 1U | `nni_port` `ETH-1/1` (10G SFP+); `uni_port` `ETH-1/2` (10G SFP+ customer handoff); `ETH-1/3`–`4` 10G SFP+, `ETH-1/5`–`8` 1G SFP and `ETH-1/9`–`12` 1000BASE-T spare; virtual `Management`; `MNG-ETH` out-of-band mgmt (uncabled); USB `control`; C14 `power` |
+| `nid` | Ciena 3903 AC, 1U | `nni_port` `1` (1G SFP); `spare_port` `2` (1G SFP); `uni_port` `3` typed `1000base-t` (declared deviation); `management_interface` `Management` (virtual, builder-created); RJ45 `CONSOLE`; C14 `PSA`/`PSB` |
+| `nid-10g` | RAD ETX-2i-10G, 1U | `nni_port` `ETH-1/1` (10G SFP+); `uni_port` `ETH-1/2` (10G SFP+ customer handoff); `ETH-1/3`–`4` 10G SFP+, `ETH-1/5`–`8` 1G SFP and `ETH-1/9`–`12` 1000BASE-T spare; `management_interface` `Management` (virtual, builder-created); `MNG-ETH` out-of-band mgmt (uncabled); USB `control`; C14 `power` |
 | `ce-small` | Juniper SRX300, 1U (L14: first pinned of SRX300 / FG-60F) | `wan_ports` [`ge-0/0/0`] (copper; replaces the FortiGate's `wan1` in a CE↔NID cable); `lan_ports` `ge-0/0/1`–`5`; `ge-0/0/6`/`7` 1G SFP spare; RJ45 `Console`; C14 `PSU0` |
 | `edge` (existing) | Fortinet FortiGate 100F | gains `wan_ports` [`wan1`, `wan2`] and `lan_ports` `port1`–`port12` |
 | `pop-mgmt` | Juniper EX3400-24T, 1U, no PoE | `access_ports` `ge-0/0/0`–`23`; `uplink_ports` `xe-0/2/0`–`3`; `stack_ports` `et-0/1/0`/`1`; `me0` mgmt; two JPSU-150-AC-AFO → C14 `Power Supply 0`/`1` |
@@ -105,8 +105,10 @@ names. Deviations and evidence are in
 
 CE models expose `wan_ports`/`lan_ports` and NIDs `nni_port`/`uni_port`/
 `management_interface`, so builders never write a vendor port name. Planning
-allowances stay in `estates/blocks.py` (`PLANNED_WATTS`); the evidence-backed
-figures for the new aliases are listed with each model below. Panel models carry `front_ports` / `rear_ports` lists and the mapping is
+allowances stay in `estates/blocks.py` (`PLANNED_WATTS`, canonical); the
+evidence each figure rests on is listed with each model below. `blocks.py`
+rounds two up conservatively (`pop-mgmt` 120 W over Juniper's 100 W maximum,
+`ce-small` 40 W over the SRX300's 24.9 W average). Panel models carry `front_ports` / `rear_ports` lists and the mapping is
 position 1:1 (front `Port n` ↔ rear `Port n`). Passive models carry
 `is_powered: false`. Rack types live in the new top-level `rack_types` map:
 
@@ -700,8 +702,10 @@ The [Ciena 3903 data sheet](https://www.westconcomstor.com/content/dam/wcgcom/US
 documents "2 x 100/1000M SFP NNI/UNI ports" and "1 x 10/100/1000M RJ-45;
 100/1000M SFP UNI combo port". Declared deviations: port `3`, the combo UNI,
 is typed `1000base-t` (its RJ-45 personality, the customer handoff) where the
-library types all three ports `1000base-x-sfp`; a virtual `Management`
-interface is added for the in-band management address (the library has none).
+library types all three ports `1000base-x-sfp`. The in-band management
+address sits on a virtual `Management` interface the premises builder creates
+(`management_interface` names it); virtual interfaces are not hardware
+inventory, so the model does not list it.
 Planning allowance **52 W**, the data sheet's "Maximum Power Input: 52W"; the
 library's 96 W `maximum_draw` per inlet is not used. Ciena's qualified-optics
 reference is behind a customer login, so the NID's SFPs are labelled `Generic`
@@ -711,8 +715,8 @@ reference is behind a customer login, so the NID's SFPs are labelled `Generic`
 [`RAD/ETX-2i-10G.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/RAD/ETX-2i-10G.yaml)
 (4 SFP+, 4 SFP, 4 RJ-45, `MNG-ETH`). The [RAD data sheet](https://www.rad.com/wp-content/uploads/2025/01/etx-2i-10g_ds.pdf)
 lists 1/10GBASE-SR/LR/ER/ZR on the SFP+ ports and notes "Non-activated SFP+
-ports are limited to operate at 1 Gbps": the 10G tier assumes the licence. A
-virtual `Management` interface is added as on the Ciena (declared). Its optics
+ports are limited to operate at 1 Gbps": the 10G tier assumes the licence. Management is
+the same builder-created virtual `Management` interface as on the Ciena. Its optics
 are RAD parts from the [RAD transceiver data sheet](https://www.rad.com/wp-content/uploads/2025/03/SFP-XFP-SFPPlus-Transceivers.pdf);
 RAD publishes no module power, so 1.5 W is authored. Planning allowance
 **90 W**, the library `maximum_draw`, inside the data sheet's 70–120 W range.
