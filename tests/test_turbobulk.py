@@ -951,15 +951,15 @@ class TurboBulkLoaderTests(unittest.TestCase):
         rows = []
         for kind in sorted(RENDER_DEFAULTS):
             obj = {"kind": kind, "key": "k", "attrs": {"name": "n"}, "refs": {}, "meta": {}}
-            if kind == "power_outlet":
+            if kind in {"power_outlet", "front_port"}:
                 obj["refs"] = {"device": "d"}
             rows.append(_render(obj, {"d": device, "k": obj}, {"d": 1, "s": 2}, {}))
         golden = hashlib.sha256(json.dumps({"defaults": RENDER_DEFAULTS, "rows": rows},
                                            sort_keys=True).encode()).hexdigest()
         self.assertEqual(
             (COMPILER_VERSION, golden),
-            ("v02-turbobulk-14",
-             "bc1f571dc42b7c17a12c8c2982daa9c96f282d2831f5df6550a8ab521a97cb6e"))
+            ("v02-turbobulk-15",
+             "bad50ffba6104ca04a2d0749371166df4a7e82c7751dafbda211f38881ecc874"))
 
     def test_supersede_refuses_when_rq_reports_the_job_alive(self):
         receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},
