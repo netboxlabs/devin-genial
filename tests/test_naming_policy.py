@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 
 from estates.generate import generate
+from estates.validate import validate
 from estates.naming import (IDENTITY_NAMED_KINDS, NAMESPACED_KINDS, name_limit,
                             display_name, titleize)
 
@@ -75,6 +76,14 @@ class NamingHelpers(unittest.TestCase):
         self.assertFalse([n for n in names if "zeta" in n.lower()])
         slugs = [o["attrs"]["slug"] for o in plan["objects"] if o["kind"] in ("site", "tenant")]
         self.assertTrue(slugs and all("zeta" in slug for slug in slugs))
+        # Root contact groups drop it too; the slug still derives from the
+        # name, so the auto-slug matcher resolves the same identity.
+        groups = [o["attrs"] for o in plan["objects"] if o["kind"] == "contact_group"]
+        self.assertTrue(groups)
+        for attrs in groups:
+            self.assertNotIn("zeta", attrs["name"].lower())
+            self.assertEqual(attrs["slug"], attrs["name"].lower().replace(" ", "-"))
+        self.assertEqual(validate(plan), [])
 
     def test_config_context_is_not_main_scoped(self):
         # get_branchable_object_types() lists extras.configcontext, so a config

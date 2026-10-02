@@ -2,8 +2,8 @@
 # onto a dedicated tenant's main (a second estate cannot pass the fresh-load
 # occupancy gate). 12 PoPs, three per metro, and 12 private-L3 enterprise
 # customers whose names echo the other industry profiles; each premises is the
-# carrier's CPE plus managed switch (lan_endpoints = 0: a carrier does not
-# inventory its customers' desktops); dual-stack; Juniper
+# carrier's CE alone, handing the LAN to customer-owned gear (lan_endpoints = 0:
+# a carrier does not inventory its customers' desktops); dual-stack; Juniper
 # access beside the MX204 PEs, Arista leaf/spine kept. Fictional design inputs.
 # Runbook: .claude/skills/showcase-tenant/SKILL.md.
 profile = "provider-backbone"

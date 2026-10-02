@@ -176,7 +176,7 @@ def enrich(world):
     def loopback(router, family):
         port = interfaces.get((router, LOOPBACK))
         if port is None:
-            raise DesignError(f"{router}: BGP inventory needs the in-band {LOOPBACK} loopback")
+            raise DesignError(f"{router}: BGP inventory needs the {LOOPBACK} router loopback")
         return port, address(port, f"{router} {LOOPBACK}", family)
 
     # --- iBGP: reflectors at PE A of two PoPs in different metros. ---

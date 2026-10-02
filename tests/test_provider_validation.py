@@ -95,10 +95,24 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("provider-device-inventory", self.codes())
         self.assertIn("provider-pair-path", self.codes())
 
-    def test_management_is_inband_and_has_two_real_data_uplinks(self):
-        self.objects[f"{self.pe}/if/fxp0"]["refs"]["vrf"] = "vrf/provider"
+    def test_management_is_out_of_band_and_has_two_real_data_uplinks(self):
+        fxp0 = f"{self.pe}/if/fxp0"
+        self.plan["objects"].remove(self.cable(fxp0))
         self.strip()
         self.assertIn("provider-management-mode", self.codes())
+        self.setUp()
+        self.objects[f"ip/{fxp0}"]["refs"].pop("vrf")
+        self.objects[fxp0]["refs"].pop("vrf")
+        self.assertIn("provider-management-mode", self.codes())
+        # The console server's independent broadband path: cut, or re-homed
+        # into the carrier's own management context, it no longer counts.
+        console = "device/pop-chicago-west/console-01/if/NET2"
+        self.setUp()
+        self.plan["objects"].remove(self.cable(console))
+        self.assertIn("provider-oob", self.codes())
+        self.setUp()
+        self.objects[f"ip/{console}"]["refs"]["vrf"] = "vrf/provider"
+        self.assertIn("provider-oob", self.codes())
         self.setUp()
         self.cable(f"{self.pe}/if/xe-0/1/6")["attrs"]["status"] = "planned"
         self.assertIn("provider-management-uplink", self.codes())
@@ -127,7 +141,7 @@ class ProviderValidationTests(unittest.TestCase):
             with self.subTest(mask=mask):
                 self.setUp()
                 self.plan["objects"].append(dict(key="ip/invented-transit-peer", kind="ip_address",
-                    attrs={"address": f"{network[1]}/{mask}", "status": "reserved"}, refs={"vrf": "vrf/provider"}, meta={}))
+                    attrs={"address": f"{network[0]}/{mask}", "status": "reserved"}, refs={}, meta={}))
                 self.strip()
                 self.assertIn("provider-routed-address", self.codes())
 
@@ -437,6 +451,26 @@ class ProviderRealismTests(unittest.TestCase):
             email = self.objects[f"contact/provider/{label}"]["attrs"]["email"]
             self.assertFalse(email.endswith(self.plan["recipe"]["namespace"] + ".example"), email)
 
+    def test_premises_sit_in_their_serving_pops_area_and_growth_keeps_them_there(self):
+        from estates.provider import km
+        pops = {k: (o["attrs"]["latitude"], o["attrs"]["longitude"]) for k, o in self.objects.items() if k.startswith("site/pop-")}
+        metro = {f"site/pop-{p['key']}": p["metro"] for p in self.plan["recipe"]["pops"]}
+        for key, obj in self.objects.items():
+            if not key.startswith("site/ce-"):
+                continue
+            home = next(p for p in pops if key.removeprefix("site/ce-").count(p.removeprefix("site/pop-") + "-"))
+            here = (obj["attrs"]["latitude"], obj["attrs"]["longitude"])
+            nearest = min((p for p in pops if metro[p] == metro[home]), key=lambda p: km(here, pops[p]))
+            self.assertEqual(nearest, home, key)
+        # A PoP appended into a metro never pulls an existing premises out of its area.
+        grown = deepcopy(self.plan["recipe"])
+        grown["pops"].append({"key": "chicago-ravenswood", "metro": "chicago"})
+        grown["customers"][0]["sites"].append({"pop": "chicago-ravenswood", "count": 1})
+        plan = generate(grown, previous=self.baseline)
+        self.assertEqual(validate(plan), [])
+        after = {o["key"]: o for o in plan["objects"]}
+        self.assertFalse([k for k in self.objects if k.startswith("site/") and self.objects[k]["attrs"] != after[k]["attrs"]])
+
     def test_mutations_of_the_realism_obligations_fail(self):
         spans = sorted(self.spans())
         dark = next(k for k in spans if self.objects[k]["refs"]["provider"] == "provider/operator")
@@ -450,9 +484,29 @@ class ProviderRealismTests(unittest.TestCase):
             ("provider-circuit-path", lambda: self.objects[dark]["attrs"].update(commit_rate=10000000)),
             ("provider-timeline", lambda: self.objects[hub]["attrs"].update(install_date="2010-01-01")),
             ("provider-timeline", lambda: self.objects[second]["attrs"].update(install_date="2018-01-01")),
+            # Homed on Flats but standing on top of the Lakewood PoP.
             ("provider-premises-geography", lambda: self.objects["site/ce-lakeshore-health-cleveland-flats-001"]["attrs"].update(
-                latitude=self.objects["site/pop-cleveland-flats"]["attrs"]["latitude"],
-                longitude=self.objects["site/pop-cleveland-flats"]["attrs"]["longitude"])),
+                latitude=self.objects["site/pop-cleveland-lakewood"]["attrs"]["latitude"],
+                longitude=self.objects["site/pop-cleveland-lakewood"]["attrs"]["longitude"])),
+            # In no other PoP's area, but farther than the service radius.
+            ("provider-premises-geography", lambda: self.objects["site/ce-lakeshore-health-cleveland-flats-001"]["attrs"].update(
+                latitude=self.objects["site/pop-cleveland-flats"]["attrs"]["latitude"] + 0.4)),
+            # The core is the global table: a span /31 inside a VRF is refused.
+            ("provider-routed-address", lambda: [self.objects[k]["refs"].update(vrf="vrf/provider")
+                for k in (f"prefix/link/{leased[0]}",)]),
+            # A customer VRF that stops importing the hub cuts NOC reach to its CEs.
+            ("provider-customer-routing", lambda: self.objects["vrf/customer/lakeshore-health"]["refs"].update(
+                import_targets=["route-target/customer/lakeshore-health"])),
+            ("provider-routing-domain", lambda: self.objects["vrf/provider"]["refs"].update(
+                import_targets=["route-target/management/hub"])),
+            # A loopback on the network address of its /24.
+            ("provider-allocation", lambda: self.plan["reservations"]["provider-loopbacks"].update(
+                {"device/pop-chicago-cermak/pe-a": 254})),
+            # A CE-only premises with a management VLAN and no switch to use it.
+            ("provider-customer-gateway", lambda: self.objects["prefix/ce-lakeshore-health-cleveland-flats-001/management"]["refs"].update(
+                vlan="vlan/ce-lakeshore-health-cleveland-flats-001/clients")),
+            # Transit numbered from the operator's own aggregate.
+            ("provider-public-space", lambda: self.objects["prefix/upstream/transit-a"]["attrs"].update(prefix="192.0.2.224/28")),
             ("provider-carrier-identity", lambda: self.objects["provider/transport-b"]["attrs"].update(name="Meridian Transport")),
             ("provider-asn", lambda: self.objects["asn/transit-a"]["attrs"].update(asn=self.objects["asn/transit-b"]["attrs"]["asn"])),
             ("provider-public-space", lambda: self.plan["objects"].remove(self.objects["aggregate/public/203.0.113.0/24"])),

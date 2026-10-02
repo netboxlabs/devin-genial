@@ -51,7 +51,9 @@ import re
 # * ``contact_group`` — the root group's canonical slug is derived from this
 #   name and is deliberately omitted on the wire so the pinned plugin's
 #   auto-slug matcher resolves it; a clean name silently moves the matching
-#   identity (estates/operations_context.py).
+#   identity (estates/operations_context.py).  A dedicated tenant drops the
+#   prefix via ``main_scoped_name``: one estate owns it, so the bare name and
+#   the slug derived from it cannot collide and still match on the wire.
 # * ``route_target`` — the name IS the route distinguisher, "<asn>:<number>",
 #   built from the estate's namespace-derived private ASN block.  NetBox holds
 #   RouteTarget.name unique=True globally (pinned 4.7.1 ipam/models/vrfs.py),
@@ -318,7 +320,7 @@ SEGMENT_ROLES = {
     "clinical": "clinical", "medical": "clinical", "imaging": "clinical",
     "process": "ot", "supervisory": "ot", "protection": "ot", "telemetry": "ot", "station": "ot",
     "wan": "transit", "conduit": "transit", "recovery": "transit",
-    "provider": "backbone",
+    "provider": "backbone", "oob": "management",
 }
 
 
