@@ -15,6 +15,98 @@ from estates.validate_provider import _loads
 ROOT = Path(__file__).parents[1]
 
 
+LIFECYCLE_RECIPE = {"profile": "provider-backbone", "customers": [
+    dict(key="harbor-logistics", hub_pop="chicago-west", sites=[
+        dict(pop="chicago-west"), dict(pop="detroit-south", status="planned"),
+        dict(pop="cleveland-east", status="decommissioning")]),
+    dict(key="maple-schools", hub_pop="detroit-south", status="planned", lan_endpoints=0,
+         sites=[dict(pop="detroit-south"), dict(pop="cleveland-east")])]}
+
+
+class ProviderLifecycleTests(unittest.TestCase):
+    """Onboarding, provisioning and decommissioning premises are honest, never healthy capacity."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.baseline = generate(LIFECYCLE_RECIPE)
+
+    def setUp(self):
+        self.plan = deepcopy(self.baseline)
+        self.objects = {o["key"]: o for o in self.plan["objects"]}
+
+    def codes(self):
+        return {finding["code"] for finding in validate(self.plan)}
+
+    def test_each_premises_lifecycle_reaches_every_record_it_owns(self):
+        self.assertEqual(validate(self.plan), [])
+        o = self.objects
+        for sid, site, device, circuit, ip, bgp in (
+                ("ce-maple-schools-detroit-south-001", "planned", "planned", "planned", "reserved", "planned"),
+                ("ce-harbor-logistics-detroit-south-001", "staging", "staged", "provisioning", "reserved", "planned"),
+                ("ce-harbor-logistics-cleveland-east-001", "decommissioning", "decommissioning", "deprovisioning", "deprecated", "offline"),
+                ("ce-harbor-logistics-chicago-west-001", "active", "active", "active", "active", "active")):
+            with self.subTest(sid=sid):
+                self.assertEqual(o[f"site/{sid}"]["attrs"]["status"], site)
+                self.assertEqual(o[f"device/{sid}/edge-01"]["attrs"]["status"], device)
+                self.assertEqual(o[f"circuit/customer/{sid}"]["attrs"]["status"], circuit)
+                self.assertEqual(o[f"ip/device/{sid}/edge-01/if/wan1"]["attrs"]["status"], ip)
+                self.assertEqual(o[f"bgp-session/customer/{sid}"]["attrs"]["status"], bgp)
+                self.assertEqual("install_date" in o[f"circuit/customer/{sid}"]["attrs"], circuit in ("active", "deprovisioning"))
+        self.assertEqual(o["virtual-circuit/customer/maple-schools"]["attrs"]["status"], "planned")
+        # Nothing records an installation that has not happened.
+        self.assertNotIn("journal/device/ce-maple-schools-detroit-south-001/edge-01/equipment-record", o)
+        self.assertFalse([k for k in o if k.startswith("journal/circuit/customer/ce-maple-schools-")])
+        # Only in-service premises offer traffic to the capacity model.
+        capacity = next(c for c in self.plan["contracts"] if c.get("provider"))["provider"]["capacity"]
+        self.assertFalse(any(capacity["normal_load_mbps"].values()))
+
+    def test_status_counterexamples_are_reported(self):
+        sid = "ce-maple-schools-detroit-south-001"
+        cases = ((f"circuit/customer/{sid}", "install_date", "2026-01-01", "provider-timeline"),
+                 (f"site/{sid}", "status", "active", "provider-site-context"),
+                 (f"device/ce-harbor-logistics-cleveland-east-001/edge-01", "status", "active", "provider-device-inventory"),
+                 (f"ip/device/{sid}/edge-01/if/wan1", "status", "active", "provider-routed-address"),
+                 (f"bgp-session/customer/{sid}", "status", "active", "provider-bgp-session"),
+                 (f"circuit/customer/ce-harbor-logistics-detroit-south-001", "status", "active", "provider-circuit-path"),
+                 ("virtual-circuit/customer/maple-schools", "status", "active", "provider-customer-service"))
+        for key, field, value, code in cases:
+            with self.subTest(key=key, field=field):
+                self.setUp()
+                self.objects[key]["attrs"][field] = value
+                self.assertIn(code, self.codes())
+
+    def test_recipe_lifecycle_bounds(self):
+        bad = deepcopy(LIFECYCLE_RECIPE)
+        bad["customers"][0]["sites"][0]["status"] = "planned"  # the hub of an active customer
+        with self.assertRaisesRegex(DesignError, "hub_pop entry of an active customer"):
+            generate(bad)
+        bad = deepcopy(LIFECYCLE_RECIPE)
+        bad["customers"][1]["sites"][0]["status"] = "active"
+        with self.assertRaisesRegex(DesignError, "every premises of a planned customer is planned"):
+            generate(bad)
+        bad = deepcopy(LIFECYCLE_RECIPE)
+        bad["customers"][0]["sites"][1]["status"] = "retired"
+        with self.assertRaisesRegex(DesignError, "status must be one of"):
+            generate(bad)
+
+    def test_lifecycle_moves_forward_as_growth(self):
+        grown = deepcopy(self.plan["recipe"])
+        grown["customers"][1]["status"] = "active"
+        for entry in grown["customers"][1]["sites"]:
+            entry.pop("status", None)
+        next(e for e in grown["customers"][0]["sites"] if e["pop"] == "detroit-south").pop("status")
+        plan = generate(grown, previous=self.plan)
+        self.assertEqual(validate(plan), [])
+        after = {o["key"]: o for o in plan["objects"]}
+        self.assertEqual(after["circuit/customer/ce-maple-schools-detroit-south-001"]["attrs"]["status"], "active")
+        self.assertEqual(after["circuit/customer/ce-harbor-logistics-chicago-west-001"],
+                         self.objects["circuit/customer/ce-harbor-logistics-chicago-west-001"])
+        back = deepcopy(self.plan["recipe"])
+        next(e for e in back["customers"][0]["sites"] if e["pop"] == "cleveland-east").pop("status")  # decommissioning -> active
+        with self.assertRaisesRegex(DesignError, "requires a new baseline"):
+            generate(back, previous=self.plan)
+
+
 class ProviderValidationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

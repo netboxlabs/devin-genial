@@ -290,6 +290,11 @@ def analyze(plan, catalog=None):
                 not isinstance(supported, list) or not any(bay_type_identity(t) == expected_type for t in supported)):
             report("optics-module", port, "Interface, module and cage must share an owner and the unique named, positioned, manufacturer/form-factor bay type with advertised module fit.")
 
+    # A cage may face a circuit not (or no longer) in service: its cables carry
+    # that circuit's lifecycle instead of "connected". Such a path is checked
+    # for media and reach like any other but is never an in-service channel.
+    lifecycle = {"planned": {"planned", "provisioning"}, "decommissioning": {"deprovisioning"}}
+
     def channel(start):
         current, seen, length, route = start, set(), 0, []
         site = refs(refs(start).get("device")).get("site")
@@ -302,22 +307,27 @@ def analyze(plan, catalog=None):
             cable, peer = cables[current][0]
             route.append(cable)
             value, unit = attrs(cable).get("length"), attrs(cable).get("length_unit")
-            if (attrs(cable).get("status") != "connected" or len(cables[peer]) != 1 or
+            if (attrs(cable).get("status") not in {"connected", *lifecycle} or len(cables[peer]) != 1 or
                     not (type(value) is int or type(value) is float and math.isfinite(value)) or value <= 0 or
                     not isinstance(unit, str) or unit not in _LENGTH or value > maximum / _LENGTH[unit]):
                 return None, route, length, "requires connected, singly occupied cables with finite supported lengths"
             length += value * _LENGTH[unit]
             if length > maximum:
                 return None, route, length, "exceeds the complete local-channel length policy"
+            staged = {attrs(c).get("status") for c in route} - {"connected"}
+            if staged and kind(peer) != "circuit_termination":
+                return None, route, length, "requires connected cables unless it faces a circuit not in service"
             if kind(peer) == "interface":
                 if refs(refs(peer).get("device")).get("site") != site:
                     return None, route, length, "cannot join different sites with a short local optical channel"
                 return peer, route, length, None
             if kind(peer) == "circuit_termination":
                 circuit = refs(peer).get("circuit")
+                wanted = lifecycle[next(iter(staged))] if len(staged) == 1 else {"active"} if not staged else set()
                 if (term_site(peer) != site or kind(site) != "site" or
-                        kind(circuit) != "circuit" or attrs(circuit).get("status") != "active"):
-                    return None, route, length, "requires an active circuit handoff terminating at the local site"
+                        kind(circuit) != "circuit" or attrs(circuit).get("status") not in wanted):
+                    return None, route, length, ("requires an active circuit handoff terminating at the local site; "
+                                                 "a planned or decommissioning cable only faces a circuit in that lifecycle")
                 return peer, route, length, None
             if kind(peer) not in {"front_port", "rear_port"} or len(passive[peer]) != 1:
                 return None, route, length, "requires a real peer or an unambiguous passive front/rear mapping"

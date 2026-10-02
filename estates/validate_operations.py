@@ -290,7 +290,8 @@ def _context(plan, objects, kinds):
     # serial's date code is a manufacture 30-180 days before the install of the
     # unit it sits in, or before the circuit an optic's own port serves.
     # Re-derived from the graph alone.
-    circuit_day = {t["key"]: attrs(t["refs"].get("circuit")).get("install_date") for t in kinds["circuit_termination"]}
+    circuit_day = {t["key"]: attrs(t["refs"].get("circuit")).get("install_date") for t in kinds["circuit_termination"]
+                   if attrs(t["refs"].get("circuit")).get("install_date")}
     port_day = {}
     for cable in kinds["cable"]:
         ends = (cable["refs"].get("a"), cable["refs"].get("b"))
@@ -430,6 +431,10 @@ def _context(plan, objects, kinds):
         contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
                                  None if own_domain else f"carrier-{provider.removeprefix('provider/')}.support")
         expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        if data.get("status") in {"planned", "provisioning"}:
+            if "install_date" in data:
+                fail("operations-journal", key, "A circuit not yet in service has no install date.")
+            continue  # and no dated order or handoff history yet
         if "commit_rate" in data or recipe.get("profile") != "provider-backbone":  # owned fiber purchases nothing
             expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
                         (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
@@ -500,8 +505,9 @@ def _context(plan, objects, kinds):
     for device in kinds["device"]:
         refs, data = device["refs"], device["attrs"]
         rack, position = refs.get("rack"), data.get("position")
-        if refs.get("role") not in infrastructure_roles or not rack or position is None:
-            continue
+        if (refs.get("role") not in infrastructure_roles or not rack or position is None
+                or data.get("status") in {"planned", "staged", "inventory"}):
+            continue  # equipment not yet installed carries no installation note
         if type(position) not in (int, float):
             fail("operations-journal-facts", device["key"], "Equipment history requires an actual numeric rack position.")
             continue

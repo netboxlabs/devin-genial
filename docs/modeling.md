@@ -360,16 +360,26 @@ Allocation pools). IP ranges are DHCP pools when active and Reserved when held.
 
 The address pool is one global container under its aggregate; a global
 container parents prefixes in every VRF, so the per-VRF copies of the pool are
-gone (site-block containers stay per VRF, since each VRF holds a slot of it).
+gone. Each site's block is likewise **one global container**
+(`prefix/<site>/reservation`, scoped to the site, with the site's tenant; the
+IPv6 /48 is `ipv6/reservation/<site>`) parenting that site's segments in every
+VRF — since 0.16.0 it is no longer repeated once per VRF (the provider NOC's
+`10.0.0.0/16` used to appear five times). Being VRF-less it carries the
+Allocation pools role.
 `networking.address_ranges` fills every VLAN-bound IPv4 LAN of /26 or larger
-with fixed-geometry ranges: a Reserved infrastructure block between the
-gateways and `.10` (where `Site.address` starts endpoints), and on client
-segments (Users, Wireless, Guest, Voice roles) a DHCP scope over the top
-quarter (at most 128 hosts) whose last `reserve_fraction` is a Reserved
-headroom range. Boundaries depend only on prefix size and the recipe's reserve
-fraction, so growth never moves a range; a held range is emitted only while no
-assigned address occupies it. WLAN capacity (`wireless_context`) treats a DHCP
-scope as client capacity and held ranges as consumed.
+so a client segment reads top to bottom with no unexplained gap: a Reserved
+infrastructure block between the gateways and `.10` (where `Site.address`
+starts endpoints), then on client segments (Users, Wireless, Guest, Voice
+roles) an active **static** range from `.10` (the segment's own role), the
+**DHCP scope** from the first quarter mark clear of every static assignment
+(normally the upper half; guest segments, which have no static clients, from
+`.10`), and a Reserved headroom range holding back `reserve_fraction` of the
+scope at the top. A dense-static segment whose assignments pass three quarters
+has no DHCP scope, and growth that pushes static clients past a quarter mark
+moves the scope up (a `ponytail:` note in `networking.py`); a held range is
+emitted only while no assigned address occupies it. WLAN capacity
+(`wireless_context`) counts only held (reserved) ranges and actual addresses
+as consumed; DHCP and static pools are client capacity.
 `validate_networking` re-derives and enforces every assignment (`ipam-role`).
 Role names are namespace-free like device roles; Role is a branch-scoped
 OrganizationalModel and the loader's occupancy gate keeps two estates out of
@@ -525,7 +535,7 @@ complete simulations:
 | Cooling and serviceable parts | Explicitly fictional analytics enclosure and blade, replaceable cold plate, rack coolant feed, source and acyclic intake/outflow chain |
 | IPAM and HA | Private ASN ranges and site/provider ASNs, aggregates, roles, route targets, reserved ranges, and one valid VRRPv3 gateway pair with its shared address |
 | Wireless | Site-scoped staff WLAN groups, actual radio interfaces and tagged user-VLAN access paths; a separate routed diagnostic hop |
-| Carrier and recovery services | Virtual circuits over real WAN handoffs; planned IKE/IPsec tunnel and translated VXLAN recovery segment between the DCs |
+| Carrier and recovery services | Virtual circuits over real WAN handoffs (hub and spoke terminations); planned IKE/IPsec tunnel and translated VXLAN recovery segment between the DCs |
 | Operations | Contacts/owners, commercial accounts, tenant groups, A/B circuit groups, cluster groups, per-role VM types and disks, cabinet types/groups, the site service-tier field, journal entries and the site-equipment link — every profile; the bank adds its DC01 rack reservation and cable bundle |
 | Automation | A global config context carrying this estate's own service endpoints and a role-weighted switching context; CSV export templates for devices and cables; an inert `.invalid` webhook with its disabled device-change event rule (loader-only: no Diode entity exists for these four kinds) |
 
@@ -563,7 +573,13 @@ The shared policy assigns /48 facilities, /64 LANs, /127 routed router links and
 /128 PE loopbacks. Bank diagnostic radios use a /64; bank FHRP VIPs remain
 IPv4-only. Unknown transit far ends remain unknown. Existing interfaces gain
 IPv6 addresses and eligible device/VM primaries; services list both families on
-the same object. `report.md` shows bounded primary and listener examples from
+the same object. Services carry NetBox 4.7 `port_mappings` (`tcp/53`,
+`udp/53`) rather than the deprecated single `protocol`/`ports` pair, so one DNS
+service lists both transports: a listener named `<service>-<protocol>`
+(`dns-udp` beside `dns`) folds into its service (`datacenter.services`). The
+loader writes `port_mappings` on a 4.7 target and falls back to
+`protocol`/`ports` only for a single-protocol service on an older one. No
+ServiceTemplate kind is emitted. `report.md` shows bounded primary and listener examples from
 those actual references. This models address and listener intent, not executed
 routing, RA/DHCPv6, IPv6 default-router failover or application configuration.
 
@@ -704,9 +720,10 @@ mutation in `tests/test_estate_hygiene.py`.
   powered. Journals carry `success`/`warning`/`info` by event and contact
   assignments `primary`/`secondary`/`tertiary` by desk order
   ([below](#contact-and-journal-context)). Devices, sites and circuits stay
-  `active`: no baseline ledger implies a staged or decommissioning device —
-  those states belong to the acquisition/refresh, power and span-maintenance
-  snapshots.
+  `active` unless the recipe says otherwise: only the provider's customer
+  lifecycle keys ([below](#provider-customer-lifecycle)) set planned, staged or
+  decommissioning premises; the acquisition/refresh, power and span-maintenance
+  snapshots carry their own states.
 - **Tags name properties the graph shows** (`naming.TAGS`): `Hub site` (hosts a
   cluster or a private-WAN hub), `Dual-homed` (active circuits from two
   carriers), `Acquired` (Birch lineage sites and devices), `Route reflector`
@@ -736,10 +753,12 @@ mutation in `tests/test_estate_hygiene.py`.
   (spine, leaf, core, distribution, provider edge) and over backbone spans carry
   jumbo MTU (9192 on Junos, 9216 elsewhere).
 - **Addresses don't repeat their interface.** IP addresses carry no
-  description; DNS names stay on primaries (`<device>.<domain>`), VM addresses
-  and loopbacks keep their host's name, and every other device address is
-  interface-qualified (`xe-0-1-1.<device>.<domain>`). Loopback addresses carry
-  the `loopback` IP role.
+  description. DNS names are published only where an operator would publish
+  them (since 0.16.0): primaries (`<device>.<domain>`), VM addresses, and
+  loopbacks and dedicated management ports, interface-qualified
+  (`lo0.<device>.<domain>`, `fxp0.<device>.<domain>`). Routed /31 and /127
+  links, gateways, VRRP virtual addresses and service attachments carry none.
+  Loopback addresses carry the `loopback` IP role.
 - **Fingerprints look like hardware.** Vendor-OUI MACs (above), optic serials in
   the maker's label shape (`optics.serial_formats`, authored fiction), and
   optic module types carrying only datasheet facts — provenance and the
@@ -985,6 +1004,53 @@ customer's own domain (`noc@cedar-regional-bank.example`). A PoP cage's
 facilities desk is the remote-hands desk of the carrier hotel's operator — one
 invented colocation company per metro (Windward Interconnect, Motorline Data
 Centers, Cuyahoga Colocation, Kinnickinnic Colocation) — not carrier staff.
+
+**Terminations.** A local handoff terminates in the room its equipment stands
+in — the PoP cage, the premises or NOC equipment room — so a circuit's A and Z
+read as a cage, not just a building; NetBox's termination save still caches
+the room's site, so `?site_id=` filters and WAN maps are unchanged. A far end
+NetBox cannot see stays on the carrier's provider network. Every carrier
+handoff into a PoP (leased spans, transit, NOC private lines and out-of-band
+broadband) records the carrier hotel's cross-connect order (`xconnect_id`,
+`XC-` plus seven digits, ledger `provider-cross-connects`), and a fibre handoff
+its position on the PE cabinet's own 1U enclosure (`pp_info`,
+`chicago-cermak-odf-a, panel 1, port 2`; ledger
+`provider-odf-positions/<enclosure>`, four panels of twelve ports). The
+operator's own circuits carry neither. Access circuits record `distance`: the
+premises-to-PoP great-circle distance times the 1.3 route factor, which the
+optic chooser reads directly.
+
+**Customer services.** Each customer's private-L3 virtual circuit terminates
+as `hub` at its hub premises and `spoke` elsewhere. A customer's private ASN
+carries the customer tenant; the operator's documentation ASN the operator
+tenant; the upstreams' none.
+
+### Provider customer lifecycle
+
+A provider recipe can show a carrier mid-motion, honestly. A customer may be
+onboarding (`status = "planned"`); a premises entry may be `"planned"`
+(provisioning under an active customer) or `"decommissioning"`. Every record
+the premises owns — site and rooms, rack, devices, cables, access circuit,
+addresses, prefixes, VLAN, the serving PE port's /31 end and the BGP session —
+moves together:
+
+| Premises | Site | Devices | Access circuit | Cables | Addresses / prefixes | BGP session |
+| --- | --- | --- | --- | --- | --- | --- |
+| onboarding customer | planned | planned | planned | planned | reserved | planned |
+| planned entry | staging | staged | provisioning | planned | reserved | planned |
+| decommissioning entry | decommissioning | decommissioning | deprovisioning | decommissioning | deprecated | offline |
+
+An onboarding customer's virtual circuit is `planned`. A circuit not yet in
+service has no `install_date` and no dated order or handoff history; equipment
+not yet installed gets no installation journal and stays out of the asset
+lifecycle BOMs. None of these paths counts as healthy capacity: only active
+premises offer spoke-to-hub traffic, and power validation covers in-service
+equipment only. An active customer's hub entry must stay active. Growth may
+move a premises forward — planned to provisioning or active, provisioning to
+active, active to decommissioning; anything else (including removing a
+decommissioned premises) needs a new baseline. Activation dates the circuit and
+re-dates that premises' own equipment history and serial date codes; nothing
+else moves.
 
 **Optic reach.** Intra-metro dark fiber and access tails are the operator's own
 fiber, so each optic is chosen by the run it lights (since 0.16.0): spans up to

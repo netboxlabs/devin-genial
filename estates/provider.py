@@ -28,7 +28,23 @@ COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "re
 DEFAULT_POPS = [dict(key="chicago-west",metro="chicago"),dict(key="detroit-south",metro="detroit"),
                 dict(key="cleveland-east",metro="cleveland")]
 DEFAULT_CUSTOMERS = [dict(key="harbor-logistics",hub_pop="chicago-west",sites=[dict(pop=p["key"],count=1) for p in DEFAULT_POPS])]
-CUSTOMER_DEFAULTS = dict(service="private-l3",site_peak_mbps=50,hub_commit_mbps=1000,lan_endpoints=4)
+CUSTOMER_DEFAULTS = dict(service="private-l3",site_peak_mbps=50,hub_commit_mbps=1000,lan_endpoints=4,status="active")
+# Recipe lifecycle: a customer may be onboarding ("planned"); a premises entry
+# may also be "planned" (provisioning under an active customer) or
+# "decommissioning". Each premises lifecycle sets every record it owns.
+CUSTOMER_STATUSES = ("active","planned")
+# Growth may only move a premises forward through its lifecycle.
+FORWARD = {("planned","provisioning"),("planned","active"),("provisioning","active"),("active","decommissioning")}
+FORWARD_TEXT = "planned to provisioning or active, provisioning to active, and active to decommissioning"
+ENTRY_STATUSES = ("active","planned","decommissioning")
+LIFECYCLE = {
+    "planned": dict(site="planned",device="planned",circuit="planned",cable="planned",rack="planned",
+                    feed="planned",ip="reserved",prefix="reserved",vlan="reserved",bgp="planned"),
+    "provisioning": dict(site="staging",device="staged",circuit="provisioning",cable="planned",rack="planned",
+                         feed="planned",ip="reserved",prefix="reserved",vlan="reserved",bgp="planned"),
+    "decommissioning": dict(site="decommissioning",device="decommissioning",circuit="deprovisioning",cable="decommissioning",
+                            rack="deprecated",feed="active",ip="deprecated",prefix="deprecated",vlan="deprecated",bgp="offline"),
+}
 CAPACITY_SCOPE = ("Directed customer spoke-to-hub offered load under normal operation and loss of one inter-PoP span. "
                   "Return, arbitrary peer-to-peer, NOC and external-transit traffic are excluded; this is not total backbone capacity. "
                   "NOC peak tests only local purchased handoff headroom. Router and local-pair failures have a connectivity witness only, "
@@ -140,6 +156,14 @@ def premises(recipe):
             for c in recipe["customers"] for entry in c["sites"] for n in range(1,entry["count"]+1)]
 
 
+def lifecycle(customer,pop):
+    """A premises lifecycle: active, planned (onboarding customer), provisioning or decommissioning."""
+    if customer.get("status","active") == "planned":
+        return "planned"
+    status = next(e.get("status","active") for e in customer["sites"] if e["pop"] == pop)
+    return "provisioning" if status == "planned" else status
+
+
 def premises_code(w,sid,customer):
     """Hostname stem for one customer premises: lakeshore-health-cle03.
 
@@ -220,6 +244,8 @@ def resolve(raw):
         _integer(c["site_peak_mbps"],f"Customer {key} site_peak_mbps",1,800)
         _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",0,12)
         _integer(c["hub_commit_mbps"],f"Customer {key} hub_commit_mbps",1,1000)
+        if c["status"] not in CUSTOMER_STATUSES:
+            raise DesignError(f"Customer {key}: status must be one of {', '.join(CUSTOMER_STATUSES)}")
         if c["hub_commit_mbps"] not in r["wan_tiers_mbps"]:
             raise DesignError(f"Customer {key}: hub_commit_mbps must be one of wan_tiers_mbps")
         if c["site_peak_mbps"] > 1000*usable:
@@ -229,8 +255,12 @@ def resolve(raw):
             raise DesignError(f"Customer {key}: sites must span at least two distinct modeled PoPs")
         seen = set()
         for entry in entries:
-            if not isinstance(entry,dict) or entry.keys()-{"pop","count"} or "pop" not in entry:
-                raise DesignError(f"Customer {key}: each sites entry requires pop and optional count")
+            if not isinstance(entry,dict) or entry.keys()-{"pop","count","status"} or "pop" not in entry:
+                raise DesignError(f"Customer {key}: each sites entry requires pop and optional count and status")
+            if entry.get("status","active") not in ENTRY_STATUSES:
+                raise DesignError(f"Customer {key}: a sites entry status must be one of {', '.join(ENTRY_STATUSES)}")
+            if c["status"] == "planned" and entry.get("status","planned") != "planned":
+                raise DesignError(f"Customer {key}: every premises of a planned customer is planned")
             pop = entry["pop"]
             if not isinstance(pop,str) or pop not in values or pop in seen:
                 raise DesignError(f"Customer {key}: attachment PoPs must be unique known keys")
@@ -244,6 +274,9 @@ def resolve(raw):
                 site_ids.add(sid)
         if not isinstance(c["hub_pop"],str) or c["hub_pop"] not in seen:
             raise DesignError(f"Customer {key}: hub_pop must be one of its attachment PoPs")
+        if c["status"] == "active" and next(e for e in entries if e["pop"] == c["hub_pop"]).get("status","active") != "active":
+            raise DesignError(f"Customer {key}: the hub_pop entry of an active customer must stay active; "
+                              "its spokes route through that hub")
         c["sites"] = sorted(entries,key=lambda item:item["pop"])
         count = sum(e["count"] for e in entries)
         if (count-1)*c["site_peak_mbps"] > c["hub_commit_mbps"]*usable:
@@ -304,6 +337,14 @@ def generate(recipe,previous=None):
                 raise DesignError(
                     f"Customer {before['key']}: changing {', '.join(changed)} is a hub or "
                     "purchased-bandwidth change and requires a new baseline")
+            # Lifecycle moves forward only: planned premises go into service,
+            # in-service premises may start decommissioning.
+            for entry in before["sites"]:
+                if entry["pop"] in {e["pop"] for e in after["sites"]}:
+                    move = (lifecycle(before,entry["pop"]),lifecycle(after,entry["pop"]))
+                    if move[0] != move[1] and move not in FORWARD:
+                        raise DesignError(f"Customer {before['key']} at {entry['pop']}: moving premises from {move[0]} "
+                                          f"to {move[1]} requires a new baseline; supported growth is {FORWARD_TEXT}")
             counts = {e["pop"]:e["count"] for e in after["sites"]}
             if after["lan_endpoints"] < before["lan_endpoints"] or any(counts.get(e["pop"],0) < e["count"] for e in before["sites"]):
                 raise DesignError("Reducing customer premises or LAN endpoint demand requires a new baseline")
@@ -512,8 +553,10 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
              cid,installed,description=None,distance_km=None):
     """One circuit; rate_mbps None is owned fibre with no purchased commitment."""
     handoff = handoff_mbps or rate_mbps
-    attrs = dict(cid=cid,status="active",install_date=installed.isoformat(),
-                 description=description or f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff")
+    # A circuit not yet in service (installed None) records no install date.
+    attrs = dict(cid=cid,status="active",description=description or f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff")
+    if installed is not None:
+        attrs["install_date"] = installed.isoformat()
     if rate_mbps is not None:
         attrs["commit_rate"] = rate_mbps*1000
     if distance_km:
@@ -913,7 +956,8 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
         lines = node["attrs"]["physical_address"].split("\n")
         lines[:2] = [places.street_address(sid,anchor,latitude,longitude),f"{anchor[1]}, {lines[1].rsplit(', ',1)[-1]}"]
         node["attrs"].update(name=name,latitude=latitude,longitude=longitude,physical_address="\n".join(lines))
-    w.obj(site.key)["meta"]["in_service"] = installed.isoformat()
+    if lifecycle(c,pop) in ("active","decommissioning"):
+        w.obj(site.key)["meta"]["in_service"] = installed.isoformat()
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     managed_lan = c["lan_endpoints"] > 0
@@ -970,7 +1014,8 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     distance = (round(km((here["latitude"],here["longitude"]),(there["latitude"],there["longitude"]))*ROUTE_FACTOR,1)
                 if "latitude" in here and "latitude" in there else None)
     _circuit(w,circuit,"provider/operator",f"provider-account/customer/{key}","access",site,port,pop_site,pe_port,rate,tenant,handoff_mbps=1000,
-             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",installed=installed,distance_km=distance)
+             cid=f"{operator_code(w.recipe['name'])}-PL3-{w.allocations[sid]:05d}",
+             installed=installed if lifecycle(c,pop) in ("active","decommissioning") else None,distance_km=distance)
     _routed_pair(w,circuit,port,pe_port,vrf,tenant)
     vi=w.add("interface",f"{edge}/if/PrivateL3",dict(name="PrivateL3",type="virtual",enabled=True,description="Private L3 VPN attachment over the access circuit"),
              dict(device=edge,parent=port,vrf=vrf))
@@ -986,7 +1031,59 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     else:
         equipment.enrich_site(site,demonstrations=False)
     site.power()
-    return dict(site=site.key,customer=key,router=w.obj(pe_port)["refs"]["device"],hub=hub,peak_mbps=c["site_peak_mbps"])
+    return dict(site=site.key,customer=key,router=w.obj(pe_port)["refs"]["device"],hub=hub,peak_mbps=c["site_peak_mbps"],
+                stage=lifecycle(c,pop))
+
+
+def _apply_lifecycle(w,entries):
+    """Give every record a premises owns its lifecycle status (LIFECYCLE).
+
+    Runs once the graph is enriched, so IPv6, optics and MAC records exist;
+    the site's own rooms, racks, devices, cables, addresses, segments and
+    access circuit move together, and the serving PE port's /31 end with them.
+    """
+    objects = w.objects
+    customers = {c["key"]:c for c in w.recipe["customers"]}
+    for c in customers.values():
+        if c["status"] == "planned":
+            objects[f"virtual-circuit/customer/{c['key']}"]["attrs"]["status"] = "planned"
+    stages = {f"site/{sid}":(lifecycle(c,pop),sid) for sid,c,pop,_ in entries if lifecycle(c,pop) != "active"}
+    if not stages:
+        return
+    owner = {}
+    for key,obj in objects.items():
+        site = obj["refs"].get("site") if obj["kind"] in ("device","rack","location","vlan") else None
+        if site in stages: owner[key] = site
+    for key,obj in objects.items():
+        if obj["refs"].get("device") in owner: owner[key] = owner[obj["refs"]["device"]]
+    for site,(_,sid) in stages.items():
+        circuit = f"circuit/customer/{sid}"
+        owner[circuit] = owner[f"{circuit}/A"] = owner[f"{circuit}/Z"] = site
+        for prefix in (f"prefix/link/{circuit}",f"ipv6/prefix/link/{circuit}"):
+            if prefix in objects: owner[prefix] = site
+    for key,obj in objects.items():
+        if obj["kind"] == "cable":
+            ends = [owner.get(obj["refs"][side]) for side in ("a","b")]
+            site = next((s for s in ends if s),None)
+            if site: owner[key] = site
+            # The PE end of an access /31 belongs to the premises it serves.
+            if site and obj["refs"]["b"].startswith("circuit/customer/"):
+                owner[obj["refs"]["a"]] = site
+        elif obj["kind"] == "prefix" and obj["refs"].get("scope_site") in stages and obj["attrs"]["status"] != "container":
+            owner[key] = obj["refs"]["scope_site"]
+        elif obj["kind"] == "power_feed" and objects.get(obj["refs"].get("rack"),{}).get("refs",{}).get("site") in stages:
+            owner[key] = objects[obj["refs"]["rack"]]["refs"]["site"]
+    for key,obj in objects.items():
+        if obj["kind"] == "ip_address" and obj["refs"].get("assigned_object") in owner:
+            owner[key] = owner[obj["refs"]["assigned_object"]]
+    field = {"site":"site","location":"site","device":"device","rack":"rack","cable":"cable","circuit":"circuit",
+             "ip_address":"ip","prefix":"prefix","vlan":"vlan","power_feed":"feed"}
+    for key,site in owner.items():
+        obj = objects[key]
+        if obj["kind"] in field:
+            obj["attrs"]["status"] = LIFECYCLE[stages[site][0]][field[obj["kind"]]]
+    for site,(stage,_) in stages.items():
+        objects[site]["attrs"]["status"] = LIFECYCLE[stage]["site"]
 
 
 def _capacity(graph,attachments,reserve):
@@ -995,10 +1092,12 @@ def _capacity(graph,attachments,reserve):
     for edge,a,b,rate in graph:
         adjacency[a].append((edge,b)); adjacency[b].append((edge,a))
     for edges in adjacency.values(): edges.sort()
-    hubs={a["customer"]:a["router"] for a in attachments if a["hub"]}
+    hubs={a["customer"]:a["router"] for a in attachments if a["hub"] and a.get("stage","active") == "active"}
     flows=Counter()
     for a in attachments:
-        if not a["hub"]: flows[a["router"],hubs[a["customer"]]] += a["peak_mbps"]
+        # Only an in-service premises offers traffic: planned, provisioning
+        # and decommissioning paths are never counted as healthy capacity.
+        if not a["hub"] and a.get("stage","active") == "active": flows[a["router"],hubs[a["customer"]]] += a["peak_mbps"]
     worst=Counter(); normal=Counter()
     for failed in [None]+[edge for edge,*_ in graph if edge.startswith("circuit/backbone/")]:
         trees={}; loads=Counter()
@@ -1108,7 +1207,9 @@ def _generate(recipe,previous=None):
     dc.contract["provider"]=dict(pop_count=len(pop_sites),customer_count=len(recipe["customers"]),customer_premises=len(entries),
         transport_spans=len(spans),capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
         management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
-    equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w); operations.supporting_records(w)
+    equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w)
+    _apply_lifecycle(w,entries)
+    operations.supporting_records(w)
     bgp.enrich(w)
     discovery_lab.add_discovery_lab(w)
     return w.finish()

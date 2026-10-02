@@ -72,6 +72,10 @@ CE_ROLE = "role/customer-edge"
 LOOPBACK = "lo0"
 
 
+# A customer peering's inventory status follows its access circuit's
+# lifecycle: one not yet in service is planned, one being withdrawn offline.
+SESSION_STATUS = {"active": "active", "planned": "planned", "provisioning": "planned", "deprovisioning": "offline"}
+
 def _index(world):
     """Finished-graph indexes every derivation below reads from."""
     interfaces, address_of, prefix_of, peers = {}, {4: {}, 6: {}}, {}, {}
@@ -158,7 +162,7 @@ def enrich(world):
             {"name": name, "description": description}, refs)
 
     def session(key, local, local_address, remote_as, group, description,
-                *, remote_address=None, remote_prefix=None, tenant=None, remote_label):
+                *, remote_address=None, remote_prefix=None, tenant=None, remote_label, status="active"):
         local_site = obj(local)["refs"]["site"]
         refs = {"device": local, "site": local_site, "local_address": local_address,
                 "local_as": site_asn(local_site), "remote_as": remote_as,
@@ -171,7 +175,7 @@ def enrich(world):
             refs["tenant"] = tenant
         add("bgp_session", key,
             {"name": f"{obj(local)['attrs']['name']} to {remote_label}",
-             "status": "active", "description": description}, refs)
+             "status": status, "description": description}, refs)
 
     def loopback(router, family):
         port = interfaces.get((router, LOOPBACK))
@@ -250,4 +254,5 @@ def enrich(world):
                     f"Private-L3 customer edge peering over {cid}",
                     remote_address=address(remote, f"the {cid} customer handoff", family),
                     tenant=entry["refs"].get("tenant"),
-                    remote_label=f"{obj(remote_device)['attrs']['name']} customer{label(family)}")
+                    remote_label=f"{obj(remote_device)['attrs']['name']} customer{label(family)}",
+                    status=SESSION_STATUS[entry["attrs"]["status"]])

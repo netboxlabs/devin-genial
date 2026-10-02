@@ -89,6 +89,30 @@ BGP_GROUPS = {
 }
 
 
+# Premises lifecycle, restated from the recipe: an onboarding customer is
+# planned; a planned entry under an active customer is provisioning; an entry
+# may be decommissioning. Every record the premises owns carries the status
+# below, and none of them counts as healthy, in-service capacity.
+LIFE = {
+    "active": dict(site="active", device="active", circuit="active", cable="connected", rack="active",
+                   ip="active", prefix="active", vlan="active", bgp="active"),
+    "planned": dict(site="planned", device="planned", circuit="planned", cable="planned", rack="planned",
+                    ip="reserved", prefix="reserved", vlan="reserved", bgp="planned"),
+    "provisioning": dict(site="staging", device="staged", circuit="provisioning", cable="planned", rack="planned",
+                         ip="reserved", prefix="reserved", vlan="reserved", bgp="planned"),
+    "decommissioning": dict(site="decommissioning", device="decommissioning", circuit="deprovisioning",
+                            cable="decommissioning", rack="deprecated", ip="deprecated", prefix="deprecated",
+                            vlan="deprecated", bgp="offline"),
+}
+
+
+def _stage(customer, pop):
+    if customer.get("status", "active") == "planned":
+        return "planned"
+    status = next(e.get("status", "active") for e in customer["sites"] if e["pop"] == pop)
+    return "provisioning" if status == "planned" else status
+
+
 def _km(a, b):
     """Great-circle kilometres (haversine, mean Earth radius)."""
     (la1, lo1), (la2, lo2) = ((math.radians(x), math.radians(y)) for x, y in (a, b))
@@ -158,14 +182,18 @@ def _recipe(recipe):
                 item.get("service") != "private-l3" or not isinstance(item.get("hub_pop"), str) or item["hub_pop"] not in pops or
                 not _integer(item.get("site_peak_mbps"), 1, 800) or not _integer(item.get("lan_endpoints"), 0, 12) or
                 type(item.get("hub_commit_mbps")) is not int or item["hub_commit_mbps"] not in tiers or
-                not isinstance(item.get("sites"), list) or not 1 <= len(item["sites"]) <= len(pops)):
-            raise ValueError("Customer keys, service, fixed hub commitment and installed LAN demand must be bounded.")
+                not isinstance(item.get("sites"), list) or not 1 <= len(item["sites"]) <= len(pops) or
+                item.get("status", "active") not in ("active", "planned")):
+            raise ValueError("Customer keys, service, fixed hub commitment, installed LAN demand and status must be bounded.")
         seen.add(item["key"])
         entries, premises = set(), []
         for entry in item["sites"]:
             if (not isinstance(entry, dict) or not isinstance(entry.get("pop"), str) or entry["pop"] not in pops or
-                    entry["pop"] in entries or not _integer(entry.get("count"), 1, 12)):
-                raise ValueError("Customer site entries need distinct valid PoPs and 1–12 premises each.")
+                    entry["pop"] in entries or not _integer(entry.get("count"), 1, 12) or
+                    entry.get("status", "active") not in ("active", "planned", "decommissioning") or
+                    (item.get("status", "active") == "planned" and entry.get("status", "planned") != "planned")):
+                raise ValueError("Customer site entries need distinct valid PoPs, 1–12 premises each and a "
+                                 "lifecycle status; every entry of a planned customer is planned.")
             entries.add(entry["pop"])
             occupancy[entry["pop"]] += entry["count"]
             for ordinal in range(1, entry["count"] + 1):
@@ -176,6 +204,8 @@ def _recipe(recipe):
                 premises.append(sid)
         if len(entries) < 2 or item["hub_pop"] not in entries:
             raise ValueError("Every private service needs a real hub and premises at two or more PoPs.")
+        if item.get("status", "active") == "active" and _stage(item, item["hub_pop"]) != "active":
+            raise ValueError("An active customer's hub premises stays active; its spokes route through it.")
         if Decimal(len(premises) - 1) * item["site_peak_mbps"] > Decimal(item["hub_commit_mbps"]) * usable:
             raise ValueError("Purchased hub commitment cannot cover the declared customer spoke-to-hub peak after reserve.")
         if Decimal(item["site_peak_mbps"]) > 1000 * usable:
@@ -296,14 +326,23 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     def child(field, key, wanted):
         return [item for item in children[(field, key)] if kind(item) == wanted] if isinstance(key, str) else []
 
+    # The lifecycle stage of the premises being checked; "active" elsewhere.
+    now = ["active"]
+
+    def life(field):
+        return LIFE[now[0]][field]
+
     def active_path(port):
+        """An in-service path; at a non-active premises, the path in its own lifecycle status."""
         if not isinstance(port, str) or not peers.get(port):
             return False
         members = component_members.get(component_of.get(port), ())
         cables = {cable_of[p] for p in members if p in cable_of}
         devices = {refs(p).get("device") for p in members} - {None}
-        return bool(cables) and all(attrs(c).get("status") == "connected" for c in cables) and all(
-            attrs(d).get("status") == "active" for d in devices) and all(
+        # The serving PE stays active while a premises it serves is not.
+        return bool(cables) and all(attrs(c).get("status") == life("cable") for c in cables) and all(
+            attrs(d).get("status") in {"active", life("device")} for d in devices) and (
+            now[0] != "active" or all(attrs(d).get("status") == "active" for d in devices)) and all(
             attrs(p).get("enabled") is True for p in (port, peers[port]) if kind(p) == "interface")
 
     def vlans(port):
@@ -320,12 +359,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         key = ips[0]
         ip = ipv4_addresses[key]
         good = ip.network == network and (host is None or int(ip.ip) == int(network.network_address) + host)
-        return (good and attrs(key).get("status") == "active" and refs(key).get("vrf") == vrf and
+        return (good and attrs(key).get("status") == life("ip") and refs(key).get("vrf") == vrf and
                 refs(port).get("vrf") == vrf and (tenant is None or refs(key).get("tenant") == tenant))
 
     def primary(device, port):
         key = refs(device).get("primary_ip4")
-        return key in ipv4_addresses and refs(key).get("assigned_object") == port and attrs(key).get("status") == "active"
+        return key in ipv4_addresses and refs(key).get("assigned_object") == port and attrs(key).get("status") == life("ip")
 
     def physical(a, b, speed=None):
         return (kind(a) == kind(b) == "interface" and peers.get(a) == b and active_path(a) and
@@ -465,7 +504,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         network = link_network[link]
         prefix = f"prefix/link/{link}"
         good = (kind(prefix) == "prefix" and attrs(prefix).get("prefix") == str(network) and
-                attrs(prefix).get("status") == "active" and refs(prefix).get("vrf") == vrf and refs(prefix).get("tenant") == tenant)
+                attrs(prefix).get("status") == life("prefix") and refs(prefix).get("vrf") == vrf and refs(prefix).get("tenant") == tenant)
         for host, port in zip(hosts, endpoints):
             good &= address(port, network, vrf, host, tenant) and not vlans(port)
         # An opaque transit peer has no native remote address owner.
@@ -505,7 +544,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     def circuit(key, port_a, port_z, site_a, site_z, provider, speed, commitment, tenant="tenant", account=None):
         terms = child("circuit", key, "circuit_termination")
         sides = {side: [term for term in terms if attrs(term).get("term_side") == side] for side in ("A", "Z")}
-        good = (kind(key) == "circuit" and attrs(key).get("status") == "active" and
+        good = (kind(key) == "circuit" and attrs(key).get("status") == life("circuit") and
                 attrs(key).get("commit_rate") == commitment and refs(key).get("provider") == provider and
                 refs(key).get("tenant") == tenant and len(terms) == 2 and all(len(value) == 1 for value in sides.values()))
         if account is not None:
@@ -535,6 +574,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     for site in sorted(expected_sites):
         sid = site.removeprefix("site/")
         customer = premises[sid][0] if sid in premises else None
+        now[0] = _stage(customer, premises[sid][1]) if customer else "active"
         tenant = f"tenant/cust-{customer['key']}" if customer else "tenant"
         category = "customer" if customer else "dc" if sid == "dc-01" else "pop"
         city, state_code, state, zone = METROS[site_metros[sid]]
@@ -557,7 +597,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                        "dc": "Provider NOC services, inventory and monitoring"}[category]
         if attrs(site).get("description") != description:
             report("provider-scope-text", site, "Facility description must state its modeled role without adding unmodeled availability or execution guarantees.")
-        if (kind(site) != "site" or attrs(site).get("status") != "active" or refs(site).get("tenant") != tenant or
+        if (kind(site) != "site" or attrs(site).get("status") != life("site") or refs(site).get("tenant") != tenant or
                 refs(site).get("region") != region or refs(site).get("group") != group or attrs(site).get("time_zone") != zone or
                 not good_address or kind(region) != "region" or kind(group) != "site_group" or
                 refs(region).get("parent") != f"region/{recipe['namespace']}/us/great-lakes"):
@@ -577,7 +617,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-room-inventory", site, "Each bounded facility needs its real building, ground floor, equipment room and requested customer office.")
         for key, (function, floor, point, parent) in required_rooms.items():
             metadata = objects.get(key, {}).get("meta", {})
-            if (kind(key) != "location" or attrs(key).get("status") != "active" or refs(key).get("site") != site or
+            if (kind(key) != "location" or attrs(key).get("status") != life("site") or refs(key).get("site") != site or
                     refs(key).get("tenant") != tenant or refs(key).get("parent") != parent or
                     metadata.get("space_type") != function or metadata.get("floor") != floor or metadata.get("position_m") != point or
                     (function == "office" and metadata.get("capacity") != {"workstations": 12})):
@@ -596,7 +636,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             expected[f"device/{sid}/mgmt-01"] = ("management", access_alias)
         for key, (role, hardware) in expected.items():
             location = f"{room}/office-01" if role == "workstation" else room
-            if (kind(key) != "device" or attrs(key).get("status") != "active" or refs(key).get("site") != site or
+            if (kind(key) != "device" or attrs(key).get("status") != life("device") or refs(key).get("site") != site or
                     refs(key).get("tenant") != tenant or refs(key).get("role") != f"role/{role}" or
                     refs(key).get("device_type") != f"hardware/{hardware}" or refs(key).get("location") != location):
                 report("provider-device-inventory", key, "Requested devices need their exact active hardware, role, tenant and local room.")
@@ -605,7 +645,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 if role in {"provider-edge", "customer-edge"} and attrs(key).get("description") != f"{role_label(role)} at {attrs(site).get('name')}":
                     report("provider-scope-text", key, "Router description must retain its actual local role; modeled paths do not establish availability or running forwarding.")
                 rack = refs(key).get("rack")
-                if kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or attrs(rack).get("status") != "active":
+                if kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or attrs(rack).get("status") != life("rack"):
                     report("provider-rack-placement", key, "Network and serial equipment must occupy an active rack in their local equipment room.")
         actual = {device for device in devices if refs(device).get("role") not in {"role/pdu", "role/patch-panel", "role/wall-outlet"}}
         if actual != set(expected):
@@ -619,6 +659,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if (kind(port) != "console_port" or kind(peer) != "console_server_port" or
                     server != f"device/{sid}/console-01" or not active_path(port)):
                 report("provider-console-path", device, "Every PE, CPE and management/access switch requires its own active local serial console path.")
+    now[0] = "active"
 
     for pop in ordered:
         sid, site = f"pop-{pop}", f"site/pop-{pop}"
@@ -737,9 +778,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         container = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
         network = ip_network((int(container.network_address) + (128 if role == "clients" else 0), 25 if role == "clients" else 26))
         vlan, prefix = f"vlan/{sid}/{role}", f"prefix/{sid}/{role}"
-        if (kind(prefix) != "prefix" or attrs(prefix).get("status") != "active" or attrs(prefix).get("prefix") != str(network) or
+        if (kind(prefix) != "prefix" or attrs(prefix).get("status") != life("prefix") or attrs(prefix).get("prefix") != str(network) or
                 refs(prefix).get("vrf") != vrf or refs(prefix).get("tenant") != tenant or refs(prefix).get("scope_site") != site or refs(prefix).get("vlan") != vlan or
-                kind(vlan) != "vlan" or attrs(vlan).get("vid") != (20 if role == "clients" else 10) or attrs(vlan).get("status") != "active" or
+                kind(vlan) != "vlan" or attrs(vlan).get("vid") != (20 if role == "clients" else 10) or attrs(vlan).get("status") != life("vlan") or
                 refs(vlan).get("site") != site or refs(vlan).get("tenant") != tenant or
                 attrs(f"prefix/{sid}/reservation").get("prefix") != str(container) or "vrf" in refs(f"prefix/{sid}/reservation") or
                 refs(f"prefix/{sid}/reservation").get("tenant") != tenant):
@@ -804,7 +845,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return router, port
 
     attachments, customer_peerings, transit_peerings = {}, {}, {}
+    stages = {sid: _stage(customer, pop) for sid, (customer, pop, _) in premises.items()}
     for sid, (customer, pop, ordinal) in premises.items():
+        now[0] = stages[sid]
         tenant, vrf = f"tenant/cust-{customer['key']}", f"vrf/customer/{customer['key']}"
         cpe, switch = f"device/{sid}/edge-01", f"device/{sid}/access-01"
         cpe_wan = f"{cpe}/if/wan1"
@@ -884,6 +927,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if actual_copper != used_copper or Decimal(len(used_copper)) > len(access_ports) * usable:
             report("provider-customer-port-capacity", switch, "Actual customer access attachments must use the finite fixed ports and retain declared copper-port reserve.")
 
+    now[0] = "active"
     noc_edges = set()
     for side in ("a", "b"):
         pop = recipe[f"noc_pop_{side}"]
@@ -1023,13 +1067,15 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-customer-routing", vrf, "Each private customer needs its own tenant VRF and exact symmetric reserved route target.")
         if (kind(account) != "provider_account" or refs(account).get("provider") != "provider/operator" or "tenant" in refs(account) or
                 attrs(account).get("account") != f"{code}-C{customer_slots[key] + 1:05d}" or
-                kind(vc) != "virtual_circuit" or attrs(vc).get("status") != "active" or refs(vc).get("provider_network") != "provider-network/operator" or
+                kind(vc) != "virtual_circuit" or attrs(vc).get("status") != ("planned" if customer.get("status") == "planned" else "active") or
+                refs(vc).get("provider_network") != "provider-network/operator" or
                 refs(vc).get("provider_account") != account or refs(vc).get("tenant") != tenant or
                 refs(vc).get("type") != "virtual-circuit-type/private-l3"):
-            report("provider-customer-service", vc, "The active private-L3 service must belong to the correct customer, operator network and customer procurement account.")
+            report("provider-customer-service", vc, "The private-L3 service (planned while its customer onboards) must belong to the correct customer, operator network and customer procurement account.")
         members = {sid for sid, (item, _, _) in premises.items() if item["key"] == key}
         hub = f"ce-{key}-{customer['hub_pop']}-001"
         for sid in members:
+            now[0] = stages[sid]
             term = f"virtual-circuit-termination/{sid}"
             expected_terms.add(term)
             port, parent = f"device/{sid}/edge-01/if/PrivateL3", f"device/{sid}/edge-01/if/wan1"
@@ -1040,8 +1086,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     refs(port).get("device") != f"device/{sid}/edge-01" or refs(port).get("parent") != parent or refs(port).get("vrf") != vrf or
                     not active_path(parent) or len(child("interface", port, "virtual_circuit_termination")) != 1 or child("assigned_object", port, "ip_address")):
                 report("provider-virtual-membership", term, "Each requested CPE needs exactly one active virtual membership (hub at the customer's hub premises, spoke elsewhere) over its actual physical customer handoff and customer VRF.")
-            if sid != hub:
+            # Only an in-service premises offers traffic; planned, provisioning
+            # and decommissioning paths never count as healthy capacity.
+            if sid != hub and stages[sid] == "active":
                 flows[(attachments[sid], attachments[hub])] += customer["site_peak_mbps"] * 1000
+    now[0] = "active"
     if by_kind["virtual_circuit"] != expected_vcs or by_kind["virtual_circuit_termination"] != expected_terms:
         report("provider-service-inventory", "plan", "Every requested customer and premise must contribute exactly its private-L3 service membership.")
     if by_kind["provider_account"] != expected_accounts:
@@ -1078,9 +1127,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if (day := in_service(key)) is not None:
             for router in ends:
                 first_span[pop_of(router)] = min(day, first_span.get(pop_of(router), day))
+    pending = {f"circuit/customer/{sid}" for sid, stage in stages.items() if stage in ("planned", "provisioning")}
     for key in sorted(by_kind["circuit"]):
-        if (day := in_service(key)) is None or day > as_of:
-            report("provider-timeline", key, "Every circuit needs a service date on or before as_of.")
+        if key in pending:
+            if "install_date" in attrs(key):
+                report("provider-timeline", key, "A circuit not yet in service has no install date.")
+        elif (day := in_service(key)) is None or day > as_of:
+            report("provider-timeline", key, "Every circuit in or leaving service needs a service date on or before as_of.")
     starts = defaultdict(list)
     for sid, (customer, pop, _) in premises.items():
         key = f"circuit/customer/{sid}"
@@ -1163,7 +1216,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return found[0] if len(found) == 1 else None
 
     def peering(local, remote_label, remote_as, group, description, local_address,
-                remote_address=None, remote_prefix=None, tenant=None):
+                remote_address=None, remote_prefix=None, tenant=None, status="active"):
         expected = {"device": local, "site": refs(local).get("site"),
                     "local_address": local_address, "local_as": "asn/operator",
                     "remote_as": remote_as, "peer_group": f"bgp-peer-group/{group}"}
@@ -1173,7 +1226,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             expected["remote_prefix"] = remote_prefix
         if tenant is not None:
             expected["tenant"] = tenant
-        return {"name": f"{name_of(local)} to {remote_label}", "status": "active",
+        return {"name": f"{name_of(local)} to {remote_label}", "status": status,
                 "description": description}, expected
 
     for family in families:
@@ -1203,7 +1256,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             expected_sessions[f"bgp-session/customer/{sid}{tail}"] = peering(
                 router, f"{name_of(cpe)} customer{label}", f"asn/customer/{ckey}", "customer",
                 f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
-                address_of(port, family), remote_address=address_of(cpe_wan, family), tenant=tenant)
+                address_of(port, family), remote_address=address_of(cpe_wan, family), tenant=tenant,
+                status=LIFE[stages[sid]]["bgp"])
     if by_kind["bgp_session"] != set(expected_sessions):
         report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair, "
                "every other provider edge against both reflectors, each actual transit handoff and "
@@ -1221,7 +1275,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-bgp-scope-text", key, "BGP records carry inventory fields only; "
                    + ", ".join(sorted(extra)) + " would read as configured or established session state.")
 
-    findings.extend(validate_power(objects, catalog, [d for d in infrastructure if d not in routers], children, peers, cable_of,
+    serving = [d for d in infrastructure if d not in routers and
+                  stages.get(str(refs(d).get("site")).removeprefix("site/"), "active") == "active"]
+    findings.extend(validate_power(objects, catalog, serving, children, peers, cable_of,
                                    poe_watts=poe_watts, optics_watts=optics_watts,
                                    single_feed={f"site/{sid}" for sid in premises}))
     findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),

@@ -22,6 +22,9 @@ SERIAL_SHIFT_WEEKS = 8
 
 
 
+# Equipment not yet installed has no installation history to record.
+NOT_INSTALLED = frozenset({"planned", "staged", "inventory"})
+
 def _site_of(world, term):
     """The site or provider network a circuit termination stands in, through its room."""
     target = term["refs"]["termination"]
@@ -40,14 +43,16 @@ def timeline(world, kinds, dated):
     (its own port's install), else before its host's install.
     Returns (service_day per site, install date per device), ISO strings.
     """
+    # A circuit not yet in service has no install date and dates nothing.
     circuit_day = {term["key"]: world.obj(term["refs"]["circuit"])["attrs"]["install_date"]
-                   for term in kinds["circuit_termination"]}
+                   for term in kinds["circuit_termination"]
+                   if "install_date" in world.obj(term["refs"]["circuit"])["attrs"]}
     service_day, port_day = {}, {}
     for term in kinds["circuit_termination"]:
         site = term["refs"]["termination"]
         if site.startswith("location/"):  # a handoff in a room serves that room's site
             site = world.obj(site)["refs"]["site"]
-        if site.startswith("site/"):
+        if site.startswith("site/") and term["key"] in circuit_day:
             service_day[site] = min(circuit_day[term["key"]], service_day.get(site, circuit_day[term["key"]]))
     for cable in kinds["cable"]:
         ends = (cable["refs"].get("a"), cable["refs"].get("b"))
@@ -263,6 +268,8 @@ def enrich(world):
                  if world.recipe["profile"] == "provider-backbone" else
                  f"Circuit identifiers, contracted capacity and handoff coordination for {name}; customer-side troubleshooting stays with the tenant technical desk."))
         assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
+        if "install_date" not in attrs:
+            continue  # ordered work not yet in service has no dated history
         term = terms[key]
         site_name = world.obj(_site_of(world, term))["attrs"]["name"]
         if "commit_rate" in attrs:  # owned fiber has no purchased commitment to request
@@ -330,7 +337,8 @@ def enrich(world):
     for device in kinds["device"]:
         refs, attrs = device["refs"], device["attrs"]
         rack, position = refs.get("rack"), attrs.get("position")
-        if refs.get("role") not in infrastructure_roles or not rack or position is None:
+        if (refs.get("role") not in infrastructure_roles or not rack or position is None
+                or attrs.get("status") in NOT_INSTALLED):
             continue
         old = equipment_anchors.get(rack)
         if old is None or (position, device["key"]) < (old["attrs"]["position"], old["key"]):

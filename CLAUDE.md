@@ -101,7 +101,12 @@ contact phones read like a production network. Physical sites read real too:
 real-street addresses, per-metro and CLLI-style facility codes, flat location
 trees (a PoP is a suite holding a cage), room-scoped cabinet codes, short
 sequential asset tags, 208 V US feeds and a small-room kit for single-CE
-premises. Identities, names and the
+premises. IPAM and services read like NetBox 4.7: services carry
+`port_mappings` (one DNS service with `tcp/53` and `udp/53`; a
+`<name>-<protocol>` listener folds into its service), each site has one global
+site block instead of one per VRF, DNS names sit only on primaries, VMs,
+loopbacks and management ports, and client segments tile infrastructure,
+static, DHCP and headroom ranges with no gap. Identities, names and the
 hardware digest move across every profile, so 0.15 plans reject growth by
 version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
@@ -129,7 +134,10 @@ candidate of its kinds) and land only on `naming.TAGS` kinds. Prune only roles
 and passive cabling types: device types, platforms and makers are a fixed library
 because growth and scenario snapshots must never delete one. Statuses other than
 `active` come only from ledgers (IP-range geometry, unused ports, the next grid
-cabinet), never invented events; required paths stay `active`.
+cabinet) or from an explicit recipe lifecycle (the provider's customer and
+premises `status` keys), never invented events; required paths stay `active`,
+and a planned, provisioning or decommissioning path never counts as healthy
+capacity.
 Journals are short operational lines whose kind follows the event (completed
 success, open action warning, else info); never restate the record's own
 fields; dates follow the site's service day (its first circuit's install date,
@@ -656,7 +664,17 @@ for the separately recorded pinned-target live qualification.
   before them), so name, address and homing agree. `lan_endpoints = 0` is a
   CE-only premises managed on a /32 loopback; growing it to desks needs a new
   baseline. Customer desks answer from the customer's own domain and PoP
-  facilities desks are the carrier hotel's remote hands. Catalog additions require an explicit baseline;
+  facilities desks are the carrier hotel's remote hands. Local circuit handoffs
+  terminate in the cage or equipment room (a Location), so the save-hook cache
+  still resolves the site; carrier handoffs into a PoP carry `xconnect_id` and,
+  for fibre, the PE cabinet enclosure position in `pp_info`. Customer virtual
+  circuits terminate `hub`/`spoke`; access circuits record their route
+  `distance`; customer ASNs carry their tenant. A customer may be onboarding
+  (`status = "planned"`) and a premises entry `planned` or `decommissioning`
+  (docs/modeling.md#provider-customer-lifecycle): every record the premises
+  owns moves together, a circuit not yet in service has no install date or
+  dated history, and only active premises offer traffic. Growth moves a
+  premises forward only. Catalog additions require an explicit baseline;
   preserve hospital source/artifacts and historical live evidence.
 - Provider BGP records (`estates/bgp.py`, since 0.14.0) are inventory, never
   execution. They document intended peerings so the `netbox_bgp` tables and the
