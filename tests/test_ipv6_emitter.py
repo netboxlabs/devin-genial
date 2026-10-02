@@ -66,6 +66,11 @@ class IPv6EmitterTests(unittest.TestCase):
                     self.assertEqual(new["refs"], old["refs"])
                     self.assertEqual({k: v for k, v in new["attrs"].items() if k != "address"},
                                      {k: v for k, v in old["attrs"].items() if k != "address"})
+                if profile == "provider-backbone":
+                    # The provider holds its IPv6 allocation under its own ARIN registry.
+                    self.assertNotIn("ipv6/rir", world.objects)
+                    self.assertEqual(world.obj("ipv6/aggregate")["refs"], {"rir": "rir/arin"})
+                    continue
                 rir = world.obj("ipv6/rir")["attrs"]
                 self.assertEqual(rir["name"], "IPv6 documentation registry")
                 self.assertEqual(rir["slug"], f"{world.recipe['namespace']}-ipv6-docs")

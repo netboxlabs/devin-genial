@@ -62,22 +62,25 @@ class ProviderTests(unittest.TestCase):
         plan['contracts'] = []
         for obj in objects.values():
             obj['meta'] = {}
-        site = objects['circuit/backbone/seed-01/A']['refs']['termination']
+        first, second = 'circuit/backbone/chicago-west-a/detroit-south-a', 'circuit/backbone/chicago-west-b/detroit-south-b'
+        site = objects[first + '/A']['refs']['termination']
         site_name = objects[site]['attrs']['name']
-        provider = objects['circuit/backbone/seed-01']['refs']['provider']
+        provider = objects[first]['refs']['provider']
         provider_name = objects[provider]['attrs']['name']
+        other = objects[second]['refs']['provider']
 
         def pop_row():
             table = markdown(plan).split('Actual inter-PoP carriers', 1)[1].split('Private service', 1)[0]
             return next(row for row in table.splitlines() if row.startswith(f'| {site_name} |'))
 
-        self.assertIn(f'{provider_name} (2 spans)', pop_row())
-        # Moving only the real procurement reference must change the count;
-        # neither seed ordinals nor absent emitted contracts determine it.
-        other = objects['circuit/backbone/seed-02']['refs']['provider']
-        objects['circuit/backbone/seed-03']['refs']['provider'] = other
+        # Chicago's two spans to Detroit come from two different carriers.
+        self.assertNotEqual(provider, other)
         self.assertIn(f'{provider_name} (1 span)', pop_row())
         self.assertIn(f"{objects[other]['attrs']['name']} (1 span)", pop_row())
+        # Moving only the real procurement reference must change the count;
+        # neither span ordinals nor absent emitted contracts determine it.
+        objects[second]['refs']['provider'] = provider
+        self.assertIn(f'{provider_name} (2 spans)', pop_row())
         self.assertIn('Per-PoP carrier diversity is not guaranteed', markdown(plan))
 
     def test_capacity_core_keeps_opposing_full_duplex_flows_separate(self):
@@ -104,9 +107,13 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(kinds["site"],7)
         self.assertEqual(kinds["virtual_circuit"],1)
         self.assertEqual(kinds["virtual_circuit_termination"],3)
-        self.assertEqual(kinds["circuit"],10)
+        # Two diverse spans per metro adjacency (Chicago-Detroit, Detroit-Cleveland),
+        # three customer access circuits, two NOC handoffs and two transit ports.
+        self.assertEqual(kinds["circuit"],11)
         objects={o["key"]:o for o in plan["objects"]}
-        for key in ("circuit/backbone/seed-01","circuit/backbone/seed-02","circuit/backbone/seed-03","circuit/noc/a","circuit/noc/b"):
+        spans=[k for k,o in objects.items() if o["kind"]=="circuit" and k.startswith("circuit/backbone/")]
+        self.assertEqual(len(spans),4)
+        for key in (*spans,"circuit/noc/a","circuit/noc/b"):
             ends=[objects[key+'/'+side]['refs']['termination'] for side in ('A','Z')]
             self.assertNotEqual(*ends)
             self.assertTrue(all(objects[e]['kind']=='site' for e in ends))
@@ -125,13 +132,18 @@ class ProviderTests(unittest.TestCase):
                 plan=generate(raw)
                 nodes,edges=physical_router_graph(plan)
                 self.assertEqual(len(nodes),2*count)
-                self.assertEqual(len(edges),3*count-3)
                 self.assertTrue(connected(nodes,edges))
                 for node in nodes:self.assertTrue(connected(nodes-{node},edges),(seed,count,node))
                 for edge in edges:self.assertTrue(connected(nodes,edges-{edge}),(seed,count,edge))
                 degree=Counter(n for e in edges for n in e)
+                # A PE has its local pair plus at most its two 100G transport ports.
                 self.assertLessEqual(max(degree.values()),3)
-                self.assertEqual(sum(3-degree[n] for n in nodes),6)
+                self.assertGreaterEqual(min(degree[n] for n in nodes),2)
+                # Geography: a span stays in its metro or joins the next metro
+                # along the lakeshore; none crosses Lake Michigan or skips Detroit.
+                metro={f"device/pop-{p['key']}/pe-{s}":p['metro'] for p in raw['pops'] for s in 'ab'}
+                chain=['milwaukee','chicago','detroit','cleveland']
+                for a,b in edges:self.assertLessEqual(abs(chain.index(metro[a])-chain.index(metro[b])),1,(seed,count,a,b))
 
     def test_growth_preserves_occupied_inventory_addresses_and_journals(self):
         for mode in ('direct','panels'):

@@ -2,10 +2,14 @@
 
 `provider-backbone.toml` describes a regional private-L3 service: three PoPs,
 a customer hub and two remote offices, and a NOC data center. Change demand in
-the recipe and regenerate. The first three PoPs form a six-router cycle; every
-new PoP adds a pair of routers and attaches them to free ports at two distinct
-older PoPs. Existing circuits, ports, addresses and procurement records remain
-reserved. No LLM runs in the generator.
+the recipe and regenerate. The backbone follows the map
+([geography and numbering](../docs/modeling.md#provider-backbone-geography-and-numbering)):
+owned dark fiber rings the PoPs inside each metro, and two leased spans from two
+different carriers join each neighbouring metro along the lakeshore chain
+Milwaukee–Chicago–Detroit–Cleveland. Under growth every new PoP adds a pair of
+routers dual-homed to its nearest PoPs with free transport ports, in its own or
+a neighbouring metro. Existing circuits, ports, addresses and procurement
+records remain reserved. No LLM runs in the generator.
 
 ```sh
 python3 -m estates generate profiles/provider-backbone.toml --out build/provider-demo
@@ -33,7 +37,7 @@ exactly from its recipe and ledgers before ordinary growth can use it.
 | `address_pool` | Aligned RFC1918 /8 through /12; first /16 NOC, last /16 infrastructure, middle /24 site reservations |
 | `ipv6_pool` | Optional common dual-stack pool; [operation and current qualification](../docs/modeling.md#optional-ipv6). Absent means IPv4-only; toggling or changing it needs a new baseline |
 | `reserve_fraction` | 0.1–0.4, exact decimal headroom; combined demands can fail even when every field is within its individual bounds |
-| `asn_base` | Optional private 1024-ASN block aligned from 4200000000; default is namespace-derived. Global target conflict preflight is still required |
+| `asn_base` | Optional private 1024-ASN block aligned from 4200000000 for customer VPN ASNs; default is namespace-derived. The operator and upstream ASNs come from the RFC 5398 documentation range. Global target conflict preflight is still required |
 | `demo` | `baseline`, shared `loss-of-power-diversity`, or provider-only `provider-span-maintenance`; planning builds a healthy baseline, generation dispatches narrative intent |
 
 Keys are lowercase, 1–20 characters, starting with a letter. PoP keys must also
@@ -61,7 +65,14 @@ router are configured at 1G for customer/NOC handoffs; one 10G port serves local
 management and one is reserved for external transit.
 
 Inter-PoP circuits have actual A and Z site terminations, each physically cabled
-to a catalog port. /31s belong to the two real interfaces. Transit circuits are
+to a catalog port; the circuit's `distance` is the authored route length
+(great-circle distance between the two PoPs times 1.3). Same-metro spans are the
+operator's own dark fiber, lit at 100G with no purchased commitment. Inter-metro
+spans are Ethernet transport from Ridgeline Lightwave or Ironwood Fiber on a
+100G handoff, committed at 10 Gbps unless the declared flows need the full
+port; an upgraded span stays upgraded under growth. /31s belong to the two real
+interfaces and come from RFC 5737 documentation space, as do the PE loopbacks
+and transit handoffs, all under ARIN aggregates. Transit circuits are
 fixed at founder slot 0 PE-a and founder slot 1 PE-b on `xe-0/1/7`, with a 10G
 handoff and commitment. Only their known local IP is created; the remote owner
 is unknown and the whole /31 stays reserved. Separate carrier names do not
@@ -87,7 +98,12 @@ inventory additions qualified in the [pinned local provider example](../lab/READ
 not executed router configuration.
 
 Each customer has a native tenant, private ASN, VRF with import/export route
-target, operator account and private-L3 virtual circuit.
+target, operator account and private-L3 virtual circuit. Recipe order is
+onboarding order: it numbers the customer slot, the ASN, the
+`<operator ASN>:<1001+slot>` route distinguisher and the `ILF-C00001`-style
+account, and the customer's hub circuit is its first install. Premises are
+named after the neighbourhood or suburb they sit in, 2–25 km from the serving
+PoP, not after the PoP.
 Account association to a customer is represented by its circuit/service account
 reference and tenant reference; the pinned native/SDK ProviderAccount has no
 tenant field. Customer and NOC account numbers have separate identity domains.
@@ -150,8 +166,8 @@ Panel access uses the existing [local front-port bridge](../lab/README.md#opt-in
 the pinned NetBox 4.7 target; a new direct-mode baseline avoids that mapping
 requirement. This is separate from qualifying the status transition itself.
 
-It selects an active inter-PoP leased span carrying an actual customer-to-hub
-path. Selection prefers the most rerouted premises, then the canonical span key,
+It selects an active inter-PoP span — leased transport or owned fiber —
+carrying an actual customer-to-hub path. Selection prefers the most rerouted premises, then the canonical span key,
 and requires current maintenance traffic to remain reachable within directed
 usable capacity. Harbor's spokes offer 50 Mbps each and Cedar's 30 Mbps each;
 the 1G hub commitments are purchased limits, not offered traffic. This is a

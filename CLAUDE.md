@@ -337,9 +337,15 @@ for the separately recorded pinned-target live qualification.
   `validate_hospital.py`: independent care-unit and actual physical obligations.
 - `estates/provider.py`: finite PoP growth, customer private-L3 services and real
   NOC handoffs; `validate_provider.py`: independent topology, ownership and flow checks.
+  The backbone follows the map: owned metro dark-fiber rings plus two diverse
+  leased spans per neighbouring metro (Milwaukee–Chicago–Detroit–Cleveland),
+  append-only in the `provider-backbone-spans` ledger; carrier-owned numbering is
+  RFC 5398/5737 documentation space under `ARIN`; one launch/onboarding
+  timeline. See [geography and numbering](docs/modeling.md#provider-backbone-geography-and-numbering).
 - `estates/bgp.py`: the provider-only BGP inventory — named routing policies,
-  peer groups and one session per modeled adjacency (iBGP route-reflector pair,
-  eBGP transit and eBGP customer), all attributed from the finished graph and
+  peer groups and one session per modeled adjacency (iBGP route-reflector pair
+  in two metros, eBGP transit and eBGP customer, each with an IPv6 twin when
+  dual-stack), all attributed from the finished graph and
   all documentation records; `validate_provider.py` independently re-derives
   them and refuses any record that claims configured or established routing.
   Pinned by `tests/test_provider_bgp.py`.
@@ -593,7 +599,11 @@ for the separately recorded pinned-target live qualification.
   their allocation units. Shared DC WAN attachment is an internal builder hook;
   the independent provider validator must check every NOC /31/circuit/PE path.
   Customer spoke-to-hub capacity is a finite declared flow model, not total
-  backbone/NOC/transit traffic. Catalog additions require an explicit baseline;
+  backbone/NOC/transit traffic. Since 0.16 PE loopbacks, PoP pair links,
+  inter-PoP spans and transit handoffs use carrier-owned RFC 5737 space, so the
+  final /16 now holds only management, NOC and customer access /31s. Same-metro
+  spans are owned dark fiber (no commit); inter-metro spans are leased 10G/100G
+  transport sized from the declared flows. Catalog additions require an explicit baseline;
   preserve hospital source/artifacts and historical live evidence.
 - Provider BGP records (`estates/bgp.py`, since 0.14.0) are inventory, never
   execution. They document intended peerings so the `netbox_bgp` tables and the
@@ -609,8 +619,9 @@ for the separately recorded pinned-target live qualification.
   terminations and cables, and the ASNs sites already reference — never
   invented per site. A transit peer keeps `remote_prefix` on the real /31
   rather than an invented remote address, because the remote interface and its
-  owner are unknown. iBGP is a route-reflector pair at the first PoP in the
-  permanent `provider-pop-order` ledger, not a full mesh: linear growth keeps
+  owner are unknown. iBGP is a route-reflector pair — PE A at the first PoP in
+  the permanent `provider-pop-order` ledger and PE A at the first later PoP in
+  another metro (since 0.16) — not a full mesh: linear growth keeps
   the 64-PoP ceiling bounded (a full mesh would be 8,128 sessions there) and
   appending a PoP or customer appends sessions without moving an existing one.
   The three `netbox_bgp` models have no Diode SDK entity, so they are

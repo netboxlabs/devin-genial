@@ -58,10 +58,12 @@ class ProviderBgpShapeTests(unittest.TestCase):
                   for key in ("ibgp", "transit", "customer")}
         self.assertEqual(groups, {"ibgp": 9, "transit": 2, "customer": 3})
 
-    def test_ibgp_follows_the_reflector_pair_at_the_first_permanent_pop(self):
+    def test_ibgp_reflectors_sit_in_two_metros_by_permanent_pop_order(self):
         order = self.plan["reservations"]["provider-pop-order"]
-        reflecting = min(order, key=order.get)
-        reflectors = {f"device/pop-{reflecting}/pe-{side}" for side in ("a", "b")}
+        metro = {pop["key"]: pop["metro"] for pop in self.plan["recipe"]["pops"]}
+        ordered = sorted(order, key=order.get)
+        second = next(pop for pop in ordered if metro[pop] != metro[ordered[0]])
+        reflectors = {f"device/pop-{ordered[0]}/pe-a", f"device/pop-{second}/pe-a"}
         clients, seen = set(), set()
         for key, obj in of_kind(self.plan, "bgp_session").items():
             if not key.startswith("bgp-session/ibgp/"):
@@ -135,6 +137,38 @@ class ProviderBgpShapeTests(unittest.TestCase):
             bgp.enrich(_World())
 
 
+class ProviderBgpDualStackTests(unittest.TestCase):
+    """With ipv6_pool every peering gains an IPv6 twin on the same endpoints."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plan = generate(recipe() | {"ipv6_pool": "2001:db8::/32"})
+        cls.objects = index(cls.plan)
+
+    def test_every_session_has_an_ipv6_twin_on_ipv6_addresses(self):
+        sessions = of_kind(self.plan, "bgp_session")
+        v4 = {key for key in sessions if not key.endswith("/ipv6")}
+        self.assertEqual({key + "/ipv6" for key in v4}, set(sessions) - v4)
+        for key in v4:
+            twin = sessions[key + "/ipv6"]
+            for field in ("device", "remote_as", "peer_group"):
+                self.assertEqual(twin["refs"][field], sessions[key]["refs"][field], key)
+            local = ip_interface(self.objects[twin["refs"]["local_address"]]["attrs"]["address"])
+            self.assertEqual(local.version, 6, key)
+            if "remote_prefix" in twin["refs"]:
+                # Transit: the far end stays a /127 prefix, never an invented address.
+                self.assertEqual(self.objects[twin["refs"]["remote_prefix"]]["attrs"]["prefix"], str(local.network))
+                self.assertEqual(local.network.prefixlen, 127)
+            else:
+                remote = ip_interface(self.objects[twin["refs"]["remote_address"]]["attrs"]["address"])
+                self.assertEqual(remote.version, 6, key)
+
+    def test_a_missing_ipv6_twin_is_rejected(self):
+        plan = deepcopy(self.plan)
+        plan["objects"] = [obj for obj in plan["objects"] if obj["key"] != "bgp-session/transit/a/ipv6"]
+        self.assertIn("provider-bgp-inventory", {finding["code"] for finding in validate(plan)})
+
+
 class ProviderBgpScopeTests(unittest.TestCase):
     """Inventory, never execution — the inert-webhook precedent."""
 
@@ -163,7 +197,7 @@ class ProviderBgpScopeTests(unittest.TestCase):
         raw = recipe()
         raw["demo"] = "provider-span-maintenance"
         baseline = generate(raw)
-        envelope = create(baseline, "circuit/backbone/seed-01")
+        envelope = create(baseline)
         before = of_kind(baseline, "bgp_session")
         after = {obj["key"]: obj for obj in envelope["plans"]["changed"]["objects"]
                  if obj["kind"] == "bgp_session"}
@@ -203,8 +237,8 @@ class ProviderBgpValidationTests(unittest.TestCase):
 
     def test_a_misattributed_peering_is_rejected(self):
         order = self.plan["reservations"]["provider-pop-order"]
-        client = sorted(order, key=order.get)[1]
-        key = f"bgp-session/ibgp/pop-{client}/pe-a/pop-{sorted(order, key=order.get)[0]}/pe-a"
+        first = min(order, key=order.get)
+        key = f"bgp-session/ibgp/pop-{first}/pe-b/pop-{first}/pe-a"
 
         def wrong_remote(objects, plan):
             objects[key]["refs"]["remote_address"] = objects[key]["refs"]["local_address"]

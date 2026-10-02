@@ -24,13 +24,18 @@ bounded REST create path (``turbobulk.REST_CREATE_KINDS``). They carry
 many-to-many policy lists the raw bulk path cannot express, and a plugin model
 is not guaranteed to appear in an installed TurboBulk model registry.
 
-iBGP topology: a route-reflector pair rather than a full mesh. The two PEs at
-the first PoP in the permanent ``provider-pop-order`` ledger are the
-reflectors; every other PE peers with both, and the two reflectors peer with
-each other. That is 2*(2N-2)+1 sessions for N PoPs — linear, so the 64-PoP
-recipe ceiling stays bounded (a full mesh would be 8,128 sessions at that
-ceiling), and appending a PoP appends sessions without touching any existing
-one, because the reflector pair is chosen from a permanent ordinal.
+iBGP topology: a route-reflector pair rather than a full mesh. The reflectors
+are PE A at the first PoP in the permanent ``provider-pop-order`` ledger and PE
+A at the first later PoP in a different metro, so one metro's loss cannot take
+both; every other PE peers with both, and the two reflectors peer with each
+other. That is 2*(2N-2)+1 sessions for N PoPs — linear, so the 64-PoP recipe
+ceiling stays bounded (a full mesh would be 8,128 sessions at that ceiling),
+and appending a PoP appends sessions without touching any existing one,
+because the reflectors are chosen from permanent ordinals.
+
+Dual-stack: when the estate carries ``ipv6_pool``, every peering above gains an
+IPv6 twin over the same endpoints' IPv6 companions — loopback /128s for iBGP,
+the /127 link addresses for customer eBGP and the /127 prefix for transit.
 """
 
 from collections import defaultdict
@@ -72,7 +77,7 @@ LOOPBACK = "lo0"
 
 def _index(world):
     """Finished-graph indexes every derivation below reads from."""
-    interfaces, address_of, prefix_of, peers = {}, {}, {}, {}
+    interfaces, address_of, prefix_of, peers = {}, {4: {}, 6: {}}, {}, {}
     terminations = defaultdict(dict)
     for key, obj in world.objects.items():
         kind, attrs, refs = obj["kind"], obj["attrs"], obj["refs"]
@@ -80,8 +85,8 @@ def _index(world):
             interfaces[(refs["device"], attrs["name"])] = key
         elif kind == "ip_address":
             target = refs.get("assigned_object")
-            if target is not None and ip_interface(attrs["address"]).version == 4:
-                address_of[target] = key
+            if target is not None:
+                address_of[ip_interface(attrs["address"]).version][target] = key
         elif kind == "prefix":
             prefix_of[(refs.get("vrf"), attrs["prefix"])] = key
         elif kind == "cable":
@@ -101,11 +106,19 @@ def enrich(world):
     def obj(key):
         return objects[key]
 
-    def address(port, what):
-        key = address_of.get(port)
+    families = (4, 6) if "ipv6_pool" in world.recipe else (4,)
+
+    def address(port, what, family=4):
+        key = address_of[family].get(port)
         if key is None:
-            raise DesignError(f"BGP inventory needs an IPv4 address on {what} ({port})")
+            raise DesignError(f"BGP inventory needs an IPv{family} address on {what} ({port})")
         return key
+
+    def suffix(family):
+        return "" if family == 4 else "/ipv6"
+
+    def label(family):
+        return "" if family == 4 else " IPv6"
 
     def site_asn(site):
         asns = obj(site)["refs"].get("asns") or []
@@ -164,26 +177,32 @@ def enrich(world):
             {"name": f"{obj(local)['attrs']['name']} to {remote_label}",
              "status": "active", "description": description, "comments": INVENTORY_NOTE}, refs)
 
-    def loopback(router):
+    def loopback(router, family):
         port = interfaces.get((router, LOOPBACK))
         if port is None:
             raise DesignError(f"{router}: BGP inventory needs the in-band {LOOPBACK} loopback")
-        return port, address(port, f"{router} {LOOPBACK}")
+        return port, address(port, f"{router} {LOOPBACK}", family)
 
-    # --- iBGP: a reflector pair at the first PoP, every other PE a client. ---
-    reflectors = [entry for entry in routers if entry[0] == routers[0][0]]
-    if len(reflectors) != 2:
-        raise DesignError("The reflecting PoP must hold exactly two provider edges")
+    # --- iBGP: reflectors at PE A of two PoPs in different metros. ---
+    metro = {p["key"]: p["metro"] for p in world.recipe["pops"]}
+    pop_of = lambda site: site.removeprefix("site/pop-")
+    first = next(entry for entry in routers if entry[1].endswith("/pe-a"))
+    second = next((entry for entry in routers if entry[1].endswith("/pe-a") and
+                   metro[pop_of(entry[2])] != metro[pop_of(first[2])]), None)
+    if second is None:
+        raise DesignError("The route reflectors need provider edges in two different metros")
+    reflectors = [first, second]
     clients = [entry for entry in routers if entry not in reflectors]
 
     def ibgp(local, remote, description):
-        _, local_address = loopback(local)
-        _, remote_address = loopback(remote)
-        session(f"bgp-session/ibgp/{local.removeprefix('device/')}/"
-                f"{remote.removeprefix('device/')}",
-                local, local_address, site_asn(obj(remote)["refs"]["site"]), "ibgp-core",
-                description, remote_address=remote_address,
-                remote_label=f"{obj(remote)['attrs']['name']} iBGP")
+        for family in families:
+            _, local_address = loopback(local, family)
+            _, remote_address = loopback(remote, family)
+            session(f"bgp-session/ibgp/{local.removeprefix('device/')}/"
+                    f"{remote.removeprefix('device/')}{suffix(family)}",
+                    local, local_address, site_asn(obj(remote)["refs"]["site"]), "ibgp-core",
+                    description, remote_address=remote_address,
+                    remote_label=f"{obj(remote)['attrs']['name']} iBGP{label(family)}")
 
     ibgp(reflectors[0][1], reflectors[1][1],
          "Internal peering between the two backbone route reflectors")
@@ -206,21 +225,22 @@ def enrich(world):
                 raise DesignError(f"{circuit}: transit needs exactly one local handoff")
             port = next(iter(ends.values()))
             local = obj(port)["refs"]["device"]
-            local_address = address(port, f"the {cid} transit handoff")
-            ip = obj(local_address)
-            network = str(ip_interface(ip["attrs"]["address"]).network)
-            link = prefix_of.get((ip["refs"].get("vrf"), network))
-            if link is None:
-                raise DesignError(f"{circuit}: the transit handoff has no reserved link prefix")
             upstream = obj(entry["refs"]["provider"])
             asns = upstream["refs"].get("asns") or []
             if len(asns) != 1:
                 raise DesignError(f"{circuit}: the upstream provider has no single routing identity")
-            session(f"bgp-session/{circuit.removeprefix('circuit/')}", local, local_address,
-                    asns[0], "transit",
-                    f"External transit peering over {cid}; the remote address and "
-                    "interface owner are unknown",
-                    remote_prefix=link, remote_label=f"{upstream['attrs']['name']} transit")
+            for family in families:
+                local_address = address(port, f"the {cid} transit handoff", family)
+                ip = obj(local_address)
+                network = str(ip_interface(ip["attrs"]["address"]).network)
+                link = prefix_of.get((ip["refs"].get("vrf"), network))
+                if link is None:
+                    raise DesignError(f"{circuit}: the transit handoff has no reserved link prefix")
+                session(f"bgp-session/{circuit.removeprefix('circuit/')}{suffix(family)}", local, local_address,
+                        asns[0], "transit",
+                        f"External transit peering over {cid}; the remote address and "
+                        "interface owner are unknown",
+                        remote_prefix=link, remote_label=f"{upstream['attrs']['name']} transit{label(family)}")
             continue
         customer = [port for port, role in roles.items() if role == CE_ROLE]
         provider = [port for port, role in roles.items() if role == PE_ROLE]
@@ -228,10 +248,11 @@ def enrich(world):
             continue  # backbone spans and the operator's own NOC handoffs
         local, remote = provider[0], customer[0]
         remote_device = obj(remote)["refs"]["device"]
-        session(f"bgp-session/{circuit.removeprefix('circuit/')}", obj(local)["refs"]["device"],
-                address(local, f"the {cid} provider handoff"),
-                site_asn(obj(remote_device)["refs"]["site"]), "customer",
-                f"Private-L3 customer edge peering over {cid}",
-                remote_address=address(remote, f"the {cid} customer handoff"),
-                tenant=entry["refs"].get("tenant"),
-                remote_label=f"{obj(remote_device)['attrs']['name']} customer")
+        for family in families:
+            session(f"bgp-session/{circuit.removeprefix('circuit/')}{suffix(family)}", obj(local)["refs"]["device"],
+                    address(local, f"the {cid} provider handoff", family),
+                    site_asn(obj(remote_device)["refs"]["site"]), "customer",
+                    f"Private-L3 customer edge peering over {cid}",
+                    remote_address=address(remote, f"the {cid} customer handoff", family),
+                    tenant=entry["refs"].get("tenant"),
+                    remote_label=f"{obj(remote_device)['attrs']['name']} customer{label(family)}")

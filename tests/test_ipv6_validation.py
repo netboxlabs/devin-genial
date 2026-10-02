@@ -92,7 +92,7 @@ class IPv6ValidationTests(unittest.TestCase):
             ("unknown-ledger", "ipv6-reservation", lambda p,o: p["reservations"].update({"ipv6-mystery": {"x": 0}})),
             ("missing-prefix", "ipv6-prefix", lambda p,o: p["objects"].remove(leaf(o))),
             ("LAN-127", "ipv6-prefix", lambda p,o: leaf(o)["attrs"].update(prefix="2001:db8::/127")),
-            ("registry", "ipv6-registry", lambda p,o: o["ipv6/rir"]["attrs"].update(slug="different")),
+            ("registry", "ipv6-registry", lambda p,o: o["rir/arin"]["attrs"].update(is_private=True)),
             ("aggregate", "ipv6-aggregate", lambda p,o: o["ipv6/aggregate"]["attrs"].update(prefix="2001:db8::/40")),
             ("missing-primary", "ipv6-primary", lambda p,o: first(o,"device",lambda d:"primary_ip6" in d["refs"])["refs"].pop("primary_ip6")),
             ("missing-listener", "ipv6-service", lambda p,o: service(o)["refs"]["ipaddresses"].pop()),

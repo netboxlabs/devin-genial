@@ -8,6 +8,10 @@ requires their requested IPv6 companions, including every gateway and listener.
 from collections import defaultdict
 from ipaddress import IPv6Network, IPv6Address, ip_interface, ip_network
 
+# Provider /31 ledgers, restated: private access/management links plus the
+# public PoP-pair, inter-PoP span and transit links.
+PROVIDER_LINK_SCOPES = ("provider-link-prefixes", "provider-pair-links", "provider-span-links", "provider-transit-links")
+
 
 def validate(plan):
     recipe = plan.get("recipe", {})
@@ -101,15 +105,21 @@ def validate(plan):
             site_nets[site] = IPv6Network((int(pool.network_address)+(value << 80), 48))
     infra = int(pool.network_address)+(((1 << (48-pool.prefixlen))-1) << 80)
     # Store expected identity, subnet and ownership; compare to actual rows below.
-    expected = {"ipv6/rir", "ipv6/aggregate"}
+    # The provider holds its IPv6 allocation under the same ARIN registry as its
+    # public IPv4 space; every other profile keeps the documentation registry.
+    registry = "rir/arin" if recipe.get("profile") == "provider-backbone" else "ipv6/rir"
+    expected = {"ipv6/aggregate"} | ({"ipv6/rir"} if registry == "ipv6/rir" else set())
     expected_prefixes, companions, ipv4_prefixes = {}, {}, {}
     ns = recipe.get("namespace")
-    if (kind("ipv6/rir") != "rir" or attrs("ipv6/rir") !=
+    if registry == "rir/arin":
+        if kind(registry) != "rir" or attrs(registry).get("name") != "ARIN" or attrs(registry).get("is_private") is not False:
+            report("ipv6-registry", registry, "The provider's IPv6 allocation requires its public ARIN registry identity.")
+    elif (kind("ipv6/rir") != "rir" or attrs("ipv6/rir") !=
             dict(name="IPv6 documentation registry", slug=f"{ns}-ipv6-docs",
                  is_private=False, description="Documentation address registry") or refs("ipv6/rir")):
         report("ipv6-registry", "ipv6/rir", "IPv6 allocation requires the estate's documentation registry identity.")
     if (kind("ipv6/aggregate") != "aggregate" or attrs("ipv6/aggregate").get("prefix") != str(pool) or
-            refs("ipv6/aggregate") != {"rir": "ipv6/rir"}):
+            refs("ipv6/aggregate") != {"rir": registry}):
         report("ipv6-aggregate", "ipv6/aggregate", "IPv6 aggregate must match the requested pool and documentation registry.")
 
     def require_prefix(key, net, rel, status):
@@ -130,9 +140,9 @@ def validate(plan):
     # The provider validator independently proves these ledger identities and
     # their actual physical paths from recipe demand. A prefix name alone is
     # not sufficient to enroll an arbitrary secondary VM address as a /127.
-    source_links = ledgers.get("provider-link-prefixes", {})
+    source_links = [ledgers.get(scope, {}) for scope in PROVIDER_LINK_SCOPES]
     source_loops = ledgers.get("provider-loopbacks", {})
-    routed_prefixes = {f"prefix/link/{k}" for k in source_links} if provider and isinstance(source_links, dict) else set()
+    routed_prefixes = {f"prefix/link/{k}" for links in source_links if isinstance(links, dict) for k in links} if provider else set()
     loop_prefixes = {f"prefix/loopback/{k}" for k in source_loops} if provider and isinstance(source_loops, dict) else set()
     for key, net4 in networks.items():
         if kind(key) != "prefix" or net4.version != 4 or attrs(key).get("status") == "container":

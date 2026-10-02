@@ -35,6 +35,19 @@ SERVICE_POLICY = (("identity", "premises", 128, 4, 8192, 100000, 443),
 # established anywhere in this generator, so the inert note below is mandatory
 # on every one of them and the reviewed kind set stays closed (a policy *rule*,
 # a community or a prefix list would read as configuration and is refused).
+SPAN_KEY = re.compile(r"circuit/backbone/([a-z][a-z0-9-]{0,19})-([ab])/([a-z][a-z0-9-]{0,19})-([ab])")
+# Metro centres (lat, lon), restated from the authored geography.
+METRO_POINTS = {"chicago": (41.8781, -87.6298), "detroit": (42.3314, -83.0458),
+                "cleveland": (41.4993, -81.6944), "milwaukee": (43.0389, -87.9065)}
+# Carrier-owned public space (RFC 5737) and AS numbers (RFC 5398), restated.
+PUBLIC_POOLS = {"loopbacks": ip_network("192.0.2.0/25"), "transit": ip_network("192.0.2.128/26"),
+                "pair": ip_network("198.51.100.0/25"), "backbone": ip_network("203.0.113.0/24")}
+PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+DOCUMENTATION_ASNS = range(64496, 64512)
+ROUTE_FACTOR = 1.3
+PREMISES_KM = (2, 25)
+LEASED_COMMITS = (10000000, 100000000)
+CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b")
 BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
 BGP_NOTE = ("Documentation inventory: the intended peering is recorded, nothing is "
             "configured, applied or established. No session state, route exchange or "
@@ -62,6 +75,20 @@ BGP_GROUPS = {
     "customer": ("Customer Private L3", "Customer edge peerings on private-L3 access circuits",
                  ("customer-in",), ("customer-out",), False),
 }
+
+
+def _km(a, b):
+    """Great-circle kilometres (haversine, mean Earth radius)."""
+    (la1, lo1), (la2, lo2) = ((math.radians(x), math.radians(y)) for x, y in (a, b))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 2 * 6371.0088 * math.asin(math.sqrt(h))
+
+
+def _operator_code(name):
+    """Restated: the operator's service-ID prefix is its name's initials."""
+    words = re.findall(r"[A-Za-z]+", name)
+    code = "".join(word[0] for word in words).upper()[:4]
+    return code if len(code) >= 2 else (words[0][:3].upper() if words else "OPR")
 
 
 def _integer(value, low, high):
@@ -335,34 +362,56 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         small_slots = [slot for sid, slot in allocations.items() if sid != "dc-01"]
         if any(not _integer(slot, 256, pool.num_addresses // 256 - 257) for slot in small_slots) or len(set(small_slots)) != len(small_slots):
             raise ValueError("PoP/customer /24s must be distinct and avoid the complete NOC and infrastructure /16s.")
-        parents = {}
-        for pop, ordinal in order.items():
-            if ordinal < 3:
-                continue
-            for side in ("a", "b"):
-                scope = f"provider-parents/{pop}/{side}"
-                mapping = reservations.get(scope)
-                if not isinstance(mapping, dict) or len(mapping) != 1:
-                    raise ValueError(f"{scope} needs exactly one permanent earlier router parent.")
-                parent, slot = next(iter(mapping.items()))
-                match = re.fullmatch(r"device/pop-([a-z][a-z0-9-]{0,19})/pe-[ab]", parent) if isinstance(parent, str) else None
-                if not match or type(slot) is not int or slot != 0 or match[1] not in order or order[match[1]] >= ordinal:
-                    raise ValueError(f"{scope} must refer to a real router at an older PoP.")
-                parents[(pop, side)] = parent
-            if parents[(pop, "a")].split("/")[1] == parents[(pop, "b")].split("/")[1]:
-                raise ValueError(f"New PoP {pop} requires parents at two different earlier PoPs.")
+        # The backbone span ledger: every key names both PE ends, and the
+        # ordinal is the permanent order carriers alternate in.
+        span_ledger = reservations.get("provider-backbone-spans")
+        if (not isinstance(span_ledger, dict) or not span_ledger or
+                sorted(span_ledger.values()) != list(range(len(span_ledger)))):
+            raise ValueError("provider-backbone-spans must be a dense permanent sequence of span identities.")
+        spans = {}
+        for key in sorted(span_ledger, key=span_ledger.get):
+            match = SPAN_KEY.fullmatch(key) if isinstance(key, str) else None
+            if not match or match[1] not in pops or match[3] not in pops or match[1] == match[3]:
+                raise ValueError(f"{key!r} must join PEs at two different requested PoPs.")
+            spans[key] = (f"device/pop-{match[1]}/pe-{match[2]}", f"device/pop-{match[3]}/pe-{match[4]}")
+        launch = _ledger(reservations, "provider-pop-launch", pops, 64)
+        if set(launch.values()) != set(range(len(pops))):
+            raise ValueError("PoP launch order must retain one contiguous permanent ordinal per requested PoP.")
+        upgrades = reservations.get("provider-span-upgrades", {})
+        if not isinstance(upgrades, dict) or not set(upgrades) <= set(spans):
+            raise ValueError("provider-span-upgrades may only name ledgered backbone spans.")
     except ValueError as exc:
         report("provider-allocation", "plan", str(exc))
         return findings
 
     ordered = sorted(pops, key=order.get)
     routers = {f"device/pop-{pop}/pe-{side}" for pop in pops for side in ("a", "b")}
-    spans = {}
-    for n in range(3):
-        spans[f"circuit/backbone/seed-{n+1:02}"] = (f"device/pop-{ordered[n]}/pe-b", f"device/pop-{ordered[(n+1)%3]}/pe-a")
-    for pop in ordered[3:]:
-        for side in ("a", "b"):
-            spans[f"circuit/backbone/{pop}/{side}"] = (f"device/pop-{pop}/pe-{side}", parents[(pop, side)])
+    pop_of = lambda router: router.split("/")[1].removeprefix("pop-")
+    metro_of = lambda router: pops[pop_of(router)]["metro"]
+    # Carrier policy, restated: same-metro spans are owned dark fiber; spans
+    # between metros alternate the two transport carriers in ledger order.
+    span_provider, alternation = {}, Counter()
+    for key, (a, b) in spans.items():
+        if metro_of(a) == metro_of(b):
+            span_provider[key] = "provider/operator"
+        else:
+            pair = frozenset((metro_of(a), metro_of(b)))
+            span_provider[key] = f"provider/transport-{'ab'[alternation[pair] % 2]}"
+            alternation[pair] += 1
+    # Inter-metro spans may only join neighbouring metros along the lakeshore,
+    # derived here by longitude rather than the builder's spanning tree.
+    chain = sorted({item["metro"] for item in pops.values()}, key=lambda m: METRO_POINTS[m][1])
+    neighbours = {frozenset(pair) for pair in zip(chain, chain[1:])}
+    for key, (a, b) in spans.items():
+        if metro_of(a) != metro_of(b) and frozenset((metro_of(a), metro_of(b))) not in neighbours:
+            report("provider-backbone-geography", key, "An inter-metro span must join neighbouring metros; it may not skip a metro or cross a lake.")
+    for pair in neighbours:
+        between = [key for key, (a, b) in spans.items() if frozenset((metro_of(a), metro_of(b))) == pair]
+        sides = {metro: {end for key in between for end in spans[key] if metro_of(end) == metro} for metro in pair}
+        if (len(between) < 2 or {refs(k).get("provider") for k in between} != {"provider/transport-a", "provider/transport-b"} or
+                any(len(ends) < 2 for ends in sides.values())):
+            report("provider-backbone-diversity", "plan", f"Metros {' and '.join(sorted(pair))} need two spans from two "
+                   "different carriers, landing on two different PEs at each end.")
     expected_transport = defaultdict(set)
     for circuit, ends in spans.items():
         for router in ends:
@@ -375,15 +424,23 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     try:
         transport_ports = {router: _ledger(reservations, f"provider-transport-ports/{router}", expected_transport[router], 2) for router in routers}
         service_ports = {pop: _ledger(reservations, f"provider-service-ports/{pop}", service_targets[pop], 12) for pop in pops}
-        links = set(spans) | {f"pair/pop-{pop}" for pop in pops} | {f"management/pop-{pop}/{s}" for pop in pops for s in ("a", "b")}
-        links |= {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")} | {f"circuit/transit/{s}" for s in ("a", "b")}
-        link_slots = _ledger(reservations, "provider-link-prefixes", links, 16384)
-        loop_slots = _ledger(reservations, "provider-loopbacks", routers, 32768)
+        private = {f"management/pop-{pop}/{s}" for pop in pops for s in ("a", "b")}
+        private |= {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")}
+        link_slots = _ledger(reservations, "provider-link-prefixes", private, 16384)
+        public = {"pair": ("provider-pair-links", {f"pair/pop-{pop}" for pop in pops}),
+                  "backbone": ("provider-span-links", set(spans)),
+                  "transit": ("provider-transit-links", {f"circuit/transit/{s}" for s in ("a", "b")})}
+        public_slots = {family: _ledger(reservations, scope, keys, PUBLIC_POOLS[family].num_addresses // 2)
+                        for family, (scope, keys) in public.items()}
+        loop_slots = _ledger(reservations, "provider-loopbacks", routers, PUBLIC_POOLS["loopbacks"].num_addresses)
     except ValueError as exc:
         report("provider-allocation", "plan", str(exc))
         return findings
     infra = int(pool.broadcast_address) - 65535
     link_network = {key: ip_network((infra + 2 * slot, 31)) for key, slot in link_slots.items()}
+    for family, slots in public_slots.items():
+        base = int(PUBLIC_POOLS[family].network_address)
+        link_network.update({key: ip_network((base + 2 * slot, 31)) for key, slot in slots.items()})
 
     def routed(link, endpoints, vrf, tenant="tenant"):
         network = link_network[link]
@@ -549,7 +606,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 report("provider-scope-text", lo, "The management descriptor must explicitly retain in-band dependency and the unaddressed dedicated port.")
             if peers.get(fxp0) or child("assigned_object", fxp0, "ip_address") or refs(fxp0).get("vrf") or vlans(fxp0):
                 report("provider-management-mode", fxp0, "Dedicated fxp0 remains unaddressed and uncabled; management is explicitly in-band via lo0.")
-            loopnet = ip_network((infra + 32768 + loop_slots[router], 32))
+            loopnet = ip_network((int(PUBLIC_POOLS["loopbacks"].network_address) + loop_slots[router], 32))
             matching_prefixes = prefixes_by_vrf_network[("vrf/provider", str(loopnet))]
             if (attrs(lo).get("type") != "virtual" or attrs(lo).get("enabled") is not True or refs(lo).get("device") != router or
                     not address(lo, loopnet, "vrf/provider", 0, "tenant") or not primary(router, lo) or len(matching_prefixes) != 1 or
@@ -600,14 +657,25 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if not physical(a, b, 10000000):
                 report("provider-management-uplink", site, "PoP management requires two real routed 10G switch uplinks to the separate PE data ports.")
 
-    for ordinal, (key, (a, b)) in enumerate(spans.items()):
+    site_points = {site: (attrs(site)["latitude"], attrs(site)["longitude"]) for site in expected_sites
+                   if all(type(attrs(site).get(f)) in (int, float) for f in ("latitude", "longitude"))}
+    for key, (a, b) in spans.items():
         port_a = f"{a}/if/et-0/0/{1 + transport_ports[a][key]}"
         port_b = f"{b}/if/et-0/0/{1 + transport_ports[b][key]}"
-        provider = f"provider/transport-{'a' if ordinal % 2 == 0 else 'b'}"
+        provider = span_provider[key]
+        owned = provider == "provider/operator"
+        # Owned fiber is lit at the 100G port and purchases nothing; leased
+        # transport commits 10G unless the upgrade ledger names it.
+        commit = None if owned else LEASED_COMMITS[key in upgrades]
         routed(key, (port_a, port_b), "vrf/provider")
-        if circuit(key, port_a, port_b, refs(a).get("site"), refs(b).get("site"), provider, 100000000, 100000000,
-                   account=f"provider-account/{provider}"):
-            edge(key, a, b, 100000000)
+        if circuit(key, port_a, port_b, refs(a).get("site"), refs(b).get("site"), provider, 100000000, commit,
+                   account="provider-account/operator/fiber" if owned else f"provider-account/{provider}"):
+            edge(key, a, b, 100000000 if owned else commit)
+        if refs(key).get("type") != ("circuit-type/dark-fiber" if owned else "circuit-type/backbone"):
+            report("provider-circuit-path", key, "Same-metro spans are owned dark fiber; inter-metro spans are leased transport.")
+        ends = [site_points.get(refs(router).get("site")) for router in (a, b)]
+        if all(ends) and (attrs(key).get("distance") != round(_km(*ends) * ROUTE_FACTOR, 1) or attrs(key).get("distance_unit") != "km"):
+            report("provider-backbone-geography", key, "A span's route length must follow its two PoPs' actual positions.")
 
     def local_network(sid, role, vrf, tenant):
         site = f"site/{sid}"
@@ -756,18 +824,40 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-port-use", router, "Only the exact reserved physical PE ports may be cabled; unused service/transport/transit positions remain free.")
 
     base = recipe["asn_base"]
-    expected_asns = {"asn/operator": base, "asn/transit-a": base + 1, "asn/transit-b": base + 2}
-    expected_asns.update({f"asn/customer/{key}": base + 256 + slot for key, slot in customer_slots.items()})
-    expected_providers = {"provider/operator", "provider/transport-a", "provider/transport-b", "provider/transit-a", "provider/transit-b"}
-    if by_kind["provider"] != expected_providers or by_kind["asn"] != set(expected_asns):
+    public_asns = ("asn/operator", "asn/transit-a", "asn/transit-b")
+    expected_asns = {f"asn/customer/{key}": base + 256 + slot for key, slot in customer_slots.items()}
+    expected_providers = {"provider/operator", *(f"provider/{label}" for label in CARRIER_NAMES)}
+    if by_kind["provider"] != expected_providers or by_kind["asn"] != set(expected_asns) | set(public_asns):
         report("provider-routing-registry", "plan", "Provider and ASN inventories must match actual operator, transport, upstream and customer identities.")
     if (kind("rir/private") != "rir" or attrs("rir/private").get("is_private") is not True or
             kind("asn-range/private") != "asn_range" or attrs("asn-range/private").get("start") != base or
             attrs("asn-range/private").get("end") != base + 1023 or refs("asn-range/private").get("rir") != "rir/private"):
         report("provider-routing-registry", "asn-range/private", "The estate must retain its complete aligned private 32-bit ASN reservation and private registry.")
+    if (kind("rir/arin") != "rir" or attrs("rir/arin").get("name") != "ARIN" or attrs("rir/arin").get("is_private") is not False or
+            kind("asn-range/arin") != "asn_range" or refs("asn-range/arin").get("rir") != "rir/arin" or
+            (attrs("asn-range/arin").get("start"), attrs("asn-range/arin").get("end")) != (DOCUMENTATION_ASNS[0], DOCUMENTATION_ASNS[-1])):
+        report("provider-routing-registry", "rir/arin", "The operator and upstream AS numbers need their public ARIN registry and documentation range.")
     for key, number in expected_asns.items():
         if kind(key) != "asn" or attrs(key).get("asn") != number or refs(key).get("rir") != "rir/private":
-            report("provider-asn", key, "Each real routing identity must retain its reserved private ASN and registry.")
+            report("provider-asn", key, "Each customer routing identity must retain its reserved private ASN and registry.")
+    numbers = [attrs(key).get("asn") for key in public_asns]
+    for key, number in zip(public_asns, numbers):
+        if kind(key) != "asn" or number not in DOCUMENTATION_ASNS or numbers.count(number) != 1 or refs(key).get("rir") != "rir/arin":
+            report("provider-asn", key, "The operator and each upstream hold a distinct documentation AS number under the public registry.")
+    for prefix in PUBLIC_AGGREGATES:
+        key = f"aggregate/public/{prefix}"
+        if kind(key) != "aggregate" or attrs(key).get("prefix") != prefix or refs(key).get("rir") != "rir/arin":
+            report("provider-public-space", key, "Carrier-owned loopback, link and transit space needs its public ARIN aggregate.")
+    # Third-party carriers are their own companies: distinct from each other and
+    # from every customer, down to the first word of the name.
+    first_words = Counter(str(attrs(key).get("name", "")).split(" ")[0] for key in
+                          [f"provider/{label}" for label in CARRIER_NAMES] + sorted(by_kind["tenant"]))
+    for label in CARRIER_NAMES:
+        key = f"provider/{label}"
+        if first_words[str(attrs(key).get("name", "")).split(" ")[0]] != 1:
+            report("provider-carrier-identity", key, "A carrier's name must not echo another carrier's or a customer's.")
+    operator_asn = attrs("asn/operator").get("asn")
+    code = _operator_code(recipe["name"])
     for provider, asn in (("provider/operator", "asn/operator"), ("provider/transit-a", "asn/transit-a"), ("provider/transit-b", "asn/transit-b")):
         if refs(provider).get("asns") != [asn]:
             report("provider-asn-consumer", provider, "Provider ASN association must refer to its own actual operator or upstream identity.")
@@ -781,9 +871,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             refs("provider-network/operator").get("provider") != "provider/operator"):
         report("provider-routing-domain", "vrf/provider", "The real backbone requires an operator-owned unique provider routing context and matching service network.")
     expected_vcs, expected_terms = set(), set()
-    expected_accounts = {f"provider-account/provider/{family}-{side}" for family in ("transport", "transit") for side in ("a", "b")} | {"provider-account/operator/noc"}
+    expected_accounts = {f"provider-account/provider/{label}" for label in CARRIER_NAMES} | {"provider-account/operator/noc", "provider-account/operator/fiber"}
     for account in expected_accounts:
-        provider = "provider/operator" if account.endswith("/noc") else account.removeprefix("provider-account/")
+        provider = "provider/operator" if account.startswith("provider-account/operator/") else account.removeprefix("provider-account/")
         if kind(account) != "provider_account" or refs(account).get("provider") != provider or "tenant" in refs(account):
             report("provider-account", account, "Procurement accounts must reference their actual provider; native accounts have no tenant field.")
     flows = Counter()
@@ -796,12 +886,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-scope-text", vc, "The service must distinguish peer membership from its finite offered traffic and avoid claiming configured forwarding or availability.")
         expected_vcs.add(vc); expected_accounts.add(account)
         if (kind(tenant) != "tenant" or kind(vrf) != "vrf" or refs(vrf).get("tenant") != tenant or attrs(vrf).get("enforce_unique") is not True or
-                attrs(vrf).get("rd") != f"{base}:{customer_slots[key] + 1}" or
+                attrs(vrf).get("rd") != f"{operator_asn}:{1001 + customer_slots[key]}" or
                 refs(vrf).get("import_targets") != [target] or refs(vrf).get("export_targets") != [target] or
-                kind(target) != "route_target" or attrs(target).get("name") != f"{base}:{customer_slots[key] + 1}" or refs(target).get("tenant") != tenant):
+                kind(target) != "route_target" or attrs(target).get("name") != f"{operator_asn}:{1001 + customer_slots[key]}" or refs(target).get("tenant") != tenant):
             report("provider-customer-routing", vrf, "Each private customer needs its own tenant VRF and exact symmetric reserved route target.")
         if (kind(account) != "provider_account" or refs(account).get("provider") != "provider/operator" or "tenant" in refs(account) or
-                attrs(account).get("account") != f"{recipe['namespace']}-customer-{key}" or
+                attrs(account).get("account") != f"{code}-C{customer_slots[key] + 1:05d}" or
                 kind(vc) != "virtual_circuit" or attrs(vc).get("status") != "active" or refs(vc).get("provider_network") != "provider-network/operator" or
                 refs(vc).get("provider_account") != account or refs(vc).get("tenant") != tenant or
                 refs(vc).get("type") != "virtual-circuit-type/private-l3"):
@@ -843,6 +933,46 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for (link, origin, destination), load in loads.items():
             if Decimal(load) > Decimal(capacity[link]) * usable:
                 report("provider-route-capacity", link, f"Customer spoke-to-hub flow {load/1000:g} Mbps from {origin} to {destination} exceeds purchased usable capacity after {removed or 'no span'} removal; NOC, transit and other traffic are excluded.")
+    # --- One timeline: spans before a PoP's customers, customers in slot order ---
+    as_of = date.fromisoformat(recipe["as_of"])
+
+    def in_service(key):
+        try:
+            return date.fromisoformat(attrs(key).get("install_date"))
+        except (TypeError, ValueError):
+            return None
+
+    first_span = {}
+    for key, ends in spans.items():
+        if (day := in_service(key)) is not None:
+            for router in ends:
+                first_span[pop_of(router)] = min(day, first_span.get(pop_of(router), day))
+    for key in sorted(by_kind["circuit"]):
+        if (day := in_service(key)) is None or day > as_of:
+            report("provider-timeline", key, "Every circuit needs a service date on or before as_of.")
+    starts = defaultdict(list)
+    for sid, (customer, pop, _) in premises.items():
+        key = f"circuit/customer/{sid}"
+        if (day := in_service(key)) is None:
+            continue
+        if pop not in first_span or day <= first_span[pop]:
+            report("provider-timeline", key, "A customer circuit enters service after its PoP's first backbone span.")
+        starts[customer["key"]].append((day, sid))
+    previous = None
+    for customer in sorted(customers, key=lambda item: customer_slots[item["key"]]):
+        if not starts[customer["key"]]:
+            continue
+        day, first = min(starts[customer["key"]])
+        if first != f"ce-{customer['key']}-{customer['hub_pop']}-001" or (previous is not None and day < previous):
+            report("provider-timeline", f"provider-account/customer/{customer['key']}",
+                   "Customers onboard in their permanent slot order, each starting with its hub circuit.")
+        previous = day
+    # --- Premises sit across the metro, not on top of their serving PoP ---
+    for sid, (_, pop, _) in premises.items():
+        here, there = site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")
+        if here and there and sid not in recipe.get("site_names", {}) and not PREMISES_KM[0] <= _km(here, there) <= PREMISES_KM[1]:
+            report("provider-premises-geography", f"site/{sid}", "Customer premises sit 2-25 km from their serving PoP.")
+
     # --- BGP inventory: documentation records, never applied configuration ---
     def ipv4_of(port):
         found = [key for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses]
@@ -880,10 +1010,21 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 attrs(key) != {"name": name, "description": description, "comments": BGP_NOTE}):
             report("provider-bgp-group", key, "Each peer group must retain its authored name, the "
                    "operator's own routing identity and exactly its authored import/export policies.")
-    reflector_pop = ordered[0]
-    reflectors = [f"device/pop-{reflector_pop}/pe-{side}" for side in ("a", "b")]
-    clients = [f"device/pop-{pop}/pe-{side}" for pop in ordered[1:] for side in ("a", "b")]
+    # Reflectors: PE A at the first permanent PoP and PE A at the first later
+    # PoP in another metro, so no single metro holds both.
+    reflector_pops = [ordered[0], next((pop for pop in ordered if pops[pop]["metro"] != pops[ordered[0]]["metro"]), ordered[0])]
+    reflectors = [f"device/pop-{pop}/pe-a" for pop in reflector_pops]
+    clients = [f"device/pop-{pop}/pe-{side}" for pop in ordered for side in ("a", "b")
+               if f"device/pop-{pop}/pe-{side}" not in reflectors]
+    families = (4, 6) if "ipv6_pool" in recipe else (4,)
     expected_sessions = {}
+
+    def address_of(port, family):
+        if family == 4:
+            return ipv4_of(port)
+        found = [key for key in child("assigned_object", port, "ip_address")
+                 if isinstance(attrs(key).get("address"), str) and ":" in attrs(key)["address"]]
+        return found[0] if len(found) == 1 else None
 
     def peering(local, remote_label, remote_as, group, description, local_address,
                 remote_address=None, remote_prefix=None, tenant=None):
@@ -899,32 +1040,35 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return {"name": f"{name_of(local)} to {remote_label}", "status": "active",
                 "description": description, "comments": BGP_NOTE}, expected
 
-    expected_sessions[f"bgp-session/ibgp/{reflectors[0].removeprefix('device/')}/"
-                      f"{reflectors[1].removeprefix('device/')}"] = peering(
-        reflectors[0], f"{name_of(reflectors[1])} iBGP", "asn/operator", "ibgp-core",
-        "Internal peering between the two backbone route reflectors",
-        ipv4_of(f"{reflectors[0]}/if/lo0"), remote_address=ipv4_of(f"{reflectors[1]}/if/lo0"))
-    for client in clients:
-        for reflector in reflectors:
-            expected_sessions[f"bgp-session/ibgp/{client.removeprefix('device/')}/"
-                              f"{reflector.removeprefix('device/')}"] = peering(
-                client, f"{name_of(reflector)} iBGP", "asn/operator", "ibgp-core",
-                "Route-reflector client peering to the backbone reflector at "
-                f"{name_of(refs(reflector).get('site'))}",
-                ipv4_of(f"{client}/if/lo0"), remote_address=ipv4_of(f"{reflector}/if/lo0"))
-    for side, (router, port, provider, circuit_key) in sorted(transit_peerings.items()):
-        network = link_network.get(circuit_key)
-        candidates = prefixes_by_vrf_network[("vrf/provider", str(network))]
-        expected_sessions[f"bgp-session/transit/{side}"] = peering(
-            router, f"{name_of(provider)} transit", f"asn/transit-{side}", "transit",
-            f"External transit peering over {attrs(circuit_key).get('cid')}; the remote address "
-            "and interface owner are unknown", ipv4_of(port),
-            remote_prefix=candidates[0] if len(candidates) == 1 else None)
-    for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key) in sorted(customer_peerings.items()):
-        expected_sessions[f"bgp-session/customer/{sid}"] = peering(
-            router, f"{name_of(cpe)} customer", f"asn/customer/{ckey}", "customer",
-            f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
-            ipv4_of(port), remote_address=ipv4_of(cpe_wan), tenant=tenant)
+    for family in families:
+        tail, label = ("", "") if family == 4 else ("/ipv6", " IPv6")
+        expected_sessions[f"bgp-session/ibgp/{reflectors[0].removeprefix('device/')}/"
+                          f"{reflectors[1].removeprefix('device/')}{tail}"] = peering(
+            reflectors[0], f"{name_of(reflectors[1])} iBGP{label}", "asn/operator", "ibgp-core",
+            "Internal peering between the two backbone route reflectors",
+            address_of(f"{reflectors[0]}/if/lo0", family), remote_address=address_of(f"{reflectors[1]}/if/lo0", family))
+        for client in clients:
+            for reflector in reflectors:
+                expected_sessions[f"bgp-session/ibgp/{client.removeprefix('device/')}/"
+                                  f"{reflector.removeprefix('device/')}{tail}"] = peering(
+                    client, f"{name_of(reflector)} iBGP{label}", "asn/operator", "ibgp-core",
+                    "Route-reflector client peering to the backbone reflector at "
+                    f"{name_of(refs(reflector).get('site'))}",
+                    address_of(f"{client}/if/lo0", family), remote_address=address_of(f"{reflector}/if/lo0", family))
+        for side, (router, port, provider, circuit_key) in sorted(transit_peerings.items()):
+            local = address_of(port, family)
+            network = ip_interface(attrs(local)["address"]).network if local else None
+            candidates = prefixes_by_vrf_network[("vrf/provider", str(network))]
+            expected_sessions[f"bgp-session/transit/{side}{tail}"] = peering(
+                router, f"{name_of(provider)} transit{label}", f"asn/transit-{side}", "transit",
+                f"External transit peering over {attrs(circuit_key).get('cid')}; the remote address "
+                "and interface owner are unknown", local,
+                remote_prefix=candidates[0] if len(candidates) == 1 else None)
+        for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key) in sorted(customer_peerings.items()):
+            expected_sessions[f"bgp-session/customer/{sid}{tail}"] = peering(
+                router, f"{name_of(cpe)} customer{label}", f"asn/customer/{ckey}", "customer",
+                f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
+                address_of(port, family), remote_address=address_of(cpe_wan, family), tenant=tenant)
     if by_kind["bgp_session"] != set(expected_sessions):
         report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair, "
                "every other provider edge against both reflectors, each actual transit handoff and "
