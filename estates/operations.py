@@ -669,6 +669,9 @@ def _tags(w):
         if role == "role/customer-edge" or (role == "role/wan-edge" and
                                              objects.get(device["refs"].get("tenant"), {}).get("refs", {}).get("group") == "tenant-group/customers"):
             applied[key].add("managed-ce")
+    for key, obj in objects.items():
+        if obj["kind"] in ("device", "circuit") and obj["meta"].get("managed_service"):
+            applied[key].add("managed-service")
     vrf_role = {}
     for key, role in roles.items():
         if role in zone_tags:
@@ -688,8 +691,10 @@ def _tags(w):
             port = objects.get(refs.get("assigned_object"), {})
             if port.get("kind") == "interface" and vrf_role.get(refs.get("vrf")) in zone_tags:
                 applied[port["refs"]["device"]].add(zone_tags[vrf_role[refs["vrf"]]])
-        elif obj["kind"] == "bgp_session" and refs.get("peer_group") == "bgp-peer-group/ibgp-core":
-            # Clients peer to the reflectors, so a remote iBGP loopback is a reflector's.
+        elif (obj["kind"] == "bgp_session" and refs.get("peer_group") == "bgp-peer-group/ibgp-core"
+              and not obj["meta"].get("mirror")):
+            # Clients peer to the reflectors, so a remote iBGP loopback is a
+            # reflector's; the reflector-side mirror records name clients.
             remote = objects.get(refs.get("remote_address"), {})
             port = objects.get(remote.get("refs", {}).get("assigned_object"), {})
             if port.get("kind") == "interface":

@@ -623,6 +623,7 @@ def _context(plan, objects, kinds):
 # and the switch roles a baseline config context governs.
 _TAG_KINDS = {"hub-site": {"site"}, "dual-homed": {"site"}, "acquired": {"site", "device"},
               "route-reflector": {"device"}, "transit-edge": {"device"}, "managed-ce": {"device"},
+              "managed-service": {"device", "circuit"},
               "pci-scope": {"device", "vlan", "prefix"}, "clinical": {"device", "vlan", "prefix"},
               "ot-zone": {"device", "vlan", "prefix"},
               "multi-site": {"virtual_machine"}}

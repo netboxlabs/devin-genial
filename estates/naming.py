@@ -211,6 +211,8 @@ TAGS = {
                         "iBGP route reflector for the backbone"),
     "transit-edge": ("Transit edge", "f57c00", ("device",),
                      "Terminates an upstream transit handoff"),
+    "managed-service": ("Managed service", "00796b", ("device", "circuit"),
+                        "Carrier-managed customer service: the managed CE and its access circuit"),
     "managed-ce": ("Managed CE", "26a69a", ("device",),
                    "Customer-premises edge operated by the service provider"),
     "pci-scope": ("PCI scope", "e53935", ("device", "vlan", "prefix"),
