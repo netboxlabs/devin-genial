@@ -8,6 +8,10 @@ from collections import defaultdict
 from decimal import Decimal, InvalidOperation, ROUND_CEILING
 import math
 
+# A copper channel's passive rear may be a jack (wall box) or a 110 punchdown
+# block (Panduit DP24688TGY); either terminates the same four-pair cable.
+COPPER_REAR_TYPES = {"8p8c", "110-punch"}
+
 
 _TYPE = "type2-ieee802.3at"
 _COPPER = {"cat5e", "cat6", "cat6a", "cat7", "cat7a", "cat8"}
@@ -139,9 +143,9 @@ def analyze(plan, catalog):
         expected = eligible.get(port)
         if expected:
             if (attrs(port).get("poe_mode") != expected or attrs(port).get("poe_type") != _TYPE or
-                    attrs(port).get("type") != "1000base-t" or attrs(port).get("enabled") is not True or
+                    not str(attrs(port).get("type")).endswith("base-t") or attrs(port).get("enabled") is not True or
                     attrs(port).get("mgmt_only", False) or attrs(refs(port).get("device")).get("status") != "active"):
-                report("poe-port", port, "Catalog PoE port needs its correct Type 2 mode, enabled 1G copper interface and active owner.")
+                report("poe-port", port, "Catalog PoE port needs its correct Type 2 mode, enabled BASE-T copper interface and active owner.")
         elif attrs(port).get("poe_mode") or attrs(port).get("poe_type"):
             report("poe-port", port, "PoE flags are only valid on catalog PSE access ports or the PD input, never management, optical, radio or virtual ports.")
 
@@ -173,7 +177,7 @@ def analyze(plan, catalog):
                     not hardware.get(owner, {}).get("passive_ports") or
                     refs(owner).get("site") != refs(refs(start).get("device")).get("site") or
                     attrs(owner).get("status") != "active" or
-                    attrs(front).get("type") != "8p8c" or attrs(rear).get("type") != "8p8c" or
+                    attrs(front).get("type") != "8p8c" or attrs(rear).get("type") not in COPPER_REAR_TYPES or
                     attrs(front).get("rear_port_position", 1) != 1 or attrs(rear).get("positions", 1) != 1):
                 return None
             current = mate

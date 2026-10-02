@@ -42,7 +42,7 @@ class EnterpriseReportTests(unittest.TestCase):
                 a, b = obj["refs"]["a"], obj["refs"]["b"]
                 peers[a], peers[b] = b, a
         uplinks = [obj for obj in objects.values() if obj["kind"] == "interface" and obj["refs"].get("device") == host["key"]
-                   and not obj["attrs"].get("mgmt_only")]
+                   and not obj["attrs"].get("mgmt_only") and obj["key"] in peers]
         self.assertEqual(len(uplinks), 2)
         for port in uplinks:
             peer = objects[peers[port["key"]]]
@@ -79,7 +79,7 @@ class EnterpriseReportTests(unittest.TestCase):
         changed = deepcopy(self.plan)
         objects = {obj["key"]: obj for obj in changed["objects"]}
         vm = min((obj for obj in objects.values() if obj["kind"] == "virtual_machine"), key=lambda obj: obj["key"])
-        port = f"{vm['refs']['device']}/if/eth0"
+        port = f"{vm['refs']['device']}/if/eth1"
         cable = next(obj for obj in objects.values() if obj["kind"] == "cable" and port in (obj["refs"]["a"], obj["refs"]["b"]))
         cable["attrs"]["status"] = "planned"
         walkthrough = markdown(changed).split("## Connected walkthroughs\n", 1)[1].split("## Estate topology\n", 1)[0]

@@ -56,7 +56,7 @@ SMALL = {
 # must still build exactly these.
 BASELINE = {"access": ("Cisco", "Catalyst 9200L-24P-4X"),
             "leaf": ("Arista", "DCS-7050SX3-48C8-F"),
-            "ap": ("Devin Reference Designs", "Reference PoE access point")}
+            "ap": ("Cisco", "Catalyst 9120AXI-B")}
 VARIANT = {"access": ("Juniper", "EX3400-24P"),
            "leaf": ("Juniper", "QFX5120-48Y-AFO2"),
            "ap": ("HPE", "Aruba AP-505")}
@@ -90,7 +90,7 @@ class ResolutionTests(unittest.TestCase):
     def test_absent_key_resolves_to_the_shipped_default_models(self):
         catalog = hardware_catalog()
         resolved = resolve_hardware({}, catalog)
-        self.assertEqual(resolved, {"access": "cisco", "ap": "reference", "leaf": "arista"})
+        self.assertEqual(resolved, {"access": "cisco", "ap": "cisco", "leaf": "arista"})
         for family, identity in BASELINE.items():
             alias = catalog["hardware_lines"][family]["lines"][resolved[family]]
             model = catalog["models"][alias]
@@ -248,7 +248,7 @@ class CatalogFitTests(unittest.TestCase):
             self.assertEqual(len([p for p in model["interfaces"] if p.get("mgmt_only")]), 1)
 
     def test_ap_line_matches_the_default_envelope(self):
-        base, variant = (self.models[self.alias("ap", v)] for v in ("reference", "aruba"))
+        base, variant = (self.models[self.alias("ap", v)] for v in ("cisco", "aruba"))
         self.assertEqual((variant["manufacturer"], variant["model"]), VARIANT["ap"])
         self.assertEqual(variant["poe_pd"]["required_type"], base["poe_pd"]["required_type"])
         # A larger reservation would repack every room's access-port ledger.
@@ -256,9 +256,12 @@ class CatalogFitTests(unittest.TestCase):
                          base["poe_pd"]["pse_reservation_mw"])
         self.assertLessEqual(variant["poe_pd"]["max_input_mw"], base["poe_pd"]["max_input_mw"])
         self.assertEqual(len(variant["radio_bands"]), len(base["radio_bands"]))
+        # The 9120's uplink is 2.5GBASE-T and the AP-505's 1000BASE-T, but both
+        # attach to 1G PoE+ access ports, so the configured link rate is 1G on
+        # either line and no access-port ledger moves.
         for model in (base, variant):
             powered = next(p for p in model["interfaces"] if p["name"] == model["poe_pd"]["interface"])
-            self.assertEqual(powered["type"], "1000base-t")
+            self.assertIn(powered["type"], {"1000base-t", "2.5gbase-t"})
             self.assertEqual([p["name"] for p in model["interfaces"] if p["type"].startswith("ieee802.11")],
                              sorted(model["radio_bands"]))
 

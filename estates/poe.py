@@ -54,7 +54,7 @@ def aggregate_pdu_inputs(world):
         if not normal:
             continue  # Native PowerPort draws are positive integers or unset.
         objects[inlet]["attrs"].update(allocated_draw=normal, maximum_draw=failover,
-            description="Aggregated downstream inlet allocations; maximum reserves the served devices' single-feed failover")
+            description="Sum of the connected inlet budgets; maximum covers single-feed failover")
 
 
 def enrich(world):
@@ -117,10 +117,10 @@ def enrich(world):
         ports = hardware["power_ports"]
         if not ports or key not in power_contracts:
             raise DesignError(f"{key}: installed component load needs actual infrastructure inlets and a power contract")
-        description = ("Chassis plus reserved PoE AC planning allowance; each supply reserves the full device total"
+        description = ("Budgeted draw: chassis and PoE; each supply sized for the full load"
                        if not optical_extra else
-                       "Chassis plus installed optics" + (" and reserved PoE" if extra else "") +
-                       " AC planning allowances; each supply reserves the full device total")
+                       "Budgeted draw: chassis, optics" + (" and PoE" if extra else "") +
+                       "; each supply sized for the full load")
         quotient, remainder = divmod(allowance, len(ports))
         for index, port in enumerate(ports):
             inlet = objects[f"{key}/power/{port['name']}"]

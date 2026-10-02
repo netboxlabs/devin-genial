@@ -45,9 +45,9 @@ FEATURES = ("assurance", "automation", "scenario", "maintenance")
 # for exactly `access`, `leaf` and `ap`. "juniper" has no AP line, "aruba" has
 # no switch line, so each shorthand moves the families it actually covers.
 VENDORS = {
-    "default": ({}, "catalog defaults (Cisco access, Arista leaf, reference AP)"),
+    "default": ({}, "catalog defaults (Cisco access, Arista leaf, Cisco 9120 AP)"),
     "juniper": ({"access": "juniper", "leaf": "juniper"},
-                "Juniper EX3400-24P access and QFX5120-48Y-AFO2 leaf; the AP stays the reference line"),
+                "Juniper EX3400-24P access and QFX5120-48Y-AFO2 leaf; the AP stays the Cisco 9120 line"),
     "aruba": ({"ap": "aruba"},
               "HPE Aruba AP-505 radios; access and leaf stay on the catalog defaults"),
 }
@@ -1256,7 +1256,7 @@ def demo_markdown(spec, facts, artifacts, live):
     if "juniper" in (selection.get("access"), selection.get("leaf")):
         honesty.append(
             "The Juniper line moves the access and leaf families only; the AP family has no "
-            "Juniper line in the catalog and stays on the reference model. The alternates meet "
+            "Juniper line in the catalog and stays on the Cisco Catalyst 9120. The alternates meet "
             "or beat the models they replace on every port, PSU, PoE and optics quantity.")
     if counts.get("wireless_lan"):
         honesty.append("Wireless coverage is authored zone sizing at a declared 32 devices per AP, "

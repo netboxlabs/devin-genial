@@ -174,7 +174,8 @@ equipment is explicitly fictional. Optional `console_ports` and
 Installed components are explicit objects; native component templates have no
 top-level message in the pinned SDK.
 
-Passive reference models declare `passive_ports`; both sides of every position
+Passive models declare `passive_ports` plus ordered `front_ports`/`rear_ports`
+name/type lists from their pinned source; both sides of every position
 are emitted, including unused ports. A front position maps to one rear position
 on the same device. The local plugin bridge is an explicit qualification-only
 translation to NetBox4.7 native mappings, not a change to the canonical format.

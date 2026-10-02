@@ -72,7 +72,7 @@ class DepthTests(unittest.TestCase):
     def test_pdu_input_must_carry_the_load_cabled_to_its_outlets(self):
         # Reverting the aggregation leaves the input empty, which is what made
         # the rendered power chain report 0 W across every upstream feed.
-        inlet = "device/br-s0001/pdu-network-01-a/power/Input"
+        inlet = "device/br-s0001/pdu-network-01-a/power/Power Port 1"
         draws = {obj["key"]: obj["attrs"] for obj in self.baseline["objects"]}[inlet]
         self.assertGreater(draws["allocated_draw"], 0)
         self.assertGreaterEqual(draws["maximum_draw"], draws["allocated_draw"])

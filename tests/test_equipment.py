@@ -1,10 +1,13 @@
 """Physical family links, native cooling semantics, and stable allocations."""
 
 from copy import deepcopy
+from types import SimpleNamespace
 import unittest
 
 from estates.bank import generate
-from estates.equipment import KINDS, validate
+from estates.equipment import KINDS, _console_size, validate
+from estates.model import hardware_catalog, serial_pattern, vendor_serial
+from estates.validate import validate as full_validate
 
 
 class EquipmentTests(unittest.TestCase):
@@ -51,7 +54,7 @@ class EquipmentTests(unittest.TestCase):
                 module = next(o for o in objects.values() if o["kind"] == "module")
                 bay = objects[module["refs"]["module_bay"]]
                 if mutation == "manufacturer":
-                    objects[module["refs"]["module_type"]]["refs"]["manufacturer"] = "manufacturer/Devin Reference Designs"
+                    objects[module["refs"]["module_type"]]["refs"]["manufacturer"] = "manufacturer/Generic"
                 elif mutation == "offline":
                     module["attrs"]["status"] = "offline"
                 elif mutation == "disabled-bay":
@@ -126,6 +129,67 @@ class EquipmentTests(unittest.TestCase):
             if old["kind"] in KINDS or (old["kind"] == "cable" and
                     ("console_" in old["key"] or "StackPort" in old["key"])):
                 self.assertEqual(objects[old["key"]], old, old["key"])
+
+
+class ShowcaseHardwareTests(unittest.TestCase):
+    """Real catalog models, vendor-shaped serials and platforms (catalog 0.12)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plan = generate({"branches": {"small": 1}, "headquarters": 0})
+        cls.catalog = hardware_catalog()
+
+    def objects(self, plan=None):
+        return {o["key"]: o for o in (plan or self.plan)["objects"]}
+
+    def test_no_authored_name_or_placeholder_reaches_the_estate(self):
+        for obj in self.plan["objects"]:
+            text = " ".join(str(v) for v in obj["attrs"].values())
+            self.assertNotIn("Devin", text, obj["key"])
+            self.assertNotIn("SYN-", text, obj["key"])
+            if obj["kind"] in {"device_type", "module_type", "rack_type"}:
+                self.assertFalse(obj["attrs"]["model"].startswith("Reference"), obj["key"])
+
+    def test_every_catalog_template_yields_its_own_pattern(self):
+        for alias, model in self.catalog["models"].items():
+            for field in ("serial_format", "module_serial_format"):
+                if field == "serial_format" or model.get("configured_modules"):
+                    fmt = model[field]
+                    for n in (0, 7, 2 ** 61 + 12345):
+                        serial = vendor_serial(fmt, n)
+                        self.assertRegex(serial, "^" + serial_pattern(fmt) + "$", (alias, field))
+                        self.assertLessEqual(len(serial), 50)
+
+    def test_placeholder_serial_and_wrong_platform_are_rejected(self):
+        self.assertEqual(full_validate(self.plan), [])
+        objects = self.objects()
+        switch = next(o for o in objects.values() if o["meta"].get("hardware") == "access")
+        pdu = next(o for o in objects.values() if o["meta"].get("hardware") == "pdu")
+        self.assertEqual(objects[switch["refs"]["platform"]]["attrs"]["name"], "Cisco IOS XE")
+        self.assertNotIn("platform", pdu["refs"])
+        for mutate, code in (
+                (lambda o: o[switch["key"]]["attrs"].__setitem__("serial", "SYN-0000000001"), "hardware-serial"),
+                (lambda o: o[switch["key"]]["refs"].pop("platform"), "hardware-platform"),
+                (lambda o: o[switch["key"]]["refs"].__setitem__("platform", "platform/services"), "hardware-platform"),
+                (lambda o: o[pdu["key"]]["refs"].__setitem__("platform", switch["refs"]["platform"]), "hardware-platform")):
+            plan = deepcopy(self.plan)
+            mutate(self.objects(plan))
+            self.assertIn(code, {f["code"] for f in full_validate(plan)})
+
+    def test_console_server_size_follows_first_demand_and_never_swaps(self):
+        def site(world):
+            return SimpleNamespace(w=world, id="br-x", room_prefix=lambda room: "")
+        world = SimpleNamespace(catalog=self.catalog, reservations={})
+        world.reserve = lambda scope, key, capacity: world.reservations.setdefault(scope, {}).setdefault(key, 0)
+        self.assertEqual(_console_size(site(world), "room", ["p"] * 4), "console-server")
+        # Growth past sixteen consoles adds a second CM8116, never a CM8148 swap.
+        self.assertEqual(_console_size(site(world), "room", ["p"] * 30), "console-server")
+        fresh = SimpleNamespace(catalog=self.catalog, reservations={}, reserve=None)
+        fresh.reserve = lambda scope, key, capacity: fresh.reservations.setdefault(scope, {}).setdefault(key, 0)
+        self.assertEqual(_console_size(site(fresh), "room", ["p"] * 30), "console-server-48")
+        models = {self.objects()[o["refs"]["device_type"]]["attrs"]["model"]
+                  for o in self.plan["objects"] if o["kind"] == "device" and o["refs"]["role"] == "role/console-server"}
+        self.assertTrue(models and models <= {"CM8116", "CM8148"}, models)
 
 
 if __name__ == "__main__":
