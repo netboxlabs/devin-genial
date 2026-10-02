@@ -186,9 +186,6 @@ class LivedInPlant(unittest.TestCase):
         self.assertEqual(len(cage["shapes"]), 2)
         self.assertEqual(cage["width"], cage["shapes"][0]["x"] + fibre.CAGE_POSITIONS * geometry.RACK_WIDTH + geometry.MARGIN)
 
-    @unittest.skipUnless(fibre.PE_LEGACY in __import__("json").loads(
-        (SHOWCASE.parent.parent / "catalog" / "hardware.json").read_text())["models"],
-        "STUB(WP-A): runtime catalog stubs change the hardware digest; runs once the catalog lands")
     def test_growth_never_moves_history(self):
         grown = deepcopy(self.recipe)
         grown["pops"].append(dict(key="milwaukee-bay-view", metro="milwaukee"))

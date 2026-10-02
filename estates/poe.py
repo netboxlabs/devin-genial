@@ -110,6 +110,8 @@ def enrich(world):
     for key in loads.keys() | optical_loads.keys():
         milliwatts = loads.get(key, 0)
         device = objects[key]
+        if device["attrs"].get("status", "active") != "active":
+            continue  # a staged, planned or decommissioning chassis is unpowered: nothing to budget
         alias = device["refs"]["device_type"].removeprefix("hardware/")
         hardware = models[alias]
         if milliwatts > planning_budget(hardware):
