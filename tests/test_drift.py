@@ -34,8 +34,8 @@ def plan_for(profile):
 
 def mutated_items(mutate):
     """Patch the item builder with a deliberately broken variant of itself."""
-    def factory(objects, children, subjects):
-        return mutate(objects, subjects, *_ORIGINAL_ITEMS(objects, children, subjects))
+    def factory(objects, children, subjects, *rest):
+        return mutate(objects, subjects, *_ORIGINAL_ITEMS(objects, children, subjects, *rest))
     return patch.object(drift, "_items", side_effect=factory)
 
 
@@ -470,6 +470,133 @@ class DriftProfileTests(unittest.TestCase):
         manifest["counts"]["items"] = 99
         with self.assertRaises(DesignError):
             drift.markdown(manifest, plan)
+
+
+PROVIDER = dict(profile="provider-backbone", customers=[dict(
+    key="harbor-logistics", hub_pop="chicago-west", lan_endpoints=0,
+    sites=[dict(pop="chicago-west", count=1), dict(pop="cleveland-east", count=1)])])
+
+
+class ProviderDriftTests(unittest.TestCase):
+    """The PoP subject path: a carrier's discovery observes its own equipment,
+    and a CE-only customer premises (lan_endpoints = 0) has no endpoint at all."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.plan = generate(PROVIDER)
+        cls.envelope = drift.create(deepcopy(cls.plan))
+        cls.objects = {obj["key"]: obj for obj in cls.plan["objects"]}
+
+    def test_a_ce_only_provider_drifts_its_first_pop_in_the_permanent_ledger(self):
+        selection = self.envelope["selection"]
+        order = self.plan["reservations"]["provider-pop-order"]
+        self.assertEqual(selection["site"], "site/pop-" + min(order, key=order.get))
+        for field, key in selection.items():
+            self.assertIn(key, self.objects, field)
+        for field in ("provider_edge", "peer_provider_edge", "management_switch", "console_server"):
+            self.assertEqual(self.objects[selection[field]]["refs"]["site"], selection["site"])
+        self.assertEqual(self.objects[selection["provider_edge"]]["refs"]["role"], "role/provider-edge")
+        # Nothing at a customer premises is a drift subject.
+        self.assertFalse(any(key.startswith("device/ce-") for key in self.envelope["observed"]["records"]))
+
+    def test_the_pop_set_covers_every_class_inside_the_reviewed_46_kinds(self):
+        counts = self.envelope["counts"]
+        self.assertEqual(counts["items"], 7)
+        self.assertEqual(counts["by_change_type"], {"create": 2, "update": 6})
+        self.assertEqual({item["deviation_class"] for item in self.envelope["items"]}, set(drift.CLASSES))
+        self.assertLessEqual(set(self.envelope["checks"]["emitted_kinds"]), drift.NETBOX_46_KINDS)
+        self.assertIn("module", self.envelope["checks"]["emitted_kinds"])
+        self.assertIn("mac_address", self.envelope["checks"]["emitted_kinds"])
+        self.assertNotIn("vlan", {item["kind"] for item in self.envelope["items"]})
+        self.assertIn("routing-protocol state", " ".join(self.envelope["limitations"]))
+
+    def test_replacement_parts_follow_their_catalog_format_and_predate_as_of(self):
+        from datetime import date
+        from estates.model import hardware_catalog, serial_date_code, serial_pattern
+        import re
+        catalog = hardware_catalog()
+        as_of = date.fromisoformat(self.plan["recipe"]["as_of"][:10])
+        fields = {item["id"]: item["fields"] for item in self.envelope["items"]}
+        console = self.objects[self.envelope["selection"]["console_server"]]
+        optic_format = catalog["optics"]["serial_formats"]["Juniper"]
+        for fmt, serial in ((catalog["models"][console["meta"]["hardware"]]["serial_format"],
+                             fields["replaced-console-server"][0]["observed"]),
+                            (optic_format, fields["replaced-optic-serial"][0]["observed"])):
+            self.assertRegex(serial, "^" + serial_pattern(fmt) + "$")
+            year, week = serial_date_code(fmt, serial)
+            self.assertLessEqual((year, week), tuple(as_of.isocalendar())[:2])
+        mac = fields["replaced-console-server"][1]
+        self.assertEqual(mac["observed"][:9], mac["documented"][:9], "a like-for-like spare keeps the vendor OUI")
+        self.assertNotIn(mac["observed"], {obj["attrs"]["mac_address"] for obj in self.objects.values()
+                                           if obj["kind"] == "mac_address"})
+
+    def test_the_staged_loopback_is_an_unused_host_route_in_the_documented_pool(self):
+        staged = self.envelope["observed_plan"]["objects"]
+        address = next(obj for obj in staged if obj["key"].endswith("/staged-loopback"))["attrs"]["address"]
+        self.assertTrue(address.endswith("/32"))
+        self.assertNotIn(address.split("/")[0], {obj["attrs"].get("address", "").split("/")[0]
+                                                 for obj in self.objects.values()})
+        self.assertNotIn(address, {obj["attrs"].get("prefix") for obj in self.objects.values()})
+
+    def test_selection_survives_appending_pops_and_customers(self):
+        grown_recipe = deepcopy(self.plan["recipe"])
+        # A PoP whose key sorts first by name still lands last in the ledger.
+        grown_recipe["pops"].append(dict(key="chicago-annex", metro="chicago"))
+        grown_recipe["customers"].append(dict(key="summit-legal", hub_pop="chicago-west", lan_endpoints=0,
+                                              sites=[dict(pop="chicago-west", count=2),
+                                                     dict(pop="chicago-annex", count=1)]))
+        grown = generate(grown_recipe, previous=deepcopy(self.plan))
+        after = drift.create(grown)
+        self.assertEqual(after["selection"], self.envelope["selection"])
+        # Growth may legitimately change a subject's documented snapshot (a PE
+        # gains a customer port and its power budget); the drift itself stays.
+        stable = lambda items: canonical([{key: value for key, value in item.items() if key != "documented"}
+                                          for item in items])
+        self.assertEqual(stable(after["items"]), stable(self.envelope["items"]))
+
+    def test_a_provider_with_customer_lans_still_drifts_the_pop(self):
+        envelope = drift.create(generate(dict(profile="provider-backbone")))
+        self.assertIn("provider_edge", envelope["selection"])
+        self.assertEqual(envelope["counts"]["items"], 7)
+
+    def test_the_untouched_provider_manifest_verifies_and_renders(self):
+        manifest = {key: value for key, value in deepcopy(self.envelope).items() if key != "observed_plan"}
+        drift.verify(manifest, deepcopy(self.plan))
+        text = drift.markdown(manifest, deepcopy(self.plan))
+        for item in self.envelope["items"]:
+            self.assertIn(item["id"], text)
+        self.assertIn("Optic et-0/0/0", text)
+        self.assertIn("Active Deviations", text)
+
+    def test_a_tampered_provider_manifest_is_refused(self):
+        manifest = {key: value for key, value in deepcopy(self.envelope).items() if key != "observed_plan"}
+        next(item for item in manifest["items"] if item["id"] == "replaced-optic-serial")["fields"][0]["observed"] = "1AQ00000000"
+        with self.assertRaises(DesignError):
+            drift.verify(manifest, deepcopy(self.plan))
+
+    def test_renaming_the_replaced_console_server_is_refused(self):
+        def rename(objects, subjects, items, observed):
+            observed[subjects["console_server"]]["attrs"]["name"] += "-new"
+            return items, observed
+        with mutated_items(rename), self.assertRaises(DesignError) as caught:
+            drift.create(deepcopy(self.plan))
+        self.assertIn("drifts its own Diode matching identity", str(caught.exception))
+
+    def test_a_replacement_mac_reusing_the_documented_one_is_refused(self):
+        def reuse(objects, subjects, items, observed):
+            created = next(record for key, record in observed.items() if record["kind"] == "mac_address")
+            created["attrs"]["mac_address"] = objects[subjects["console_mac"]]["attrs"]["mac_address"]
+            return items, observed
+        with mutated_items(reuse), self.assertRaises(DesignError) as caught:
+            drift.create(deepcopy(self.plan))
+        self.assertIn("reuses a documented matching identity", str(caught.exception))
+
+    def test_a_pop_without_a_second_provider_edge_is_not_eligible(self):
+        plan = deepcopy(self.plan)
+        objects, children = drift._graph(plan)
+        site = self.envelope["selection"]["site"]
+        objects[self.envelope["selection"]["peer_provider_edge"]]["attrs"]["status"] = "offline"
+        self.assertIsNone(drift._pop_subjects(objects, children, site))
 
 
 if __name__ == "__main__":
