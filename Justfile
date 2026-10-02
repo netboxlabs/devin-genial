@@ -105,6 +105,24 @@ lifecycle-check plan out:
 seed-lifecycle out target receipt='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
+# Derive plan-derived NetBox Validation policies (rules, parameters and a
+# per-rule prediction of the findings and their graph causes) from a frozen plan
+validation plan out:
+    python3 -m estates.validation build {{quote(plan)}} --out {{quote(out)}}
+
+# Recompute a saved validation artifact from its bound plan (operands match `validation`)
+validation-check plan out:
+    python3 -m estates.validation check {{quote(out)}} --plan {{quote(plan)}}
+
+# Create the policies over REST, run them once and compare the engine's failing
+# checks with the prediction. Requires VALIDATION_WRITES=1 and the estate on main.
+seed-validation out target receipt='':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.validation seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
+
+# Remove exactly the validation policies and runs a seed receipt recorded
+unseed-validation receipt target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.validation unseed {{quote(receipt)}} {{quote(target)}}
+
 # Remove exactly the floorplan rows a seed receipt recorded (before teardown-main)
 unseed-geometry receipt target:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.geometry unseed {{quote(receipt)}} {{quote(target)}}
