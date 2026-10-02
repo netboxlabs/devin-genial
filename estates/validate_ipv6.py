@@ -172,6 +172,9 @@ def validate(plan):
                 key == f"prefix/{site.removeprefix('site/')}/lan"):
             customer_lans.add((vrf, net4))
             continue  # customer-assigned LAN space: the carrier assigns it no IPv6
+        if provider and key.startswith("prefix/dia/"):
+            customer_lans.add((vrf, net4))
+            continue  # customer DIA is IPv4-only
         if (kind(vrf) != "vrf" and not (provider and vrf is None)) or kind(tenant) != "tenant":
             report("ipv6-prefix-scope", key, "Dual-stack prefixes require real VRF and tenant ownership.")
         net6, purpose = None, None
@@ -263,7 +266,11 @@ def validate(plan):
                 attrs(owner).get("name") == f"{attrs(refs(owner).get('parent')).get('name')}.0" and
                 refs(refs(owner).get("parent")).get("device") == refs(owner).get("device")):
             owner = refs(owner)["parent"]  # a Junos unit 0 stands for its physical port
-        if purpose == "routed" and provider and (kind(owner) != "interface" or
+        # A PE service subinterface ae1.<vid> routes over its actual LAG.
+        subinterface = (attrs(owner).get("type") == "virtual" and attrs(refs(owner).get("parent")).get("type") == "lag" and
+                        refs(refs(owner).get("parent")).get("device") == refs(owner).get("device") and
+                        refs(refs(owner).get("device")).get("role") == "role/provider-edge")
+        if purpose == "routed" and provider and not subinterface and (kind(owner) != "interface" or
                 attrs(owner).get("type") in (None, "virtual", "bridge", "lag") or
                 refs(refs(owner).get("device")).get("role") not in {
                     "role/provider-edge", "role/customer-edge", "role/management", "role/wan-edge"}):

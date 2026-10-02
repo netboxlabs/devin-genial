@@ -553,6 +553,10 @@ SUBURB_NUMBERS_PER_KM = 620
 # Jitter half-widths in degrees (~390 m north-south, ~370 m east-west at these
 # latitudes): separates sites sharing an anchor without leaving its area.
 JITTER_LAT, JITTER_LON = 0.0035, 0.0045
+# Provider premises sit on a 150 m street grid around their anchor, at most two
+# blocks out (300 m, inside the verified jitter box), and at least 300 m from
+# every earlier premises, so map labels never stack on one point.
+GRID_M, GRID_STEPS, MIN_PREMISES_SPACING_M = 150, 2, 300
 LOCALITIES = {anchor[1]: metro for metro, anchors in ANCHORS.items() for anchor in anchors}
 GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers", "school": "Schools",
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
@@ -1081,7 +1085,9 @@ def locate(site):
     node["refs"].update(region=metro_region(w.recipe['namespace'], state_code, city),
                         group=f"site-group/{w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = {"country": "US", "state": state_code, "city": city, "synthetic": True}
-    building, parent, name = None, None, "Data hall" if kind == "dc" else "MDF"
+    # A provider premises' carrier equipment stands in the building's minimum point
+    # of entry, where the carrier's demarcation (and any MPOE cabinet) lives.
+    building, parent, name = None, None, "Data hall" if kind == "dc" else "MPOE" if kind == "customer" else "MDF"
     if kind == "pop":
         suite, name = carrier_suite(site.id)
         parent = _location(site, "suite", suite, "suite", 1, (0, 0, 0))
@@ -1099,6 +1105,40 @@ def locate(site):
         "Geography names and time zones are real; premises and room geometry are synthetic. "
         "Access routes use local metres and an authored 80 m channel ceiling, not a surveyed cabling or RF design.")
     return equipment
+
+
+def grid_cells(site_id):
+    """The street-grid cells around an anchor in one site's hashed preference order.
+
+    Even cells (300 m lattice) come first, so an anchor packs nine premises
+    before odd cells fill any gaps left beside a neighbouring anchor.
+    """
+    cells = [(dy, dx) for dy in range(-GRID_STEPS, GRID_STEPS + 1) for dx in range(-GRID_STEPS, GRID_STEPS + 1)]
+    return sorted(cells, key=lambda cell: (cell[0] % 2 or cell[1] % 2,
+                                           hashlib.sha256(f"grid/{site_id}/{cell[0]}/{cell[1]}".encode()).digest()))
+
+
+def grid_point(anchor, cell):
+    """(lat, lon) of one 150 m grid cell offset from an anchor centre."""
+    lat = anchor[2] + cell[0] * GRID_M / 111000
+    lon = anchor[3] + cell[1] * GRID_M / (111000 * math.cos(math.radians(anchor[2])))
+    return round(lat, 6), round(lon, 6)
+
+
+def grid_place(site_id, anchors, placed):
+    """First free grid point on the first anchor (in the caller's order) with room.
+
+    Free means at least MIN_PREMISES_SPACING_M from every point in ``placed``
+    (every earlier premises, in allocation-slot order), so growth never moves
+    an earlier site. Returns (anchor, (lat, lon)) or None when all are full.
+    """
+    cells = grid_cells(site_id)
+    for anchor in anchors:
+        for cell in cells:
+            point = grid_point(anchor, cell)
+            if all(abs(point[0] - p[0]) > 0.01 or _km(point, p) * 1000 > MIN_PREMISES_SPACING_M - 1 for p in placed):
+                return anchor, point
+    return None
 
 
 def provider_office(site):

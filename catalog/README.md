@@ -1,7 +1,8 @@
 # Hardware catalog
 
 `hardware.json` is a small, versioned inventory consumed by the estate builder.
-Catalog **0.12** replaces every authored "reference" model with a pinned real
+Catalog **0.14** adds the [regional-carrier footprint models](#regional-carrier-footprint-models)
+and a top-level `rack_types` map. Catalog **0.12** replaces every authored "reference" model with a pinned real
 one or a plainly named `Generic` part, adds vendor-shaped
 [serial formats](#serial-numbers) and [platforms](#platforms), and makes the
 Cisco Catalyst 9120 the default `ap` line ([real and generic
@@ -79,6 +80,40 @@ The exact inlet types come from the pinned module definitions linked in the
 JSON. Populating both bays is a design choice, not a claim that every sold
 chassis includes two supplies. Electrical load, PoE budgets, and cord connector
 selection are not certified by this inventory.
+
+## Regional-carrier footprint aliases (catalog 0.14, generator 0.17)
+
+Stable aliases the provider footprint builders read. Every entry is pinned to
+the library commit above unless marked; port names are the exact catalog
+names. Deviations and evidence are in
+[Regional-carrier footprint models](#regional-carrier-footprint-models).
+
+| Alias | Model | Ports the builders use |
+| --- | --- | --- |
+| `aggregation` | Juniper ACX5448-M, 1U | `xe-0/0/0`–`43` 10G SFP+ (1G UNIs keep the `xe-` name with `speed` 1000000); `uni_ports` = `xe-0/0/0`–`39`; `lag_ports` = `xe-0/0/40`–`43`; `et-0/1/0`–`5` 100G unused; `em0` mgmt; RJ45 `console0`; fixed C14 `power0`/`power1` |
+| `nid` | Ciena 3903 AC, 1U | `nni_port` `1` (1G SFP); `spare_port` `2` (1G SFP); `uni_port` `3` typed `1000base-t` (declared deviation); virtual `Management`; RJ45 `CONSOLE`; C14 `PSA`/`PSB` |
+| `nid-10g` | RAD ETX-2i-10G, 1U | `nni_port` `ETH-1/1` (10G SFP+); `uni_port` `ETH-1/2` (10G SFP+ customer handoff); `ETH-1/3`–`4` 10G SFP+, `ETH-1/5`–`8` 1G SFP and `ETH-1/9`–`12` 1000BASE-T spare; virtual `Management`; `MNG-ETH` out-of-band mgmt (uncabled); USB `control`; C14 `power` |
+| `ce-small` | Juniper SRX300, 1U (L14: first pinned of SRX300 / FG-60F) | `wan_ports` [`ge-0/0/0`] (copper; replaces the FortiGate's `wan1` in a CE↔NID cable); `lan_ports` `ge-0/0/1`–`5`; `ge-0/0/6`/`7` 1G SFP spare; RJ45 `Console`; C14 `PSU0` |
+| `edge` (existing) | Fortinet FortiGate 100F | gains `wan_ports` [`wan1`, `wan2`] and `lan_ports` `port1`–`port12` |
+| `pop-mgmt` | Juniper EX3400-24T, 1U, no PoE | `access_ports` `ge-0/0/0`–`23`; `uplink_ports` `xe-0/2/0`–`3`; `stack_ports` `et-0/1/0`/`1`; `me0` mgmt; two JPSU-150-AC-AFO → C14 `Power Supply 0`/`1` |
+| `oob-server` | Opengear OM2216-L, 1U | `eth0` mgmt (cabled), `eth1` spare, `Cellular Interface (LTE)` type `lte` (uncableable); `Port 1`–`16` RJ45 console-server ports; C14 `PS1`/`PS2` |
+| `pdu-switched` | APC AP8941 Switched Rack PDU 2G, 0U, 208 V 30 A | NEMA L6-30P `Power Port 1`; `Power Outlet 1`–`24` (C13, C19 at 8/16/24); `Network` 100BASE-TX mgmt; RJ12 `Serial` |
+| `osp-panel` | Commscope (library spelling) FMS-K2BI-L1A1-48-SP (760254438), 1U | front `Port 1`–`48` (`lc`, declared deviation from `lc-apc`) ↔ rear `Port 1`–`48` (`splice`), 1:1 |
+| `demarc-panel` | Generic LC-24-port Fiber Patch Panel, 1U | front `Port 1`–`24` `lc` ↔ rear `Port 1`–`24` `lc`, 1:1 |
+| `cable-manager-1u` / `cable-manager-2u` | Generic Cable Management Panel 1U / 2U | no ports; counts toward utilization |
+| `blanking-1u` / `blanking-2u` | Generic Blanking Panel 1U / 2U | no ports; `exclude_from_utilization: true` |
+
+CE models expose `wan_ports`/`lan_ports` and NIDs `nni_port`/`uni_port`/
+`management_interface`, so builders never write a vendor port name. Planning
+allowances stay in `estates/blocks.py` (`PLANNED_WATTS`); the evidence-backed
+figures for the new aliases are listed with each model below. Panel models carry `front_ports` / `rear_ports` lists and the mapping is
+position 1:1 (front `Port n` ↔ rear `Port n`). Passive models carry
+`is_powered: false`. Rack types live in the new top-level `rack_types` map:
+
+| Rack-type alias | Model |
+| --- | --- |
+| `pop-cabinet` | APC AR3100 NetShelter SX 42U, 600 × 1070 mm, `4-post-cabinet` |
+| `mpoe-cabinet` | KOSCAB kos-shts-9u55x45x50ds 9U wall cabinet, `wall-cabinet` |
 
 ## Selectable vendor lines
 
@@ -300,7 +335,7 @@ Formats are under the native 50-character limit. Device serials are not
 enforced unique (NetBox does not either); the per-format spaces are large
 enough that sample estates carry no duplicates. Installed optics use the same
 template grammar from `optics.serial_formats`, one authored label shape per
-maker (Cisco `FNS…`, Juniper `1A…`, Arista `XKT…`, Fortinet `FNT…`, Generic
+maker (Cisco `FNS…`, Juniper `1A…`, Arista `XKT…`, Fortinet `FNT…`, RAD `RD…`, Generic
 `G…`) — fiction shaped like a transceiver label, not a vendor-verified format —
 expanded from a hash of the namespace and the interface key (an AOC uses its
 cable key, so both captive ends share one assembly serial; see the installed
@@ -312,7 +347,8 @@ optics policy). Asset tags are separate.
 catalog to its public IEEE MA-L assignment, read from the registry text
 (source `ieee-oui`, <https://standards-oui.ieee.org/oui/oui.txt>, fetched
 2026-10-02): Cisco `00:00:0C`, Juniper `00:05:85`, Arista `00:1C:73`, Fortinet
-`00:09:0F`, Supermicro `AC:1F:6B`, Opengear `00:13:C6`, APC `00:C0:B7`, HPE
+`00:09:0F`, Supermicro `AC:1F:6B`, Opengear `00:13:C6`, APC `00:C0:B7`, Ciena
+`00:23:8A`, RAD `00:20:D2` (both registry entries, fetched 2026-10-02), HPE
 (Aruba) `00:0B:86`. `mac_ouis.virtual_machine` is QEMU/KVM's conventional
 locally administered `52:54:00`, not an IEEE assignment. Generated tails are
 fictional. A platform's `svi_format` (Junos: `irb.{vid}`) names its routed
@@ -321,7 +357,8 @@ VLAN interface; platforms without one use `Vlan{vid}`.
 ## Platforms
 
 Network models declare a `platform`: Cisco IOS XE (C9200L), Cisco AP-COS
-(Catalyst 9120), Arista EOS, Juniper Junos, Fortinet FortiOS and ArubaOS
+(Catalyst 9120), Arista EOS, Juniper Junos, Fortinet FortiOS, ArubaOS and Ciena
+SAOS (the 3903 NID; the RAD NID declares none)
 (AP-505). Each becomes one NetBox platform per estate, linked to its
 manufacturer, with a namespaced slug exactly like the existing Service Linux
 platform; devices reference it. Servers, PDUs, console servers, passive gear and
@@ -428,7 +465,7 @@ their presence here is not a claim of completed native round-trip testing.
 
 ## Installed optics policy
 
-The top-level `optics.parts` map defines sixteen selected parts. Each stable part ID
+The top-level `optics.parts` map defines twenty-three selected parts. Each stable part ID
 records manufacturer/model, form factor, optical protocol, medium, connector,
 rate in **kbps**, reach in metres, power reservation in integer **mW**, source
 IDs and an explicit `compatible_interfaces` map from hardware alias to existing
@@ -440,13 +477,18 @@ Arista both sell a part named `SFP-10G-LR`.
 | --- | --- | --- | ---: |
 | `cisco-10g-lr` | Cisco `SFP-10G-LR` | `access` fixed `TenGigabitEthernet1/1/1–4`, 10G | 1,000 |
 | `cisco-10g-sr` | Cisco `SFP-10G-SR` (MMF, LC, 400 m OM4) | same cages as `cisco-10g-lr` | 1,000 |
-| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
+| `juniper-10g-lr` | Juniper `EX-SFP-10GE-LR` | `inherited-access` `xe-0/1/0–3`; `provider-edge` `xe-0/1/0–7`; `access-juniper` and `pop-mgmt` `xe-0/2/0–3`; `leaf-juniper` `et-0/0/0–47`, 10G | 1,000 |
 | `juniper-10g-sr` | Juniper `EX-SFP-10GE-SR` (MMF, LC, 400 m OM4) | same cages as `juniper-10g-lr` | 1,000 |
 | `arista-10g-lr` | Arista `SFP-10G-LR` | `leaf` `Ethernet1–48`, 10G | 2,000 authored |
 | `arista-10g-sr` | Arista `SFP-10G-SR` (MMF, LC, 400 m OM4) | `leaf` `Ethernet1–48`, 10G | 1,000 |
 | `arista-100g-sr4` | Arista `QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | `leaf` `Ethernet49/1–56/1`; `core` `Ethernet1/1–32/1`, 100G | 3,500 |
 | `fortinet-10g-lr` | Fortinet `FN-TRAN-SFP+LR` | `edge` `x1/x2`, 10G | 1,000 authored |
-| `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7` configured **1G** | 1,000 |
+| `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7`; `aggregation` `xe-0/0/0–43`; configured **1G** | 1,000 |
+| `juniper-1g-lh` | Juniper `SFP-1GE-LH` (70 km) | same cages as `juniper-1g-lx`, **1G**, owned runs over 10 km | 1,000 |
+| `juniper-sfpp-10g-sr` | Juniper `SFPP-10GE-SR` (MMF, LC, 400 m OM4) | `aggregation` `xe-0/0/0–43`, 10G (in-rack LAG members to the MX204) | 1,000 |
+| `juniper-sfpp-10g-lr` / `-er` | Juniper `SFPP-10GE-LR` (10 km) / `SFPP-10GE-ER` (40 km) | `aggregation` `xe-0/0/0–43`, 10G owned access runs | 1,000 / 1,500 |
+| `rad-10g-lr` / `-er` | RAD `SFP-P-1DH` (10 km) / `SFP-P-3DH` (40 km) | `nid-10g` `ETH-1/1–4`, 10G | 1,500 authored |
+| `generic-1g-lx` / `-zx` | Generic `SFP-1G-LX` (10 km) / `SFP-1G-ZX` (80 km) | `nid` ports `1`, `2`, 1G | 1,000 authored |
 | `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`, 100G | 3,500 |
 | `juniper-100g-sr4` | Juniper `JNP-QSFP-100G-SR4` (MMF, MPO-12, 100 m OM4) | same cages as `juniper-100g-lr4` | 3,500 |
 | `generic-10g-sr` | Generic `SFP-10G-SR` (third-party compatible) | `server` `eth1/eth2`, 10G | 1,000 authored |
@@ -516,7 +558,10 @@ cover the circuit's recorded `distance`, or, where the circuit records none,
 the two terminating sites' great-circle distance times the authored 1.3 route
 factor. `estates/optics.py` picks the **shortest** reviewed reach that covers
 the run from the parts sharing that host cage, rate and medium, so local links
-and short spans keep LX/LR4. Two long-reach MX204 parts are pinned for this
+and short spans keep LX/LR4. Since catalog 0.14 the run is traced through
+single-position passive panel mappings (an aggregation UNI patched through the
+OSP panel reaches its access circuit), and the local cords count toward the
+reach exactly as the independent check adds them. Two long-reach MX204 parts are pinned for this
 (Juniper HCT, checked 2026-10-02; the MX204 product list names both):
 
 | Part | Reach used | Power reserved | Source note |
@@ -569,6 +614,11 @@ accumulating earlier enrichment. Do not subtract optics from published PoE
 output budgets, count supply-nameplate watts as consumption, or erase an
 installed optic's reserve merely because its interface is disconnected.
 
+Catalog 0.14 adds the regional-carrier footprint optics above: the ACX5448-M's
+`SFPP-10GE-*` family (Juniper's HCT lists it, not `EX-SFP-10GE-*`, for the ACX),
+the LX/LH 1G parts on the ACX, two RAD 10G parts and two Generic 1G NID parts.
+The 80 km 10G ZR parts both vendors list are deliberately absent: no estate
+reaches past 40 km at 10G, and an unreachable part is dead inventory.
 Catalog 0.13 adds the two long-reach MX204 optics above (`SFP-1GE-LH`, `QSFP-100G-ER4L`)
 for the operator's own fiber. Catalog 0.11 adds the three alternate lines and their reviewed optics; catalog
 0.10 left every existing interface, PSU, PoE fact and device model unchanged. Phase 5 runtime evidence in `build/goal-connected-depth/phase5/`
@@ -616,3 +666,125 @@ This deliberate catalog addition changes the global hardware digest. Existing
 saved plans remain historical artifacts; growing them with the current catalog
 requires an explicit rebaseline. Do not silently substitute current hardware
 for an earlier qualified plan.
+
+## Regional-carrier footprint models
+
+Catalog 0.14 (generator 0.17) adds the provider footprint's access,
+demarcation, plant and hygiene types. Every library source below is pinned at
+the commit above with its file SHA-256 and CC0-1.0 license; vendor documents are
+archived under ignored `build/catalog-evidence/footprint/` with their response
+hashes (Juniper documentation and HCT pages re-render per request, so those
+hashes prove only the archived response). The aliases are listed in
+[the footprint alias table](#regional-carrier-footprint-aliases-catalog-014-generator-017).
+
+**Juniper ACX5448-M (`aggregation`).** Pinned
+[`Juniper/ACX5448-M.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/ACX5448-M.yaml).
+Juniper's [chassis page](https://www.juniper.net/documentation/us/en/hardware/acx5448/topics/topic-map/acx5448-chassis.html)
+gives the -M "Forty-four 10-Gigabit or 1-Gigabit Ethernet ports (0 through 43)"
+and "Six 100-Gigabit Ethernet ports (44 through 49)"; the
+[port-speed page](https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-acx-routers.html)
+runs PIC 0 at 10G with SFP+ or 1G with SFP optics. Deviations and open
+conflicts: 1G UNIs keep the `xe-` name with an explicit 1G `speed` (the page
+does not say whether a 1G optic renames the port; QFX precedent); the
+library's `et-0/1/0`–`5` QSFP28 names are unconfirmed (Juniper prints
+`et-0/1/48`–`51` for the base model and numbers PIC 1 ports 0–3 elsewhere) and
+are never used; `em0` keeps the library's 1000BASE-T although Juniper's pinout
+page says 10/100BASE-T. The library declares fixed C14 `power0`/`power1` and no
+PSU bays, so no PSU modules are installed although the -M ships 850 W modules.
+Planning allowance **300 W**: the [power page](https://www.juniper.net/documentation/us/en/hardware/acx5448/topics/topic-map/acx5448-power-system.html)
+"Typical power consumption" for the -M (maximum 550 W).
+
+**Ciena 3903 AC (`nid`).** Pinned
+[`Ciena/3903-ac.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Ciena/3903-ac.yaml).
+The [Ciena 3903 data sheet](https://www.westconcomstor.com/content/dam/wcgcom/US_EN/westcon/vendors/ciena/documentation/Packet-Products/packet/Ciena-3903-Service-Delivery-Switch-Data-Sheet.pdf)
+documents "2 x 100/1000M SFP NNI/UNI ports" and "1 x 10/100/1000M RJ-45;
+100/1000M SFP UNI combo port". Declared deviations: port `3`, the combo UNI,
+is typed `1000base-t` (its RJ-45 personality, the customer handoff) where the
+library types all three ports `1000base-x-sfp`; a virtual `Management`
+interface is added for the in-band management address (the library has none).
+Planning allowance **52 W**, the data sheet's "Maximum Power Input: 52W"; the
+library's 96 W `maximum_draw` per inlet is not used. Ciena's qualified-optics
+reference is behind a customer login, so the NID's SFPs are labelled `Generic`
+(evidence rule L12).
+
+**RAD ETX-2i-10G (`nid-10g`).** Pinned
+[`RAD/ETX-2i-10G.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/RAD/ETX-2i-10G.yaml)
+(4 SFP+, 4 SFP, 4 RJ-45, `MNG-ETH`). The [RAD data sheet](https://www.rad.com/wp-content/uploads/2025/01/etx-2i-10g_ds.pdf)
+lists 1/10GBASE-SR/LR/ER/ZR on the SFP+ ports and notes "Non-activated SFP+
+ports are limited to operate at 1 Gbps": the 10G tier assumes the licence. A
+virtual `Management` interface is added as on the Ciena (declared). Its optics
+are RAD parts from the [RAD transceiver data sheet](https://www.rad.com/wp-content/uploads/2025/03/SFP-XFP-SFPPlus-Transceivers.pdf);
+RAD publishes no module power, so 1.5 W is authored. Planning allowance
+**90 W**, the library `maximum_draw`, inside the data sheet's 70–120 W range.
+
+**Juniper SRX300 (`ce-small`).** L14 takes the first pinned of SRX300 /
+FortiGate 60F; both are pinned and the SRX300 comes first. Pinned
+[`Juniper/SRX300.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/SRX300.yaml).
+Juniper's [factory default](https://www.juniper.net/documentation/us/en/hardware/srx300/topics/topic-map/srx300-configuring-junos.html)
+makes "ge-0/0/0 and ge-0/0/7 untrust" and "irb.0 (ge-0/0/1 to ge-0/0/6) trust":
+`wan_ports` is copper `ge-0/0/0`; SFP `ge-0/0/7` stays spare. The SRX300 is fed
+by an external 60 W adapter; the library's C14 `PSU0` stands for its mains cord.
+Planning allowance **25 W** (Juniper's 24.9 W average; library allocated 25 W).
+The existing `edge` FortiGate 100F gains `wan_ports` [`wan1`, `wan2`] and
+`lan_ports` `port1`–`port12` (no interface changed).
+
+**Juniper EX3400-24T (`pop-mgmt`).** Pinned
+[`Juniper/EX3400-24T.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24T.yaml)
+and [`JPSU-150-AC-AFO`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JPSU-150-AC-AFO.yaml).
+The PoP management switch is an explicit PoP-role alias, a declared exception
+to "the selected access line serves management": a PoP has no PoE load. Same
+uplink and VCP choices as `access-juniper` (`xe-0/2/*` at 10G, `et-0/1/*` as
+`juniper-vcp`). Juniper's [power page](https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-power-system.html)
+lists "EX3400-24T – 100 W –" (no PoE) and says the switch ships with one
+supply; two are installed by design. Planning allowance **100 W** (that maximum).
+
+**Opengear OM2216-L (`oob-server`).** Pinned
+[`Opengear/OM2216-L.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/OM2216-L.yaml);
+the [OM2200 data sheet](https://resources.opengear.com/om/datasheets/om2200/om2200-datasheet.pdf)
+confirms 16 RJ45 serial ports, two GbE, global 4G LTE and dual C14 inputs.
+`Cellular Interface (LTE)` keeps type `lte`, which NetBox refuses to cable; the
+ten USB console-server ports are not modeled. No wattage is published (1.6 A
+max); planning allowance **40 W**, the existing console-server figure.
+
+**APC AP8941 (`pdu-switched`).** L15's switched 208 V Zero U PDU with a network
+port is pinned:
+[`APC/AP8941.yml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP8941.yml).
+The [Schneider product sheet](https://media.accutechdata.com/resources/downloads/NetShelter%20Switched%20Rack%20PDUs_AP8941.pdf)
+(a reseller-hosted copy; se.com refused automated retrieval) confirms the
+network management interface, NEMA L6-30P input, 0U and 21 C13 + 3 C19
+outlets. It is discontinued (2022, replacement APDU9941), which is ordinary
+installed-base inventory. Its feeds are 30 A 208 V, unlike the AP9572's C20
+inlet; the `Network` port's 100BASE-TX type is the library's, not confirmed
+first-party.
+
+**CommScope FMS-K2BI-L1A1-48-SP (`osp-panel`).** Pinned
+[`Commscope/FMS-K2BI-L1A1-48-SP.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Commscope/FMS-K2BI-L1A1-48-SP.yaml)
+(48 front, 48 rear `splice`, 1:1). Two declared deviations from
+[CommScope's page](https://www.commscope.com/product-type/frames-panels-cassettes-modules/fiber-panels-modules-cassettes/fiber-panels/item760254438/):
+front adapters are `lc` ("Interface, front LC/UPC"), not the library's
+`lc-apc`; and the part number is **760254438**, because the library's
+760258664 is the EMEA `-EU` variant. Rear ports stay `splice`, the panel's
+real fusion-splice rear. The shared optical channel check today accepts only
+LC-to-LC passive mappings, so routing a channel through this panel needs that
+check to accept a splice rear (owned by the validator package).
+
+**Generic LC-24 panel (`demarc-panel`), cable managers and blanking panels.**
+Pinned [`Generic/LC-24-port-fiber-patch-panel.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/LC-24-port-fiber-patch-panel.yaml),
+[`cable-management-panel-1u`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/cable-management-panel-1u.yaml)/[`-2u`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/cable-management-panel-2u.yaml)
+and [`Blanking-Panel-1U`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/Blanking-Panel-1U.yaml)/[`-2U`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/Blanking-Panel-2U.yaml),
+copied unchanged except one addition: blanking panels carry NetBox's
+`exclude_from_utilization: true` (the library leaves it unset); cable managers
+count toward utilization. All are `is_powered: false`.
+
+**Rack types.** `rack_types.pop-cabinet` is the pinned
+[`APC/AR3100.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/rack-types/APC/AR3100.yaml)
+(42U, 1991 × 1070 mm); its 600 mm `outer_width` comes from the library's own
+description ("600mm x 1070mm"), the one field added. `rack_types.mpoe-cabinet`
+is the pinned [`KOSCAB/kos-shts-9u55x45x50ds.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/rack-types/KOSCAB/kos-shts-9u55x45x50ds.yaml)
+9U wall cabinet (L5 first choice, present at the pinned commit). No
+manufacturer page for KOSCAB could be found; its dimensions are the library's.
+
+Serial formats remain fictional label shapes (Juniper ACX `WS…`, SRX `CV…`,
+Ciena `M…`, RAD `RD…`). `tests/test_footprint_catalog.py` pins every source,
+deviation and port contract above and proves optic selection on the new hosts
+on a synthetic world, each with failing mutations.
