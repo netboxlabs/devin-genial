@@ -249,7 +249,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3\u2013100 m complete known local fibre paths; no carrier-span or optical-loss claim. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency. In-room jumpers between two cages that both carry a reviewed short-reach part run on OM4 multimode with SR/SR4 optics; a generic third-party SFP-10G-SR (duplex LC, 400 m on OM4, authored 1000 mW envelope) serves server eth1/eth2. Long-reach single-mode stays for building backbones, carrier handoffs and owned spans, and for any cage (the FortiGate 100F) without a reviewed multimode part."
+      "purpose": "Authored policy: 3\u2013100 m complete known local fibre paths; no carrier-span or optical-loss claim. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency. In-room jumpers between two cages that both carry a reviewed short-reach part run on OM4 multimode with SR/SR4 optics; a generic third-party SFP-10G-SR (duplex LC, 400 m on OM4, authored 1000 mW envelope) serves server eth1/eth2. Long-reach single-mode stays for building backbones, carrier handoffs and owned spans, and for any cage (the FortiGate 100F) without a reviewed multimode part. Generic SFP-1G-LX (1000BASE-LX, 10 km) and SFP-1G-ZX (1000BASE-ZX, 80 km) serve the Ciena 3903 NID's SFP ports with an authored 1000 mW envelope: Ciena's qualified-optics list is not public, so no Ciena part is claimed."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -530,6 +530,102 @@
       "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
       "sha256": "af9f4e312bd42c7ca0378fd87995c337c6e87463f674ac9608ca9d775781b233",
       "license": "CC0-1.0"
+    },
+    "acx5448-ports": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/acx5448/topics/topic-map/acx5448-chassis.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "ACX5448-M: 'Forty-four 10-Gigabit or 1-Gigabit Ethernet ports (0 through 43)' that run at 10G with SFP+ or 1G with SFP optics, and 'Six 100-Gigabit Ethernet ports (44 through 49)' (QSFP28). The page states RJ-45 10/100/1000BASE-T management; Juniper's pinout page says 10/100BASE-T, a conflict this catalog records rather than resolves (em0 keeps the library's 1000base-t).",
+      "response_sha256": "12419a377e0459b78926819a64281e68b82796d16fb11c1c5b83ec0b68d21c3b",
+      "evidence_path": "build/catalog-evidence/footprint/acx_chassis.html"
+    },
+    "acx5448-port-speed": {
+      "url": "https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-acx-routers.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Table 3: ACX5448 PIC 0 ports run '10-Gigabit Ethernet with SFP+ optics' or '1-Gigabit Ethernet with SFP optics'. Table 6 names them xe-0/0/N and the QSFP28 ports et-0/1/48..51 on the base model, while Table 3 numbers PIC 1 ports 0 through 3; the ACX5448-M QSFP28 names (library et-0/1/0..5, Juniper port numbers 44..49) are therefore unconfirmed and left unused. The page does not say whether a 1G optic changes the xe- prefix; 1G UNIs keep the xe- name with an explicit 1G speed (declared, QFX precedent).",
+      "response_sha256": "f06bb02d998e97c5ea69be57a954ab37f4d684e33c3a1f801fdf370d187c0e6f",
+      "evidence_path": "build/catalog-evidence/footprint/acx_speed.html"
+    },
+    "acx5448-power": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/acx5448/topics/topic-map/acx5448-power-system.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "AC power table (ACX5448 / -D / -M): 'Typical power consumption 250 W 340 W 300 W', 'Maximum power consumption 450 W 550 W 550 W'. The 300 W typical figure is the -M planning allowance. The -M ships 850 W power supply modules; the pinned library type declares fixed C14 inlets power0/power1 and no PSU bays, which this catalog keeps (no PSU modules are installed or claimed).",
+      "response_sha256": "7140644894806cc0db2438aef4bc268bcbb256dab22a1a550bc703391a04637e",
+      "evidence_path": "build/catalog-evidence/footprint/acx_power.html"
+    },
+    "acx5448-optics-host": {
+      "url": "https://apps.juniper.net/hct/product/ACX5448-M/100001",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Juniper HCT ACX5448-M transceiver list (142 models, no caveats on these rows): SFPP-10GE-SR, SFPP-10GE-LR, SFPP-10GE-ER (40 km), SFPP-10GE-ZR (80 km), SFP-1GE-LX (10 km) and SFP-1GE-LH (70 km), each from Junos 19.3R1 on the -M. The EX-SFP-10GE-* family is not listed for the ACX5448. HCT model pages give maximum power 1 W (SR, LR, LX, LH) and 1.5 W (ER). The 80 km ZR part is listed but not catalogued: no estate reaches past 40 km at 10G. HCT pages are re-rendered per request, so the hash proves the archived response only.",
+      "response_sha256": "1752c0fea0a2cfe015c89b0d1590f85222c7fabf0b2c8065cda03376a5f098f3",
+      "evidence_path": "build/catalog-evidence/footprint/ACX5448-M.html"
+    },
+    "ciena-3903-datasheet": {
+      "url": "https://www.westconcomstor.com/content/dam/wcgcom/US_EN/westcon/vendors/ciena/documentation/Packet-Products/packet/Ciena-3903-Service-Delivery-Switch-Data-Sheet.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "Ciena 3903 data sheet DS279: '2 x 100/1000M SFP NNI/UNI ports', '1 x 10/100/1000M RJ-45; 100/1000M SFP UNI combo port', '1 x Console Port (RJ-45, EIA-561)'; ordering '170-3903-900 3903, (2) 100M/1G SFP, (1)100M/1G SFP/RJ45, Dual AC Power'; 'Maximum Power Input: 52W'. Ciena's supported-optics reference sits behind a customer login, so the NID's pluggables are labelled Generic.",
+      "response_sha256": "b88fe24c01cdeec4f241ed34c0dd0d46c94f23ff78be7642e3d727e92d871c35",
+      "evidence_path": "build/catalog-evidence/footprint/ciena3903.pdf"
+    },
+    "rad-etx-2i-10g-datasheet": {
+      "url": "https://www.rad.com/wp-content/uploads/2025/01/etx-2i-10g_ds.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "RAD ETX-2i-10G data sheet 547-101-05/24: SFP+ ports '1/10GbE SFP+ (with 1G/10G multirate support)' taking '1/10GBASE-SR/LR/ER/ZR'; '4 SFP and 4 UTP' GbE ports on the 4+8 model; Note A recommends 'original RAD SFP/SFP+ transceivers'; Note B: 'Non-activated SFP+ ports are limited to operate at 1 Gbps' (the 10G tier assumes the 10G licence). Power by model 70-120 W maximum; the library's 90 W maximum_draw sits inside that range.",
+      "response_sha256": "81f9b8f33fd0699a0d35c5c6b360ef263b39b15388aea20e77b62d7923c8b65e",
+      "evidence_path": "build/catalog-evidence/footprint/rad.pdf"
+    },
+    "rad-transceivers": {
+      "url": "https://www.rad.com/wp-content/uploads/2025/03/SFP-XFP-SFPPlus-Transceivers.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "RAD pluggable transceivers data sheet 127-100-01/24, Table 5 SFP+: SFP-P-1DH 10GBASE-LR 10 km, SFP-P-3DH 10GBASE-ER 40 km; SFP-P-2DH 10GBASE-ZR 80 km is listed but not catalogued; 'tested by RAD and approved as being compatible with other RAD devices'. No per-module power is published, so the 1500 mW reservation is authored.",
+      "response_sha256": "23e831dee77fb351e4818d5f25864a158a83742491c9ca6168939b1501b67c8e",
+      "evidence_path": "build/catalog-evidence/footprint/radsfp.pdf"
+    },
+    "srx300-factory-default": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/srx300/topics/topic-map/srx300-configuring-junos.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "SRX300 factory default: 'ge-0/0/0 and ge-0/0/7 untrust', 'irb.0 (ge-0/0/1 to ge-0/0/6) trust'; 'The ge-0/0/0 and ge-0/0/7 interfaces (ports 0/0 and 0/7) are WAN interfaces.' The hardware guide lists six RJ-45 ports (0/0-0/5) and two 1GbE SFP ports, and an external 60 W AC adapter (average 24.9 W). This catalog uses copper ge-0/0/0 as the WAN handoff and leaves SFP ge-0/0/7 spare; the library's C14 PSU0 inlet stands for the adapter's mains cord.",
+      "response_sha256": "014e4a2a3603e2c2949a58546a01c5f3a275dd9e2732d05b75027e2325b85acc",
+      "evidence_path": "build/catalog-evidence/footprint/srx_fd.html"
+    },
+    "juniper-ex3400-24t-power": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/ex3400/topics/topic-map/ex3400-power-system.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "EX3400 power system: JPSU-150-AC-AFO is the 150 W AC supply; 'EX3400-24T - 100 W -' (no PoE ports, 100 W maximum consumed, no PoE budget); 'The switch is shipped with one power supply installed.' Populating both bays is this catalog's design choice, as for the EX3400-24P.",
+      "response_sha256": "378e5b80bc80c1416efb2ee93519abfec6f611ba0a88e48e479ebd53fa888e73",
+      "evidence_path": "build/catalog-evidence/footprint/ex_power.html"
+    },
+    "opengear-om2200-datasheet": {
+      "url": "https://resources.opengear.com/om/datasheets/om2200/om2200-datasheet.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "Opengear OM2200 data sheet: 'OM2216-L 16 Serial Ports 1GbE 2 x 10/100/1000 Ethernet/SFP Fiber Ports Global 4G LTE'; '16 x RJ45 RS-232' console ports; 'Dual AC Power Inputs ... IEC C14'; package includes two cellular antennas. No wattage is published (1.6 A max), and the antenna connector type is not stated.",
+      "response_sha256": "da0d9d2f36f5c5fc3145a76be2e8cca3bacc72bd8d51d243f8dd8c0d32dc20b7",
+      "evidence_path": "build/catalog-evidence/footprint/og.pdf"
+    },
+    "apc-ap8941-product": {
+      "url": "https://media.accutechdata.com/resources/downloads/NetShelter%20Switched%20Rack%20PDUs_AP8941.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "Schneider Electric AP8941 product datasheet (dated Mar 1, 2023; se.com returned 403, so a reseller-hosted copy of the vendor sheet is archived): 'A network management interface provides standards-based management via Web, SNMP, and Command Line Interface', 'Input Connection Type NEMA L6-30P', 'Number of rack unit 0U', '21 IEC 60320 C13 3 IEC 60320 C19'. Discontinued 2022 (replacement APDU9941): installed-base equipment. The Network port's 100BASE-TX type is the library's, not confirmed first-party.",
+      "response_sha256": "f1c33295248f3942524e77cb1cef164ef9807d6018e93ed5b0db99f101e6d722",
+      "evidence_path": "build/catalog-evidence/footprint/ap_acc.pdf"
+    },
+    "commscope-fms-panel": {
+      "url": "https://www.commscope.com/product-type/frames-panels-cassettes-modules/fiber-panels-modules-cassettes/fiber-panels/item760254438/",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "CommScope 760254438 is FMS-K2BI-L1A1-48-SP: 'Interface, front LC/UPC', 24 LC SM duplex adapters (48 fibres), single-mode, heat-shrink fusion splice rear. The library's part number 760258664 is the -EU variant (FMS-K2BI-L1A1-48-SP-EU, also LC/UPC per its own page); the library types the fronts lc-apc, which neither page supports.",
+      "response_sha256": "dfcf6ad35c9212a0e4502260a9e926df0b89294008ade6a4897d8376d2dbdd72",
+      "evidence_path": "build/catalog-evidence/footprint/cs438.html"
     }
   },
   "hardware_lines": {
@@ -4147,7 +4243,9 @@
       "source_ids": [
         "aggregation-chassis",
         "acx5448-ports",
-        "acx5448-port-speed"
+        "acx5448-port-speed",
+        "acx5448-power",
+        "acx5448-optics-host"
       ],
       "description": "Pinned ACX5448-M chassis and interface inventory: 44 SFP+/SFP ports at 10G or 1G, six QSFP28 ports left unused, em0 management and two fixed C14 inlets. 1G customer UNIs keep the xe- name with an explicit 1G speed. Fan population and DC power are not modeled.",
       "serial_format": "WS{yyww}######",
@@ -4298,7 +4396,8 @@
       "management_interface": "Management",
       "source_ids": [
         "nid-10g-chassis",
-        "rad-etx-2i-10g-datasheet"
+        "rad-etx-2i-10g-datasheet",
+        "rad-transceivers"
       ],
       "description": "Pinned RAD ETX-2i-10G 10G-tier NID: ETH-1/1 is the 10G SFP+ network-facing port and ETH-1/2 the 10G SFP+ customer handoff; four 1G SFP and four 1000BASE-T ports stay spare. In-band management is the virtual Management interface; the MNG-ETH out-of-band port stays uncabled.",
       "airflow": "passive",
@@ -4592,7 +4691,7 @@
         "pop-mgmt-chassis",
         "pop-mgmt-psu",
         "juniper-ex3400-ports",
-        "juniper-ex3400-power-poe"
+        "juniper-ex3400-24t-power"
       ],
       "description": "Pinned EX3400-24T PoP management switch (no PoE) with two installed JPSU-150-AC-AFO supplies. The four shared 1G/10G uplink cages are selected at 10G; the two rear QSFP+ ports are the platform's default Virtual Chassis ports. Airflow variants and DC power are not modeled.",
       "airflow": "front-to-rear",
@@ -4863,7 +4962,7 @@
       "manufacturer": "CommScope",
       "model": "FMS-K2BI-L1A1-48-SP",
       "slug": "commscope-fms-k2bi-l1a1-48-sp",
-      "part_number": "760258664",
+      "part_number": "760254438",
       "u_height": 1,
       "is_full_depth": false,
       "is_powered": false,
@@ -6035,7 +6134,9 @@
         "source_ids": [
           "juniper-mx204-optics-host",
           "juniper-sfp-1ge-lx",
-          "mx204-port-modes"
+          "mx204-port-modes",
+          "acx5448-optics-host",
+          "acx5448-port-speed"
         ],
         "compatible_interfaces": {
           "provider-edge": [
@@ -6047,6 +6148,52 @@
             "xe-0/1/5",
             "xe-0/1/6",
             "xe-0/1/7"
+          ],
+          "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
           ]
         },
         "vendor_max_power_mw": 1000
@@ -6066,7 +6213,9 @@
         "source_ids": [
           "juniper-mx204-long-reach-optics-host",
           "juniper-sfp-1ge-lh",
-          "mx204-port-modes"
+          "mx204-port-modes",
+          "acx5448-optics-host",
+          "acx5448-port-speed"
         ],
         "compatible_interfaces": {
           "provider-edge": [
@@ -6078,6 +6227,52 @@
             "xe-0/1/5",
             "xe-0/1/6",
             "xe-0/1/7"
+          ],
+          "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
           ]
         },
         "vendor_max_power_mw": 1000
@@ -6263,6 +6458,293 @@
             "eth2"
           ]
         }
+      },
+      "juniper-sfpp-10g-sr": {
+        "manufacturer": "Juniper",
+        "model": "SFPP-10GE-SR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-SR",
+        "medium": "mmf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 400,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "acx5448-optics-host",
+          "acx5448-port-speed"
+        ],
+        "compatible_interfaces": {
+          "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "juniper-sfpp-10g-lr": {
+        "manufacturer": "Juniper",
+        "model": "SFPP-10GE-LR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1000,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "acx5448-optics-host",
+          "acx5448-port-speed"
+        ],
+        "compatible_interfaces": {
+          "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
+          ]
+        },
+        "vendor_max_power_mw": 1000
+      },
+      "juniper-sfpp-10g-er": {
+        "manufacturer": "Juniper",
+        "model": "SFPP-10GE-ER",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-ER",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 40000,
+        "power_reservation_mw": 1500,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "acx5448-optics-host",
+          "acx5448-port-speed"
+        ],
+        "compatible_interfaces": {
+          "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
+          ]
+        },
+        "vendor_max_power_mw": 1500
+      },
+      "rad-10g-lr": {
+        "manufacturer": "RAD",
+        "model": "SFP-P-1DH",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1500,
+        "power_basis": "authored planning reserve",
+        "source_ids": [
+          "rad-transceivers",
+          "rad-etx-2i-10g-datasheet"
+        ],
+        "compatible_interfaces": {
+          "nid-10g": [
+            "ETH-1/1",
+            "ETH-1/2",
+            "ETH-1/3",
+            "ETH-1/4"
+          ]
+        }
+      },
+      "rad-10g-er": {
+        "manufacturer": "RAD",
+        "model": "SFP-P-3DH",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-ER",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 40000,
+        "power_reservation_mw": 1500,
+        "power_basis": "authored planning reserve",
+        "source_ids": [
+          "rad-transceivers",
+          "rad-etx-2i-10g-datasheet"
+        ],
+        "compatible_interfaces": {
+          "nid-10g": [
+            "ETH-1/1",
+            "ETH-1/2",
+            "ETH-1/3",
+            "ETH-1/4"
+          ]
+        }
+      },
+      "generic-1g-lx": {
+        "manufacturer": "Generic",
+        "model": "SFP-1G-LX",
+        "form_factor": "sfp",
+        "protocol": "1000BASE-LX",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 1000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 1000,
+        "power_basis": "authored generic component envelope",
+        "source_ids": [
+          "reference-optics-v1",
+          "ciena-3903-datasheet"
+        ],
+        "compatible_interfaces": {
+          "nid": [
+            "1",
+            "2"
+          ]
+        }
+      },
+      "generic-1g-zx": {
+        "manufacturer": "Generic",
+        "model": "SFP-1G-ZX",
+        "form_factor": "sfp",
+        "protocol": "1000BASE-ZX",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 1000000,
+        "reach_m": 80000,
+        "power_reservation_mw": 1000,
+        "power_basis": "authored generic component envelope",
+        "source_ids": [
+          "reference-optics-v1",
+          "ciena-3903-datasheet"
+        ],
+        "compatible_interfaces": {
+          "nid": [
+            "1",
+            "2"
+          ]
+        }
       }
     },
     "serial_formats": {
@@ -6270,7 +6752,8 @@
       "Juniper": "1A@{yyww}####",
       "Arista": "XKT{yyww}####",
       "Fortinet": "FNT{yyww}#####",
-      "Generic": "G{yy}@@######"
+      "Generic": "G{yy}@@######",
+      "RAD": "RD{yyww}####"
     }
   },
   "mac_ouis": {
@@ -6311,8 +6794,7 @@
       "desc_units": false,
       "description": "NetShelter SX 42U Server Rack Enclosure 600mm x 1070mm w/ Sides Black",
       "source_ids": [
-        "pop-cabinet-rack",
-        "apc-ar3100-product"
+        "pop-cabinet-rack"
       ]
     },
     "mpoe-cabinet": {

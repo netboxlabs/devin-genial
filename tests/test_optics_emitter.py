@@ -47,7 +47,13 @@ class OpticsEmitterTests(unittest.TestCase):
                     for value in obj["refs"].values():
                         for target in value if isinstance(value, list) else [value]:
                             self.assertIn(target, objects, (obj["key"], target))
-        self.assertEqual(seen, {(p["manufacturer"], p["model"]) for p in hardware_catalog()["optics"]["parts"].values()})
+        # Every part a sampled estate could install is actually reached: a part
+        # whose host types no estate emits is catalog stock awaiting its host,
+        # not dead inventory (it is reached once its builder lands).
+        hosts = {o["key"].removeprefix("hardware/") for plan in self.plans.values()
+                 for o in plan["objects"] if o["kind"] == "device_type"}
+        self.assertEqual(seen, {(p["manufacturer"], p["model"]) for p in hardware_catalog()["optics"]["parts"].values()
+                                if set(p["compatible_interfaces"]) & hosts})
 
     def test_aoc_is_one_assembly_with_two_captive_ends(self):
         plan = self.plans["school-wireless"]
