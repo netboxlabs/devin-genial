@@ -67,9 +67,6 @@ GROUPS = (
      "Customer edge peerings on private-L3 access circuits",
      ("customer-in",), ("customer-out",), False),
 )
-INVENTORY_NOTE = ("Documentation inventory: the intended peering is recorded, nothing is "
-                  "configured, applied or established. No session state, route exchange or "
-                  "policy evaluation is claimed.")
 PE_ROLE = "role/provider-edge"
 CE_ROLE = "role/customer-edge"
 LOOPBACK = "lo0"
@@ -131,8 +128,7 @@ def enrich(world):
 
     for slug, name, weight, description in POLICIES:
         add("bgp_routing_policy", f"bgp-routing-policy/{slug}",
-            {"name": name, "weight": weight, "description": description,
-             "comments": INVENTORY_NOTE})
+            {"name": name, "weight": weight, "description": description})
 
     # Every PE, in the estate's own permanent PoP order, then by device key.
     order = world.reservations.get("provider-pop-order", {})
@@ -159,7 +155,7 @@ def enrich(world):
         if exports:
             refs["export_policies"] = [f"bgp-routing-policy/{s}" for s in exports]
         add("bgp_peer_group", f"bgp-peer-group/{slug}",
-            {"name": name, "description": description, "comments": INVENTORY_NOTE}, refs)
+            {"name": name, "description": description}, refs)
 
     def session(key, local, local_address, remote_as, group, description,
                 *, remote_address=None, remote_prefix=None, tenant=None, remote_label):
@@ -175,7 +171,7 @@ def enrich(world):
             refs["tenant"] = tenant
         add("bgp_session", key,
             {"name": f"{obj(local)['attrs']['name']} to {remote_label}",
-             "status": "active", "description": description, "comments": INVENTORY_NOTE}, refs)
+             "status": "active", "description": description}, refs)
 
     def loopback(router, family):
         port = interfaces.get((router, LOOPBACK))
@@ -238,8 +234,7 @@ def enrich(world):
                     raise DesignError(f"{circuit}: the transit handoff has no reserved link prefix")
                 session(f"bgp-session/{circuit.removeprefix('circuit/')}{suffix(family)}", local, local_address,
                         asns[0], "transit",
-                        f"External transit peering over {cid}; the remote address and "
-                        "interface owner are unknown",
+                        f"External transit peering over {cid}",
                         remote_prefix=link, remote_label=f"{upstream['attrs']['name']} transit{label(family)}")
             continue
         customer = [port for port, role in roles.items() if role == CE_ROLE]

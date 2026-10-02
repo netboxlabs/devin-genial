@@ -10,7 +10,7 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
-          "max_objects", "patching", "reservation_user", "naming", "site_names", "hardware"}
+          "max_objects", "patching", "reservation_user", "naming", "site_names", "hardware", "tenancy"}
 NETWORKS = ("management", "applications", "database", "backup", "wan", "storage")
 DEFAULT_WORKLOADS = [
     dict(key="inventory-api", groups=3, replicas=2, failure_domain="rack",
@@ -111,7 +111,7 @@ def _generate(recipe, previous=None):
         workload = {key:value for key,value in item.items() if key != "groups"}
         workload.update(slot=world.reserve("workload-slots", item["key"], 16),
                         instances=item["groups"]*item["replicas"],
-                        replica_description="complete modeled shard replica at this site; application replication is not executed")
+                        replica_description="complete shard replica at this site")
         workloads.append(workload)
     for site_id in ids:
         site = Site(world, site_id, "dc", "Enterprise data center; workload-sized compute and independent carrier attachments")

@@ -67,7 +67,7 @@ class SharedWirelessTests(unittest.TestCase):
                 self.assertEqual(guest["attrs"]["auth_type"], "open")
                 self.assertNotIn("auth_cipher", guest["attrs"])
                 self.assertNotIn("auth_psk", guest["attrs"])
-                self.assertIn("no captive portal", guest["attrs"]["comments"])
+                self.assertNotIn("comments", guest["attrs"])  # limitations live in the docs
                 self.assertEqual(guest["refs"]["vlan"], guest_vlan)
                 self.assertEqual(guest["refs"]["scope_site"], selected["key"])
                 peers = networking._physical_peers(after.objects)

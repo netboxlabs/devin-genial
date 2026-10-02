@@ -115,8 +115,8 @@ def validate(plan):
         if kind(registry) != "rir" or attrs(registry).get("name") != "ARIN" or attrs(registry).get("is_private") is not False:
             report("ipv6-registry", registry, "The provider's IPv6 allocation requires its public ARIN registry identity.")
     elif (kind("ipv6/rir") != "rir" or attrs("ipv6/rir") !=
-            dict(name="IPv6 documentation registry", slug=f"{ns}-ipv6-docs",
-                 is_private=False, description="Documentation address registry") or refs("ipv6/rir")):
+            dict(name="IPv6 allocations", slug=f"{ns}-ipv6-docs",
+                 is_private=False, description="Global IPv6 address allocations") or refs("ipv6/rir")):
         report("ipv6-registry", "ipv6/rir", "IPv6 allocation requires the estate's documentation registry identity.")
     if (kind("ipv6/aggregate") != "aggregate" or attrs("ipv6/aggregate").get("prefix") != str(pool) or
             refs("ipv6/aggregate") != {"rir": registry}):

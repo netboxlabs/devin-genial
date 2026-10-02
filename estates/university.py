@@ -22,7 +22,7 @@ from .model import DesignError, World, hardware_catalog, resolve_bank_recipe, re
 
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
-          "max_objects", "patching", "reservation_user", "wan_tiers_mbps", "naming", "site_names", "hardware"}
+          "max_objects", "patching", "reservation_user", "wan_tiers_mbps", "naming", "site_names", "hardware", "tenancy"}
 # Every campus building offers staff, student and visitor service; only academic
 # buildings carry the instructional/research computing segment.
 BUILDING_NETWORKS = ("management", "staff", "students", "wireless", "security", "guest")
@@ -320,7 +320,7 @@ def workloads(recipe):
         result.append(dict(key=key, slot=slot, instances=2*groups, replicas=2, failure_domain="rack",
                            network=network, vcpus=vcpus, memory_mb=memory, disk_mb=disk,
                            listeners=listeners, criticality="tier-1" if key in TIER_1 else "tier-2",
-                           replica_description="complete campus service shard; application replication and recovery are not executed"))
+                           replica_description="complete campus service shard"))
     return result
 
 

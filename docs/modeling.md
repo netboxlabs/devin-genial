@@ -190,6 +190,40 @@ The coordinates remain synthetic: a position, never a premises claim. Adding
 an in-city neighbourhood changes every hashed pick, so the anchor table is
 rebaseline-frozen like the other naming pools.
 
+Street addresses follow the same anchor (since 0.16.0). `places.ADDRESS_STREETS`
+names, per anchor, real streets inside it: a street run is addressed on its own
+street, a point anchor on the road Nominatim reverse-geocoded at its centre plus
+a few well-known main streets, each checked with a bounded Nominatim search
+inside the anchor box (2026-10-02; two that failed were replaced by roads the
+reverse lookup returned). A hash of the site id picks the street and a house
+number from 100 to 9899; inside Chicago a `North`/`South` street is instead
+numbered from the site's latitude and an `East`/`West` street from its
+longitude on the city grid (800 numbers a mile from State and Madison), so
+`1455 West 18th Street` sits where its map pin does. The number is synthetic,
+never a surveyed premises, and no ZIP code is claimed. `naming = "legacy"` keeps
+the pre-0.16 sequential street lines.
+
+Facility codes are per metro (`CHI01`, `DET03`, `CLE02`, `MIL04`), numbered by a
+permanent `facility-codes/<metro>` ledger in creation order, so growth appends a
+code and never renumbers one. The provider's own buildings — PoPs and the NOC —
+carry fictional CLLI-style codes instead: four letters of the municipality
+(initial plus its next three consonants: `CHCG`, `DTRT`, `DRBR`, `LKWD`), the
+state and a two-character building code from the PoP's place words (`CR` for
+Cermak, `NC` for New Center or the NOC), falling back to the ledger slot number
+when the words only repeat the municipality or clash (`LKWDOH01`). They imitate
+the shape of a CLLI code; none is a code assigned to a real building.
+
+Location trees carry no pass-through levels. Site kinds whose grammar is one
+ground floor or one data hall (`places.FLAT_KINDS`: branches, stores,
+distribution centres, managed offices, plants, substations, data centres and
+provider customer premises) hang their rooms directly from the site; a single
+`Main building` holding a single `Floor 01` only lengthened every breadcrumb.
+Kinds that can grow floors (HQ, schools, hospitals, clinics and university
+buildings) keep the building and its floors, so growth never reparents a room.
+A provider PoP is a leased carrier-hotel suite holding the provider's cage —
+`Suite 317` → `Cage G09`, both hashed from the site id — and the cage is the
+PoP's equipment room.
+
 ### Equipment-room cabinet layout
 
 Data-hall profiles author a cabinet grid in metres on each rack
@@ -209,14 +243,28 @@ a room whose cabinets sprawl down one axis is reported as a corridor rather
 than a room. Cabinet distance also sets modeled inter-rack cable length, so
 compacting the grid shortens those runs.
 
-Every cabinet is an enclosed four-post 24U cabinet carrying a room-scoped
-`facility_id`. A rack lane admits ten devices, each mounted in a single rack
-unit from the bottom rail upward, so a lane can never need more than eleven
-units: a 24U enclosure is the honest size for it, where a 42U cabinet would be
-three-quarters empty by construction. Zero-height equipment (PDUs, access
-points, wall outlets) is assigned to its cabinet without a mounting position,
-which is how NetBox itself models 0U devices — they appear under the rack's
-non-racked devices rather than in the elevation.
+Cabinets are sized to their content. A rack lane admits ten devices, each
+mounted in a single rack unit from the bottom rail upward, so a lane can never
+need more than eleven units: an enclosed four-post 24U cabinet (APC AR3104) is
+the honest size for it, where a 42U cabinet would be three-quarters empty by
+construction — a rendered PoP cabinet already read `21% utilized`. A provider
+PoP cabinet also carries the real passive content a carrier cage holds: one
+Panduit FCE1U 1U fibre enclosure per PE cabinet (pinned library type; its
+adapter-panel bays are not modeled and no circuit is routed through it). A
+single-CE premises — a provider customer office, one CE and one switch — takes
+the small-room kit instead: a 13U Panduit R2P26 two-post rack, one 1U APC AP9563
+120 V PDU at the top unit on one 120 V / 20 A branch circuit, and no console
+server (the two consoles stay local spares). The `facility_id` is a room-scoped
+cabinet code — room tag, row, zone letter and bay, such as `DH-02-C03` in a data
+hall, `G09-01-N02` in PoP cage G09, `IDF02-01-N01` in a closet — and the rack
+name stays the short `N01`/`C01` breadcrumb. Asset tags are short and estate
+sequential (`INLAND-FIBER-00042`): the uppercase namespace keeps NetBox's global
+uniqueness across coexisting estates and a permanent `asset-tags` ledger numbers
+racks in creation order. Zero-height equipment (0U PDUs, access points, wall
+outlets) is assigned to its cabinet without a mounting position, which is how
+NetBox itself models 0U devices — they appear under the rack's non-racked
+devices rather than in the elevation. The geometry sidecar draws a two-post rack
+at its real 0.52 × 0.28 m footprint and every cabinet at 0.6 × 1.07 m.
 
 Rack roles and device-role colors make elevations easier to interpret. Racked
 infrastructure carries explicit synthetic power allowances, split across its
@@ -272,9 +320,9 @@ reconciliation, particularly when an unracked device's tenant changes.
 
 Provider hostnames are readable stems rather than site-id digests: a PoP's
 routers are named from its key (`chicago-cermak-pe-a`), and a customer premises
-from its customer key, metro and permanent allocation slot
-(`lakeshore-health-cle0269-gw01`, the same slot its facility code carries), so
-they stay unique and growth-stable. PoP keys shaped like those stems or like the
+from its customer key and the site's own facility code
+(`lakeshore-health-cle03-gw01` at facility `CLE03`), so the hostname matches
+the site record and stays unique and growth-stable. PoP keys shaped like those stems or like the
 NOC's `dc01` are refused. Every VLAN in every profile is named for its segment
 (`Clients`, `Management`, `POS`) inside its site-scoped VLAN group: NetBox holds
 VLAN names unique per group (`unique_group_name`, pinned 4.7.2
@@ -300,12 +348,14 @@ helpers in `estates/naming.py`: device roles read as `Provider edge router` or
 `Rack PDU` (`ROLE_LABELS`), segments as `Office workstations` or `Point-of-sale
 lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `1 Gbps access
 committed on a 1G handoff` (`bandwidth`/`port_speed`), and routed /31s name
-both ends. Material limitations stay on the record but move to `comments`, out
-of the list view: VM placement notes, external-transit ownership, provider
-accounts, the private-L3 control plane, the diagnostic radio link, unverified
-AP RF coverage, the inventory-only status of OT, station and clinical endpoints,
-and the matching room notes (patient, imaging, production-line, switchyard-bay,
-residence and lab rooms). Endpoint descriptions read in sentence case with
+both ends. **No record carries a disclaimer.** Names, descriptions, comments,
+labels, module attributes and journals hold operational data only; the
+modeling limitations are documented once, below and in the generated
+`report.md`, never restated per record (both showcase reviewers called
+per-record disclaimers the loudest synthetic tell). `naming.DISCLAIMER` backs a
+`record-disclaimer` validation finding that refuses phrases such as "not
+verified", "no … is claimed", "documentation inventory", "fictional",
+"placeholder", "planning intent" or "unknown". Endpoint descriptions read in sentence case with
 acronyms intact — `Classroom AP`, `Point-of-sale lane`, `Station HMI`,
 `Bedside monitor`. The estate-wide tag is `Managed`
 (slug `<namespace>-managed`); nothing selects rows by it. Journals state rates
@@ -315,11 +365,44 @@ order: …`, `naming.COHORT_LABELS`), service desks name their workload
 (`Teller API service desk`), and sites carry no boilerplate comment — bank
 branches keep a one-line lineage note. The four automation records (config
 contexts, export templates, webhook, event rule) have no REST-writable
-`comments` in the pinned 4.7 serializers, so their descriptions read
+`comments` in the pinned 4.7 serializers; their descriptions read
 operationally (`Notify NetOps automation of device changes; disabled until the
 receiver is live`) while the webhook stays on a reserved `.invalid` host and
-its rule ships disabled; that inert limitation is stated here and in
-`estates/automation.py`, and enforced by `validate_operations`.
+its rule ships disabled — structure `validate_operations` enforces.
+
+### Documented limitations
+
+These hold for every estate and are stated here and in the report instead of on
+the records they concern:
+
+- **Execution.** Nothing is configured, applied, executed or measured: VM
+  replication and recovery, routing, forwarding, VRRP, IPsec and the recovery
+  L2VPN, wireless authentication, DHCP, captive portals, RF coverage and the
+  diagnostic radio hop are inventory. AP mount positions are planned, not
+  surveyed.
+- **BGP.** Provider sessions, peer groups and policies document intended
+  peerings; no session state, route exchange or policy evaluation is claimed
+  (see [provider BGP inventory](#provider-bgp-inventory)).
+- **External parties.** Transit interiors, a transit peer's remote interface
+  and owner, carrier interiors and duct diversity are unknown; separate
+  providers do not establish diverse ducts. External bank DNS/RADIUS endpoints
+  are unknown.
+- **Commercial records.** Provider accounts hold no credentials and record no
+  live purchase; circuits are purchased capacity without an acceptance test;
+  the future WAN rack reservation records no purchase or installation; the
+  Asset Lifecycle sidecar's vendors and courier are fictional and its orders
+  carry no prices.
+- **Industry endpoints.** Clinical, imaging, OT plant-floor and utility station
+  endpoints are reference inventory with no clinical function, certification,
+  control function, protection setting or industrial/utility protocol.
+  Residence-room ports are installed capacity, not resident devices; MSP sites
+  carry no SLA, remote-access path or ticketing workflow.
+- **Automation.** The webhook's `.invalid` endpoint is a placeholder and its
+  event rule is disabled; config contexts are documentation intent.
+- **Addressing and hardware.** The IPv6 registry allocates documentation space;
+  optic `power_reservation_mw` values follow the catalog's `power_basis`
+  (vendor maxima or authored conservative reservations, see
+  [the catalog](../catalog/README.md)).
 
 Panel cable labels use `P` for cabinet patch cord, `H` for horizontal run, `R`
 for room cord, and `D` for an abstracted direct channel. Other cable numbers use
@@ -347,10 +430,15 @@ of modeled routing/slack. These are direct-terminated links; fiber distribution
 panels, strand bundles, separate risers and optical-loss budgets are not modeled.
 
 Each room has rack-local PDUs and separate modeled A/B distribution panels.
-The validator checks device/PDU/rack locality and panel-room consistency as well
-as capacity. Separate panel objects do not establish independent utility feeds.
-Rack names such as `N01` repeat in different rooms; references and asset tags
-retain room identity. Equipment names include the room, e.g. `hq01-idf02-as01`.
+US feeds are 208 V / 20 A single-phase circuits — the AP9572 is a 16 A 208/230 V
+PDU, the 80% continuous load of a 20 A breaker — and a single-CE premises runs
+on one 120 V / 20 A circuit with one PDU and one panel; every supply still needs
+its own active local path (`validate_power`'s `single_feed` sites come from the
+provider validator's own premises list). The validator checks device/PDU/rack
+locality and panel-room consistency as well as capacity. Separate panel objects
+do not establish independent utility feeds. Rack names such as `N01` repeat in
+different rooms; references and the `facility_id` cabinet code retain room
+identity. Equipment names include the room, e.g. `hq01-idf02-as01`.
 
 To compare different footprints, copy a profile and change `headquarters_staff`.
 Changing staff in an existing headquarters requires a new baseline; ordinary
@@ -721,9 +809,10 @@ without them.
 configuration, applies nothing to any device, establishes no session and claims
 no protocol state — no convergence, no route exchange, no policy evaluation.
 A session's `status` is the plugin's inventory status for an *intended*
-peering, not observed state. Every record repeats that in its `comments`, and
-the independent validator refuses one that does not. This is the same rule the
-inert webhook follows.
+peering, not observed state. That limitation is documented here and in the
+report, not on the records: they carry name, description, status and weight
+only, and the independent validator refuses any other field (a rule,
+community, prefix list or session-state field would read as configuration).
 
 What the estate emits:
 
@@ -748,8 +837,7 @@ finished graph rather than authored per site:
   cable: the PE that really hosts the handoff, its `/31` address, and the
   upstream provider's own ASN. The far end stays `remote_prefix` on that real
   `/31` rather than an invented remote address, because the remote interface
-  and its owner are unknown — the same limit the transit journals and the
-  provider network record already state.
+  and its owner belong to the upstream and are not modeled.
 - **eBGP customer** is attributed from each private-L3 access circuit: the
   serving PE and its `/31` address as local, the CE's address as remote, the
   customer's own ASN from its site, and the customer tenant.

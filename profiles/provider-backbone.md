@@ -28,7 +28,7 @@ exactly from its recipe and ledgers before ordinary growth can use it.
 | `pops` | 3–64 keyed entries across at least three distinct metros; explicit metro: chicago, detroit, cleveland or milwaukee |
 | `customers` | 1–256 private-L3 customers, each spanning at least two modeled PoPs |
 | `sites` | Per-customer keyed PoP entries with `count` 1–12; combined customer and NOC attachments cannot exceed twelve per PoP |
-| `lan_endpoints` | 1–12 wired office desks at each customer premises |
+| `lan_endpoints` | 0–12 wired office desks at each customer premises; 0 models the CPE and managed switch only (no office pod) |
 | `site_peak_mbps` | 1–800 Mbps of directed traffic from each non-hub premises toward its hub |
 | `hub_pop` | Explicit hub location; ordinal 001 at that PoP is the hub premises |
 | `hub_commit_mbps` | Fixed purchased tier from `wan_tiers_mbps`; must cover the sum of spoke demand after reserve |
@@ -114,6 +114,17 @@ provider optical patch. Customer LANs use one CE gateway, one local access
 switch, a management /26, a clients /25 and fixed office desk positions. Direct
 or full panel/outlet access channels use the same demand. Customer access is
 single-homed. Wireless is omitted in this wired private-L3 service scope.
+`lan_endpoints = 0` drops the desks and the office pod: the premises is the
+carrier's CPE and managed switch, which is what a carrier's own inventory holds.
+A premises is one room at the site root with the small-room kit — a 13U
+two-post rack, one 120 V / 20 A circuit feeding one 1U 120 V PDU, and no console
+server — since one CE and one switch have no redundant pair to feed twice.
+
+A PoP is a leased carrier-hotel suite holding the provider's cage (`Suite 317`
+→ `Cage G09`); its two 24U cabinets each carry a PE, a 1U fibre enclosure and,
+in the first, the management switch and console server, on 208 V / 20 A A/B
+feeds. PoPs and the NOC carry fictional CLLI-style facility codes
+(`CHCGILCR`, `DTRTMINC`, `LKWDOH01`); customer premises carry per-metro codes.
 
 The NOC shares the existing rack-separated service DC builder. Identity and
 provisioning use one synthetic two-replica group per 128 customer premises;

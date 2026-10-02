@@ -24,7 +24,7 @@ from .naming import bandwidth, port_speed, segment_purpose, titleize
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps",
-          "naming", "site_names", "hardware"}
+          "naming", "site_names", "hardware", "tenancy"}
 DEFAULT_POPS = [dict(key="chicago-west",metro="chicago"),dict(key="detroit-south",metro="detroit"),
                 dict(key="cleveland-east",metro="cleveland")]
 DEFAULT_CUSTOMERS = [dict(key="harbor-logistics",hub_pop="chicago-west",sites=[dict(pop=p["key"],count=1) for p in DEFAULT_POPS])]
@@ -111,19 +111,23 @@ def premises(recipe):
 
 
 def premises_code(w,sid,customer):
-    """Hostname stem for one customer premises: lakeshore-health-cle0269.
+    """Hostname stem for one customer premises: lakeshore-health-cle03.
 
-    Customer key plus the metro and the site's permanent address-allocation
-    slot (the same slot its facility code carries), so it is unique across the
-    estate, frozen under growth and readable without a lookup table. Device
-    names stay short identities scoped by site and tenant in Diode matching.
+    Customer key plus the site's own facility code (metro and permanent
+    per-metro number), so the hostname matches the facility on the site record,
+    is unique across the estate and frozen under growth. Without an authored
+    facility code it falls back to the metro and address-allocation slot.
+    Device names stay short identities scoped by site and tenant in Diode matching.
     """
+    facility = w.obj(f"site/{sid}")["attrs"].get("facility","")
+    if re.fullmatch(r"(?:CHI|DET|CLE|MIL)\d{2,}",facility):
+        return f"{customer}-{facility.lower()}"
     return f"{customer}-{w.provider_metros[sid][:3]}{w.allocations[sid]:04}"
 
 
-# Premises stems end in <metro3><slot digits>; the NOC is dc01. A PoP key of
+# Premises stems end in <metro3><digits>; the NOC is dc01. A PoP key of
 # either shape could reuse another site's hostnames and DNS names.
-_RESERVED_POP_KEY = re.compile(r"dc-?\d+|.*-(?:chi|det|cle|mil)\d{4,}")
+_RESERVED_POP_KEY = re.compile(r"dc-?\d+|.*-(?:chi|det|cle|mil)\d{2,}")
 
 
 def resolve(raw):
@@ -184,7 +188,7 @@ def resolve(raw):
         if c["service"] != "private-l3":
             raise DesignError("Customer service supports private-l3; Internet and L2VPN are separate future designs")
         _integer(c["site_peak_mbps"],f"Customer {key} site_peak_mbps",1,800)
-        _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",1,12)
+        _integer(c["lan_endpoints"],f"Customer {key} lan_endpoints",0,12)
         _integer(c["hub_commit_mbps"],f"Customer {key} hub_commit_mbps",1,1000)
         if c["hub_commit_mbps"] not in r["wan_tiers_mbps"]:
             raise DesignError(f"Customer {key}: hub_commit_mbps must be one of wan_tiers_mbps")
@@ -240,7 +244,7 @@ def workloads(recipe):
         result.append(dict(key=key,slot=slot,instances=2*max(1,(number+size-1)//size),replicas=2,failure_domain="rack",
             network="applications",vcpus=cpus,memory_mb=memory,disk_mb=disk,listeners=listeners,
             criticality="tier-2" if key == "monitoring" else "tier-1",
-            replica_description="independent host and rack lanes; service execution and recovery are not verified"))
+            replica_description="independent host and rack lanes"))
     return result
 
 
@@ -307,21 +311,19 @@ def _registry(w):
             display = display[:70].rstrip()+"-"+sha256(display.encode()).hexdigest()[:16]
         attrs = dict(name=display,slug=f"{ns}-{label}")
         if label == "operator":
-            attrs["comments"] = (f"Operator of the {r['name']} private L3 VPN service; backbone, customer access "
-                                 "and NOC circuits are ordered against this provider record.")
+            attrs["comments"] = (f"Operator of the {r['name']} private L3 VPN service and its backbone, "
+                                 "customer access and NOC circuits.")
         # Support desks answer from the provider's own mail domain.
         w.add("provider",f"provider/{label}",attrs,refs,{"support_domain":CARRIERS[label][1]} if label in CARRIERS else {})
         if label.startswith("transit-"):
             w.add("provider_network",f"provider-network/transit/{label[-1]}",dict(name=f"{name} network",
-                  description=f"{name} IP transit network",
-                  comments="External transit interior and remote interface owner are unknown."),{"provider":f"provider/{label}"})
+                  description=f"{name} IP transit network"),{"provider":f"provider/{label}"})
         if label != "operator":
             _account(w,f"provider-account/provider/{label}",f"provider/{label}",
                      f"{name} transport" if label.startswith("transport-") else f"{name} transit",
                      str(10**9 + _hash(ns,label,"account") % (9*10**9)),
                      "Ethernet transport between metros" if label.startswith("transport-") else "IP transit at the core PoPs")
-    w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs",
-          comments="The control plane is documented inventory, not executed routing."),{"provider":"provider/operator"})
+    w.add("provider_network","provider-network/operator",dict(name="Private L3",description="Routed private L3 VPN service across the backbone PoPs"),{"provider":"provider/operator"})
     _account(w,"provider-account/operator/noc","provider/operator","NOC access",f"{code}-INT-0001","NOC access circuits")
     _account(w,"provider-account/operator/fiber","provider/operator","Backbone fiber",f"{code}-INT-0002","Owned metro fiber between PoPs")
     for name in ("backbone","dark-fiber","access","transit"):
@@ -347,12 +349,8 @@ def _registry(w):
 
 
 # Each premises' CE-to-PE peering is emitted by estates/bgp.py as a session in
-# the "Customer Private L3" peer group; this note must point at those records,
-# never deny them (0.14 shipped the sessions while this still said "not ...
-# configured BGP sessions", which read as a contradiction).
-VIRTUAL_CIRCUIT_NOTE = ("Peer membership is service inventory, not an all-to-all traffic matrix. "
-                        "Each premises' CE-to-PE peering is documented in the Customer Private L3 BGP peer group; "
-                        "like those sessions, it is inventory, not configured routing.")
+# the "Customer Private L3" peer group; this note points at those records.
+VIRTUAL_CIRCUIT_NOTE = "Each premises' CE-to-PE peering is in the Customer Private L3 BGP peer group."
 
 
 def virtual_circuit_description(customer):
@@ -362,8 +360,7 @@ def virtual_circuit_description(customer):
 def _account(w,key,provider,name,number,description):
     # The account number is the matching identity; the name is the label NetBox
     # renders. Both are unique per provider.
-    return w.add("provider_account",key,dict(name=name,account=number,description=description,
-          comments="Commercial inventory account; no credentials or live purchase."),dict(provider=provider))
+    return w.add("provider_account",key,dict(name=name,account=number,description=description),dict(provider=provider))
 
 
 def _site_network(site,role,prefixlen,offset,vid):
@@ -408,7 +405,7 @@ def _link_prefix(w,key,vrf,tenant):
     # ponytail: clipped at the native 200; only 100-character site_names overrides reach it.
     attrs = dict(prefix=str(net),status="active",description=_link_description(w,key)[:200])
     if key.startswith("circuit/transit/"):
-        attrs["comments"] = "The far end belongs to the upstream; its remote interface and owner are unknown."
+        attrs["comments"] = "The far end belongs to the upstream carrier."
     w.add("prefix",f"prefix/link/{key}",attrs,dict(vrf=vrf,tenant=tenant))
     return net
 
@@ -443,8 +440,7 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
     """One circuit; rate_mbps None is owned fibre with no purchased commitment."""
     handoff = handoff_mbps or rate_mbps
     attrs = dict(cid=cid,status="active",install_date=installed.isoformat(),
-                 description=description or f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff",
-                 comments="Purchased capacity record; no forwarding acceptance test or physical duct diversity is claimed.")
+                 description=description or f"{bandwidth(rate_mbps)} {kind} committed on a {port_speed(handoff)} handoff")
     if rate_mbps is not None:
         attrs["commit_rate"] = rate_mbps*1000
     if distance_km:
@@ -456,7 +452,7 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
     for side,site,port in (("A",a_site,a_port),("Z",z_site,z_port)):
         target = site.key if isinstance(site,Site) else site
         term = w.add("circuit_termination",f"{key}/{side}",dict(term_side=side,port_speed=handoff*1000,
-                     description="Local routed handoff" if port else "Upstream network edge; remote interface unknown"),dict(circuit=key,termination=target))
+                     description="Local routed handoff" if port else "Upstream carrier handoff"),dict(circuit=key,termination=target))
         if port:
             site.cable(port,term,"cat6" if w.obj(port)["attrs"]["type"] == "1000base-t" else "smf")
             w.obj(port)["attrs"]["speed"] = handoff*1000
@@ -492,6 +488,8 @@ def _pop(w,item):
     for number,side in enumerate(("a","b")):
         device = site.device("provider-edge",f"pe-{side}","provider-edge",rack_domain=number)
         routers.append(device)
+        # One 1U fibre enclosure per PE cabinet terminates its building fibre.
+        site.device("fibre-panel",f"odf-{side}","patch-panel",rack_domain=number)
         for n in range(4):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
         for n in range(8):
@@ -743,7 +741,7 @@ def _premises_places(w,entries,points):
     Each premises takes an authored places anchor chosen by a hash of its site
     id; a customer reuses an anchor only once every eligible one is taken, in
     allocation-slot order, so growth never moves or renames an existing site.
-    Returns sid -> (display name, latitude, longitude, locality).
+    Returns sid -> (display name, latitude, longitude, anchor).
     """
     overrides,result = w.recipe.get("site_names",{}),{}
     if w.recipe.get("naming","authored") != "authored":
@@ -764,7 +762,7 @@ def _premises_places(w,entries,points):
             anchor = min(eligible,key=lambda a:(taken[a[0][0]],_hash("premises",sid,a[0][0])))
             taken[anchor[0][0]] += 1
             label = anchor[0][0] + (f" {taken[anchor[0][0]]}" if taken[anchor[0][0]] > 1 else "")
-            result[sid] = (f"{titleize(c['key'])} {label}",*point(anchor),anchor[1])
+            result[sid] = (f"{titleize(c['key'])} {label}",*point(anchor),anchor)
     return result
 
 
@@ -779,16 +777,17 @@ def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     site = Site(w,sid,"customer","Private-L3 customer premises and wired office",tenant=tenant,routing_domain=vrf)
     if sid in placed:
         # Named and plotted where the premises is, not after its serving PoP.
-        name,latitude,longitude,locality = placed[sid]
+        name,latitude,longitude,anchor = placed[sid]
         node = w.obj(site.key)
         lines = node["attrs"]["physical_address"].split("\n")
-        lines[1] = f"{locality}, {lines[1].rsplit(', ',1)[-1]}"
+        lines[:2] = [places.street_address(sid,anchor,latitude,longitude),f"{anchor[1]}, {lines[1].rsplit(', ',1)[-1]}"]
         node["attrs"].update(name=name,latitude=latitude,longitude=longitude,physical_address="\n".join(lines))
     w.obj(site.key)["meta"]["in_service"] = installed.isoformat()
     site.code = premises_code(w,sid,key)
     w.obj(site.key)["refs"]["asns"] = [f"asn/customer/{key}"]
     _site_network(site,"management",26,0,10); _site_network(site,"clients",25,128,20)
-    room = places.provider_office(site)
+    # A premises with no LAN seats is a CPE and its managed switch: no office pod.
+    room = places.provider_office(site) if c["lan_endpoints"] else None
     edge = site.device("edge","edge-01","customer-edge")
     switch = site.device("access","access-01","access")
     access_ports = w.hardware("access")["access_ports"]

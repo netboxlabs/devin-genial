@@ -42,3 +42,9 @@ Do this instead:
   on-land neighbourhood on that side.
 - Cite sources for new anchors (OSM is fine); keep coordinates synthetic-precision,
   never a real customer's address.
+- Every anchor needs an `ADDRESS_STREETS[(locality, first name)]` pool of real
+  streets inside it (`tests/test_places.py` fails otherwise). Start from the road
+  the centre reverse-geocodes to; confirm any other street with one bounded
+  Nominatim search inside the anchor box (`build/geo-verify/streets.py`, one
+  lookup per new street). In Chicago, write directional streets with their
+  `North`/`South`/`East`/`West` prefix: the grid renumbers and may flip them.

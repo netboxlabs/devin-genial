@@ -22,12 +22,14 @@ class NamingTests(unittest.TestCase):
         sites = _sites(generate(_recipe()))
         for key, attrs in sites.items():
             self.assertFalse(attrs["name"].startswith("acme-"), key)
-            self.assertRegex(attrs["facility"], r"^[A-Z]{3}\d{4}$")
+            # Per-metro codes from a permanent ledger: CHI01, DET02...
+            self.assertRegex(attrs["facility"], r"^(CHI|DET|CLE|MIL)\d{2,}$")
             self.assertIsInstance(attrs["latitude"], float)
             self.assertIsInstance(attrs["longitude"], float)
             # slugs keep the stable namespace form: matching and DNS unchanged
             self.assertTrue(attrs["slug"].startswith("acme-"), key)
         self.assertEqual(len({a["name"] for a in sites.values()}), len(sites))
+        self.assertEqual(len({a["facility"] for a in sites.values()}), len(sites))
 
     def test_legacy_switch_restores_namespace_ordinal_names(self):
         sites = _sites(generate(_recipe(naming="legacy")))

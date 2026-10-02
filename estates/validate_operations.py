@@ -6,7 +6,7 @@ import math
 import re
 
 from .model import digest, hardware_catalog
-from .naming import rate_kbps, titleize
+from .naming import dedicated, rate_kbps, titleize
 
 
 # A CSV export template must be one header line plus exactly one queryset loop,
@@ -55,7 +55,7 @@ def _emitted(kinds, content_type):
             and bool(kinds.get(content_type.split(".", 1)[1])))
 
 
-def _automation(objects, kinds, ns, fail):
+def _automation(objects, kinds, ns, fail, solo=False):
     """Check the estate's automation inventory against its own graph.
 
     Config-context server lists must be addresses this estate's own service
@@ -87,12 +87,12 @@ def _automation(objects, kinds, ns, fail):
         description = obj["attrs"].get("description", "")
         main_scoped = obj["kind"] != "config_context"
         if (not isinstance(name, str) or len(name) > 100
-                or name.startswith(f"{ns} ") is not main_scoped
+                or name.startswith(f"{ns} ") is not (main_scoped and not solo)
                 or not isinstance(description, str) or not 1 <= len(description) <= 200
                 or objects.get(obj["refs"].get("owner"), {}).get("kind") != "owner"):
             fail("automation-record", obj["key"],
-                 "Main-scoped automation records must carry the namespace and branch-scoped "
-                 "config contexts must not; all need a native-length name, description and the estate's owner.")
+                 "Main-scoped automation records carry the namespace on a shared tenant only and "
+                 "branch-scoped config contexts never do; all need a native-length name, description and the estate's owner.")
 
     contexts = {obj["key"]: obj for obj in listed("config_context")}
     weights = {}
@@ -512,14 +512,14 @@ def _context(plan, objects, kinds):
     forms = {
         "equipment-record": ("Equipment installation record", r"Device: ([^\n]+)\nModel: ([^\n]+)\nSerial: ([^\n]+)\nSite: ([^\n]+)\nRoom: ([^\n]+)\nRack: ([^\n]+) / U ([0-9.]+)\nInventory access interface: ([^\n]+)\nUse this record to identify the chassis and its initial placement\."),
         "maintenance-plan": ("Equipment maintenance plan", r"Device: ([^\n]+)\nSite: ([^\n]+)\nRoom: ([^\n]+)\nRack: ([^\n]+)\nFacilities contact: ([^\n]+)\nArrange equipment-room access with this desk and consult the device's current technical contact before scheduling work\."),
-        "psu-replacement-plan": ("PSU replacement preparation", r"Device: ([^\n]+)\nInstalled PSU model: ([^\n]+)\nInstalled PSU serial: ([^\n]+)\nBay: ([^\n]+)\nSupply port: ([^\n]+)\nFacilities contact: ([^\n]+)\nPlan a like-for-like replacement using this installed component record\. Trace current power paths and confirm isolation requirements with the technical owner before scheduling work; no replacement is recorded as executed\."),
-        "optic-replacement-plan": ("Optical replacement preparation", r"Device: ([^\n]+)\nInterface: ([^\n]+)\nInstalled part: ([^\n]+)\nInstalled serial: ([^\n]+)\nBay: ([^\n]+)\nFacilities contact: ([^\n]+)\nUse the installed part and current device technical contact to review a like-for-like replacement\. For a captive AOC end, replace the complete assembly\. Preserve the interface and its dependent records; no module deletion, hot-swap or replacement is recorded as executed\."),
+        "psu-replacement-plan": ("PSU replacement preparation", r"Device: ([^\n]+)\nInstalled PSU model: ([^\n]+)\nInstalled PSU serial: ([^\n]+)\nBay: ([^\n]+)\nSupply port: ([^\n]+)\nFacilities contact: ([^\n]+)\nPlan a like-for-like replacement using this installed component record\. Trace current power paths and confirm isolation requirements with the technical owner before scheduling work\."),
+        "optic-replacement-plan": ("Optical replacement preparation", r"Device: ([^\n]+)\nInterface: ([^\n]+)\nInstalled part: ([^\n]+)\nInstalled serial: ([^\n]+)\nBay: ([^\n]+)\nFacilities contact: ([^\n]+)\nUse the installed part and current device technical contact to review a like-for-like replacement\. For a captive AOC end, replace the complete assembly\. Preserve the interface and its dependent records\."),
         "site-record": ("Site record", r"Site: ([^\n]+)\nAddress: ([^\n]+)\nTime zone: ([^\n]+)\nUse this record when arranging a site visit\."),
         "access-plan": ("Access coordination", r"Site: ([^\n]+)\nFacilities contact: ([^\n]+)\nCoordinate equipment-room access and planned power work with this local desk\."),
         "capacity-request": ("WAN capacity request", r"Circuit: ([^\n]+)\nProvider: ([^\n]+)\nCommitted capacity: ([^\n]+)\nUse the circuit identifier and committed rate when discussing the access order\."),
-        "handoff-plan": ("WAN handoff plan", r"Circuit: ([^\n]+)\nCustomer site: ([^\n]+)\nPhysical handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nThis handoff plan describes the inventory connection; it does not record an acceptance test\."),
+        "handoff-plan": ("WAN handoff plan", r"Circuit: ([^\n]+)\nCustomer site: ([^\n]+)\nPhysical handoff: ([^\n]+)\nRecorded service date: ([^\n]+)"),
         "resource-plan": ("Service resource plan", r"VM: ([^\n]+)\nHost: ([^\n]+)\nCapacity: ([0-9.]+) vCPU; ([0-9]+) MB memory; ([0-9]+) MB disk\nThis is the initial placement and resource budget for this service instance\."),
-        "listener-plan": ("Service listener plan", r"VM: ([^\n]+)\nListeners: ([^\n]+)\nSupport contact: ([^\n]+)\nUse the modeled listeners to scope configuration review; no application health check is recorded\.")}
+        "listener-plan": ("Service listener plan", r"VM: ([^\n]+)\nListeners: ([^\n]+)\nSupport contact: ([^\n]+)\nUse these listeners to scope configuration review\.")}
     if recipe.get("profile") == "provider-backbone":
         forms["handoff-plan"] = ("Circuit handoff plan", r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ termination: ([^\n]+)\nA handoff: ([^\n]+)\nZ handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nUse both termination records to coordinate the local handoffs\.")
     for obj in kinds["journal_entry"]:
@@ -531,7 +531,7 @@ def _context(plan, objects, kinds):
         title, body = forms[event]
         if event == "handoff-plan" and target in external_handoffs:
             body = (r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ network boundary: ([^\n]+)\n"
-                    r"A handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nRemote interface and owner: unknown\.\n"
+                    r"A handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nRemote side: upstream carrier network\.\n"
                     r"Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary\.")
         comments = obj["attrs"].get("comments", "")
         match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
@@ -548,7 +548,7 @@ def _context(plan, objects, kinds):
     for key in notes:
         if objects.get(key, {}).get("kind") != "journal_entry":
             fail("operations-journal", key, "Required bounded lifecycle event is missing.")
-    _automation(objects, kinds, ns, fail)
+    _automation(objects, kinds, ns, fail, dedicated(recipe))
     return findings
 
 

@@ -146,14 +146,14 @@ def enrich(world):
             if far_target["kind"] == "provider_network":
                 body = (f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ network boundary: {far_name}\n"
                         f"A handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\n"
-                        "Remote interface and owner: unknown.\n"
+                        "Remote side: upstream carrier network.\n"
                         "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
             else:
                 body = f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ termination: {far_name}\nA handoff: {rate_kbps(term['attrs']['port_speed'])}\nZ handoff: {rate_kbps(far['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nUse both termination records to coordinate the local handoffs."
             journal(key, "handoff-plan", attrs["install_date"], "Circuit handoff plan", body)
         else:
             journal(key, "handoff-plan", attrs["install_date"], "WAN handoff plan",
-                f"Circuit: {attrs['cid']}\nCustomer site: {site_name}\nPhysical handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nThis handoff plan describes the inventory connection; it does not record an acceptance test.")
+                f"Circuit: {attrs['cid']}\nCustomer site: {site_name}\nPhysical handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}")
 
     service_desks, anchors = {}, {}
     listeners = defaultdict(list)
@@ -184,7 +184,7 @@ def enrich(world):
             f"VM: {attrs['name']}\nHost: {world.obj(refs['device'])['attrs']['name']}\nCapacity: {attrs['vcpus']} vCPU; {attrs['memory']} MB memory; {attrs['disk']} MB disk\nThis is the initial placement and resource budget for this service instance.")
         entries = [f"{service['attrs']['name']}: {service['attrs']['protocol']}/{','.join(map(str, service['attrs']['ports']))}" for service in sorted(listeners[key], key=lambda obj: obj["key"])]
         journal(key, "listener-plan", dated(key, "listener-plan", as_of, 30, 31), "Service listener plan",
-            f"VM: {attrs['name']}\nListeners: {'; '.join(entries)}\nSupport contact: {world.obj(service_desks[(refs['tenant'], key.split('/')[2])])['attrs']['name']}\nUse the modeled listeners to scope configuration review; no application health check is recorded.")
+            f"VM: {attrs['name']}\nListeners: {'; '.join(entries)}\nSupport contact: {world.obj(service_desks[(refs['tenant'], key.split('/')[2])])['attrs']['name']}\nUse these listeners to scope configuration review.")
 
     # Permanent U allocation makes this local selection stable when a new
     # workload sorts before existing workloads. New racks receive new stories.
@@ -226,7 +226,7 @@ def enrich(world):
             bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
             model = world.obj(module["refs"]["module_type"])["attrs"]["model"]
             journal(key, "psu-replacement-plan", dated(key, "psu-replacement-plan", as_of, 1, 19), "PSU replacement preparation",
-                f"Device: {attrs['name']}\nInstalled PSU model: {model}\nInstalled PSU serial: {module['attrs']['serial']}\nBay: {bay}\nSupply port: {port['attrs']['name']}\nFacilities contact: {facilities}\nPlan a like-for-like replacement using this installed component record. Trace current power paths and confirm isolation requirements with the technical owner before scheduling work; no replacement is recorded as executed.")
+                f"Device: {attrs['name']}\nInstalled PSU model: {model}\nInstalled PSU serial: {module['attrs']['serial']}\nBay: {bay}\nSupply port: {port['attrs']['name']}\nFacilities contact: {facilities}\nPlan a like-for-like replacement using this installed component record. Trace current power paths and confirm isolation requirements with the technical owner before scheduling work.")
         dtype = world.obj(refs["device_type"])
         manufacturer = world.obj(dtype["refs"]["manufacturer"])["attrs"]["name"]
         # Select a fixed catalog cage before considering occupancy. Later ports
@@ -239,6 +239,6 @@ def enrich(world):
             maker = world.obj(module_type["refs"]["manufacturer"])["attrs"]["name"]
             bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
             journal(key, "optic-replacement-plan", dated(key, "optic-replacement-plan", as_of, 40, 20), "Optical replacement preparation",
-                f"Device: {attrs['name']}\nInterface: {port['attrs']['name']}\nInstalled part: {maker} {module_type['attrs']['model']}\nInstalled serial: {module['attrs']['serial']}\nBay: {bay}\nFacilities contact: {facilities}\nUse the installed part and current device technical contact to review a like-for-like replacement. For a captive AOC end, replace the complete assembly. Preserve the interface and its dependent records; no module deletion, hot-swap or replacement is recorded as executed.")
+                f"Device: {attrs['name']}\nInterface: {port['attrs']['name']}\nInstalled part: {maker} {module_type['attrs']['model']}\nInstalled serial: {module['attrs']['serial']}\nBay: {bay}\nFacilities contact: {facilities}\nUse the installed part and current device technical contact to review a like-for-like replacement. For a captive AOC end, replace the complete assembly. Preserve the interface and its dependent records.")
     wireless_context(world)
     automation_records(world)

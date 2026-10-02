@@ -17,7 +17,7 @@ from .model import DesignError, World, resolve_bank_recipe, resolve_demo
 
 COMMON = {"namespace", "name", "seed", "as_of", "address_pool", "ipv6_pool", "reserve_fraction",
           "max_objects", "patching", "reservation_user", "wan_tiers_mbps", "headquarters_staff",
-          "naming", "site_names", "hardware"}
+          "naming", "site_names", "hardware", "tenancy"}
 STORE_NETWORKS = ("backoffice", "pos", "wireless", "security", "guest", "management")
 DISTRIBUTION_NETWORKS = ("backoffice", "wireless", "security", "management")
 OFFICE_NETWORKS = ("backoffice", "wireless", "security", "guest", "management")
@@ -127,7 +127,7 @@ def workloads(recipe):
                            network=network, vcpus=vcpus, memory_mb=memory, disk_mb=disk,
                            listeners=listeners,
                            criticality="tier-1" if key in {"commerce-api", "pos-gateway", "inventory-db", "identity", "dns"} else "tier-2",
-                           replica_description="complete chain service shard; application replication and recovery are not executed"))
+                           replica_description="complete chain service shard"))
     return result
 
 

@@ -75,7 +75,7 @@ class ProviderIntegrationTests(unittest.TestCase):
                 else:
                     self.assertIn("A termination: Chicago PoP\nZ network boundary: " + name, note)
                     self.assertIn("A handoff: 100 Gbps", note)
-                    self.assertIn("Remote interface and owner: unknown.", note)
+                    self.assertIn("Remote side: upstream carrier network.", note)
                     self.assertNotIn("Z handoff:", note)
                 assignment = objects["contact-assignment/virtual-circuit/acme"]
                 self.assertEqual(assignment["refs"]["contact"], "contact/operations/tenant/cust-acme")

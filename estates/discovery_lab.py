@@ -107,7 +107,7 @@ def add_discovery_lab(world):
         raise DesignError("discovery_lab is modeled for the provider backbone only")
     objects, ns = world.objects, world.recipe["namespace"]
     prod_nodes, prod_links = select(objects, world.reservations["provider-pop-order"], setting["nodes"])
-    site, floor = "site/dc-01", "location/dc-01/floor-01"
+    site = "site/dc-01"
     stem = "dc-01"
     room, rack = f"location/{stem}/network-lab", f"rack/{stem}/network-lab/lab-01"
     spec = world.catalog["models"][ALIAS]
@@ -131,9 +131,9 @@ def add_discovery_lab(world):
                               "description": "Isolated staging router; never carries customer traffic"})
     add("location", room, {"name": "Network Lab", "slug": f"{ns}-{stem}-network-lab", "status": "active",
                            "description": "Isolated software-staging lab; containerised network OS, no production links"},
-        {"site": site, "parent": floor, "tenant": "tenant"}, {"floor": 1, "space_type": "lab"})
-    add("rack", rack, {"name": "L01", "facility_id": "L01", "status": "active", "u_height": 24, "width": 19,
-                       "form_factor": "4-post-cabinet", "asset_tag": f"{ns}-{stem}-lab-01",
+        {"site": site, "tenant": "tenant"}, {"floor": 1, "space_type": "lab"})
+    add("rack", rack, {"name": "L01", "facility_id": "NL-01-L01", "status": "active", "u_height": 24, "width": 19,
+                       "form_factor": "4-post-cabinet", "asset_tag": f"{ns.upper()}-{world.reserve('asset-tags', rack, 100000) + 1:05}",
                        "description": "Lab server cabinet hosting the containerlab VM"},
         {"site": site, "location": room, "role": "rack-role/network", "tenant": "tenant"})
     add("prefix", "prefix/lab/pool", {"prefix": str(LAB_POOL), "status": "container",

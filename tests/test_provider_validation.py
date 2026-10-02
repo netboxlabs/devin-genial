@@ -167,7 +167,7 @@ class ProviderValidationTests(unittest.TestCase):
             (f"{device}/if/eth0", "untagged_vlan", f"vlan/{self.customer}/management", "provider-customer-endpoint"),
             (device, "location", f"location/{self.customer}", "provider-device-inventory"),
             (f"device/{self.customer}/edge-01/if/Clients", "parent", f"device/{self.customer}/edge-01/if/port2", "provider-customer-gateway"),
-            (f"device/{self.customer}/console-01/if/NET1", "vrf", "vrf/provider", "provider-console-management")):
+            ("device/pop-chicago-west/console-01/if/NET1", "vrf", f"vrf/customer/harbor-logistics", "provider-console-management")):
             with self.subTest(key=key, field=field):
                 self.setUp()
                 self.objects[key]["refs"][field] = value
@@ -177,6 +177,42 @@ class ProviderValidationTests(unittest.TestCase):
         self.cable(f"device/{self.customer}/edge-01/if/port1")["attrs"]["status"] = "planned"
         self.strip()
         self.assertIn("provider-customer-gateway", self.codes())
+
+    def test_small_premises_kit_cannot_hide_a_pop_or_premises_defect(self):
+        """Single-feed and console-free applies only to the validator's own premises list."""
+        # A premises is one circuit and one PDU, every supply still on a live local path.
+        pdus = {o["key"] for o in self.plan["objects"] if o["kind"] == "device"
+                and o["refs"].get("site") == f"site/{self.customer}" and o["refs"]["role"] == "role/pdu"}
+        self.assertEqual(len(pdus), 1)
+        self.assertEqual({self.objects[p]["refs"]["device_type"] for p in pdus}, {"hardware/pdu-120"})
+        feed = next(o for o in self.plan["objects"] if o["kind"] == "power_feed" and o["refs"]["rack"]
+                    == self.objects[f"device/{self.customer}/edge-01"]["refs"]["rack"])
+        self.assertEqual((feed["attrs"]["voltage"], feed["attrs"]["amperage"]), (120, 20))
+        # Moving a PoP switch's B supply onto its A PDU is still a diversity finding.
+        switch = "device/pop-chicago-west/mgmt-01"
+        ports = sorted(o["key"] for o in self.plan["objects"] if o["kind"] == "power_port" and o["refs"]["device"] == switch)
+        a_outlet = next(v for v in (self.cable(ports[0])["refs"]["a"], self.cable(ports[0])["refs"]["b"]) if v != ports[0])
+        spare = next(o["key"] for o in self.plan["objects"] if o["kind"] == "power_outlet"
+                     and o["refs"]["device"] == self.objects[a_outlet]["refs"]["device"]
+                     and not any(o["key"] in c["refs"].values() for c in self.plan["objects"] if c["kind"] == "cable"))
+        cable = self.cable(ports[1])
+        cable["refs"].update(a=spare, b=ports[1])
+        self.strip()
+        self.assertIn("dc-power-diversity", self.codes())
+        # A console server at a premises, a sequential street or a renamed cage is refused.
+        self.setUp()
+        self.objects[f"site/{self.customer}"]["attrs"]["physical_address"] = (
+            "1172 Business Way\nChicago, Illinois\nUnited States")
+        self.assertIn("provider-site-context", self.codes())
+        self.setUp()
+        self.objects["location/pop-chicago-west"]["attrs"]["name"] = "MDF"
+        self.assertIn("provider-room-geometry", self.codes())
+        self.setUp()
+        server = deepcopy(self.objects["device/pop-chicago-west/console-01"])
+        server["key"] = f"device/{self.customer}/console-01"
+        server["refs"].update(site=f"site/{self.customer}", location=f"location/{self.customer}")
+        self.plan["objects"].append(server)
+        self.assertIn("provider-device-inventory", self.codes())
 
     def test_geometry_and_panel_paths_cannot_borrow_another_site(self):
         self.plan = generate(self.plan["recipe"] | {"patching": "panels"})

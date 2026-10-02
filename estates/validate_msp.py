@@ -321,7 +321,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for room, (space_type, origin, desks) in rooms.items():
             if (kind_of(room) != "location" or meta(room).get("space_type") != space_type or
                     meta(room).get("floor") != 1 or meta(room).get("position_m") != origin or
-                    refs(room).get("parent") != f"location/{sid}/floor-01" or attrs(room).get("status") != "active" or
+                    refs(room).get("parent") is not None or attrs(room).get("status") != "active" or
                     (desks is not None and meta(room).get("capacity", {}).get("workstations") != desks)):
                 report("msp-room-placement", room, "Managed-office rooms must occupy their fixed active ground-floor "
                                                     "positions with their installed desk capacity.")
@@ -517,10 +517,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         comments = attrs(site).get("comments", "")
         segment = attrs(f"prefix/{sid}/management").get("prefix")
         if (not isinstance(comments, str) or not segment or segment not in comments or
-                "managed-network contract" not in comments or
-                "No service-level commitment, remote-access path or ticketing workflow" not in comments):
-            report("msp-managed-by", site, "The office record must state the operating relationship, its management "
-                                            "segment and the limits that relationship does not assert.")
+                "managed-network contract" not in comments):
+            report("msp-managed-by", site, "The office record must state the operating relationship and its management "
+                                            "segment.")
 
         # --- carrier attachments -------------------------------------------------
         circuits = defaultdict(list)

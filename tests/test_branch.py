@@ -139,6 +139,66 @@ class BranchTests(unittest.TestCase):
         self.assertEqual(stub2.deleted, {3})
         self.assertEqual([d["name"] for d in deleted2], ["mercy_operations_tier"])
 
+    def test_dedicated_retirement_matches_exact_bare_labels_only(self):
+        from estates.branch import retire_namespace_rows
+
+        class Owners:
+            rows = {1: "Network operations", 2: "Network operations team",
+                    3: "lakes-fiber Network operations", 4: "Infrastructure operations"}
+
+            def __init__(self):
+                self.deleted = set()
+
+            def all(self, path):
+                return [{"id": i, "name": n} for i, n in self.rows.items()] if path == "/api/users/owners/" else []
+
+            def request(self, path, *, method="GET", **_kwargs):
+                row_id = int(path.rstrip("/").rsplit("/", 1)[1])
+                if method == "DELETE":
+                    self.deleted.add(row_id)
+                    raise LoadError("204 empty body")
+                if row_id in self.deleted:
+                    raise LoadError("GET returned HTTP 404")
+                return 200, {"id": row_id}
+
+        stub = Owners()
+        retire_namespace_rows(stub, "lakes-fiber", dedicated=True, sleep=lambda _s: None)
+        self.assertEqual(stub.deleted, {1, 4})  # never a lookalike or a shared-mode row
+        stub = Owners()
+        retire_namespace_rows(stub, "lakes-fiber", sleep=lambda _s: None)
+        self.assertEqual(stub.deleted, {3})
+
+    def test_every_generated_main_scoped_row_resolves_for_retirement_in_both_modes(self):
+        import tomllib
+        from pathlib import Path
+        from estates.branch import RETIREMENT_PATHS, retirement_matcher
+        from estates.generate import generate
+        from estates.naming import NAMESPACED_KINDS
+        from estates.turbobulk import SPECS
+
+        for path in sorted((Path(__file__).parents[1] / "profiles").glob("*.toml")):
+            raw = tomllib.loads(path.read_text())
+            for tenancy in ("shared", "dedicated"):
+                with self.subTest(profile=path.name, tenancy=tenancy):
+                    plan = generate(dict(raw, tenancy=tenancy))
+                    ns, dedicated = plan["recipe"]["namespace"], tenancy == "dedicated"
+                    rows = [o for o in plan["objects"] if o["kind"] in NAMESPACED_KINDS]
+                    self.assertTrue(rows)
+                    for obj in rows:
+                        endpoint, name = SPECS[obj["kind"]][1], obj["attrs"]["name"]
+                        self.assertIn(endpoint, RETIREMENT_PATHS)
+                        self.assertTrue(retirement_matcher(endpoint, ns, dedicated=dedicated)(name),
+                                        f"{obj['kind']} {name!r} would strand on retirement")
+                        self.assertFalse(retirement_matcher(endpoint, "qq7", dedicated=False)(name))
+                        if dedicated and obj["kind"] != "custom_field":
+                            self.assertNotIn(ns, name.lower(), "dedicated tenancy must drop the namespace")
+                        if not dedicated:
+                            self.assertTrue(name.startswith(ns.replace("-", "_") if obj["kind"] == "custom_field" else f"{ns} "))
+                    for obj in plan["objects"]:
+                        for field in ("slug",):
+                            if obj["kind"] in ("tenant", "site") and isinstance(obj["attrs"].get(field), str):
+                                self.assertIn(ns, obj["attrs"][field], "identities keep the namespace in both modes")
+
     def test_timeout_deletes_the_stuck_branch_and_names_the_worker(self):
         stub = Stub(states=["new"] * 5)
         with self.assertRaises(LoadError) as caught:

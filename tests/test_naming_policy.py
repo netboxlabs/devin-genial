@@ -63,6 +63,19 @@ class NamingHelpers(unittest.TestCase):
             self.assertIn(kind, NAMESPACED_KINDS)
             self.assertTrue(display_name("acme", kind, "thing").startswith("acme "))
 
+    def test_dedicated_tenancy_drops_the_prefix_from_main_scoped_names_only(self):
+        from estates.naming import main_scoped_name
+        self.assertEqual(main_scoped_name({"namespace": "acme"}, "Network operations"), "acme Network operations")
+        self.assertEqual(main_scoped_name({"namespace": "acme", "tenancy": "shared"}, "X"), "acme X")
+        self.assertEqual(main_scoped_name({"namespace": "acme", "tenancy": "dedicated"}, "X"), "X")
+        plan = generate({"namespace": "zeta", "name": "Acme Estate", "tenancy": "dedicated"})
+        names = [o["attrs"]["name"] for o in plan["objects"]
+                 if o["kind"] in NAMESPACED_KINDS - {"custom_field"}]
+        self.assertTrue(names)
+        self.assertFalse([n for n in names if "zeta" in n.lower()])
+        slugs = [o["attrs"]["slug"] for o in plan["objects"] if o["kind"] in ("site", "tenant")]
+        self.assertTrue(slugs and all("zeta" in slug for slug in slugs))
+
     def test_config_context_is_not_main_scoped(self):
         # get_branchable_object_types() lists extras.configcontext, so a config
         # context goes with its branch and `just retire` never looks for it.

@@ -39,7 +39,7 @@ class HospitalTests(unittest.TestCase):
         for obj in monitors+modalities:
             self.assertEqual(obj["refs"]["device_type"],"hardware/endpoint")
             self.assertNotIn("Reference",obj["attrs"]["description"])
-            self.assertIn("no clinical function",obj["attrs"]["comments"])
+            self.assertNotIn("comments",obj["attrs"])  # limitations live in the docs, not the record
             ip = actual[obj["refs"]["primary_ip4"]]
             self.assertEqual(ip["refs"]["assigned_object"],f"{obj['key']}/if/eth0")
         cameras = [obj for obj in actual.values() if obj["kind"] == "device" and obj["refs"]["role"] == "role/camera"]

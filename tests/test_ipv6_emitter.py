@@ -72,7 +72,7 @@ class IPv6EmitterTests(unittest.TestCase):
                     self.assertEqual(world.obj("ipv6/aggregate")["refs"], {"rir": "rir/arin"})
                     continue
                 rir = world.obj("ipv6/rir")["attrs"]
-                self.assertEqual(rir["name"], "IPv6 documentation registry")
+                self.assertEqual(rir["name"], "IPv6 allocations")
                 self.assertEqual(rir["slug"], f"{world.recipe['namespace']}-ipv6-docs")
                 self.assertFalse(rir["is_private"])
                 self.assertEqual(world.obj("ipv6/aggregate")["refs"], {"rir": "ipv6/rir"})

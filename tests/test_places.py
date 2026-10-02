@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 
 from estates.generate import generate
 from estates.model import DesignError, World
-from estates.places import (ANCHORS, CAMPUSES, JITTER_LAT, JITTER_LON, STREETS, arrange, foundation,
-                            locate, place_endpoint)
+from estates.places import (ADDRESS_STREETS, ANCHORS, CAMPUSES, CHICAGO_GRID, FLAT_KINDS, JITTER_LAT,
+                            JITTER_LON, STREETS, arrange, clli_place, foundation, locate, place_endpoint)
 
 # Conservative (lat, lon) exclusion polygons: Lake Michigan off Chicago and
 # Milwaukee, Lake Erie off Cleveland, and for Detroit Lake St. Clair, the
@@ -218,6 +218,53 @@ class SiteGeographyTests(unittest.TestCase):
                              if any(f" {n.lower()} " in f" {attrs['name'].lower()} " for n in a[0])]
                     if named and plan["recipe"]["profile"] != "university-campus":
                         self.assertTrue(any(a in named for a in anchors), attrs["name"])
+                    # The street is a real street of the anchor the site sits on,
+                    # and a Chicago grid direction agrees with the coordinate.
+                    number, _, street = attrs["physical_address"].split("\n")[0].partition(" ")
+                    self.assertTrue(number.isdecimal() and int(number) > 0, attrs["physical_address"])
+                    direction, _, rest = street.partition(" ")
+                    pools = {name for a in anchors for name in ADDRESS_STREETS[(a[1], a[0][0])]}
+                    if locality == "Chicago" and direction in {"North", "South", "East", "West"}:
+                        self.assertTrue(any(name.partition(" ")[2] == rest for name in pools), street)
+                        lat0, lon0 = CHICAGO_GRID[:2]
+                        self.assertEqual(direction in {"North", "East"},
+                                         (lat >= lat0) if direction in {"North", "South"} else (lon >= lon0), street)
+                    else:
+                        self.assertIn(street, pools)
+            sites = [o for o in plan["objects"] if o["kind"] == "site"]
+            facilities = [o["attrs"]["facility"] for o in sites]
+            self.assertEqual(len(set(facilities)), len(facilities), path.name)
+
+    def test_every_anchor_has_real_streets_and_codes_have_their_shape(self):
+        keys = {(anchor[1], anchor[0][0]) for anchors in ANCHORS.values() for anchor in anchors}
+        self.assertEqual(set(ADDRESS_STREETS), keys)
+        self.assertTrue(all(ADDRESS_STREETS.values()))
+        self.assertEqual([clli_place(*args) for args in (("Chicago", "IL"), ("Detroit", "MI"), ("West Allis", "WI"),
+                                                          ("Troy", "MI"))], ["CHCGIL", "DTRTMI", "WSTLWI", "TRYRMI"])
+
+    def test_flat_premises_carry_no_pass_through_levels_and_pops_are_suites(self):
+        plan = generate({"profile": "provider-backbone"})
+        objects = {o["key"]: o for o in plan["objects"]}
+        kinds = {c["site"]: c["kind"] for c in plan["contracts"]}
+        for location in (o for o in plan["objects"] if o["kind"] == "location"):
+            kind = kinds[location["refs"]["site"]]
+            self.assertIn(kind, FLAT_KINDS)
+            self.assertNotIn(location["meta"]["space_type"], {"building", "floor"})
+        for pop in (key for key, kind in kinds.items() if kind == "pop"):
+            sid = pop.removeprefix("site/")
+            cage, suite = objects[f"location/{sid}"], objects[f"location/{sid}/suite"]
+            self.assertEqual(cage["refs"]["parent"], suite["key"])
+            self.assertRegex(suite["attrs"]["name"], r"^Suite [2-9]\d\d$")
+            self.assertRegex(cage["attrs"]["name"], r"^Cage [A-H]\d\d$")
+            self.assertRegex(objects[pop]["attrs"]["facility"], r"^[A-Z]{4}(IL|MI|OH|WI)[A-Z0-9]{2}$")
+        # Failing mutation: a flat premises room cannot hang from another room.
+        from estates.validate import validate
+        customer = next(key for key, kind in kinds.items() if kind == "customer").removeprefix("site/")
+        objects[f"location/{customer}/office-01"]["refs"]["parent"] = f"location/{customer}"
+        self.assertIn("location-floor", {f["code"] for f in validate(plan)})
+        # A multi-floor kind keeps its building and floors.
+        school = generate({"profile": "school-district"})
+        self.assertTrue(any(o["kind"] == "location" and o["meta"]["space_type"] == "building" for o in school["objects"]))
 
 
 if __name__ == "__main__":

@@ -22,9 +22,11 @@ Two buckets, and the split is load-bearing:
   namespaces coexist there by design, the loader's allowlist requires their
   plain-attribute identities to be disjoint from the plan, and ``just retire``
   selects them by an exact ``"<namespace> …"`` match (see
-  ``estates/branch.py`` EXACT_RETIREMENT_NAMES).  A clean name would make two
+  ``estates/branch.py`` RETIREMENT_LABELS).  A clean name would make two
   estates collide on one main and would strand rows that retirement can no
-  longer find.
+  longer find.  The exception is a recipe with ``tenancy = "dedicated"``: one
+  estate owns the tenant, so ``main_scoped_name`` drops the prefix and
+  retirement matches the bare labels exactly instead.
 * Everything else is branch- or estate-scoped.  The loader's fresh-load
   occupancy gate already refuses a second estate in one scope, so a clean
   display name cannot collide in practice even for the families NetBox holds
@@ -41,6 +43,7 @@ for three releases.
 """
 
 import ipaddress
+import re
 
 # Kinds whose ``name`` IS a cross-estate identity rather than a label, so the
 # namespace has to stay in it.  Each entry needs a reason, not a convenience:
@@ -63,6 +66,24 @@ NAMESPACED_KINDS = frozenset({
     "export_template", "webhook", "event_rule",
     "custom_field", "custom_field_choice_set", "custom_link",
 })
+
+
+def dedicated(recipe):
+    """``tenancy = "dedicated"``: one estate owns the whole tenant."""
+    return recipe.get("tenancy") == "dedicated"
+
+
+def main_scoped_name(recipe, label):
+    """The ``name`` of one ``NAMESPACED_KINDS`` record.
+
+    Shared tenancy (the default) prefixes ``"<namespace> "`` so estates coexist
+    on one main.  A dedicated tenant drops it: nothing else can coexist there
+    (the fresh-load occupancy gate), so the prefix is only noise in the UI.
+    Retirement then matches the bare labels exactly
+    (``estates/branch.py`` RETIREMENT_LABELS).  ``custom_field`` names are an
+    identifier, not a label, and keep the namespace in both modes.
+    """
+    return label if dedicated(recipe) else f"{recipe['namespace']} {label}"
 
 # Tokens whose conventional casing a naive .title() would destroy.
 _ACRONYMS = {
@@ -280,3 +301,26 @@ def prefix_role(key, prefix, vrf, vlan):
     if parts[:2] == ["vrf", "customer"] and len(parts) == 3:
         return "customer"
     return segment_role(parts[-1])
+
+
+# Records carry operational text only (0.16.0).  Both showcase reviewers called
+# per-record disclaimers ("documentation inventory…", "no … is claimed",
+# "fictional", "placeholder") the loudest synthetic tell, so the modeling
+# limitations live in docs/modeling.md and the generated report instead, and
+# this pattern refuses them on any emitted string attribute.  The substantive
+# guards (inert webhook, closed BGP kind/field set, no session state) are
+# enforced as structure by their own validators, never by prose.
+DISCLAIMER = re.compile(
+    r"\b(?:not verified|unverified|claim(?:s|ed)?|asserted|placeholder|fictional|synthetic"
+    r"|generator|authored|planning intent|inventory (?:only|intent)|(?:reference|documentation"
+    r"|documented|service) inventory|documentation registry|not executed|is executed|recorded as executed|does not record"
+    r"|is represented|not modell?ed|modell?ed|unknown|nothing is configured|is configured"
+    r"|not configured|never applied)\b", re.I)
+
+
+def disclaimer(obj):
+    """The first disclaimer phrase in one object's string attributes, or None."""
+    for value in obj.get("attrs", {}).values():
+        if isinstance(value, str) and (found := DISCLAIMER.search(value)):
+            return found.group(0)
+    return None

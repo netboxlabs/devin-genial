@@ -54,7 +54,7 @@ class OperationsContextTests(unittest.TestCase):
             if remote["kind"] == "provider_network":
                 expected = (f"Circuit: {data['cid']}\nA termination: {local['attrs']['name']}\n"
                     f"Z network boundary: {remote['attrs']['name']}\nA handoff: {rate_kbps(a['attrs']['port_speed'])}\n"
-                    f"Recorded service date: {data['install_date']}\nRemote interface and owner: unknown.\n"
+                    f"Recorded service date: {data['install_date']}\nRemote side: upstream carrier network.\n"
                     "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
                 self.assertNotIn("Z handoff:", note["attrs"]["comments"])
             else:
@@ -85,7 +85,7 @@ class OperationsContextTests(unittest.TestCase):
         mutations = (("A termination: ", "A termination: wrong "),
                      ("Z network boundary: ", "Z network boundary: wrong "),
                      ("A handoff: 10 Gbps", "A handoff: 1 Gbps"),
-                     ("Remote interface and owner: unknown.", "Remote interface and owner: transit-router xe-0/0/0."),
+                     ("Remote side: upstream carrier network.", "Remote interface and owner: transit-router xe-0/0/0."),
                      ("the Z record identifies an external network boundary.", "both local physical handoffs are installed."))
         for before, after in mutations:
             plan, objects = self.provider_plan()
