@@ -37,6 +37,12 @@ up() {
   mkdir -p "$WORK"
   cp -R "$out"/. "$WORK"/
   cd "$WORK"
+  # A re-render can change the node set; containerlab refuses to redeploy a
+  # same-named lab from a changed topology, so destroy by name first.
+  # (containerlab only recognizes nodes from the topology it parses, so a
+  # renamed node set is invisible to `destroy`: remove by the lab label.)
+  sudo docker ps -aq --filter "label=containerlab=$LAB" | xargs -r sudo docker rm -f >/dev/null
+  sudo rm -rf "clab-$LAB"
   sudo containerlab deploy -t "$LAB.clab.yml" --reconfigure
   # containerlab randomises the second byte of every SR Linux base MAC per
   # deploy; NetBox records carry the rendered MACs, so pin them and restart
@@ -71,6 +77,13 @@ dry_run() {
   sudo rm -rf "$WORK/orb/out"
   cp "$out/agent.dry-run.json" "$WORK/orb/agent.yaml"
   docker rm -f "$LAB-dry-run" >/dev/null 2>&1 || true
+  # The fleet agent and the dry-run agent both bind 127.0.0.1:8072 on the host
+  # network: pause the fleet agent for the dry run, resume it afterwards.
+  paused=""
+  if docker ps --format '{{.Names}}' | grep -qx "$LAB-orb-agent"; then
+    docker stop -t 30 "$LAB-orb-agent" >/dev/null && paused=1
+  fi
+  trap '[ -z "$paused" ] || docker start "$LAB-orb-agent" >/dev/null' RETURN
   # Same credential path as the fleet job: the password is a Vault reference.
   docker run -d --name "$LAB-dry-run" --net=host --env-file "$WORK/vault.env" -v "$WORK/orb:/opt/orb" \
     "$ORB_IMAGE" run -c /opt/orb/agent.yaml >/dev/null

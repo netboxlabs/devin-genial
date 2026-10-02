@@ -303,3 +303,15 @@ The host also runs `netbox-generator`, another 8 GiB VM.
 - `render.py` reads the lab from the plan (`from_plan`) and writes
   `lab-slice.json` as a copy of the plan's lab records. It never re-derives
   them.
+
+### Re-rendering and checking a running lab (learned 2026-10-02)
+
+- `discovery-lab-up` removes the previous lab's containers by their
+  `containerlab=genial-discovery` label before deploying: containerlab only
+  recognises nodes named in the topology it parses, so a re-render that renames
+  nodes left the old routers running and starved the VM of memory.
+- `discovery-lab-check` pauses the Fleet agent for the dry run and resumes it:
+  both agents bind `127.0.0.1:8072` on the host network.
+- Showcase result on the final 0.16 plan: clean render 0 deviations; drifted
+  render exactly the 6 predicted, 0 unexpected, 0 missing.
+
