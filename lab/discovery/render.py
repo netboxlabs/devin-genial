@@ -1,19 +1,17 @@
-"""Render a real-discovery lab from a provider plan.json.
+"""Render a real-discovery lab from a provider plan.json that carries one.
 
     python3 lab/discovery/render.py PLAN OUT            # write the lab
     python3 lab/discovery/render.py --check OUT DRYRUN  # diff an orb-agent dry run
 
-The lab is a small staging replica of the first PoP in the permanent
-``provider-pop-order`` ledger: its PE pair plus the first-ordered backbone
-neighbour of PE A (and, with ``--nodes 4``, of PE B), as Nokia SR Linux
-containers wired exactly as those routers are wired to each other in the plan.
-Real discovery of an SR Linux container must report a Nokia 7220 IXR-D2L, so
-the lab is NOT matched against
-the Juniper MX204 records it mirrors. It is its own clearly labelled slice -
-``lab-slice.json``, written in the plan's own object grammar - in a Network Lab
-room at the NOC site, whose every record says what discovery will truly find.
-The only intended differences are the documented ``drift.json`` items, which
-``--check`` proves against the agent's own dry-run output.
+The lab records come FROM THE PLAN: a provider recipe with ``discovery_lab =
+true`` makes the generator (``estates/discovery_lab.py``) emit a Network Lab
+room at the NOC holding Nokia 7220 IXR-D2L lab routers that mirror the wiring
+of the first PoP in the permanent ``provider-pop-order`` ledger, independently
+checked by ``validate_provider.discovery_lab``. This script only turns those
+records into what runs them - the containerlab topology, SR Linux startup
+configs and the orb-agent policy - plus ``lab-slice.json``, the plan's own lab
+records, which ``--check`` compares with the agent's dry-run output. The only
+intended differences are the documented ``drift.json`` items.
 
 Stdlib only. Nothing here contacts a NetBox target.
 """
@@ -28,35 +26,21 @@ from pathlib import Path
 
 LAB = "genial-discovery"
 SRL_IMAGE = "ghcr.io/nokia/srlinux:26.7.2"  # sha256:0096fe3e...b48be8, arm64+amd64
-SRL_VERSION = "v26.7.2"
-# Reported by the containerised SR Linux itself (``show version``), observed in
-# an orb-agent 2.15.0 dry run: these are what discovery will compare.
-MODEL, MANUFACTURER, SERIAL = "7220 IXR-D2L", "Nokia", "Sim Serial No."
-PLATFORM = f"NOKIA_SRL {SRL_VERSION}"
+MANUFACTURER = "Nokia"
+LAB_ROLE = "role/lab-router"
 USERNAME, PASSWORD = "admin", "NokiaSrl1!"  # containerlab's documented SR Linux default
 VAULT_REFERENCE = f"secret//{LAB}/srl/password"  # KV-v2 mount // path / key, seeded by vm.sh
-# 7220 IXR-D2L front panel, per netbox-community/devicetype-library
-# device-types/Nokia/7220-IXR-D2L-25-100GE.yaml: 48x SFP28, 8x QSFP28, 2x SFP+.
-PORTS = ([(n, "25gbase-x-sfp28", 25_000_000) for n in range(1, 49)]
-         + [(n, "100gbase-x-qsfp28", 100_000_000) for n in range(49, 57)]
-         + [(n, "10gbase-x-sfpp", 10_000_000) for n in range(57, 59)])
-INTERFACE_PATTERNS = [  # discovery defaults that type ports as the hardware above
+INTERFACE_PATTERNS = [  # discovery defaults that type ports as the 7220 IXR-D2L front panel
     {"match": r"^ethernet-1/(49|5[0-6])$", "type": "100gbase-x-qsfp28"},
     {"match": r"^ethernet-1/5[78]$", "type": "10gbase-x-sfpp"},
     {"match": r"^ethernet-1/\d+$", "type": "25gbase-x-sfp28"},
     {"match": r"^mgmt0$", "type": "1000base-t"},
     {"match": r"^system0$", "type": "virtual"},  # the driver reports this loopback as "other"
 ]
-# RFC 2544 benchmarking space: reserved for network-device test labs and
-# disjoint from every estate pool (10.0.0.0/8, 2001:db8::/32).
-LAB_POOL = ipaddress.ip_network("198.18.0.0/15")
-MGMT = ipaddress.ip_network("198.18.0.0/24")
+# Drift addresses stay inside the generator's lab blocks (estates/discovery_lab.py).
 LINKS = ipaddress.ip_network("198.19.0.0/24")
 LOOPBACKS = ipaddress.ip_network("198.19.255.0/24")
-ROLE_COLOR = "ff6f00"
-HONESTY = ("Software lab: a Nokia SR Linux container emulating this chassis under containerlab. "
-           "No physical hardware, optics or production traffic; it mirrors the wiring of the "
-           "production routers named in its description, not their hardware or addressing.")
+MGMT = ipaddress.ip_network("198.18.0.0/24")
 
 
 def natural(text):
@@ -68,103 +52,50 @@ def require(condition, message):
         sys.exit(f"discovery lab: {message}")
 
 
-# --------------------------------------------------------------------------- selection
+# --------------------------------------------------------------------------- read the plan
 
-def select(plan, size=3):
-    """``size`` (3 or 4) production PEs and the /31 links among them, read from the plan."""
+def lab_objects(plan):
+    """The plan's own lab records, exactly as the generator emitted them."""
+    return [o for o in plan["objects"] if o["meta"].get("discovery_lab")]
+
+
+def from_plan(plan):
+    """Nodes and links as the renderers below need them, read from the plan's lab records."""
     objects = {o["key"]: o for o in plan["objects"]}
-    order = plan.get("reservations", {}).get("provider-pop-order")
-    require(order, "plan has no provider-pop-order ledger; only the provider profile is supported")
-    pes = {k for k, o in objects.items()
-           if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"}
-    pop_of = {k: objects[k]["refs"]["site"].removeprefix("site/pop-") for k in pes}
-    # Routed adjacency from the addresses themselves: a /31 with one PE
-    # interface on each end, independent of how cables or circuits model it.
-    ends = {}
-    for o in plan["objects"]:
-        if o["kind"] != "ip_address":
-            continue
-        address = ipaddress.ip_interface(o["attrs"]["address"])
-        iface = objects.get(o["refs"].get("assigned_object"), {})
-        if address.version == 4 and address.network.prefixlen == 31 and iface.get("kind") == "interface":
-            ends.setdefault(address.network, []).append((iface["refs"]["device"], iface["key"]))
-    links = sorted((sorted(pair) for pair in ends.values()
-                    if len(pair) == 2 and all(d in pes for d, _ in pair)), key=str)
-
-    rank = lambda dev: (order.get(pop_of[dev], 1 << 30), natural(dev))
-    first = min(order, key=order.get)
-    nodes = sorted((d for d in pes if pop_of[d] == first), key=rank)
-    require(len(nodes) == 2, f"PoP {first} does not have a PE pair")
-    for anchor in list(nodes)[:size - 2]:
-        neighbours = sorted({d for pair in links for d, _ in pair
-                             if anchor in (pair[0][0], pair[1][0]) and d != anchor and d not in nodes},
-                            key=rank)
-        require(neighbours, f"{anchor} has no PE neighbour outside its PoP")
-        nodes.append(neighbours[0])
-    chosen = set(nodes)
-    lab_links = [pair for pair in links if pair[0][0] in chosen and pair[1][0] in chosen]
-    return objects, nodes, lab_links
-
-
-def noc_site(plan, objects):
-    """The first site in the data-centre site group: the provider's NOC campus."""
-    sites = sorted(k for k, o in objects.items()
-                   if o["kind"] == "site" and str(o["refs"].get("group", "")).endswith("/dc"))
-    require(sites, "plan has no data-centre (NOC) site")
-    site = sites[0]
-    rooms = sorted(k for k, o in objects.items()
-                   if o["kind"] == "location" and o["refs"].get("site") == site
-                   and o["meta"].get("space_type") == "floor")
-    require(rooms, f"{site} has no floor location to hold the lab room")
-    return site, rooms[0]
-
-
-# --------------------------------------------------------------------------- model
-
-def build(plan, size=3):
-    objects, prod_nodes, prod_links = select(plan, size)
-    ns = plan["recipe"]["namespace"]
-    site, floor = noc_site(plan, objects)
-    site_stem = site.removeprefix("site/")
-    salt = int(hashlib.sha256(f"{LAB}/{ns}".encode()).hexdigest(), 16) % 256
-
-    nodes = []
-    for index, prod in enumerate(prod_nodes):
-        name = "lab-" + objects[prod]["attrs"]["name"]
-        require(len(name) <= 63, f"lab hostname {name} exceeds 63 characters")
-        nodes.append({"index": index, "prod": prod, "prod_name": objects[prod]["attrs"]["name"],
-                      "name": name, "key": f"device/{site_stem}/network-lab/{name}",
-                      "mgmt": f"{MGMT[11 + index]}/{MGMT.prefixlen}",
-                      "loopback": f"{LOOPBACKS[1 + index]}/32",
-                      "base_mac": f"1a:{salt:02x}:{index:02x}:00:00:00", "ports": {}})
-    by_prod = {n["prod"]: n for n in nodes}
-
-    # Map each mirrored production port onto the next free front-panel port of
-    # the same speed class, in natural production-interface order per node.
-    free = {n["name"]: {"fast": list(range(49, 57)), "slow": list(range(1, 49))} for n in nodes}
-    ports = {}
-    for node in nodes:
-        mine = sorted((iface for pair in prod_links for dev, iface in pair if dev == node["prod"]),
-                      key=natural)
-        for iface in mine:
-            speed = objects[iface]["attrs"].get("speed") or 0
-            pool = free[node["name"]]["fast" if speed >= 100_000_000 else "slow"]
-            require(pool, f"{node['name']} has no free port for {iface}")
-            ports[iface] = (node, f"ethernet-1/{pool.pop(0)}")
-
+    devices = sorted((o for o in objects.values() if o["kind"] == "device" and o["refs"].get("role") == LAB_ROLE),
+                     key=lambda o: o["attrs"]["position"])
+    require(devices, "plan has no network lab; set discovery_lab = true in the provider recipe and regenerate")
+    ports = {(o["refs"]["device"], o["attrs"]["name"]): o for o in objects.values() if o["kind"] == "interface"}
+    address = {o["refs"]["assigned_object"]: o["attrs"]["address"]
+               for o in objects.values() if o["kind"] == "ip_address"}
+    name = lambda key: objects[key]["attrs"]["name"]
+    nodes, by_key = [], {}
+    for index, device in enumerate(devices):
+        key = device["key"]
+        mac = objects[ports[(key, "mgmt0")]["refs"]["primary_mac_address"]]["attrs"]["mac_address"]
+        node = {"index": index, "key": key, "name": device["attrs"]["name"],
+                "prod": device["meta"]["mirrors"], "prod_name": name(device["meta"]["mirrors"]),
+                "mgmt": objects[device["refs"]["primary_ip4"]]["attrs"]["address"],
+                "loopback": address[ports[(key, "system0.0")]["key"]],
+                "base_mac": mac.lower(), "ports": {}}
+        nodes.append(node)
+        by_key[key] = node
+    cables = sorted((o for o in objects.values() if o["kind"] == "cable"
+                     and objects[o["refs"]["a"]]["refs"].get("device") in by_key), key=lambda o: o["attrs"]["label"])
     links = []
-    for number, ((a_dev, a_if), (b_dev, b_if)) in enumerate(prod_links):
-        net = list(LINKS.subnets(new_prefix=31))[number]
-        (a_node, a_port), (b_node, b_port) = ports[a_if], ports[b_if]
-        links.append({"a": (a_node["name"], a_port), "b": (b_node["name"], b_port), "prefix": str(net),
-                      "mirrors": [objects[a_if]["key"], objects[b_if]["key"]]})
-        a_node["ports"][a_port] = {"peer": f"{b_node['name']} / {b_port}", "ip": f"{net[0]}/31"}
-        b_node["ports"][b_port] = {"peer": f"{a_node['name']} / {a_port}", "ip": f"{net[1]}/31"}
-    for node in nodes:
-        for port in node["ports"].values():
-            port["description"] = f"To {port['peer']}"
-    return {"namespace": ns, "site": site, "floor": floor, "nodes": nodes, "links": links,
-            "site_name": objects[site]["attrs"]["name"]}
+    for cable in cables:
+        a, b = (objects[cable["refs"][side]] for side in ("a", "b"))
+        ends = [(by_key[i["refs"]["device"]], i["attrs"]["name"]) for i in (a, b)]
+        for (node, port), (peer, peer_port), iface in ((ends[0], ends[1], a), (ends[1], ends[0], b)):
+            node["ports"][port] = {"peer": f"{peer['name']} / {peer_port}",
+                                   "ip": address[ports[(node["key"], f"{port}.0")]["key"]],
+                                   "description": iface["attrs"]["description"]}
+        links.append({"a": (ends[0][0]["name"], ends[0][1]), "b": (ends[1][0]["name"], ends[1][1]),
+                      "prefix": str(ipaddress.ip_interface(ends[0][0]["ports"][ends[0][1]]["ip"]).network),
+                      "mirrors": cable["meta"]["mirrors"]})
+    first = devices[0]["refs"]
+    return {"namespace": plan["recipe"]["namespace"], "nodes": nodes, "links": links,
+            "site_name": name(first["site"]), "room": name(first["location"]), "role": name(LAB_ROLE)}
 
 
 def drift(lab):
@@ -195,108 +126,6 @@ def drift(lab):
          "ip": f"{extra[0]}/31", "description": "Traffic generator - not yet patched",
          "story": "A spare 25G port was enabled and addressed for a traffic generator and never recorded."},
     ]
-
-
-def slice_objects(lab):
-    """The lab in the plan's own object grammar (kind/key/attrs/refs/meta)."""
-    ns, site, stem = lab["namespace"], lab["site"], lab["site"].removeprefix("site/")
-    room, rack = f"location/{stem}/network-lab", f"rack/{stem}/network-lab/lab-01"
-    out = [
-        {"kind": "manufacturer", "key": "manufacturer/Nokia", "attrs": {"name": MANUFACTURER, "slug": "nokia"},
-         "refs": {}, "meta": {}},
-        {"kind": "device_type", "key": "hardware/lab-router", "refs": {"manufacturer": "manufacturer/Nokia"},
-         "attrs": {"model": MODEL, "slug": "nokia-7220-ixr-d2l", "part_number": "3HE17645AA", "u_height": 1,
-                   "is_full_depth": True,
-                   "comments": "Model string as reported by SR Linux `show version`. Ports follow "
-                               "netbox-community/devicetype-library Nokia/7220-IXR-D2L-25-100GE.yaml."},
-         "meta": {"source": "SR Linux 26.7.2 container; devicetype-library"}},
-        {"kind": "platform", "key": "platform/lab-srl", "refs": {"manufacturer": "manufacturer/Nokia"},
-         "attrs": {"name": PLATFORM, "slug": "nokia-srl-" + SRL_VERSION.lstrip("v").replace(".", "-"),
-                   "description": "Nokia SR Linux; name exactly as Orb device discovery reports it"},
-         "meta": {}},
-        {"kind": "device_role", "key": "role/lab-router", "refs": {}, "meta": {},
-         "attrs": {"name": "Lab Router", "slug": f"{ns}-lab-router", "color": ROLE_COLOR,
-                   "description": "Isolated staging router; never carries customer traffic"}},
-        {"kind": "location", "key": room, "meta": {"space_type": "lab"},
-         "refs": {"site": site, "parent": lab["floor"], "tenant": "tenant"},
-         "attrs": {"name": "Network Lab", "slug": f"{ns}-{stem}-network-lab", "status": "active",
-                   "description": "Isolated software-staging lab; containerised network OS, no production links"}},
-        {"kind": "rack", "key": rack, "meta": {},
-         "refs": {"site": site, "location": room, "role": "rack-role/network", "tenant": "tenant"},
-         "attrs": {"name": "L01", "facility_id": "L01", "status": "active", "u_height": 24, "width": 19,
-                   "form_factor": "4-post-cabinet", "asset_tag": f"{ns}-{stem}-lab-01",
-                   "description": "Lab server cabinet hosting the containerlab VM"}},
-        {"kind": "prefix", "key": "prefix/lab/pool", "refs": {"tenant": "tenant"}, "meta": {},
-         "attrs": {"prefix": str(LAB_POOL), "status": "container",
-                   "description": "RFC 2544 benchmarking space reserved for the isolated network lab"}},
-        {"kind": "prefix", "key": "prefix/lab/management", "refs": {"tenant": "tenant"}, "meta": {},
-         "attrs": {"prefix": str(MGMT), "status": "active", "description": "Network lab out-of-band management"}},
-    ]
-    for link in lab["links"]:
-        out.append({"kind": "prefix", "key": f"prefix/lab/link/{link['prefix']}", "refs": {"tenant": "tenant"},
-                    "meta": {"mirrors": link["mirrors"]},
-                    "attrs": {"prefix": link["prefix"], "status": "active",
-                              "description": "Network lab point-to-point link"}})
-    for node in lab["nodes"]:
-        dev, base = node["key"], bytes.fromhex(node["base_mac"].replace(":", ""))
-
-        def mac(last, chassis=True):
-            raw = base[:3] + bytes([0xFF if chassis else 0, 0, last])
-            return ":".join(f"{b:02X}" for b in raw)
-
-        def iface(name, attrs, refs=None, mac_address=None):
-            key = f"{dev}/if/{name}"
-            out.append({"kind": "interface", "key": key, "meta": {},
-                        "refs": {"device": dev, **(refs or {}),
-                                 **({"primary_mac_address": f"mac/{key}"} if mac_address else {})},
-                        "attrs": {"name": name, **attrs}})
-            if mac_address:
-                out.append({"kind": "mac_address", "key": f"mac/{key}", "meta": {},
-                            "refs": {"assigned_object": key},
-                            "attrs": {"mac_address": mac_address,
-                                      "description": "SR Linux chassis-derived interface MAC"}})
-            return key
-
-        def address(key, cidr, description):
-            out.append({"kind": "ip_address", "key": f"ip/{key}", "meta": {},
-                        "refs": {"assigned_object": key, "tenant": "tenant"},
-                        "attrs": {"address": cidr, "status": "active", "description": description}})
-
-        out.append({"kind": "device", "key": dev, "meta": {"mirrors": node["prod"], "lab_index": node["index"]},
-                    "refs": {"device_type": "hardware/lab-router", "role": "role/lab-router",
-                             "platform": "platform/lab-srl", "site": site, "location": room, "rack": rack,
-                             "tenant": "tenant", "tags": ["tag/estate"],
-                             "primary_ip4": f"ip/{dev}/if/mgmt0.0"},
-                    "attrs": {"name": node["name"], "status": "active", "serial": SERIAL, "face": "front",
-                              "position": 1 + node["index"],
-                              "description": f"Lab replica of {node['prod_name']} (SR Linux container)",
-                              "comments": HONESTY}})
-        mgmt = iface("mgmt0", {"type": "1000base-t", "mgmt_only": True, "enabled": True, "speed": 1_000_000},
-                     mac_address=mac(0, chassis=False))
-        sub = iface("mgmt0.0", {"type": "virtual", "enabled": True}, {"parent": mgmt})
-        address(sub, node["mgmt"], f"{node['name']} mgmt0.0")
-        system = iface("system0", {"type": "virtual", "enabled": True, "description": "Router ID loopback"})
-        address(iface("system0.0", {"type": "virtual", "enabled": True}, {"parent": system}),
-                node["loopback"], f"{node['name']} system0.0")
-        for number, kind, speed in PORTS:
-            name = f"ethernet-1/{number}"
-            wired = node["ports"].get(name)
-            attrs = {"type": kind, "enabled": bool(wired)}
-            if wired:
-                attrs.update(speed=speed, description=wired["description"])
-            key = iface(name, attrs, mac_address=mac(number))
-            if wired:
-                address(iface(f"{name}.0", {"type": "virtual", "enabled": True}, {"parent": key}),
-                        wired["ip"], f"{node['name']} {name}.0")
-    for link in lab["links"]:
-        (a, ap), (b, bp) = link["a"], link["b"]
-        ka = f"device/{stem}/network-lab/{a}/if/{ap}"
-        kb = f"device/{stem}/network-lab/{b}/if/{bp}"
-        out.append({"kind": "cable", "key": f"cable/{ka}--{kb}", "refs": {"a": ka, "b": kb},
-                    "meta": {"mirrors": link["mirrors"]},
-                    "attrs": {"status": "connected", "label": f"LAB-{lab['links'].index(link) + 1:02d}",
-                              "description": "containerlab veth pair; no physical medium"}})
-    return out
 
 
 # --------------------------------------------------------------------------- render
@@ -351,7 +180,7 @@ def agent_policy(lab):
 
     The password is the same Vault reference a fleet credential carries; vm.sh
     seeds that path in the lab's dev Vault."""
-    return {"config": {"defaults": {"site": lab["site_name"], "location": "Network Lab", "role": "Lab Router",
+    return {"config": {"defaults": {"site": lab["site_name"], "location": lab["room"], "role": lab["role"],
                                     "interface_patterns": INTERFACE_PATTERNS}},
             "scope": [{"hostname": n["mgmt"].split("/")[0], "username": USERNAME,
                        "password": "${vault://" + VAULT_REFERENCE + "}", "driver": "nokia_srl"}
@@ -367,10 +196,10 @@ def dry_run_agent(lab):
                     "policies": {"device_discovery": {f"{LAB}-dry-run": agent_policy(lab)}}}}
 
 
-def render(plan_path, out, size=3, clean=False):
+def render(plan_path, out, clean=False):
     """``clean`` renders the documented state with no drift (the Day-1 seeding route)."""
     plan = json.loads(Path(plan_path).read_text())
-    lab = build(plan, size)
+    lab = from_plan(plan)
     drifts = [] if clean else drift(lab)
     out = Path(out)
     (out / "configs").mkdir(parents=True, exist_ok=True)
@@ -378,7 +207,7 @@ def render(plan_path, out, size=3, clean=False):
         (out / "configs" / f"{node['name']}.cli").write_text(srl_config(node, drifts))
     (out / f"{LAB}.clab.yml").write_text(topology(lab))
     dump = lambda name, value: (out / name).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-    dump("lab-slice.json", slice_objects(lab))
+    dump("lab-slice.json", lab_objects(plan))
     dump("drift.json", drifts)
     dump("agent.dry-run.json", dry_run_agent(lab))  # YAML is a JSON superset; orb-agent reads it
     dump("manifest.json", {
@@ -503,14 +332,12 @@ def main(argv=None):
     parser.add_argument("--check", action="store_true", help="compare OUT's slice with an orb-agent dry run")
     parser.add_argument("--clean", action="store_true",
                         help="render without drift: the lab then matches lab-slice.json exactly")
-    parser.add_argument("--nodes", type=int, choices=(3, 4), default=3,
-                        help="lab size; each SR Linux container needs ~1.8 GB of VM memory")
     parser.add_argument("source", help="plan.json (render) or rendered OUT directory (--check)")
     parser.add_argument("target", help="output directory (render) or dry-run output directory (--check)")
     args = parser.parse_args(argv)
     if args.check:
         return check(args.source, args.target)
-    render(args.source, args.target, args.nodes, args.clean)
+    render(args.source, args.target, args.clean)
     return 0
 
 

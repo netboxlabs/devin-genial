@@ -343,6 +343,11 @@ for the separately recorded pinned-target live qualification.
   all documentation records; `validate_provider.py` independently re-derives
   them and refuses any record that claims configured or established routing.
   Pinned by `tests/test_provider_bgp.py`.
+- `estates/discovery_lab.py`: the provider-only network lab (`discovery_lab`
+  recipe key, off by default) — Nokia 7220 IXR-D2L lab routers in a NOC
+  Network Lab room mirroring the first PoP's wiring, which
+  `lab/discovery/render.py` reads from the plan; `validate_provider.discovery_lab`
+  checks it as a closed slice. Pinned by `tests/test_discovery_lab.py`.
 - `estates/retail.py`: store-format fleet, distribution centres and shared commerce
   services; `validate_retail.py`: independent format, segment, radio and WAN checks.
 - `estates/university.py`: one campus of keyed academic buildings, residence halls
@@ -405,10 +410,11 @@ for the separately recorded pinned-target live qualification.
   only on the pinned local 4.7.1 stack; Cloud/Enterprise remain unqualified.
 - [lab/README.md](lab/README.md): disposable Colima/Compose target and live checks.
 - [lab/discovery/README.md](lab/discovery/README.md): real-discovery lab — the
-  provider's first PoP rendered as SR Linux containers (own `genial-discovery`
-  Colima VM) for a real orb-agent; the lab is its own honestly-typed slice, never
-  matched against the MX204 records it mirrors. `render.py --check` proves an
-  orb-agent dry run differs only by its documented `drift.json`.
+  plan's own network lab (`discovery_lab = true`) rendered as SR Linux containers
+  (own `genial-discovery` Colima VM) for a real orb-agent; the lab is its own
+  honestly-typed slice, never matched against the MX204 records it mirrors.
+  `render.py --check` proves an orb-agent dry run differs only by its documented
+  `drift.json`.
 
 ## Design boundaries
 
@@ -610,6 +616,21 @@ for the separately recorded pinned-target live qualification.
   The three `netbox_bgp` models have no Diode SDK entity, so they are
   `LOADER_ONLY_KINDS` delivered only by `just load`, over the REST create path.
   Live loading of these plugin models is unqualified; see docs/loading.md.
+- The provider network lab (`estates/discovery_lab.py`, `discovery_lab` recipe
+  key, off by default, since 0.16.0) is a staging replica, never the production
+  routers: Nokia 7220 IXR-D2L records whose model, serial (`Sim Serial No.`)
+  and platform (`NOKIA_SRL v26.7.2`) are exactly what the SR Linux container
+  reports, so real discovery matches them, with comments naming the production
+  router each mirrors. It lives in a NOC `Network Lab` room, uses only RFC 2544
+  `198.18.0.0/15` addresses with no VRF, and carries no circuit, BGP session,
+  power, console or production cable. It is selected from the permanent
+  `provider-pop-order` ledger and cabled from the finished graph's routed /31
+  adjacencies, never invented. `validate_provider.discovery_lab` checks it as a
+  closed slice by role, references and addresses (never meta), then removes it
+  so production checks see the estate exactly as with the lab off; extend that
+  check and its failing mutations rather than exempting lab records elsewhere.
+  `lab/discovery/render.py` reads the lab FROM THE PLAN — never re-derive it
+  there. Enabling, disabling or resizing the lab requires a new baseline.
 - Shared DC power checks derive hardware and supply allowances from actual
   device-type references; removing descriptive hardware metadata cannot skip them.
   A PDU's own input port carries the totalled draw of the inlets cabled to its

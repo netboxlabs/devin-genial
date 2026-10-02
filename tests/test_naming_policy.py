@@ -264,6 +264,8 @@ class NameUniquenessAcrossProfiles(unittest.TestCase):
         for path in sorted(PROFILES.glob("*.toml")):
             with path.open("rb") as handle:
                 recipe = tomllib.load(handle)
+            if recipe.get("profile") == "provider-backbone":
+                recipe["discovery_lab"] = True  # sweep the optional network lab's records too
             cls.plans[path.name] = generate(recipe)
             # The same estate under a namespace no authored word can equal.
             moved = dict(recipe, namespace="qq7")

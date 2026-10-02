@@ -91,6 +91,19 @@ def _speed(port_type):
 
 def validate(plan):
     """Return stable ``{code, object, message}`` findings; never mutate the plan."""
+    lab = []
+    if (isinstance(plan, dict) and isinstance(plan.get("recipe"), dict)
+            and plan["recipe"].get("profile") == "provider-backbone" and isinstance(plan.get("objects"), list)
+            and all(isinstance(o, dict) and isinstance(o.get("key"), str) and isinstance(o.get("kind"), str)
+                    and all(isinstance(o.get(f), dict) for f in ("attrs", "refs", "meta")) for o in plan["objects"])):
+        # The provider's optional network lab is checked as its own closed
+        # slice; every other check then sees the estate without it.
+        from .validate_provider import discovery_lab
+        lab, plan = discovery_lab(plan, {"models": _catalog()})
+    return sorted(lab + _validate(plan), key=lambda item: (item["code"], str(item["object"]), item["message"]))
+
+
+def _validate(plan):
     findings = []
 
     def report(code, key, message):

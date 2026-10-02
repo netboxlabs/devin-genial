@@ -365,6 +365,18 @@
     "generic-design-v1": {
       "url": "README.md#generic-equipment",
       "purpose": "Generic, unbranded equipment authored for this project: wired endpoints, ATMs, the liquid-cooled laboratory pair and third-party optics. Dimensions, ports and supplies are explicit design assumptions, not a vendor product."
+    },
+    "lab-router-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Nokia/7220-IXR-D2L-25-100GE.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "6759fc2f09b629ee9e4c68d2e49835a12e5d3cb1ed2fe2c276afd1eb6e3bc2ee",
+      "license": "CC0-1.0"
+    },
+    "srlinux-container": {
+      "url": "https://github.com/nokia/srlinux-container-image",
+      "checked": "2026-10-01",
+      "representation": "observed-lab-output",
+      "purpose": "ghcr.io/nokia/srlinux:26.7.2 (sha256:0096fe3ebcafabb7253492e2060425fe027a168e0e066766d1e85efbb0b48be8, arm64) under containerlab 0.79.0 reports chassis type 7220 IXR-D2L, serial 'Sim Serial No.' and, through the orb-agent 2.15.0 nokia_srl driver, platform 'NOKIA_SRL v26.7.2' (lab/discovery/README.md). The catalog keeps those strings verbatim so real discovery of the lab matches its records; the devicetype-library model string '7220 IXR-D2L 25/100GE' is the labelled deviation. The container emulates no power supply, fan or optic."
     }
   },
   "hardware_lines": {
@@ -3318,6 +3330,264 @@
       "description": "Verified Opengear CM8148: 48 RJ45 serial ports, dual built-in C14 supplies, NET1/NET2 management Ethernet. NET1 is the cabled management port; NET2 stays spare.",
       "serial_format": "8148{yyww}####",
       "airflow": "passive"
+    },
+    "lab-router": {
+      "manufacturer": "Nokia",
+      "model": "7220 IXR-D2L",
+      "slug": "nokia-7220-ixr-d2l",
+      "part_number": "3HE17645AA",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "mgmt0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "ethernet-1/1",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/2",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/3",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/4",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/5",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/6",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/7",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/8",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/9",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/10",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/11",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/12",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/13",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/14",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/15",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/16",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/17",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/18",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/19",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/20",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/21",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/22",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/23",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/24",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/25",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/26",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/27",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/28",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/29",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/30",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/31",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/32",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/33",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/34",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/35",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/36",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/37",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/38",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/39",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/40",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/41",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/42",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/43",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/44",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/45",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/46",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/47",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/48",
+          "type": "25gbase-x-sfp28"
+        },
+        {
+          "name": "ethernet-1/49",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/50",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/51",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/52",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/53",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/54",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/55",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/56",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "ethernet-1/57",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "ethernet-1/58",
+          "type": "10gbase-x-sfpp"
+        }
+      ],
+      "power_ports": [],
+      "source_ids": [
+        "lab-router-chassis",
+        "srlinux-container"
+      ],
+      "description": "Software emulation only: a Nokia SR Linux container standing in for a 7220 IXR-D2L in the provider's network lab (discovery_lab recipe key). Front panel follows the pinned devicetype-library file (48 SFP28, 8 QSFP28, 2 SFP+, mgmt0); model, serial and platform strings are what the container itself reports. No PSU, fan, optic or power draw is modeled.",
+      "serial_format": "Sim Serial No.",
+      "platform": {
+        "name": "NOKIA_SRL v26.7.2",
+        "slug": "nokia-srl"
+      }
     }
   },
   "optics": {

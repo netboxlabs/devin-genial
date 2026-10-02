@@ -7,7 +7,9 @@ import tempfile
 import tomllib
 import unittest
 
+from estates.discovery_lab import LAB_POOL
 from estates.generate import generate
+from estates.model import hardware_catalog
 from lab.discovery import render
 
 ROOT = Path(__file__).parents[2]
@@ -18,7 +20,8 @@ class DiscoveryLabRenderTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.plan = Path(cls.tmp.name) / "plan.json"
-        cls.plan.write_text(json.dumps(generate(tomllib.loads((ROOT / "profiles/provider-backbone.toml").read_text()))))
+        recipe = tomllib.loads((ROOT / "profiles/provider-backbone.toml").read_text()) | {"discovery_lab": True}
+        cls.plan.write_text(json.dumps(generate(recipe)))
         cls.out = Path(cls.tmp.name) / "lab"
         render.render(cls.plan, cls.out)
 
@@ -35,21 +38,39 @@ class DiscoveryLabRenderTests(unittest.TestCase):
 
     def test_lab_addresses_never_touch_the_estate(self):
         plan = json.loads(self.plan.read_text())
-        estate = [ipaddress.ip_network(o["attrs"]["prefix"]) for o in plan["objects"] if o["kind"] == "prefix"]
+        estate = [ipaddress.ip_network(o["attrs"]["prefix"]) for o in plan["objects"]
+                  if o["kind"] == "prefix" and not o["meta"].get("discovery_lab")]
         lab = json.loads((self.out / "lab-slice.json").read_text())
         for obj in lab:
             if obj["kind"] == "ip_address":
                 address = ipaddress.ip_interface(obj["attrs"]["address"])
-                self.assertIn(address, render.LAB_POOL)
+                self.assertIn(address, LAB_POOL)
                 self.assertFalse(any(address.network.overlaps(n) for n in estate if n.version == 4))
 
+    def test_the_slice_is_the_plans_own_lab_records(self):
+        plan = json.loads(self.plan.read_text())
+        slice_ = json.loads((self.out / "lab-slice.json").read_text())
+        self.assertEqual(slice_, [o for o in plan["objects"] if o["meta"].get("discovery_lab")])
+        nodes = json.loads((self.out / "manifest.json").read_text())["nodes"]
+        self.assertEqual([n["name"] for n in nodes], [o["attrs"]["name"] for o in sorted(
+            (o for o in slice_ if o["kind"] == "device"), key=lambda o: o["attrs"]["position"])])
+
+    def test_a_plan_without_the_lab_is_refused(self):
+        bare = Path(self.tmp.name) / "bare.json"
+        plan = json.loads(self.plan.read_text())
+        plan["objects"] = [o for o in plan["objects"] if not o["meta"].get("discovery_lab")]
+        bare.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(SystemExit, "discovery_lab = true"):
+            render.render(bare, Path(self.tmp.name) / "none")
+
     def test_every_lab_device_is_the_hardware_discovery_reports(self):
+        model = hardware_catalog()["models"]["lab-router"]
         lab = {o["key"]: o for o in json.loads((self.out / "lab-slice.json").read_text())}
         devices = [o for o in lab.values() if o["kind"] == "device"]
         self.assertEqual(len(devices), 3)
         for device in devices:
-            self.assertEqual(lab[device["refs"]["device_type"]]["attrs"]["model"], render.MODEL)
-            self.assertEqual(lab[device["refs"]["platform"]]["attrs"]["name"], render.PLATFORM)
+            self.assertEqual(lab[device["refs"]["device_type"]]["attrs"]["model"], model["model"])
+            self.assertEqual(lab[device["refs"]["platform"]]["attrs"]["name"], model["platform"]["name"])
             ports = [o for o in lab.values() if o["kind"] == "interface" and o["refs"]["device"] == device["key"]
                      and o["attrs"]["name"].count(".") == 0 and o["attrs"]["name"].startswith("ethernet-")]
             self.assertEqual(len(ports), 58)
@@ -64,7 +85,7 @@ class DiscoveryLabRenderTests(unittest.TestCase):
                              "device_type": {"model": "MX204", "manufacturer": {"name": "Juniper"}}}}
         (dry / "one.json").write_text(json.dumps({"entities": [entity]}))
         rows = render.predicted(self.out, dry)
-        self.assertIn(("update", "device", device["attrs"]["name"], "model", render.MODEL, "MX204"), rows)
+        self.assertIn(("update", "device", device["attrs"]["name"], "model", "7220 IXR-D2L", "MX204"), rows)
         self.assertEqual(len(render.expected(self.out)), 6)
 
 

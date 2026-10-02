@@ -946,3 +946,129 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),
                     peak=recipe["noc_peak_mbps"], reserve=recipe["reserve_fraction"], strict_sites=False, network_offsets=DC_OFFSETS, poe_watts=poe_watts, optics_watts=optics_watts))
     return findings
+
+
+# The network lab (recipe ``discovery_lab``; built by estates/discovery_lab.py),
+# restated here. It is a container lab documented beside the estate, so it is
+# validated as its own closed slice and then removed before the production
+# checks run: those see exactly the graph they would see with the lab off.
+# Membership is decided from roles, references and addresses, never from meta,
+# so a production object given the lab role must pass every lab obligation
+# below instead of escaping the production checks.
+LAB_ROLE = "role/lab-router"
+LAB_POOL = ip_network("198.18.0.0/15")
+LAB_ALIAS = "lab-router"
+
+
+def discovery_lab(plan, catalog):
+    """Return (lab findings, the production plan without the lab slice)."""
+    findings = []
+
+    def report(code, key, message):
+        findings.append({"code": code, "object": key, "message": message})
+
+    objects = {o["key"]: o for o in plan["objects"]}
+    setting = plan.get("recipe", {}).get("discovery_lab")
+    of = lambda kind: [o for o in objects.values() if o["kind"] == kind]
+    devices = {o["key"] for o in of("device") if o["refs"].get("role") == LAB_ROLE}
+    components = {o["key"] for o in objects.values() if o["refs"].get("device") in devices}
+    interfaces = {k for k in components if objects[k]["kind"] == "interface"}
+    owned = {o["key"] for o in objects.values() if o["kind"] in {"mac_address", "ip_address"}
+             and o["refs"].get("assigned_object") in interfaces}
+    cables = {o["key"] for o in of("cable") if {o["refs"].get("a"), o["refs"].get("b")} & interfaces}
+    in_pool = lambda net: net.version == 4 and net.subnet_of(LAB_POOL)
+    prefixes = {o["key"] for o in of("prefix") if in_pool(ip_network(o["attrs"]["prefix"], strict=False))}
+    used = lambda field: {objects[d]["refs"].get(field) for d in devices} - {None}
+    types, platforms, rooms, racks = used("device_type"), used("platform"), used("location"), used("rack")
+    lab = devices | components | owned | cables | prefixes | types | platforms | rooms | racks
+    lab |= {LAB_ROLE} & objects.keys()
+    # A manufacturer leaves with the lab only when no production record uses it.
+    makers = {objects.get(k, {}).get("refs", {}).get("manufacturer") for k in types | platforms} - {None} - {
+        v for k, o in objects.items() if k not in lab for v in o["refs"].values() if isinstance(v, str)}
+    lab |= makers
+    production = {k: o for k, o in objects.items() if k not in lab}
+    if bool(setting) != bool(lab):
+        report("lab-recipe", "plan", "Network lab records exist exactly when recipe discovery_lab enables them.")
+    if setting and len(devices) != setting.get("nodes"):
+        report("lab-recipe", "plan", f"discovery_lab requests {setting.get('nodes')} lab routers; found {len(devices)}.")
+
+    # Closed slice: no production record may reference a lab record. That also
+    # catches a shared platform, room or rack and any BGP session, circuit or
+    # VRF bound to a lab port. A manufacturer may be shared with production.
+    for key, obj in sorted(production.items()):
+        for value in obj["refs"].values():
+            for target in value if isinstance(value, list) else [value]:
+                if target in lab:
+                    report("lab-isolation", key, f"Production record references network lab record {target}.")
+    for key in sorted(lab - makers):
+        if objects[key]["refs"].get("vrf") or objects[key]["kind"] in {
+                "power_port", "power_outlet", "console_port", "module", "module_bay", "circuit_termination"}:
+            report("lab-isolation", key, "Network lab records carry no VRF, circuit, modeled power, console or module.")
+    for key in sorted(cables):
+        if not {objects[key]["refs"].get(side) for side in ("a", "b")} <= interfaces:
+            report("lab-isolation", key, "A network lab cable may only join two lab router ports.")
+
+    # Addresses: only RFC 2544 benchmarking space, and that space only in the lab.
+    leaves = [ip_network(objects[p]["attrs"]["prefix"]) for p in prefixes if objects[p]["attrs"].get("status") != "container"]
+    for ip in of("ip_address"):
+        address = ip_interface(ip["attrs"]["address"])
+        if (ip["key"] in owned) != in_pool(address.network):
+            report("lab-address", ip["key"], "Network lab addresses come from 198.18.0.0/15, and only the lab uses it.")
+
+    # Hardware: what the SR Linux container reports, with every front-panel port.
+    model = catalog["models"][LAB_ALIAS]
+    panel = {p["name"]: p["type"] for p in model["interfaces"]}
+    for device in sorted(devices):
+        refs, attrs = objects[device]["refs"], objects[device]["attrs"]
+        if (objects.get(refs.get("device_type"), {}).get("attrs", {}).get("model") != model["model"]
+                or attrs.get("serial") != model["serial_format"]
+                or objects.get(refs.get("platform"), {}).get("attrs", {}).get("name") != model["platform"]["name"]):
+            report("lab-hardware", device, "Lab routers carry the model, serial and platform the SR Linux container reports.")
+        mine = [objects[k] for k in interfaces if objects[k]["refs"]["device"] == device]
+        physical = {i["attrs"]["name"]: i["attrs"].get("type") for i in mine if i["attrs"].get("type") != "virtual"}
+        virtual = {i["attrs"]["name"]: i["refs"].get("parent") for i in mine if i["attrs"].get("type") == "virtual"}
+        if physical != panel or any(name != "system0" and (not name.endswith(".0") or
+                                    objects.get(parent, {}).get("attrs", {}).get("name") != name[:-2])
+                                    for name, parent in virtual.items()):
+            report("lab-hardware", device, "Lab router interfaces are the 7220 IXR-D2L front panel plus system0 and .0 subinterfaces.")
+        macs = [objects.get(i["refs"].get("primary_mac_address"), {}).get("attrs", {}).get("mac_address")
+                for i in mine if i["attrs"].get("type") != "virtual"]
+        if any(not m or not int(m.split(":")[0], 16) & 2 for m in macs):
+            report("lab-hardware", device, "Every lab router port carries its locally administered SR Linux MAC.")
+        if any(not any(ip_interface(objects[ip]["attrs"]["address"]) in net for net in leaves)
+               for ip in owned if objects[ip]["kind"] == "ip_address"
+               and objects[objects[ip]["refs"]["assigned_object"]]["refs"]["device"] == device
+               and ip_interface(objects[ip]["attrs"]["address"]).network.prefixlen < 32):
+            report("lab-address", device, "Every lab router address sits in an active lab prefix.")
+
+    # Placement: a dedicated room and rack at the NOC holding only lab routers.
+    for room in sorted(rooms):
+        if objects[room]["refs"].get("site") != "site/dc-01" or objects[room]["attrs"].get("name") != "Network Lab":
+            report("lab-placement", room, "Lab routers stand in the NOC's Network Lab room.")
+    for rack in sorted(racks):
+        if objects[rack]["refs"].get("location") not in rooms:
+            report("lab-placement", rack, "The lab rack stands in the Network Lab room.")
+
+    # Mirror: lab-<name> of the first PoP's PE pair plus backbone neighbours, wired
+    # exactly as their routed /31 adjacencies in the production graph.
+    by_name = {o["attrs"]["name"]: k for k, o in production.items() if o["kind"] == "device"}
+    mirrors = {d: by_name.get(objects[d]["attrs"]["name"].removeprefix("lab-")) for d in devices}
+    pes = {k for k, o in production.items() if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"}
+    order = plan.get("reservations", {}).get("provider-pop-order") or {"": 0}
+    first = {k for k in pes if production[k]["refs"].get("site") == f"site/pop-{min(order, key=order.get)}"}
+    ends = defaultdict(set)
+    for ip in production.values():
+        owner = production.get(ip["refs"].get("assigned_object"), {}) if ip["kind"] == "ip_address" else {}
+        address = ip_interface(ip["attrs"]["address"]) if owner.get("kind") == "interface" else None
+        if address and address.version == 4 and address.network.prefixlen == 31:
+            ends[address.network].add(owner["refs"]["device"])
+    mirrored = set(mirrors.values())
+    adjacency = Counter(frozenset(pair) for pair in ends.values() if len(pair) == 2 and pair <= mirrored)
+    if devices and (None in mirrored or not mirrored <= pes or not first <= mirrored
+                    or any(not any(frozenset((m, f)) in adjacency for f in first) for m in mirrored - first)):
+        report("lab-mirror", "plan", "Lab routers mirror the first PoP's PE pair and their backbone neighbours.")
+    wired = Counter(frozenset(mirrors.get(objects[objects[c]["refs"][side]]["refs"]["device"]) for side in ("a", "b"))
+                    for c in cables if {objects[c]["refs"].get(s) for s in ("a", "b")} <= interfaces)
+    if devices and wired != adjacency:
+        report("lab-mirror", "plan", "Lab cables follow exactly the mirrored routers' routed /31 adjacencies.")
+    return findings, {**plan, "objects": [o for o in plan["objects"] if o["key"] not in lab]}

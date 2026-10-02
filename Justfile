@@ -216,10 +216,11 @@ lab-load directory receipt compatibility='official':
 
 # Idempotent: rerun after any VM or container restart (it re-pins MACs and re-seeds Vault).
 # state=clean renders the documented state without drift (Day-1 seeding route).
-# Render the SR Linux discovery lab from a provider plan and run it in its own Colima VM
-discovery-lab-up plan out='build/discovery-lab' nodes='3' state='drift':
-    python3 lab/discovery/render.py {{quote(plan)}} {{quote(out)}} --nodes {{nodes}} {{if state == 'clean' { '--clean' } else { '' } }}
-    {{discovery_colima}} start -p genial-discovery --cpu 4 --memory {{if nodes == '4' { '10' } else { '8' } }} --disk 40 --vm-type vz --runtime docker --activate=false
+# Render the SR Linux discovery lab a provider plan carries (recipe discovery_lab) and
+# run it in its own Colima VM; a 4-node lab gets a 10 GiB VM, otherwise 8 GiB
+discovery-lab-up plan out='build/discovery-lab' state='drift':
+    python3 lab/discovery/render.py {{quote(plan)}} {{quote(out)}} {{if state == 'clean' { '--clean' } else { '' } }}
+    {{discovery_colima}} start -p genial-discovery --cpu 4 --memory "$(python3 -c 'import json,sys; print(10 if len(json.load(open(sys.argv[1]))["nodes"]) > 3 else 8)' {{quote(out / 'manifest.json')}})" --disk 40 --vm-type vz --runtime docker --activate=false
     {{discovery_vm}} up {{quote(absolute_path(out))}}
 
 # Dry-run real orb-agent discovery (no Diode writes); fail unless it differs only by drift.json
