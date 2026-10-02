@@ -37,6 +37,15 @@ class EstateHygieneTests(unittest.TestCase):
     def of(self, plan, kind):
         return [obj for obj in plan["objects"] if obj["kind"] == kind]
 
+    def test_custom_link_guard_matches_every_site(self):
+        """The link renders only when its Jinja guard is true; guard on the namespaced slug, not the authored name."""
+        for profile, plan in self.plans.items():
+            with self.subTest(profile=profile):
+                ns = plan["recipe"]["namespace"]
+                link = self.of(plan, "custom_link")[0]["attrs"]["link_text"]
+                self.assertIn("object.slug.startswith('" + ns + "-')", link)
+                self.assertTrue(all(site["attrs"]["slug"].startswith(ns + "-") for site in self.of(plan, "site")))
+
     def test_estates_validate_and_statuses_are_not_one_colour(self):
         for profile, plan in self.plans.items():
             with self.subTest(profile=profile):
