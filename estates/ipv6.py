@@ -112,7 +112,7 @@ created on a spare interface or an unmodeled far end of a circuit.
         site, vlan = refs.get("scope_site"), refs.get("vlan")
         if provider and refs.get("vrf") in PROVIDER_IPV4_ONLY_VRFS:
             continue
-        if provider and key.startswith(("prefix/dia/", "prefix/nid-management/")):
+        if provider and (key.startswith("prefix/dia/") or key.endswith("/nid-management")):
             # Customer DIA (its /29 and managed public /31) and in-band NID
             # management are IPv4-only.
             customer_lans.add((refs.get("vrf"), network))

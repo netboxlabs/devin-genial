@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from copy import deepcopy
 from decimal import Decimal
 
+from . import fibre
 from .model import DesignError, canonical, digest
 from .power_scenario import _healthy as _healthy_plan
 from .report import _cell, _table
@@ -65,14 +66,8 @@ def _graph(plan):
 
     # Passive plant: a circuit lands on a patch panel's rear port and leaves by
     # the front port mapped to it (OSP and colo demarcation panels).
-    front_of = {obj["refs"]["rear_port"]: key for key, obj in objects.items()
-                if obj["kind"] == "front_port" and obj["refs"].get("rear_port")}
-
     def trace(term):
-        key = peers.get(term)
-        while key in front_of:
-            key = peers.get(front_of[key])
-        return key
+        return fibre.far_end(objects, peers[term], peers) if term in peers else None
 
     def end(term):
         key = trace(term)

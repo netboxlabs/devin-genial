@@ -191,6 +191,9 @@ ROLE_COLORS = {
     "rtu": "00695c", "protection-relay": "ad1457", "station-gateway": "4527a0",
     "provider-edge": "5e35b1", "customer-edge": "0097a7", "nid": "00897b",
     "console-server": "455a64", "laboratory": "37474f", "stack": "283593", "lab-router": "ff6f00",
+    # PoP plant (estates/fibre.py): passive hygiene reads neutral grey beside
+    # the grey patch panels; the aggregation pair takes its own blue.
+    "aggregation": "0277bd", "cable-management": "bdbdbd",
     # VM roles
     "application": "43a047", "database": "3949ab", "backup-service": "8d6e63",
 }
@@ -293,6 +296,7 @@ SEGMENT_PURPOSES = {
     "protection": "Protection relays", "telemetry": "Remote terminal units",
     "station": "Station HMIs and gateway", "clients": "Office workstations",
     "provider": "Provider backbone",
+    "nid-management": "Customer-premises NID in-band management",
 }
 
 
@@ -355,15 +359,15 @@ IPAM_ROLES = {
     "ot": ("Operational technology", "Plant-floor and substation equipment segments"),
     "customer": ("Customer", "Address space allocated to customer VPNs"),
     "customer-dia": ("Customer DIA", "Public address space assigned to dedicated internet customers"),
-    "nid-management": ("NID management", "In-band management of customer-premises NIDs"),
     "dhcp": ("DHCP pools", "Dynamic client address scopes"),
     "reserved": ("Reserved", "Addresses held for onboarding and growth"),
+    "nid-management": ("NID management", "In-band management of customer-premises network interface devices"),
 }
 
 # The IPAM role each addressed segment (the VLAN/VRF role key) belongs to.  An
 # unlisted segment is a hard error, so a new segment cannot ship role-less.
 SEGMENT_ROLES = {
-    "management": "management", "nid-management": "nid-management", "customer": "customer", "users": "users", "staff": "users", "students": "users",
+    "management": "management", "customer": "customer", "users": "users", "staff": "users", "students": "users",
     "clients": "users", "office": "users", "backoffice": "users", "logistics": "users",
     "voice": "voice", "wireless": "wireless", "guest": "guest",
     "applications": "servers", "database": "servers", "research": "servers",
@@ -372,7 +376,7 @@ SEGMENT_ROLES = {
     "clinical": "clinical", "medical": "clinical", "imaging": "clinical",
     "process": "ot", "supervisory": "ot", "protection": "ot", "telemetry": "ot", "station": "ot",
     "wan": "transit", "conduit": "transit", "recovery": "transit",
-    "provider": "backbone", "oob": "management",
+    "provider": "backbone", "oob": "management", "nid-management": "nid-management",
 }
 
 
@@ -399,8 +403,6 @@ def prefix_role(key, prefix, vrf, vlan):
         return "transit"
     if key.startswith("prefix/dia/"):
         return "customer-dia"
-    if key.startswith("prefix/nid-management/"):
-        return "nid-management"
     if key.startswith("ipv6/infrastructure/"):
         return "loopbacks" if key.endswith("/loopbacks") else "transit"
     if vlan:

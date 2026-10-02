@@ -172,7 +172,7 @@ def validate(plan):
                 key == f"prefix/{site.removeprefix('site/')}/lan"):
             customer_lans.add((vrf, net4))
             continue  # customer-assigned LAN space: the carrier assigns it no IPv6
-        if provider and key.startswith(("prefix/dia/", "prefix/nid-management/")) and not rel.get("vlan"):
+        if provider and (key.startswith("prefix/dia/") or key.endswith("/nid-management")):
             customer_lans.add((vrf, net4))
             continue  # customer DIA and in-band NID management are IPv4-only
         if (kind(vrf) != "vrf" and not (provider and vrf is None)) or kind(tenant) != "tenant":

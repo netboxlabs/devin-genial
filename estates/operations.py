@@ -25,7 +25,11 @@ RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
               # Pinned devicetype-library rack-types/Panduit/R2P26.yaml: the
               # small-room kit's two-post relay rack (blocks.SMALL_RACK).
               13: ("Panduit", "R2P26", "2-post-frame",
-                   "2-Post Rack, 13RU, #12-24 Threaded E-Rails, Aluminum, Black")}
+                   "2-Post Rack, 13RU, #12-24 Threaded E-Rails, Aluminum, Black"),
+              # Provider PoP cage cabinets (estates/fibre.py): APC NetShelter
+              # SX 42U AR3100; the evidence is WP-A's catalog/README.md entry.
+              42: ("APC", "AR3100", "4-post-cabinet",
+                   "NetShelter SX 42U server rack enclosure, 600 mm wide x 1070 mm deep, with sides")}
 
 # The group every estate tenant joins, per profile: (key, name, description).
 # Customer tenants keep the groups their profile builders already give them.
@@ -548,7 +552,9 @@ def _cables(w):
                         next((side_of.get(end["refs"].get("power_port"), "a")
                               for end in ends if end["kind"] == "power_outlet"), "a"))
             attrs["color"] = naming.CABLE_COLORS["power-" + side]
-        elif attrs.get("type") in naming.CABLE_COLORS:
+        elif attrs.get("type") in naming.CABLE_COLORS and "color" not in attrs:
+            # A builder's colour-by-function (estates/fibre.py PoP cable
+            # policy: OSP blue, management grey) outranks colour-by-medium.
             attrs["color"] = naming.CABLE_COLORS[attrs["type"]]
 
 

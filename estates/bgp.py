@@ -41,6 +41,7 @@ the /127 link addresses for customer eBGP and the /127 prefix for transit.
 from collections import defaultdict
 from ipaddress import ip_interface
 
+from . import fibre
 from .model import DesignError
 
 
@@ -224,13 +225,8 @@ def enrich(world):
 
     # Passive plant: a circuit lands on a patch panel's rear port and leaves by
     # the front port mapped to it, so a handoff is traced through panels.
-    front_of = {entry["refs"]["rear_port"]: key for key, entry in objects.items()
-                if entry["kind"] == "front_port" and entry["refs"].get("rear_port")}
-
     def trace(term):
-        port = peers.get(term)
-        while port in front_of:
-            port = peers.get(front_of[port])
+        port = fibre.far_end(objects, peers[term], peers) if term in peers else None
         return port if objects.get(port, {}).get("kind") == "interface" else None
 
     # --- eBGP transit: attributed from each circuit's own terminations and cables. ---
