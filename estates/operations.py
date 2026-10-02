@@ -26,10 +26,10 @@ RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
               # small-room kit's two-post relay rack (blocks.SMALL_RACK).
               13: ("Panduit", "R2P26", "2-post-frame",
                    "2-Post Rack, 13RU, #12-24 Threaded E-Rails, Aluminum, Black"),
-              # Provider PoP cage cabinets (estates/fibre.py): APC NetShelter
-              # SX 42U AR3100; the evidence is WP-A's catalog/README.md entry.
-              42: ("APC", "AR3100", "4-post-cabinet",
-                   "NetShelter SX 42U server rack enclosure, 600 mm wide x 1070 mm deep, with sides")}
+              }
+# Heights whose type is the catalog's own rack type (catalog rack_types): the
+# provider PoP cage cabinet, APC NetShelter SX 42U AR3100 (catalog/README.md).
+CATALOG_RACK_HEIGHTS = {42: "pop-cabinet"}
 
 # The group every estate tenant joins, per profile: (key, name, description).
 # Customer tenants keep the groups their profile builders already give them.
@@ -142,9 +142,14 @@ def _site_facts(w):
         elif obj["kind"] == "circuit_termination":
             sides[obj["refs"]["circuit"]][obj["attrs"]["term_side"]] = obj
     own = "provider/operator" if w.recipe["profile"] == "provider-backbone" else None
+    # An aggregation switch's provider edge: the device at the far end of its LAG members.
+    lag_peer = {}
+    for obj in objects.values():
+        if obj["kind"] == "interface" and obj["refs"].get("lag") and obj["key"] in cabled:
+            lag_peer.setdefault(obj["refs"]["device"], objects[cabled[obj["key"]]]["refs"].get("device"))
     for key, ends in sides.items():
         circuit = circuits[key]
-        if circuit["attrs"].get("status") != "active" or circuit["refs"].get("type") == "circuit-type/out-of-band":
+        if circuit["attrs"].get("status") != "active" or circuit["refs"].get("type") in ("circuit-type/out-of-band", "circuit-type/cellular-oob"):
             continue
         for side, term in ends.items():
             target = str(term["refs"].get("termination", ""))
@@ -154,9 +159,16 @@ def _site_facts(w):
             if circuit["refs"]["provider"] != own:
                 carriers[site].add(circuit["refs"]["provider"])
             far = ends.get("Z" if side == "A" else "A")
-            port = objects.get(cabled.get(far["key"]) if far else None, {})
+            if not str(circuit["refs"].get("type")).endswith("access") or far is None or far["key"] not in cabled:
+                continue
+            # The far end lands through a patch panel onto an aggregation UNI;
+            # the attachment's provider edge is that switch's LAG peer.
+            from .fibre import far_end
+            port = objects.get(far_end(objects, cabled[far["key"]], cabled), {})
             device = objects.get(port.get("refs", {}).get("device"), {})
-            if circuit["refs"].get("type") == "circuit-type/access" and device.get("refs", {}).get("role") == "role/provider-edge":
+            if device.get("refs", {}).get("role") == "role/aggregation":
+                device = objects.get(lag_peer.get(device["key"]), {})
+            if device.get("refs", {}).get("role") == "role/provider-edge":
                 edges[site].add(device["key"])
     return hubs, {site for site in set(carriers) | set(edges) if len(carriers[site]) >= 2 or len(edges[site]) >= 2}
 
@@ -403,14 +415,19 @@ def _racks(w):
             for field in ("width", "form_factor"):
                 rack["attrs"].pop(field, None)
             continue
-        if height not in RACK_TYPES:
+        if height in CATALOG_RACK_HEIGHTS:
+            spec = w.catalog["rack_types"][CATALOG_RACK_HEIGHTS[height]]
+            authored = (spec["manufacturer"], spec["model"], spec["form_factor"], spec["description"])
+        elif height in RACK_TYPES:
+            authored = RACK_TYPES[height]
+        else:
             raise DesignError(f"No catalog rack type for a {height}U cabinet; add one before changing rack height")
         key = f"rack-type/{height}u"
         if key not in w.objects:
             # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
             # cabinet grid (blocks.CABINET_WIDTH_M) is authored around. The pinned
             # library has no 24U SX type, so catalog/README.md cites APC's page.
-            maker, model, form, description = RACK_TYPES[height]
+            maker, model, form, description = authored
             if f"manufacturer/{maker}" not in w.objects:
                 w.add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
             w.add("rack_type", key, {"model": model, "slug": f"{w.recipe['namespace']}-{maker.lower()}-{model.lower()}",

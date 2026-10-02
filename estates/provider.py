@@ -227,7 +227,8 @@ def holder_label(name, limit=30):
     """An AS holder's name cut on a word boundary to fit graph labels (≤ 30)."""
     if len(name) <= limit:
         return name
-    cut = name[:limit+1].rsplit(" ",1)[0].rstrip(" ,&-")
+    # A name with no space in reach cuts hard at the limit.
+    cut = name[:limit+1].rsplit(" ",1)[0].rstrip(" ,&-") if " " in name[:limit+1] else ""
     return cut if cut else name[:limit]
 
 
@@ -1068,7 +1069,9 @@ def _premises_places(w,entries,points):
         if not eligible:
             raise DesignError(f"{sid}: no authored {city} anchor lies in the service area of PoP {pop} "
                               f"(within {PREMISES_KM} km and nearer it than any other {city} PoP)")
-        found = places.grid_place(sid,sorted(eligible,key=lambda a:(mine[a[0][0]],_hash("premises",sid,a[0][0]))),placed)
+        # The grid offset must not carry the point out of the PoP's area.
+        inside = lambda point: km(points[pop],point) <= PREMISES_KM and all(km(points[pop],point) < km(points[q],point) for q in rivals)
+        found = places.grid_place(sid,sorted(eligible,key=lambda a:(mine[a[0][0]],_hash("premises",sid,a[0][0]))),placed,inside)
         if found is None:
             raise DesignError(f"{sid}: every street-grid position {places.MIN_PREMISES_SPACING_M} m from earlier premises is taken "
                               f"in PoP {pop}'s service area; add {city} anchors (places.ANCHORS) or a PoP")

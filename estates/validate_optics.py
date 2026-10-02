@@ -332,7 +332,7 @@ def analyze(plan, catalog=None):
             if length > maximum:
                 return None, route, length, "exceeds the complete local-channel length policy"
             staged = {attrs(c).get("status") for c in route} - {"connected"}
-            if staged and kind(peer) != "circuit_termination":
+            if staged and kind(peer) not in {"circuit_termination", "front_port", "rear_port"}:
                 return None, route, length, "requires connected cables unless it faces a circuit not in service"
             if kind(peer) == "interface":
                 if refs(refs(peer).get("device")).get("site") != site:
@@ -357,7 +357,7 @@ def analyze(plan, catalog=None):
                     kind(owner) != "device" or refs(rear).get("device") != owner or
                     not models.get(hardware.get(owner), {}).get("passive_ports") or
                     attrs(owner).get("status") != "active" or refs(owner).get("site") != site or
-                    attrs(front).get("type") != "lc" or attrs(rear).get("type") != "lc" or
+                    attrs(front).get("type") != "lc" or attrs(rear).get("type") not in {"lc", "splice"} or
                     type(attrs(front).get("rear_port_position")) is not int or attrs(front)["rear_port_position"] != 1 or
                     type(attrs(rear).get("positions")) is not int or attrs(rear)["positions"] != 1):
                 return None, route, length, "requires same-site LC ports with a single owned front/rear position"

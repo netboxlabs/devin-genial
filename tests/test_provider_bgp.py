@@ -52,13 +52,14 @@ class ProviderBgpShapeTests(unittest.TestCase):
         self.assertEqual(len(of_kind(self.plan, "bgp_routing_policy")), len(POLICIES))
         self.assertEqual(len(of_kind(self.plan, "bgp_peer_group")), len(GROUPS))
         sessions = of_kind(self.plan, "bgp_session")
-        # Three PoPs: a reflector pair (1 session), four clients against both
-        # reflectors (8), two transit handoffs and four customer access circuits
-        # (three premises; the hub is dual-homed).
-        self.assertEqual(len(sessions), 1 + 2 * (2 * 3 - 2) + 2 + 4)
+        # Three PoPs: a reflector pair and four clients against both
+        # reflectors, every iBGP peering recorded from both ends (2 + 16), two
+        # transit handoffs and four customer access circuits (three premises;
+        # the hub is dual-homed).
+        self.assertEqual(len(sessions), 2 * (1 + 2 * (2 * 3 - 2)) + 2 + 4)
         groups = {key: len([k for k in sessions if k.startswith(f"bgp-session/{key}")])
                   for key in ("ibgp", "transit", "customer")}
-        self.assertEqual(groups, {"ibgp": 9, "transit": 2, "customer": 4})
+        self.assertEqual(groups, {"ibgp": 18, "transit": 2, "customer": 4})
 
     def test_ibgp_reflectors_sit_in_two_metros_by_permanent_pop_order(self):
         order = self.plan["reservations"]["provider-pop-order"]
@@ -73,7 +74,8 @@ class ProviderBgpShapeTests(unittest.TestCase):
             local, remote = obj["refs"]["device"], None
             remote = self.objects[obj["refs"]["remote_address"]]["refs"]["assigned_object"]
             remote = self.objects[remote]["refs"]["device"]
-            self.assertIn(remote, reflectors, key)
+            # Every peering has a reflector at one end (the mirror at the other).
+            self.assertTrue(remote in reflectors or local in reflectors, key)
             # Both ends peer from the in-band loopback, never a link address.
             for field in ("local_address", "remote_address"):
                 port = self.objects[obj["refs"][field]]["refs"]["assigned_object"]
@@ -82,11 +84,14 @@ class ProviderBgpShapeTests(unittest.TestCase):
             seen.add((local, remote))
             if local not in reflectors:
                 clients.add(local)
+            elif remote not in reflectors:
+                clients.add(remote)
         routers = {key for key, obj in self.objects.items()
                    if obj["kind"] == "device" and obj["refs"].get("role") == "role/provider-edge"}
         self.assertEqual(clients, routers - reflectors)
-        # Exactly one record per adjacency: no reversed duplicate.
-        self.assertFalse({pair for pair in seen if tuple(reversed(pair)) in seen})
+        # Every adjacency is recorded from both ends, so each loopback in the
+        # BGP view belongs to a named device; exactly once per direction.
+        self.assertEqual(seen, {tuple(reversed(pair)) for pair in seen})
 
     def test_transit_and_customer_sessions_are_attributed_from_their_own_circuits(self):
         sessions = of_kind(self.plan, "bgp_session")
@@ -309,7 +314,7 @@ class ProviderBgpTransportTests(unittest.TestCase):
         self.assertFalse([key for key, obj in delivered.items() if obj["kind"] in BGP_KINDS])
         omitted = loader_only_records(self.plan)
         self.assertEqual({kind: omitted["counts"][kind] for kind in BGP_KINDS},
-                         {"bgp_routing_policy": 4, "bgp_peer_group": 3, "bgp_session": 15})
+                         {"bgp_routing_policy": 4, "bgp_peer_group": 3, "bgp_session": 24})
 
     def test_the_loader_covers_every_bgp_kind_on_the_rest_create_path(self):
         for kind in BGP_KINDS:
@@ -331,7 +336,7 @@ class ProviderBgpTransportTests(unittest.TestCase):
 
     def test_every_bgp_row_keeps_its_own_create_change_diff(self):
         expected = _expected_change_diff_counts(self.objects)
-        self.assertEqual(expected["netbox_bgp.bgpsession"], 15)
+        self.assertEqual(expected["netbox_bgp.bgpsession"], 24)
         self.assertEqual(expected["netbox_bgp.bgppeergroup"], 3)
         self.assertEqual(expected["netbox_bgp.routingpolicy"], 4)
 

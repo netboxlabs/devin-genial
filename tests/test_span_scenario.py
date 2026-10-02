@@ -56,14 +56,18 @@ class SpanScenarioTests(unittest.TestCase):
         self.assertEqual(e["subject"], "circuit/backbone/chicago-west-a/detroit-south-a")
         site = "site/ce-harbor-logistics-cleveland-east-001"
         hub = "site/ce-harbor-logistics-chicago-west-001"
-        self.assertEqual(e["affected"]["premises"], [site])
+        # Every first attachment homes on side A (provider-agg-home), so both
+        # spokes and the hub's first attachment sit on PE-A of their PoPs.
+        self.assertEqual(e["affected"]["premises"], [site, "site/ce-harbor-logistics-detroit-south-001"])
         self.assertEqual(e["affected"]["hubs"], [hub])
-        self.assertEqual(e["affected"]["unchanged_premises_sharing_increased_load"], ["site/ce-harbor-logistics-detroit-south-001"])
+        self.assertEqual(e["affected"]["unchanged_premises_sharing_increased_load"], [])
         # Cleveland reaches the Chicago hub through Detroit on carrier A's span;
-        # with it offline the path crosses Detroit's PE pair onto carrier B's.
-        expected = ["circuit/backbone/cleveland-east-a/detroit-south-a", "pair/pop-detroit-south", "circuit/backbone/chicago-west-b/detroit-south-b"]
+        # with it offline the path crosses Detroit's PE pair onto carrier B's,
+        # then Chicago's pair back to the hub's PE-A.
+        expected = ["circuit/backbone/cleveland-east-a/detroit-south-a", "pair/pop-detroit-south",
+                    "circuit/backbone/chicago-west-b/detroit-south-b", "pair/pop-chicago-west"]
         before, after = (next(row for row in e["paths"][stage] if row["site"] == site) for stage in ("baseline", "changed"))
-        self.assertEqual([hop["edge"] for hop in before["hops"]], ["circuit/backbone/cleveland-east-a/detroit-south-a", e["subject"], "pair/pop-chicago-west"])
+        self.assertEqual([hop["edge"] for hop in before["hops"]], ["circuit/backbone/cleveland-east-a/detroit-south-a", e["subject"]])
         self.assertEqual([hop["edge"] for hop in after["hops"]], expected)
         objects = {obj["key"]: obj for obj in self.baseline["objects"]}
         for stage, paths in e["paths"].items():
@@ -77,10 +81,16 @@ class SpanScenarioTests(unittest.TestCase):
                     for end in edge["ends"]:
                         self.assertEqual(objects[end["interface"]]["refs"]["device"], end["device"])
                         cable = objects[end["cable"]]
-                        self.assertIn(end["interface"], cable["refs"].values())
                         if edge["kind"] == "span":
+                            # A span lands on a PoP panel: the termination's cable
+                            # reaches a rear port whose mapped front reaches the PE.
+                            from estates.fibre import far_end
                             self.assertIn(end["termination"], cable["refs"].values())
                             self.assertEqual(objects[end["termination"]]["refs"]["circuit"], hop["edge"])
+                            panel = next(v for v in cable["refs"].values() if v != end["termination"])
+                            self.assertEqual(far_end(objects, panel), end["interface"])
+                        else:
+                            self.assertIn(end["interface"], cable["refs"].values())
                     summed[(hop["edge"], hop["from_pe"], hop["to_pe"])] += row["offered_kbps"]
                     current = hop["to_pe"]
                 self.assertEqual(current, row["to_pe"])

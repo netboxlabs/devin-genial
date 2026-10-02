@@ -392,7 +392,7 @@ def nid_management(w, pop, side):
     net = ipaddress.ip_network((base + 128 * "ab".index(side), 25))
     if vlan not in w.objects:
         display = w.obj(f"site/{sid}")["attrs"]["name"]
-        w.add("vlan", vlan, dict(name=f"NID Management {side.upper()}", vid=NID_VIDS[side], status="active",
+        w.add("vlan", vlan, dict(name=f"NID-Mgmt-{side.upper()}", vid=NID_VIDS[side], status="active",
               description=f"In-band management of customer-premises NIDs homed on aggregation side {side.upper()}"),
               dict(site=f"site/{sid}", tenant="tenant"))
         w.add("prefix", f"prefix/{sid}/{side}/nid-management", dict(prefix=str(net), status="active",

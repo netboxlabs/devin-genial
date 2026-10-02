@@ -58,7 +58,8 @@ class EstateHygieneTests(unittest.TestCase):
 
     def test_tags_are_graph_derived_scoped_and_discriminating(self):
         self.assertEqual({t["key"] for t in self.of(self.plans["provider-backbone"], "tag")},
-                         {"tag/hub-site", "tag/dual-homed", "tag/route-reflector", "tag/transit-edge", "tag/managed-ce"})
+                         {"tag/hub-site", "tag/dual-homed", "tag/route-reflector", "tag/transit-edge", "tag/managed-ce",
+                          "tag/managed-service"})
         self.assertIn("tag/pci-scope", {t["key"] for t in self.of(self.plans["regional-bank"], "tag")})
         self.assertIn("tag/ot-zone", {t["key"] for t in self.of(self.plans["manufacturing"], "tag")})
         objects = {obj["key"]: obj for obj in self.plans["provider-backbone"]["objects"]}
@@ -88,7 +89,8 @@ class EstateHygieneTests(unittest.TestCase):
         provider = self.plans["provider-backbone"]
         self.assertFalse({"role/database", "role/backup-service", "role/wall-outlet"}
                          & {obj["key"] for obj in provider["objects"]})
-        self.assertNotIn("hardware/patch-panel", {obj["key"] for obj in provider["objects"]})
+        # The NOC demarcation panel is a used Panduit patch panel; a wall outlet is not.
+        self.assertNotIn("hardware/wall-outlet", {obj["key"] for obj in provider["objects"]})
 
         def orphan(plan, objects):
             plan["objects"].append({"key": "role/unused", "kind": "device_role", "attrs": {"name": "Unused",

@@ -684,6 +684,15 @@ def markdown(plan):
     terms = defaultdict(list)
     for term in kinds["circuit_termination"]:
         terms[term["refs"]["circuit"]].append(term)
+
+    def handoff_peer(end):
+        """The port a circuit end reaches: its cable peer, through 1:1 panels when it lands on one."""
+        port = cable_peer.get(end)
+        seen = set()
+        while objects.get(port, {}).get("kind") in ("front_port", "rear_port") and port not in seen:
+            seen.add(port)
+            port = cable_peer.get(passive_peer.get(port))
+        return port
     diagram_edges, wan = Counter(), defaultdict(list)
     purchases = []
     for circuit in kinds["circuit"]:
@@ -696,7 +705,7 @@ def markdown(plan):
         remote_speeds = []
         if two_site_path:
             for end in ends:
-                port = objects.get(cable_peer.get(end["key"]), {})
+                port = objects.get(handoff_peer(end["key"]), {})
                 owner = objects.get(port.get("refs", {}).get("device"), {})
                 if (port.get("kind") != "interface" or owner.get("refs", {}).get("site") != _term_site(objects, end)
                         or port["attrs"].get("enabled") is not True or owner.get("attrs", {}).get("status") != "active"
@@ -708,7 +717,7 @@ def markdown(plan):
             site_ends = [term for term in ends if _term_site(objects, term) == site]
             term = site_ends[0]
             cable = cable_at.get(term["key"], {})
-            peer = objects.get(cable_peer.get(term["key"]), {})
+            peer = objects.get(handoff_peer(term["key"]), {})
             interface = peer.get("attrs", {})
             device = objects.get(peer.get("refs", {}).get("device"), {})
             edge_speed = interface.get("speed") or _speed(interface.get("type", "")) or 0
@@ -756,7 +765,7 @@ def markdown(plan):
         transport_by_site = defaultdict(Counter)
         for circuit in kinds["circuit"]:
             ends = terms[circuit["key"]]
-            owners = [objects.get(objects.get(cable_peer.get(end["key"]), {}).get("refs", {}).get("device"), {}) for end in ends]
+            owners = [objects.get(objects.get(handoff_peer(end["key"]), {}).get("refs", {}).get("device"), {}) for end in ends]
             sites = {owner.get("refs", {}).get("site") for owner in owners}
             if (len(ends) == 2 and {end["attrs"].get("term_side") for end in ends} == {"A", "Z"}
                     and len(sites) == 2 and None not in sites
@@ -769,9 +778,14 @@ def markdown(plan):
             routers = [d for d in devices_by_site[site["key"]] if d["refs"].get("role") == "role/provider-edge"]
             if not routers:
                 continue
-            ports = [port for router in routers for port in interfaces_by_device[router["key"]]
-                     if port["attrs"].get("name") in {f"xe-0/1/{n}" for n in range(6)}]
-            connected = sum(objects.get(cable_peer.get(port["key"]), {}).get("kind") == "circuit_termination"
+            # Customer access lands on the aggregation switches' UNIs (through
+            # the OSP panel), never on a PE port.
+            aggregation = [d for d in devices_by_site[site["key"]] if d["refs"].get("role") == "role/aggregation"]
+            ports = [port for switch in aggregation for port in interfaces_by_device[switch["key"]]
+                     if port["attrs"].get("type") not in ("virtual", "lag") and not port["attrs"].get("mgmt_only")
+                     and not port["refs"].get("lag")]
+            connected = sum(port["key"] in cable_at
+                            and objects.get(handoff_peer(port["key"]), {}).get("kind") == "circuit_termination"
                             and cable_at[port["key"]]["attrs"].get("status") == "connected"
                             and port["attrs"].get("enabled") is True for port in ports)
             # IP objects have addresses, not names.

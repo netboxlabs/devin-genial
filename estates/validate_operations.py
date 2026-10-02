@@ -640,6 +640,9 @@ _COLOURED = ("device_role", "rack_role", "tag", "inventory_item_role", "module_b
 # Restated jacket colours by cable medium (and power by feed side).
 _CABLE_COLOURS = {"smf": "ffeb3b", "mmf": "00bcd4", "aoc": "00bcd4", "cat6": "2196f3"}
 _CONSOLE_COLOUR, _POWER_COLOURS = "00e5ff", {"primary": "212121", "redundant": "d50000"}
+# Provider PoP colour by function: outside plant blue, carrier cross-connect
+# yellow, management grey.
+_FUNCTION_COLOURS = {"osp": "2196f3", "xc": "ffeb3b", "mgmt": "9e9e9e"}
 _OWNED = ("site", "cluster", "circuit", "device", "rack", "prefix", "ip_address", "vlan")
 
 
@@ -800,11 +803,41 @@ def _shared(plan, objects, kinds, report):
     # whip is black on the primary feed and red on the redundant one; an
     # equipment cord is either (a cord moved between PDUs keeps its jacket —
     # that is how the power-diversity defect looks on the floor).
+    # A provider PoP colours by function instead (DESIGN §5), re-derived here
+    # from the graph: a landing panel (one whose rear ports face circuit
+    # terminations) is our outside plant (blue) when the operator holds it and
+    # a carrier hotel's cross-connect demarc (yellow) otherwise; anything on a
+    # PoP management switch is management grey.
+    provider = plan.get("recipe", {}).get("profile") == "provider-backbone"
+    landing = {}
+    for cable in kinds["cable"] if provider else ():
+        for near, far in ((cable["refs"].get("a"), cable["refs"].get("b")),
+                          (cable["refs"].get("b"), cable["refs"].get("a"))):
+            panel = objects.get(objects.get(near, {}).get("refs", {}).get("device"), {})
+            if (objects.get(near, {}).get("kind") == "rear_port"
+                    and objects.get(far, {}).get("kind") == "circuit_termination"
+                    and panel.get("refs", {}).get("role") == "role/patch-panel"):
+                landing[panel["key"]] = ("osp" if panel["refs"].get("tenant") == "tenant" else "xc")
+
+    def function(end):
+        device = objects.get(end.get("refs", {}).get("device"), {})
+        if end.get("kind") in {"front_port", "rear_port"} and device.get("key") in landing:
+            return landing[device["key"]]
+        if (end.get("kind") == "interface" and device.get("refs", {}).get("role") == "role/management"
+                and str(device.get("refs", {}).get("site", "")).startswith("site/pop-")):
+            return "mgmt"
+        return None
+
     for cable in kinds["cable"]:
         ends = [objects.get(cable["refs"].get(side), {}) for side in ("a", "b")]
         cable_type, colour = cable["attrs"].get("type"), cable["attrs"].get("color")
         feeds = [end for end in ends if end.get("kind") == "power_feed"]
-        if {end.get("kind") for end in ends} == {"console_port", "console_server_port"}:
+        functions = {function(end) for end in ends} - {None} if provider else set()
+        if len(functions) == 1:
+            expected = {_FUNCTION_COLOURS[functions.pop()]}
+        elif functions:
+            expected = set()  # one cable cannot serve two functions
+        elif {end.get("kind") for end in ends} == {"console_port", "console_server_port"}:
             expected = {_CONSOLE_COLOUR} if cable_type == "cat6" else set()
         elif cable_type == "power":
             expected = ({_POWER_COLOURS.get(feeds[0]["attrs"].get("type"))} if feeds
