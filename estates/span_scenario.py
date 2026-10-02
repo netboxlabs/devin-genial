@@ -46,7 +46,9 @@ def _graph(plan):
     """Index the supported direct PE transport and actual service attachments."""
     objects = {o["key"]: o for o in plan["objects"]}
     peers, cables, terms, assignments = {}, {}, defaultdict(list), defaultdict(list)
-    routers = {k for k, o in objects.items() if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"}
+    # In-service PEs only: an MX80 relic or a planned or staged MX304 carries no transport.
+    routers = {k for k, o in objects.items() if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"
+               and o["attrs"].get("status") == "active"}
     for key, obj in sorted(objects.items()):
         refs = obj["refs"]
         if obj["kind"] == "cable":

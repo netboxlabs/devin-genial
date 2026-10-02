@@ -57,15 +57,22 @@ def plant_world():
     return w, pop_sites
 
 
-SPEC = {  # DESIGN.md §5, U by U: (position, name, model)
+SPEC = {  # v0.18 stratigraphy (lived-in DESIGN §3), U by U: (position, name, model).
+    # Chicago West launched 2012 on the MX80 (removed at its 2022 refresh: the
+    # 2U gap at U36-37 is blanked), its original aggregation switches gave way
+    # to ACX5048s in 2016 and its console server to the EX3400 + OM2216-L in
+    # 2019; it hosts a NOC handoff, so it carries the M300 time server.
     "R01": [(42, "R01 OSP Panel", fibre.OSP_PANEL), (40, "R01 CM-40", fibre.CABLE_MANAGER_2U),
             (39, "R01 Colo Demarc", fibre.COLO_PANEL), (38, "R01 CM-38", fibre.CABLE_MANAGER_1U),
-            (37, "pe-a", "provider-edge"), (36, "R01 CM-36", fibre.CABLE_MANAGER_1U),
-            (35, "agg-a", fibre.AGGREGATION), (34, "mgmt-01", fibre.POP_MANAGEMENT), (33, "console-01", fibre.POP_OOB)],
+            (36, "R01 Blank-36", fibre.BLANKING_2U), (35, "R01 CM-35", fibre.CABLE_MANAGER_1U),
+            (34, "ntp-01", fibre.TIMING), (32, "R01 Blank-32", fibre.BLANKING_2U),
+            (31, "agg-a", fibre.AGGREGATION_LEGACY), (30, "mgmt-01", fibre.POP_MANAGEMENT),
+            (29, "console-01", fibre.POP_OOB), (28, "pe-a", "provider-edge"), (27, "R01 CM-27", fibre.CABLE_MANAGER_1U)],
     "R02": [(42, "R02 OSP Panel", fibre.OSP_PANEL), (40, "R02 CM-40", fibre.CABLE_MANAGER_2U),
             (39, "R02 Colo Demarc", fibre.COLO_PANEL), (38, "R02 CM-38", fibre.CABLE_MANAGER_1U),
-            (37, "pe-b", "provider-edge"), (36, "R02 CM-36", fibre.CABLE_MANAGER_1U),
-            (35, "agg-b", fibre.AGGREGATION)],
+            (36, "R02 Blank-36", fibre.BLANKING_2U), (35, "R02 CM-35", fibre.CABLE_MANAGER_1U),
+            (34, "R02 Blank-34", fibre.BLANKING_1U), (33, "agg-b", fibre.AGGREGATION_LEGACY),
+            (32, "pe-b", "provider-edge"), (31, "R02 CM-31", fibre.CABLE_MANAGER_1U)],
 }
 
 
@@ -99,43 +106,38 @@ class PopPlant(unittest.TestCase):
     def test_elevation_matches_the_design_table(self):
         for name, rows in SPEC.items():
             self.assertEqual(elevation(self.objects, self.rack(name)), rows, name)
-        self.assertAlmostEqual(utilization(self.w, self.rack("R01")), 10 / 42)
-        self.assertAlmostEqual(utilization(self.w, self.rack("R02")), 8 / 42)
+        self.assertAlmostEqual(utilization(self.w, self.rack("R01")), 12 / 42)
+        self.assertAlmostEqual(utilization(self.w, self.rack("R02")), 9 / 42)
         mutated = deepcopy(self.objects)
         mutated[f"device/{self.site.id}/agg-a"]["attrs"]["position"] = 32
         self.assertNotEqual(elevation(mutated, self.rack("R01")), SPEC["R01"])
 
-    def test_cage_has_four_bays_two_reserved_and_bare(self):
+    def test_core_cage_has_two_cabinets_and_states_its_contract(self):
         racks = sorted((o for o in self.objects.values() if o["kind"] == "rack" and o["refs"]["site"] == self.site.key),
                        key=lambda o: o["attrs"]["name"])
         self.assertEqual([(r["attrs"]["name"], r["attrs"]["status"], r["attrs"]["u_height"]) for r in racks],
-                         [("R01", "active", 42), ("R02", "active", 42), ("R03", "reserved", 42), ("R04", "reserved", 42)])
+                         [("R01", "active", 42), ("R02", "active", 42)])
         self.assertEqual({r["refs"]["location"] for r in racks}, {self.site.equipment_location})
-        self.assertEqual([r["meta"]["position_m"] for r in racks], [[1.0, 1.0, 0], [1.6, 1.0, 0], [2.2, 1.0, 0], [2.8, 1.0, 0]])
+        self.assertEqual([r["meta"]["position_m"] for r in racks], [[1.0, 1.0, 0], [1.6, 1.0, 0]])
         location = self.objects[self.site.equipment_location]
         self.assertTrue(location["attrs"]["name"].startswith("Cage "))
+        # Reserved positions are a contract on the cage, never modeled racks.
+        self.assertIn(fibre.CAGE_CONTRACT, location["attrs"]["description"])
         self.assertEqual(self.objects[location["refs"]["parent"]]["meta"]["space_type"], "suite")
-        for rack in racks[2:]:
-            self.assertEqual(rack["attrs"]["description"], fibre.RESERVED_DESCRIPTION)
-            self.assertNotIn("asset_tag", rack["attrs"])
-            held = [o for o in self.objects.values() if o["refs"].get("rack") == rack["key"]]
-            self.assertEqual(held, [], "a reserved position holds no device, PDU or feed")
         self.assertFalse(any(o["kind"] == "rack_reservation" for o in self.objects.values()))
 
     def test_hygiene_rule_counts_and_blanking(self):
-        heights = {alias: self.w.catalog["models"][alias]["u_height"] for alias in fibre.ROLES}
         managers = [o for o in self.objects.values() if o["kind"] == "device" and o["refs"]["site"] == self.site.key
-                    and o["refs"]["role"] == "role/cable-management"]
-        self.assertEqual(len(managers), 6)
-        self.assertFalse(any(o["meta"]["hardware"].startswith("blanking") for o in managers))
-        # A 2U hole inside the band takes one blanking panel; a 3U hole none.
-        gap = [(42, "x", fibre.CABLE_MANAGER_1U), (39, "y", fibre.CABLE_MANAGER_1U), (35, "z", fibre.CABLE_MANAGER_1U)]
-        self.assertEqual(fibre._blanking(gap, heights), [(40, "blank-40", fibre.BLANKING_2U)])
-        # Mutation: a PE directly above the aggregation switch must take a manager.
-        rule = fibre.hygiene([("p", "provider-edge", "pe"), ("g", fibre.AGGREGATION, "agg")], heights)
-        self.assertEqual([alias for _, _, alias in rule], ["provider-edge", fibre.CABLE_MANAGER_1U, fibre.AGGREGATION])
-        rule = fibre.hygiene([("p", "provider-edge", "pe"), ("g", fibre.AGGREGATION, None)], heights)
-        self.assertEqual(len(rule), 2)
+                    and o["refs"]["role"] == "role/cable-management" and not o["meta"]["hardware"].startswith("blanking")]
+        # Under each panel and each router, removed relics included: their
+        # managers stay below the blanked gap.
+        self.assertEqual(len(managers), 8)
+        # Blanking fills each gap strictly inside the occupied band: 2U panels
+        # from a gap's top, then 1U.
+        self.assertEqual(fibre._blanking({42, 39, 35}), [(40, fibre.BLANKING_2U), (37, fibre.BLANKING_2U), (36, fibre.BLANKING_1U)])
+        self.assertEqual(fibre._blanking({42, 41}), [])
+        for alias in (fibre.BLANKING_1U, fibre.BLANKING_2U):
+            self.assertTrue(self.w.catalog["models"][alias]["exclude_from_utilization"])
 
     def test_panels_map_front_to_rear_one_to_one(self):
         panels = [o for o in self.objects.values() if o["kind"] == "device" and o["refs"]["site"] == self.site.key
@@ -264,7 +266,7 @@ class PopPlant(unittest.TestCase):
                     if f["location_slug"] == self.objects[self.site.equipment_location]["attrs"]["slug"])
         self.assertEqual(cage["layout"], "authored")
         self.assertEqual([(s["rack_name"], s["x"], s["y"]) for s in cage["shapes"]],
-                         [("R01", 200, 200), ("R02", 260, 200), ("R03", 320, 200), ("R04", 380, 200)])
+                         [("R01", 200, 200), ("R02", 260, 200)])
         geometry._intrinsic({"artifact": "floorplan-geometry", "floorplans": [cage]})
 
     def test_build_is_deterministic(self):

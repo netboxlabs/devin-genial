@@ -179,7 +179,8 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
     def test_pe_addresses_live_on_unit_zero(self):
         pes = {d["key"] for d in self.of("device") if d["refs"]["role"] == "role/provider-edge"}
         for ip in self.of("ip_address"):
-            port = self.o[ip["refs"]["assigned_object"]]
+            # The exchange route servers' addresses bind no interface of ours.
+            port = self.o.get(ip["refs"].get("assigned_object"), {})
             if port.get("refs", {}).get("device") in pes:
                 self.assertEqual(port["attrs"]["type"], "virtual", port["key"])
                 parent = self.o[port["refs"]["parent"]]

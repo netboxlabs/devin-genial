@@ -775,12 +775,15 @@ def markdown(plan):
                     transport_by_site[site][circuit["refs"].get("provider")] += 1
         pop_rows = []
         for site in sorted(kinds["site"], key=lambda obj: obj["key"]):
-            routers = [d for d in devices_by_site[site["key"]] if d["refs"].get("role") == "role/provider-edge"]
+            # PEs in service; an MX80 relic or a planned MX304 is racked, not routing.
+            routers = [d for d in devices_by_site[site["key"]] if d["refs"].get("role") == "role/provider-edge"
+                       and d["attrs"].get("status", "active") == "active"]
             if not routers:
                 continue
             # Customer access lands on the aggregation switches' UNIs (through
             # the OSP panel), never on a PE port.
-            aggregation = [d for d in devices_by_site[site["key"]] if d["refs"].get("role") == "role/aggregation"]
+            aggregation = [d for d in devices_by_site[site["key"]] if d["refs"].get("role") == "role/aggregation"
+                           and d["attrs"].get("status", "active") == "active"]
             ports = [port for switch in aggregation for port in interfaces_by_device[switch["key"]]
                      if port["attrs"].get("type") not in ("virtual", "lag") and not port["attrs"].get("mgmt_only")
                      and not port["refs"].get("lag")]

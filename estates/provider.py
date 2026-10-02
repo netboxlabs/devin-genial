@@ -1094,7 +1094,8 @@ def _topology(w,pop_sites,points,spans,launch):
         sites = [pop_sites[pop][0] for pop,_ in (a,b)]
         ports = [sites[i].interface(d,f"et-0/0/{1+w.reserve(f'provider-transport-ports/{d}',key,2)}") for i,d in enumerate(devices)]
         later = max(a[0],b[0],key=launched.get)
-        installed = launch[later]-timedelta(days=w.choose(key,"span-install",range(10,26)))
+        # Lit once both ends are racked: 1-3 weeks after the later PoP's launch kit.
+        installed = launch[later]+timedelta(days=w.choose(key,"span-install",range(7,22)))
         distance = round(km(points[a[0]],points[b[0]])*ROUTE_FACTOR,1)
         ends = f"{sites[0].display} to {sites[1].display}"
         carrier = carriers[key]
@@ -1200,7 +1201,7 @@ def _oob(w,site,pop,launched):
     kind = fibre.circuit_type(w,"cellular-oob","Cellular OOB").removeprefix("circuit-type/")
     _circuit(w,circuit,"provider/oob","provider-account/provider/oob",kind,site,None,"provider-network/oob",None,None,
              cid=CARRIERS["oob"][2].format(carrier_number(w.recipe["namespace"],"oob",w.reservations["provider-pop-order"][pop])),
-             installed=launched-timedelta(days=w.choose(circuit,"oob-install",range(20,41))),
+             installed=launched+timedelta(days=w.choose(circuit,"oob-install",range(7,21))),  # after the console server is racked
              description=f"Cellular data service for out-of-band console access at {site.display}; best effort, no committed rate",
              uncabled=f"Cellular service to the {site.display} console server's LTE modem; NetBox cannot cable a cellular interface")
     net = oob_network(w.reserve("provider-oob-links",pop,64))
@@ -2092,7 +2093,7 @@ def _generate(recipe,previous=None):
         pop=ordered[index]["key"]; site,routers=pop_sites[pop]; port=site.interface(routers[index],"xe-0/1/7")
         circuit=f"circuit/transit/{side}"; label=f"transit-{side}"
         _circuit(w,circuit,f"provider/{label}",f"provider-account/provider/{label}","transit",site,port,f"provider-network/transit/{side}",None,10000,
-                 cid=CARRIERS[label][2].format(carrier_number(ns,label,0)),installed=launch[pop]-timedelta(days=w.choose(circuit,"transit-install",range(5,21))))
+                 cid=CARRIERS[label][2].format(carrier_number(ns,label,0)),installed=launch[pop]+timedelta(days=w.choose(circuit,"transit-install",range(7,22))))
         # The upstream holds the even address of its /31; the operator takes the odd one.
         net=_link_prefix(w,circuit,CORE_VRF,"tenant"); _ip(w,port,net,1,CORE_VRF,"tenant")
     for p in ordered:

@@ -11,10 +11,18 @@ the management switch and cellular console server in R01; every customer
 premises is a NID-terminated access circuit into one aggregation side, with a
 carrier CE in an MPOE wall cabinet where the service is managed. Every gate
 below re-derives its obligation from the recipe, the ledgers and the graph.
+
+v0.18 lived-in carrier (build/lived-in-design/DESIGN.md §§2-4, §7): the
+provider timeline is restated from its frozen ``provider-timeline`` ledgers
+(estates/timeline.py is never imported), and each cabinet's install history
+from it: a core PoP's cage of R01/R02 or an edge PoP's one cabinet, units
+top-down from ``provider-cabinet-u``, blanked never-reused gaps with dated
+rack journals, MX80 relics, the MX304 successor, the cold spare, the time
+server and the DDoS appliance, exchanges and former customers.
 """
 
 from collections import Counter, defaultdict, deque
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from ipaddress import ip_interface, ip_network
 import math
@@ -23,7 +31,8 @@ import re
 from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
-from .model import selected_alias
+from . import __version__
+from .model import digest, selected_alias
 from .naming import bandwidth, port_speed, role_label, titleize
 # Authored address localities (suburbs map to their metro); geography data, not builder policy.
 from .places import ADDRESS_STREETS, LOCALITIES, MILWAUKEE_COUNTY, carrier_suite
@@ -70,6 +79,7 @@ CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b", "oob")
 CORE, MANAGEMENT, OOB = None, "vrf/provider", "vrf/oob"
 HUB_RT, SPOKE_RT = 9000, 9001
 FXP0_HOSTS, AGG_EM0_HOSTS, PDU_HOSTS, OOB_HOST = (4, 5), (6, 7), (8, 9, 10, 11), 3
+TIME_SERVER_HOST, DDOS_HOST = 20, 21  # PoP services on the management /26, clear of the plant's 1-11
 # Services, tiers and the access layer, restated (DESIGN §§2-3).
 SERVICES = ("private-l3", "dia", "epl")
 LARGE_TIERS = (2000, 5000)
@@ -143,6 +153,209 @@ LIFE = {
                             cable="decommissioning", rack="deprecated", ip="deprecated", prefix="deprecated",
                             vlan="deprecated", bgp="offline"),
 }
+
+
+# --- v0.18 lived-in plant, restated (build/lived-in-design DESIGN §3, §4.1) ---
+# Vendor facts (VERIFICATION §1) and authored milestones the history follows.
+MX204_AVAILABLE, ACX5048_AVAILABLE, ACX5448M_CUTOVER = date(2018, 1, 1), date(2015, 1, 1), date(2019, 7, 1)
+NS2_ADOPTED, AGG_SWAP_START, OOB_SWAP_START = date(2018, 3, 1), date(2016, 3, 1), date(2019, 4, 1)
+ACX5048_LAST_ORDER, MX204_EOL_ANNOUNCED, MX304_AVAILABLE = date(2022, 12, 31), date(2026, 6, 15), date(2022, 7, 1)
+RELIC_DAYS = 730  # an MX80 pair stays racked "decommissioning" if cut over within 24 months
+SFP_PLUS_PORTS = tuple(f"xe-0/1/{n}" for n in range(8))
+PE_IX_PORT = "xe-0/1/5"
+# Each PoP-plant model's role; the history's aliases.
+PLANT_ROLES = {"provider-edge": "provider-edge", "provider-edge-legacy": "provider-edge",
+               "provider-edge-successor": "provider-edge", "aggregation": "aggregation",
+               "aggregation-legacy": "aggregation", "pop-mgmt": "management", "oob-server": "console-server",
+               "osp-panel": "patch-panel", "demarc-panel": "patch-panel", "cable-manager-1u": "cable-management",
+               "cable-manager-2u": "cable-management", "blanking-1u": "cable-management",
+               "blanking-2u": "cable-management", "pdu-switched": "pdu", "ddos-mitigation": "ddos-mitigation",
+               "time-server": "time-server"}
+AGG_ALIASES = {"acx5048": "aggregation-legacy", "acx5448m": "aggregation"}
+PASSIVE_NAMES = {"osp-panel": "{rack} OSP Panel", "demarc-panel": "{rack} Colo Demarc", "cable-manager-1u": "{rack} CM-{u}",
+                 "cable-manager-2u": "{rack} CM-{u}", "blanking-1u": "{rack} Blank-{u}", "blanking-2u": "{rack} Blank-{u}"}
+LEGACY_ABBREVIATIONS = {"provider-edge": "rtr", "aggregation": "agg", "time-server": "ntp",
+                        "management": "sw", "console-server": "con"}
+CAGE_CONTRACT = "Operator cage; Cage contract: 4 cabinet positions; 2 installed; expansion by change order"
+EDGE_CABINET = "Leased single cabinet in the carrier hotel; both PoP sides share it"
+NOT_IN_SERVICE = ("decommissioning", "planned", "staged", "inventory")
+# Internet exchanges (DESIGN §2, K8): one fictional exchange per metro, hosted at
+# its founding PoP on PE-A xe-0/1/5; the Milwaukee exchange relocated, so its
+# old port at the metro's second PoP is being withdrawn.
+IXES = {"chicago": ("Calumet Internet Exchange", "CAL-IX"), "detroit": ("Rouge River IX", "RRIX"),
+        "cleveland": ("Erie Shore IX", "ESIX"),
+        "milwaukee": ("Cream City Internet Exchange", "Cream City Internet Exchange")}
+IX_RELOCATED = "milwaukee"
+IX_ASNS = range(65536, 65552)  # RFC 5398 32-bit documentation range
+IX_ROUTE_SERVERS = 2
+IX_IPV4_NOTE = "No IPv4 peering: the IPv4 blocks are committed to dedicated internet customer assignments."
+# Former customers (P0-6): an order ID above every premises serial.
+FORMER_ORDER_BASE = 90000
+# The detection controller pair exists only beside a TMS (K7).
+CONTROLLER_POLICY = ("ddos-detection", 8, 32768, 200000)
+LEGACY_NID_BEFORE = date(2016, 1, 1)
+ONBOARDING_YEAR_SHARE = 0.15  # DESIGN gate 12 and L16: premises service starts per calendar year
+ONBOARDING_MIN_BOOK = 40      # a smaller book is too few for a yearly share to mean anything
+
+
+def _choose(recipe, key, label, choices):
+    """Restated stable local variation: the seed, a subject key, a label and the generator version."""
+    return choices[int(digest([recipe["seed"], key, label, __version__]), 16) % len(choices)]
+
+
+def _timeline(recipe, reservations, pops, order, premises):
+    """The frozen provider timeline, re-derived from its ledgers and the recipe.
+
+    Launch and refresh days are read from ``provider-timeline/<event>/<pop>``;
+    every other date is the authored rule over them (estates/timeline.py
+    restated, never imported). Raises ValueError when a ledger is missing.
+    """
+    as_of = date.fromisoformat(recipe["as_of"])
+    after = lambda pop, label, day, spread, low=0: day + timedelta(days=_choose(recipe, pop, f"timeline-{label}",
+                                                                                range(low, low + spread)))
+
+    def ledger(event, pop):
+        value = reservations.get(f"provider-timeline/{event}/{pop}")
+        if not isinstance(value, dict) or set(value) != {"day"} or not _integer(value["day"], 1, date.max.toordinal()):
+            raise ValueError(f"provider-timeline/{event}/{pop} must hold the frozen day of that event.")
+        return date.fromordinal(value["day"])
+
+    ordered = sorted(pops, key=order.get)
+    tl = dict(as_of=as_of, launch={p: ledger("launch", p) for p in ordered})
+    founding = {}
+    for pop in ordered:
+        founding.setdefault(pops[pop]["metro"], pop)
+    noc = {p: tuple(s for s in "ab" if recipe.get(f"noc_pop_{s}") == p) for p in ordered}
+    transit = {p: ("a", "b")[i] if i < 2 else None for i, p in enumerate(ordered)}
+    dia = Counter(pop for customer, pop, _ in premises.values() if customer["service"] == "dia")
+    ix = {p: founding[pops[p]["metro"]] == p for p in ordered}
+    tl.update(founding=founding, noc=noc, transit=transit, ix=ix, dia=dia,
+              tier={p: "core" if noc[p] or transit[p] or ix[p] else "edge" for p in ordered})
+    tl["refresh"] = {p: ledger("refresh", p) if tl["launch"][p] < MX204_AVAILABLE else None for p in ordered}
+    if any(f"provider-timeline/refresh/{p}" in reservations for p in ordered if tl["refresh"][p] is None):
+        raise ValueError("Only a PoP launched on the MX80 carries a frozen refresh date.")
+    tl["relic"] = {p: d is not None and (as_of - d).days <= RELIC_DAYS for p, d in tl["refresh"].items()}
+    tl["agg"] = {p: "acx5048" if d < ACX5448M_CUTOVER else "acx5448m" for p, d in tl["launch"].items()}
+    tl["agg_swap"] = {p: after(p, "agg-swap", max(AGG_SWAP_START, d + timedelta(days=60)), 240)
+                      if d < ACX5048_AVAILABLE else None for p, d in tl["launch"].items()}
+    tl["oob_swap"] = {p: after(p, "oob-swap", max(OOB_SWAP_START, d + timedelta(days=60)), 240)
+                      if d < OOB_SWAP_START else None for p, d in tl["launch"].items()}
+    tl["timing"] = {p: tl["launch"][p] if noc[p] else None for p in ordered}
+    tl["spare"] = {p: None for p in ordered}
+    for pop in founding.values():
+        if tl["agg"][pop] == "acx5048":
+            day = min(after(pop, "cold-spare", max(date(2022, 3, 1), tl["launch"][pop]), 240),
+                      ACX5048_LAST_ORDER - timedelta(days=14))
+        else:
+            day = after(pop, "cold-spare", tl["launch"][pop] + timedelta(days=120), 280)
+        if day <= as_of - timedelta(days=30):
+            tl["spare"][pop] = (tl["agg"][pop], day)
+    # The MX204 SFP+ budget: four LAG members and the management uplink, then
+    # the NOC, transit and (PE-A) exchange handoffs; eight is the ceiling.
+    tl["sfp_plus"] = {(p, s): 5 + (s in noc[p]) + (transit[p] == s) + (ix[p] and s == "a") for p in ordered for s in "ab"}
+    tl["mx304"], tl["ddos"] = {}, {}
+    for pop in ordered:
+        plan = None
+        if any(tl["sfp_plus"][(pop, s)] >= len(SFP_PLUS_PORTS) for s in "ab"):
+            ordered_on = after(pop, "mx304-ordered", max(MX204_EOL_ANNOUNCED, MX304_AVAILABLE), 30, 10)
+            if ordered_on <= as_of - timedelta(days=3):
+                received = after(pop, "mx304-received", ordered_on, 31, 60)
+                received = received if received <= as_of else None
+                plan = dict(ordered=ordered_on, received=received, status="staged" if received else "planned")
+        tl["mx304"][pop] = plan
+        tl["ddos"][pop] = (min(as_of - timedelta(days=3), after(pop, "ddos-racked", plan["ordered"], 26, 20))
+                           if plan and transit[pop] and dia[pop] else None)
+    return tl
+
+
+def _history(tl, pop):
+    """One PoP's install ledger, restated: [(rack name, item)] in install order.
+
+    A removed device (``removed`` set) keeps its units as a gap; its alias is None
+    for a never-inventoried predecessor (1U).
+    """
+    core, launch, items = tl["tier"][pop] == "core", tl["launch"][pop], []
+    rack = lambda side: "R01" if side == "a" or not core else "R02"
+
+    def add(side, label, alias, kind, day, status="active", removed=None, order=0):
+        items.append((day, order, len(items), rack(side), dict(label=label, alias=alias, kind=kind, day=day,
+                      status=status, removed=removed)))
+
+    pe0 = "provider-edge-legacy" if tl["refresh"][pop] else "provider-edge"
+    for side in ("ab" if core else "a"):
+        add(side, f"{rack(side).lower()}-osp", "osp-panel", "panel-48", launch)
+        add(side, f"{rack(side).lower()}-demarc", "demarc-panel", "panel-24", launch)
+    refresh = tl["refresh"][pop]
+    for side in "ab":
+        add(side, f"legacy-pe-{side}" if refresh else f"pe-{side}", pe0, "router", launch,
+            status="decommissioning" if tl["relic"][pop] else "active",
+            removed=refresh if refresh and not tl["relic"][pop] else None)
+    if tl["timing"][pop]:
+        add("a", "ntp-01", "time-server", None, tl["timing"][pop])
+    agg = AGG_ALIASES[tl["agg"][pop]]
+    for side in "ab":
+        if tl["agg_swap"][pop]:
+            add(side, f"original-agg-{side}", None, None, launch, removed=tl["agg_swap"][pop])
+        else:
+            add(side, f"agg-{side}", agg, None, launch)
+    if tl["oob_swap"][pop]:
+        add("a", "original-console", None, None, launch, removed=tl["oob_swap"][pop])
+    else:
+        add("a", "mgmt-01", "pop-mgmt", None, launch)
+        add("a", "console-01", "oob-server", None, launch)
+    if tl["agg_swap"][pop]:
+        for side in "ab":
+            add(side, f"agg-{side}", agg, None, tl["agg_swap"][pop])
+    if tl["oob_swap"][pop]:
+        add("a", "mgmt-01", "pop-mgmt", None, tl["oob_swap"][pop])
+        add("a", "console-01", "oob-server", None, tl["oob_swap"][pop])
+    if tl["spare"][pop]:
+        add("b", "agg-spare", AGG_ALIASES[tl["spare"][pop][0]], None, tl["spare"][pop][1], status="inventory")
+    if refresh:
+        for side in "ab":
+            add(side, f"pe-{side}", "provider-edge", "router", refresh)
+    if tl["mx304"][pop]:
+        plan = tl["mx304"][pop]
+        for side in "ab":
+            add(side, f"pe-{side}2", "provider-edge-successor", "router", plan["received"] or plan["ordered"],
+                status=plan["status"])
+    if tl["ddos"][pop]:
+        add("a", "ddos-01", "ddos-mitigation", None, tl["ddos"][pop], status="staged", order=1)
+    return [(name, item) for _, _, _, name, item in sorted(items, key=lambda row: row[:3])]
+
+
+def _mounts(items):
+    """Each cabinet item and the hygiene rule's cable managers, in mounting order.
+
+    A 48-port panel takes a 2U manager below it, a 24-port panel and each router
+    (or same-day router pair) a 1U manager.
+    """
+    result = []
+    for i, item in enumerate(items):
+        result.append(item)
+        after = items[i + 1] if i + 1 < len(items) else None
+        manager = {"panel-48": "cable-manager-2u", "panel-24": "cable-manager-1u"}.get(item["kind"])
+        if item["kind"] == "router" and not (after and after["kind"] == "router" and after["day"] == item["day"]):
+            manager = "cable-manager-1u"
+        if manager:
+            result.append(dict(label=f"cm-under-{item['label']}", alias=manager, kind=None, day=item["day"],
+                               status="active", removed=None))
+    return result
+
+
+def _blanks(occupied):
+    """Blanking panels filling each gap inside the occupied band: 2U from the gap's top, then 1U."""
+    fill, gap = [], []
+    for u in range(max(occupied), min(occupied) - 1, -1):
+        if u not in occupied:
+            gap.append(u)
+            continue
+        while gap:
+            if len(gap) >= 2:
+                fill.append((gap[1], "blanking-2u")); gap = gap[2:]
+            else:
+                fill.append((gap[0], "blanking-1u")); gap = []
+    return fill
 
 
 def _stage(customer, pop):
@@ -349,10 +562,12 @@ def _loads(adjacency, flows, excluded=None):
     return loads
 
 
-def _workloads(premises, pops):
+def _workloads(premises, pops, tms=False):
+    """NOC service groups; a DDoS detection controller pair only beside a racked TMS (K7)."""
     result = []
-    for key, measure, threshold, cpus, memory, disk, port in SERVICE_POLICY:
-        count = premises if measure == "premises" else pops
+    controller = ((CONTROLLER_POLICY[0], "one", 1, *CONTROLLER_POLICY[1:], 443),) if tms else ()
+    for key, measure, threshold, cpus, memory, disk, port in (*SERVICE_POLICY, *controller):
+        count = premises if measure == "premises" else pops if measure == "pops" else 1
         listeners = [dict(key="", name=key, protocol="tcp", ports=[port])]
         if key == "identity":
             listeners.append(dict(key="radius", name="radius", protocol="udp", ports=[1812, 1813]))
@@ -360,7 +575,7 @@ def _workloads(premises, pops):
             listeners.append(dict(key="udp", name="dns-udp", protocol="udp", ports=[53]))
         result.append(dict(key=key, groups=max(1, (count + threshold - 1) // threshold), replicas=2,
             failure_domain="rack", network="applications", vcpus=cpus, memory_mb=memory, disk_mb=disk,
-            listeners=listeners, criticality="tier-2" if key == "monitoring" else "tier-1"))
+            listeners=listeners, criticality="tier-2" if key in ("monitoring", CONTROLLER_POLICY[0]) else "tier-1"))
     return result
 
 
@@ -565,6 +780,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         order = _ledger(reservations, "provider-pop-order", pops, 64)
         if set(order.values()) != set(range(len(pops))):
             raise ValueError("PoP order must retain one contiguous permanent ordinal per requested PoP.")
+        tl = _timeline(recipe, reservations, pops, order, premises)
         customer_slots = _ledger(reservations, "provider-customers", [c["key"] for c in customers], 256)
         if set(allocations) != {site.removeprefix("site/") for site in expected_sites} or allocations.get("dc-01") != 0:
             raise ValueError("All requested sites need exactly one reservation, with NOC dc-01 fixed at /24-unit zero.")
@@ -829,8 +1045,15 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         required_rooms = {room: ("equipment_room", 1, [24, 18, 0], f"{room}/suite" if category == "pop" else None)}
         if category == "pop":
             required_rooms[f"{room}/suite"] = ("suite", 1, [0, 0, 0], None)
-            if [attrs(f"{room}/suite").get("name"), attrs(room).get("name")] != list(carrier_suite(sid)):
-                report("provider-room-geometry", room, "A PoP cage and its suite keep their authored carrier-hotel names.")
+            # A core PoP is a cage; an edge PoP's room is its one leased cabinet,
+            # named by that cabinet's facility code (K3).
+            suite, cage = carrier_suite(sid)
+            core = tl["tier"][sid.removeprefix("pop-")] == "core"
+            space = (cage, CAGE_CONTRACT) if core else (f"Cabinet {cage.removeprefix('Cage ')}-01", EDGE_CABINET)
+            if ([attrs(f"{room}/suite").get("name"), attrs(room).get("name"), attrs(room).get("description")] != [suite, *space]
+                    or meta(room).get("cabinet_positions") != (4 if core else None)):
+                report("provider-room-geometry", room, "A core PoP's cage states its cabinet contract and an edge PoP's room is "
+                       "its one leased cabinet, inside their authored carrier-hotel suite.")
         elif category == "customer" and attrs(room).get("name") != "MPOE":
             report("provider-room-geometry", room, "A premises' carrier equipment stands in its MPOE room.")
         if customer and customer["service"] == "private-l3" and customer["lan_endpoints"]:
@@ -856,67 +1079,132 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-scope-text", f"tenant/cust-{customer['key']}", "A multi-site customer's premises descriptions "
                    "distinguish its hub, branches or line ends.")
 
-    # --- PoP plant: cage, cabinets, elevation, panels and power ---
-    infrastructure = []
+    # --- PoP plant: stratigraphy, cage or cabinet, panels and history (v0.18) ---
+    # Every unit is re-derived from the frozen timeline: each cabinet holds its
+    # install ledger top-down, a removed device's units stay a blanked gap with a
+    # dated rack journal, and nothing out of service is cabled or powered.
+    infrastructure, plant = [], {}
+    cables_on = defaultdict(set)  # device -> cables on any of its components
+    for cable in by_kind["cable"]:
+        for end in (refs(cable).get("a"), refs(cable).get("b")):
+            owner = refs(end).get("device")
+            if isinstance(owner, str):
+                cables_on[owner].add(cable)
     for pop in ordered:
         sid, site, room = f"pop-{pop}", f"site/pop-{pop}", f"location/pop-{pop}"
         city = METROS[pops[pop]["metro"]][0]
-        cage = str(attrs(room).get("name", "")).removeprefix("Cage ")
-        racks = {f"rack/{sid}/r{bay + 1:02}": bay for bay in range(CAGE_BAYS)}
-        if set(child("site", site, "rack")) != set(racks) or by_kind["rack_reservation"]:
-            report("provider-rack-geometry", site, "A PoP cage holds exactly its four contracted cabinet positions, with no rack reservation.")
-        for rack, bay in racks.items():
-            installed = bay < INSTALLED_BAYS
-            if (kind(rack) != "rack" or attrs(rack).get("name") != f"R{bay + 1:02}" or attrs(rack).get("u_height") != CABINET_U or
-                    attrs(rack).get("status") != ("active" if installed else "reserved") or refs(rack).get("location") != room or
+        core = tl["tier"][pop] == "core"
+        cage = carrier_suite(sid)[1].removeprefix("Cage ")
+        facility = str(attrs(site).get("facility", "")).lower()
+        history = _history(tl, pop)
+        names = ("R01", "R02") if core else ("R01",)
+        racks = {name: f"rack/{sid}/{name.lower()}" for name in names}
+        if set(child("site", site, "rack")) != set(racks.values()) or by_kind["rack_reservation"]:
+            report("provider-rack-geometry", site, "A core PoP's cage holds its two installed cabinets R01/R02 and an edge "
+                   "PoP its one cabinet; contracted positions are stated on the cage, never modeled as racks or reservations.")
+        expected = {}  # device -> (alias, rack, position, status, item)
+        for bay, (name, rack) in enumerate(racks.items()):
+            if (kind(rack) != "rack" or attrs(rack).get("name") != name or attrs(rack).get("u_height") != CABINET_U or
+                    attrs(rack).get("status") != "active" or refs(rack).get("location") != room or
                     refs(rack).get("rack_type") != "rack-type/42u" or attrs(rack).get("facility_id") != f"{cage}-{bay + 1:02}" or
-                    meta(rack).get("position_m") != [round(1.0 + 0.6 * bay, 1), 1.0, 0] or
-                    (not installed and attrs(rack).get("description") != RESERVED_CABINET) or
-                    (not installed and (child("rack", rack, "device") or child("rack", rack, "power_feed")))):
-                report("provider-rack-geometry", rack, "Cage positions R01-R04 stand in one row at the cabinet pitch: R01/R02 "
-                       "installed 42U AR3100, R03/R04 contracted positions with no equipment, feeds or PDUs.")
-        expected = {}
-        colo = f"tenant/colo/{city.lower()}"
-        for side, stack in ELEVATION.items():
-            rack = f"rack/{sid}/r0{1 + 'ab'.index(side)}"
-            for position, (stem, alias) in stack.items():
-                expected[f"device/{sid}/{stem}"] = (alias, rack, position)
+                    meta(rack).get("position_m") != [round(1.0 + 0.6 * bay, 1), 1.0, 0]):
+                report("provider-rack-geometry", rack, "Each installed 42U AR3100 cabinet keeps its name, facility code and "
+                       "position at the cabinet pitch.")
+            mounts = _mounts([item for r, item in history if r == name])
+            ledger = reservations.get(f"provider-cabinet-u/{rack}", {})
+            if not isinstance(ledger, dict) or set(ledger) != {m["label"] for m in mounts}:
+                report("provider-rack-geometry", rack, "The cabinet's unit ledger records exactly its install history: every "
+                       "device ever racked, removed ones included, and the hygiene rule's cable managers.")
+                continue
+            height = lambda m: catalog.get(m["alias"], {}).get("u_height", 0) if m["alias"] else 1
+            # Top-down in install order: the ledger tiles a contiguous band from
+            # the top, each item below the one installed before it, and a
+            # manager directly under the item it dresses. Gaps are never reused.
+            floor, previous = CABINET_U + 1, None
+            for m in sorted(mounts, key=lambda m: -ledger[m["label"]] if _integer(ledger[m["label"]], 1, CABINET_U) else 0):
+                position = ledger[m["label"]]
+                if (not _integer(position, 1, CABINET_U) or position != floor - height(m) or
+                        (previous is not None and m["day"] < previous["day"]) or
+                        (m["label"].startswith("cm-under-") and previous is not None and
+                         m["label"] != f"cm-under-{previous['label']}" and previous["label"].startswith("cm-under-"))):
+                    report("provider-rack-geometry", rack, f"{m['label']} at U{position}: the cabinet fills top-down in install "
+                           "order with no unledgered gap; a removed device's units are never reused.")
+                    break
+                floor, previous = position, m
+            occupied = {u for m in mounts if not m["removed"] for u in range(ledger[m["label"]], ledger[m["label"]] + height(m))}
+            for m in mounts:
+                if m["removed"]:
+                    continue
+                label = (f"{name.lower()}-cm-{ledger[m['label']]}" if m["label"].startswith("cm-under-") else m["label"])
+                expected[f"device/{sid}/{label}"] = (m["alias"], rack, ledger[m["label"]], m["status"], m)
+            for position, alias in _blanks(occupied) if occupied else ():
+                expected[f"device/{sid}/{name.lower()}-blank-{position}"] = (alias, rack, position, "active", None)
             for feed in ("a", "b"):
-                expected[f"device/{sid}/pdu-r0{1 + 'ab'.index(side)}-{feed}"] = ("pdu-switched", rack, None)
-        roles = {"provider-edge": "provider-edge", "aggregation": "aggregation", "pop-mgmt": "management",
-                 "oob-server": "console-server", "osp-panel": "patch-panel", "demarc-panel": "patch-panel",
-                 "cable-manager-1u": "cable-management", "cable-manager-2u": "cable-management", "pdu-switched": "pdu"}
-        names = {"osp-panel": "{rack} OSP Panel", "demarc-panel": "{rack} Colo Demarc", "cable-manager-1u": "{rack} CM-{u}",
-                 "cable-manager-2u": "{rack} CM-{u}"}
-        for device, (alias, rack, position) in expected.items():
+                expected[f"device/{sid}/pdu-{name.lower()}-{feed}"] = ("pdu-switched", rack, None, "active", None)
+            # Each removed device leaves a dated rack journal naming the change.
+            for m in mounts:
+                journal = f"journal/{rack}/removed/{m['label']}"
+                if m["removed"] and (kind(journal) != "journal_entry" or refs(journal).get("assigned_object") != rack or
+                                     not str(attrs(journal).get("comments", "")).startswith(f"**Removed** · {m['removed']}\n\nRemoved: ") or
+                                     not re.search(r", CHG\d{7}\. ", str(attrs(journal).get("comments", ""))) or
+                                     not str(attrs(journal).get("created", "")).startswith(m["removed"].isoformat())):
+                    report("provider-rack-journal", rack, f"The gap left by {m['label']} needs its dated removal journal "
+                           "naming the predecessor and change ticket.")
+            removals = {k for k in child("assigned_object", rack, "journal_entry") if "/removed/" in k}
+            if removals != {f"journal/{rack}/removed/{m['label']}" for m in mounts if m["removed"]}:
+                report("provider-rack-journal", rack, "Removal journals exist exactly for the devices removed from this cabinet.")
+        colo = f"tenant/colo/{city.lower()}"
+        for device, (alias, rack, position, status, item) in expected.items():
             rack_name = attrs(rack).get("name", "")
-            name = (names[alias].format(rack=rack_name, u=position) if alias in names else
-                    f"{rack_name} PDU-{device[-1].upper()}" if alias == "pdu-switched" else None)
-            if (kind(device) != "device" or attrs(device).get("status") != "active" or refs(device).get("site") != site or
+            legacy = bool(item) and alias not in PASSIVE_NAMES and item["day"] < NS2_ADOPTED
+            name = (PASSIVE_NAMES[alias].format(rack=rack_name, u=position) if alias in PASSIVE_NAMES else
+                    f"{rack_name} PDU-{device[-1].upper()}" if alias == "pdu-switched" else
+                    f"{facility}-{LEGACY_ABBREVIATIONS[PLANT_ROLES[alias]]}{2 if item['label'].endswith('-b') else 1}"
+                    if legacy else None)
+            if (kind(device) != "device" or attrs(device).get("status") != status or refs(device).get("site") != site or
                     refs(device).get("tenant") != (colo if alias == "demarc-panel" else "tenant") or
-                    refs(device).get("role") != f"role/{roles[alias]}" or refs(device).get("device_type") != f"hardware/{alias}" or
+                    refs(device).get("role") != f"role/{PLANT_ROLES[alias]}" or refs(device).get("device_type") != f"hardware/{alias}" or
                     refs(device).get("location") != room or refs(device).get("rack") != rack or
                     attrs(device).get("position") != position or (position is not None and attrs(device).get("face") != "front") or
-                    (name is not None and attrs(device).get("name") != name)):
-                report("provider-device-inventory", device, "Each cage device holds its exact hardware, role, tenant, cabinet "
-                       "and unit: the DESIGN §5 elevation, with the colo demarc panel the carrier hotel's.")
-            if alias in ("aggregation", "pop-mgmt", "oob-server"):
+                    (name is not None and attrs(device).get("name") != name) or
+                    ("tag/legacy-naming" in (refs(device).get("tags") or [])) is not legacy):
+                report("provider-device-inventory", device, "Each PoP device holds its exact hardware, role, status, tenant, "
+                       "cabinet and unit from the install history; a pre-NS-2 survivor keeps its legacy name and tag.")
+            # Out of service: a relic or cold spare has no cable at all; a
+            # planned or staged chassis only planned pre-cabling; none is powered.
+            if status != "active":
+                on = cables_on[device]
+                if (any(kind(refs(c).get(s)) in ("power_port", "power_outlet") for c in on for s in ("a", "b")) or
+                        (status in ("decommissioning", "inventory") and on) or
+                        any(attrs(c).get("status") != "planned" for c in on)):
+                    report("provider-out-of-service", device, "A device not in service draws no power; a relic or spare is "
+                           "uncabled, and a planned or staged chassis carries only planned cables.")
+                if status != "staged" and any(attrs(p).get("enabled") is not False for p in child("device", device, "interface")
+                                              if attrs(p).get("type") != "virtual"):
+                    report("provider-out-of-service", device, "A decommissioning, planned or spare chassis keeps every port shut.")
+            elif alias not in PASSIVE_NAMES and child("device", device, "interface") and not any(
+                    attrs(c).get("status") == "connected" and kind(refs(c).get(s)) == "interface" and refs(refs(c).get(s)).get("device") == device
+                    for c in cables_on[device] for s in ("a", "b")):
+                report("provider-out-of-service", device, "An active device with interfaces has a cabled data or management port.")
+            if status == "active" and alias in ("aggregation", "aggregation-legacy", "pop-mgmt", "oob-server", "time-server"):
                 infrastructure.append(device)
         if set(child("site", site, "device")) != set(expected):
-            report("provider-device-inventory", site, "The PoP inventory is exactly its elevation: PE, aggregation and panels per "
-                   "side, management switch and console server in R01, four PDUs, and the hygiene rule's cable managers.")
-        # Fill: the plan's per-cabinet rack-unit utilisation, recomputed from
-        # each device's own type height (blanking panels are excluded).
-        for side in ELEVATION:
-            rack = f"rack/{sid}/r0{1 + 'ab'.index(side)}"
-            want = sum(catalog.get(alias, {}).get("u_height", 0) for _, alias in ELEVATION[side].values())
-            have = sum(catalog.get(meta(d).get("hardware") or str(refs(d).get("device_type")).removeprefix("hardware/"), {}).get("u_height", 0)
+            report("provider-device-inventory", site, "The PoP inventory is exactly its install history: panels, PEs and their "
+                   "relic or successor, aggregation, management, console, time and DDoS equipment, the cold spare, cable "
+                   "managers, blanking in the gaps and the PDUs.")
+        plant[pop] = expected
+        # Fill: per-cabinet rack-unit utilisation, recomputed from each
+        # positioned device's type height whatever its status (blanking excluded).
+        for name, rack in racks.items():
+            want = sum(catalog.get(alias, {}).get("u_height", 0) for alias, r, position, _, _ in expected.values()
+                       if r == rack and position is not None and not catalog.get(alias, {}).get("exclude_from_utilization"))
+            have = sum(catalog.get(str(refs(d).get("device_type")).removeprefix("hardware/"), {}).get("u_height", 0)
                        for d in child("rack", rack, "device") if attrs(d).get("position") is not None and
                        not catalog.get(str(refs(d).get("device_type")).removeprefix("hardware/"), {}).get("exclude_from_utilization"))
             if have != want:
-                report("provider-rack-geometry", rack, f"Cabinet utilisation is the elevation's {want}U, recomputed from installed devices.")
+                report("provider-rack-geometry", rack, f"Cabinet utilisation is the install history's {want}U, recomputed from racked devices.")
         # Panels: every front position maps 1:1 onto the same rear position.
-        for panel, (count, front_type) in ((f"device/{sid}/r0{n}-{kind_}", spec) for n in (1, 2) for kind_, spec in
+        for panel, (count, front_type) in ((f"device/{sid}/{name.lower()}-{kind_}", spec) for name in names for kind_, spec in
                                            (("osp", (48, "lc")), ("demarc", (24, "lc")))):
             fronts = child("device", panel, "front_port")
             rears = {attrs(r).get("name"): r for r in child("device", panel, "rear_port")}
@@ -924,6 +1212,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     any(rear_of.get(f) != rears.get(attrs(f).get("name")) or attrs(f).get("rear_port_position") != 1 or
                         attrs(f).get("type") != front_type for f in fronts)):
                 report("provider-panel-mapping", panel, "Each panel front position maps one-to-one onto the same-numbered rear position.")
+            # TIA-606-style front labels: <facility_id>.<U>:<port>.
+            unit, fid = attrs(panel).get("position"), attrs(refs(panel).get("rack")).get("facility_id")
+            if any(attrs(f).get("label") != f"{fid}.{unit}:{int(str(attrs(f).get('name')).removeprefix('Port ') or 0):02}"
+                   for f in fronts if str(attrs(f).get("name", "")).removeprefix("Port ").isdecimal()):
+                report("provider-panel-mapping", panel, "Panel front ports carry their <facility>.<U>:<port> labels.")
         # Console paths: each managed chassis' RJ-45 console reaches the console server.
         console = f"device/{sid}/console-01"
         for device in (f"device/{sid}/pe-a", f"device/{sid}/pe-b", f"device/{sid}/agg-a", f"device/{sid}/agg-b", f"device/{sid}/mgmt-01"):
@@ -944,12 +1237,34 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     for index, side in enumerate(("a", "b")):
         router = f"device/pop-{ordered[index]}/pe-{side}"
         used_pe_ports[router].add(f"{router}/if/{PE_TRANSIT_PORT}")
+    # Exchange ports on PE-A xe-0/1/5: each metro's founding PoP, and the
+    # relocated exchange's withdrawn port at its metro's second PoP (cabled,
+    # shut, its circuit deprovisioning).
+    ix_ports = {}  # PE port -> (metro, circuit, in service)
+    for metro, host in tl["founding"].items():
+        if metro not in IXES:
+            continue
+        ix_ports[f"device/pop-{host}/pe-a/if/{PE_IX_PORT}"] = (metro, f"circuit/ix/{metro}", True)
+        hosts = sorted((p for p in pops if pops[p]["metro"] == metro), key=lambda p: (tl["launch"][p], order[p]))
+        if metro == IX_RELOCATED and len(hosts) > 1:
+            ix_ports[f"device/pop-{hosts[1]}/pe-a/if/{PE_IX_PORT}"] = (metro, f"circuit/ix/{metro}/former", False)
+    for port in ix_ports:
+        used_pe_ports[port.rsplit("/if/", 1)[0]].add(port)
     for pop in ordered:
         sid, site = f"pop-{pop}", f"site/pop-{pop}"
         pe_a, pe_b = (f"device/{sid}/pe-{side}" for side in ("a", "b"))
+        # Every SFP+ position cabled is the MX304 trigger (DESIGN §3, gate 5).
+        free = {s: len(SFP_PLUS_PORTS) - sum(bool(adjacent.get(f"device/{sid}/pe-{s}/if/{n}")) for n in SFP_PLUS_PORTS)
+                for s in "ab"}
+        exhausted = {s for s in "ab" if free[s] == 0}
+        if (exhausted != {s for s in "ab" if tl["sfp_plus"][(pop, s)] >= len(SFP_PLUS_PORTS)} or
+                (tl["mx304"][pop] is not None and not exhausted)):
+            report("provider-successor", site, "An MX304 successor pair is planned exactly where a PE has no free SFP+ "
+                   "position left for its handoffs.")
+        ceiling = ("SFP+ positions exhausted, MX304 successor planned" if tl["mx304"][pop]
+                   else "MX204 SFP+ ports exhausted at 8, next platform MX304")
         for router in (pe_a, pe_b):
-            if attrs(router).get("description") != (f"{role_label('provider-edge')} at {attrs(site).get('name')}; "
-                                                     "MX204 SFP+ ports exhausted at 8, next platform MX304"):
+            if attrs(router).get("description") != f"{role_label('provider-edge')} at {attrs(site).get('name')}; {ceiling}":
                 report("provider-scope-text", router, "The PE states its role and the MX204 port ceiling with its MX304 growth path.")
             physical = {p["name"] for p in catalog.get("provider-edge", {}).get("interfaces", [])}
             ports = child("device", router, "interface")
@@ -970,20 +1285,23 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 if (attrs(port).get("type") != "100gbase-x-qsfp28" or attrs(port).get("enabled") is not (n < 3 and in_use(port)) or
                         (n < 3 and attrs(port).get("speed") != 100000000) or (n == 3 and adjacent.get(port))):
                     report("provider-port-mode", port, "The installed MX204 mode exposes three active 100G cages and leaves the fourth unavailable.")
-            speeds = {**{p: 10000000 for p in PE_LAG_MEMBERS}, PE_NOC_PORT: 1000000, PE_MGMT_PORT: 10000000, PE_TRANSIT_PORT: 10000000}
+            speeds = {**{p: 10000000 for p in PE_LAG_MEMBERS}, PE_NOC_PORT: 1000000, PE_MGMT_PORT: 10000000,
+                      PE_TRANSIT_PORT: 10000000, PE_IX_PORT: 10000000}
             for n in range(8):
                 name = f"xe-0/1/{n}"
                 port = f"{router}/if/{name}"
                 used = port in used_pe_ports[router]
-                if (attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not used or
+                live = used and ix_ports.get(port, (None, None, True))[2]
+                if (attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not live or
                         (used and attrs(port).get("speed") != speeds.get(name)) or
                         (name in PE_LAG_MEMBERS) != (refs(port).get("lag") == f"{router}/if/{PE_LAG}")):
                     report("provider-port-mode", port, "PE SFP+ ports: xe-0/1/0-3 the 10G ae1 members, xe-0/1/4 the 1G NOC handoff, "
-                           "xe-0/1/6 the 10G management uplink, xe-0/1/7 the 10G transit handoff; unused ports are shut.")
+                           "xe-0/1/5 the 10G exchange port, xe-0/1/6 the 10G management uplink, xe-0/1/7 the 10G transit "
+                           "handoff; unused and withdrawn ports are shut.")
             actual = {p for p in ports if adjacent.get(p)}
             if actual != used_pe_ports[router]:
                 report("provider-port-use", router, "Only the reserved PE ports are cabled: pair, transport, LAG members, NOC, "
-                       "management and transit. No access attachment lands on a PE physical port.")
+                       "management, transit and exchange. No access attachment lands on a PE physical port.")
             lo, unit = f"{router}/if/lo0", f"{router}/if/lo0.0"
             if attrs(lo).get("description") != "Backbone router identity loopback":
                 report("provider-scope-text", lo, "The loopback descriptor must state its role as the router's backbone identity.")
@@ -1069,8 +1387,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 port = f"{agg}/if/{name}"
                 if port not in used and (adjacent.get(port) or attrs(port).get("enabled") is not False or vlans(port)):
                     report("provider-port-mode", port, "An aggregation UNI with no attachment is shut, uncabled and carries no VLAN.")
-            # In-band management: em0 to the PoP management switch, addressed on em0.0.
-            infrastructure.append(agg)
 
     # --- PoP management LAN, uplinks and the cellular out-of-band service ---
     def local_network(sid, role, vrf, tenant):
@@ -1099,11 +1415,29 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         irb = f"{switch}/if/Vlan10"
         if not svi(irb, network, None, MANAGEMENT, 1, "tenant") or not primary(switch, irb):
             report("provider-management-gateway", switch, "The PoP management subnet requires its routed switch interface and primary management address.")
-        pdus = [f"device/{sid}/pdu-r0{n}-{feed}" for n in (1, 2) for feed in ("a", "b")]
+        pdus = [f"device/{sid}/pdu-r0{n}-{feed}" for n in ((1, 2) if tl["tier"][pop] == "core" else (1,)) for feed in ("a", "b")]
         plan_ports = [(f"device/{sid}/pe-a/if/fxp0", FXP0_HOSTS[0], False), (f"device/{sid}/pe-b/if/fxp0", FXP0_HOSTS[1], False),
                       (f"device/{sid}/agg-a/if/em0", AGG_EM0_HOSTS[0], True), (f"device/{sid}/agg-b/if/em0", AGG_EM0_HOSTS[1], True),
                       (f"{console}/if/{eth0}", OOB_HOST, True),
                       *((f"{pdu}/if/{pdu_net}", host, True) for pdu, host in zip(pdus, PDU_HOSTS))]
+        # The PoP services take the next copper ports: the time server's lan1
+        # in service, the staged DDoS appliance's Management pre-cabled
+        # (planned cable, reserved address, not yet its primary).
+        services = [(f"device/{sid}/ntp-01/if/{catalog.get('time-server', {}).get('management_port')}", TIME_SERVER_HOST, True)
+                    ] if tl["timing"][pop] else []
+        if tl["ddos"][pop]:
+            services.append((f"device/{sid}/ddos-01/if/Management", DDOS_HOST, False))
+        for index, (port, host, in_service) in enumerate(services, len(plan_ports)):
+            peer, device = f"{switch}/if/{copper[index]}", refs(port).get("device")
+            ips = [k for k in child("assigned_object", port, "ip_address") if k in ipv4_addresses]
+            if (adjacent.get(port) != peer or attrs(cable_of.get(port)).get("status") != ("connected" if in_service else "planned") or
+                    vlans(peer) != {vlan} or attrs(peer).get("mode") != "access" or len(ips) != 1 or
+                    ipv4_addresses[ips[0]] != ip_interface(f"{network[host]}/{network.prefixlen}") or
+                    refs(ips[0]).get("vrf") != MANAGEMENT or attrs(ips[0]).get("status") != ("active" if in_service else "reserved") or
+                    (refs(device).get("primary_ip4") == ips[0]) is not in_service):
+                report("provider-management-mode", port, "The time server's management port and the staged DDoS appliance's "
+                       "are cabled to the next management-switch copper ports and addressed in Carrier Management; only "
+                       "the in-service time server's address is active and primary.")
         # The switch port is the access switchport; the host port carries no
         # 802.1Q mode (the shared view lends it its prefix's segment only).
         for index, (port, host, is_primary) in enumerate(plan_ports):
@@ -1122,7 +1456,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             routed(f"management/{sid}/{side}", (a, b), MANAGEMENT)
             if not cabled(a, b, 10000000):
                 report("provider-management-uplink", site, "PoP management requires two real routed 10G switch uplinks to the separate PE ports.")
-        infrastructure.extend((switch, console))
         # Cellular out-of-band: the LTE modem cannot be cabled (NetBox refuses
         # it); it holds the cellular carrier's /30, and the circuit's local end
         # is site-scoped and marked connected. No trace is claimed.
@@ -1227,7 +1560,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         att = attachments[target]
         side, uni, subif, vlan = att["side"], att["uni"], att["subif"], att["vlan"]
         nid = f"device/{sid}/nid-{ordinal:02}"
-        alias = "nid-10g" if handoff > 1000 else "nid"
+        # The first NID generation (P1-14) stays where a single-NID 1G service
+        # with customer-owned gear behind it entered service before 2016.
+        circuit_key = f"circuit/customer/{target}"
+        early = str(attrs(circuit_key).get("install_date", "9999")) < LEGACY_NID_BEFORE.isoformat()
+        legacy_nid = early and (service == "epl" or (service == "dia" and not customer["managed"]))
+        alias = "nid-10g" if handoff > 1000 else "nid-legacy" if legacy_nid else "nid"
+        handoff_label = ", 1000BASE-LX handoff" if alias == "nid-legacy" else ""
         spec = catalog.get(alias, {})
         nni = f"{nid}/if/{spec.get('nni_port')}"
         nid_uni = f"{nid}/if/{spec.get('uni_port')}"
@@ -1322,12 +1661,12 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                     report("provider-dia-address", sid, "Managed DIA joins PE and CE on a public /31, routes the /29 to the CE's "
                            "marked-connected LAN handoff, and cables the CE to its NID.")
             elif (not address(subif, block, None, 1, tenant) or attrs(nid_uni).get("mark_connected") is not True or
-                  adjacent.get(nid_uni) or attrs(nid_uni).get("label") != "Customer-owned firewall"):
+                  adjacent.get(nid_uni) or attrs(nid_uni).get("label") != f"Customer-owned firewall{handoff_label}"):
                 report("provider-dia-address", sid, "Unmanaged DIA routes the /29 on the PE unit (.1) and marks the NID's "
                        "customer port connected to the customer-owned firewall the carrier does not inventory.")
         else:
             if (child("assigned_object", subif, "ip_address") or attrs(nid_uni).get("mark_connected") is not True or
-                    adjacent.get(nid_uni) or attrs(nid_uni).get("label") != "Customer Ethernet equipment"):
+                    adjacent.get(nid_uni) or attrs(nid_uni).get("label") != f"Customer Ethernet equipment{handoff_label}"):
                 report("provider-epl", sid, "An EPL end carries no address on its PE unit and marks the NID's customer port "
                        "connected to customer Ethernet equipment the carrier does not inventory.")
     now[0] = "active"
@@ -1460,8 +1799,67 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     now[0] = "active"
 
     # --- Inventory totals, the cross-connect and panel tenancy ---
+    # --- Exchanges (K8): the IX is a provider with one AS, its peering LAN a
+    # provider network, our port an IX Port circuit through the colo demarc ---
+    as_of = date.fromisoformat(recipe["as_of"])
+    exchanges = sorted({metro for metro, _, _ in ix_ports.values()})
+    for port, (metro, key, live) in sorted(ix_ports.items()):
+        now[0] = "active" if live else "decommissioning"
+        router = port.rsplit("/if/", 1)[0]
+        lan, provider = f"provider-network/ix/{metro}", f"provider/ix-{metro}"
+        circuit(key, port, None, refs(router).get("site"), lan, provider, 10000000, None,
+                account=f"provider-account/ix/{metro}", circuit_type="circuit-type/ix-port")
+        ends_on = attrs(key).get("termination_date")
+        if (IX_IPV4_NOTE not in str(attrs(key).get("comments")) or (ends_on is None) is not live or
+                (ends_on is not None and str(ends_on) <= as_of.isoformat())):
+            report("provider-exchange", key, "An exchange port declares its IPv6-only peering; only the relocated "
+                   "exchange's withdrawn port carries a disconnect date after as_of.")
+    now[0] = "active"
+    for metro in exchanges:
+        name, short = IXES[metro]
+        provider, asn, lan = f"provider/ix-{metro}", f"asn/ix/{metro}", f"provider-network/ix/{metro}"
+        if (attrs(provider).get("name") != name or refs(provider).get("asns") != [asn] or
+                attrs(asn).get("asn") not in IX_ASNS or refs(asn).get("rir") != "rir/arin" or "tenant" in refs(asn) or
+                attrs(asn).get("description") != _holder(name) or refs(lan).get("provider") != provider or
+                attrs(lan).get("name") != f"{short} peering LAN" or IX_IPV4_NOTE not in str(attrs(lan).get("description")) or
+                refs(f"provider-account/ix/{metro}").get("provider") != provider):
+            report("provider-exchange", provider, "Each exchange is a provider holding its one route-server AS from the "
+                   "exchange range, with its peering LAN and membership account; no tenant holds it.")
+    if [attrs(f"asn/ix/{m}").get("asn") for m in exchanges].count(None) or len({attrs(f"asn/ix/{m}").get("asn") for m in exchanges}) != len(exchanges):
+        report("provider-exchange", "plan", "Each exchange holds its own distinct AS number.")
+    if exchanges and (kind("asn-range/exchanges") != "asn_range" or refs("asn-range/exchanges").get("rir") != "rir/arin" or
+                      (attrs("asn-range/exchanges").get("start"), attrs("asn-range/exchanges").get("end")) != (IX_ASNS[0], IX_ASNS[-1])):
+        report("provider-routing-registry", "asn-range/exchanges", "Exchange route-server AS numbers need their declared documentation range.")
+
+    # --- Former customers (P0-6): tenant, account and one decommissioned circuit ---
+    formers = recipe.get("former_customers") or []
+    former_slots = reservations.get("provider-former-customers", {}) if formers else {}
+    tenant_users = {value for obj in objects.values() if obj["kind"] not in ("circuit", "provider_account", "journal_entry")
+                    for value in obj["refs"].values() if isinstance(value, str) and value.startswith("tenant/cust-")}
+    for former in formers:
+        key, slot = former.get("key"), former_slots.get(former.get("key")) if isinstance(former_slots, dict) else None
+        tenant, account, circuit_key = f"tenant/cust-{key}", f"provider-account/customer/{key}", f"circuit/former/{key}"
+        installed, ended = (str(attrs(circuit_key).get(f, "")) for f in ("install_date", "termination_date"))
+        if (not _integer(slot, 0, 31) or kind(tenant) != "tenant" or refs(tenant).get("group") != "tenant-group/customers" or
+                attrs(tenant).get("name") != former.get("name") or
+                not str(attrs(tenant).get("description", "")).startswith("Former ") or
+                not str(attrs(tenant).get("description", "")).endswith(f" customer of {recipe['name']}") or
+                refs(account).get("provider") != "provider/operator" or attrs(account).get("account") != f"{code}-F{slot + 1:05d}" or
+                kind(circuit_key) != "circuit" or attrs(circuit_key).get("status") != "decommissioned" or
+                attrs(circuit_key).get("cid") != f"{code}-{CID_CODES.get(former.get('service'))}-{FORMER_ORDER_BASE + slot:05d}" or
+                refs(circuit_key).get("provider") != "provider/operator" or refs(circuit_key).get("tenant") != tenant or
+                refs(circuit_key).get("provider_account") != account or
+                refs(circuit_key).get("type") != f"circuit-type/{former.get('service')}-access" or
+                not str(former.get("start")) <= installed[:4] or not installed < ended <= as_of.isoformat() or
+                child("circuit", circuit_key, "circuit_termination") or tenant in tenant_users):
+            report("provider-former-customer", circuit_key, "A former customer keeps its tenant, closed account and one "
+                   "decommissioned circuit with its service dates; no termination, site, device or address remains.")
+    if isinstance(former_slots, dict) and set(former_slots) != {f.get("key") for f in formers}:
+        report("provider-former-customer", "plan", "provider-former-customers holds exactly the recipe's former customers.")
+
     expected_circuits = (set(spans) | {f"circuit/customer/{t}" for t in targets} | {f"circuit/noc/{s}" for s in ("a", "b")} |
-                         {f"circuit/transit/{s}" for s in ("a", "b")} | {f"circuit/oob/{pop}" for pop in pops})
+                         {f"circuit/transit/{s}" for s in ("a", "b")} | {f"circuit/oob/{pop}" for pop in pops} |
+                         {key for _, key, _ in ix_ports.values()} | {f"circuit/former/{f.get('key')}" for f in formers})
     if by_kind["circuit"] != expected_circuits:
         report("provider-circuit-inventory", "plan", "Physical circuit inventory must exactly cover requested backbone, customer, "
                "NOC, external transit and cellular out-of-band services.")
@@ -1508,12 +1906,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     public_asns = ("asn/operator", "asn/transit-a", "asn/transit-b")
     l3_customers = [c for c in customers if c["service"] == "private-l3"]
     expected_asns = {f"asn/customer/{c['key']}": base + 256 + customer_slots[c["key"]] for c in l3_customers}
-    expected_providers = {"provider/operator", *(f"provider/{label}" for label in CARRIER_NAMES)}
+    expected_providers = {"provider/operator", *(f"provider/{label}" for label in CARRIER_NAMES), *(f"provider/ix-{m}" for m in exchanges)}
+    exchange_asns = {f"asn/ix/{m}" for m in exchanges}
     if kind("provider-network/oob") != "provider_network" or refs("provider-network/oob").get("provider") != "provider/oob":
         report("provider-oob", "provider-network/oob", "The cellular carrier needs its own provider network as the far end of every out-of-band circuit.")
-    if by_kind["provider"] != expected_providers or by_kind["asn"] != set(expected_asns) | set(public_asns):
+    if by_kind["provider"] != expected_providers or by_kind["asn"] != set(expected_asns) | set(public_asns) | exchange_asns:
         report("provider-routing-registry", "plan", "Provider and ASN inventories must match actual operator, transport, upstream "
-               "and private-L3 customer identities.")
+               "and exchange and private-L3 customer identities.")
     if (kind("rir/private") != "rir" or attrs("rir/private").get("is_private") is not True or
             kind("asn-range/private") != "asn_range" or attrs("asn-range/private").get("start") != base or
             attrs("asn-range/private").get("end") != base + 1023 or refs("asn-range/private").get("rir") != "rir/private"):
@@ -1589,11 +1988,13 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     if kind(OOB) != "vrf" or refs(OOB).get("tenant") != "tenant" or refs(OOB).get("import_targets") or refs(OOB).get("export_targets"):
         report("provider-routing-domain", OOB, "The out-of-band context is the cellular carrier's network: no route target joins it to the carrier.")
     expected_accounts = ({f"provider-account/provider/{label}" for label in CARRIER_NAMES} | {"provider-account/operator/fiber"} |
-                         {f"provider-account/customer/{c['key']}" for c in customers})
+                         {f"provider-account/customer/{c['key']}" for c in [*customers, *formers]} |
+                         {f"provider-account/ix/{metro}" for metro in exchanges})
     if any(refs(f"circuit/noc/{side}").get("provider") == "provider/operator" for side in ("a", "b")):
         expected_accounts.add("provider-account/operator/noc")
     for account in expected_accounts:
         provider = ("provider/operator" if account.startswith(("provider-account/operator/", "provider-account/customer/"))
+                    else f"provider/ix-{account.rsplit('/', 1)[1]}" if account.startswith("provider-account/ix/")
                     else account.removeprefix("provider-account/"))
         if kind(account) != "provider_account" or refs(account).get("provider") != provider or "tenant" in refs(account):
             report("provider-account", account, "Procurement accounts must reference their actual provider; native accounts have no tenant field.")
@@ -1713,16 +2114,24 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if pop not in first_span or day <= first_span[pop]:
             report("provider-timeline", key, "A customer circuit enters service after its PoP's first backbone span.")
         starts[customer["key"]].append((day, sid))
-    previous = None
-    for customer in sorted(customers, key=lambda item: customer_slots[item["key"]]):
-        if not starts[customer["key"]]:
-            continue
-        day, first = min(starts[customer["key"]])
+    # Onboarding (v0.18): each customer signs on its frozen ledger day, from a
+    # year after founding to a week before as_of, starting with its hub (or
+    # first) circuit; the book spreads over the years, with no clamp pile-up.
+    for customer in customers:
+        frozen = reservations.get(f"provider-timeline/onboard/{customer['key']}")
+        signed = date.fromordinal(frozen["day"]) if isinstance(frozen, dict) and _integer(frozen.get("day"), 1, date.max.toordinal()) else None
         anchor = customer.get("hub_pop") or customer["sites"][0]["pop"]
-        if first != f"ce-{customer['key']}-{anchor}-001" or (previous is not None and day < previous):
+        founded = date(as_of.year - 15, as_of.month, min(as_of.day, 28))
+        if signed is None or not founded + timedelta(days=365) <= signed <= as_of - timedelta(days=7) or (
+                starts[customer["key"]] and min(starts[customer["key"]]) != (signed, f"ce-{customer['key']}-{anchor}-001")):
             report("provider-timeline", f"provider-account/customer/{customer['key']}",
-                   "Customers onboard in their permanent slot order, each starting with its hub (or first) circuit.")
-        previous = day
+                   "A customer signs on its frozen onboarding day, inside the estate's history, starting with its hub "
+                   "(or first) circuit.")
+    years = Counter(day.year for days in starts.values() for day, _ in days)
+    for year, count in sorted(years.items()):
+        if sum(years.values()) >= ONBOARDING_MIN_BOOK and count > ONBOARDING_YEAR_SHARE * sum(years.values()):
+            report("provider-timeline", "plan", f"{count} of {sum(years.values())} premises entered service in {year}: "
+                   f"no year may hold more than {ONBOARDING_YEAR_SHARE:.0%} of the book.")
 
     # --- Geography: premises across the metro, on a street grid, apart ---
     placed = []
@@ -1775,8 +2184,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                + ", ".join(sorted(extra_bgp)) + " would read as device configuration.")
     if by_kind["bgp_routing_policy"] != {f"bgp-routing-policy/{slug}" for slug in BGP_POLICIES}:
         report("provider-bgp-inventory", "plan", "The estate carries exactly the four authored named routing policies.")
-    if by_kind["bgp_peer_group"] != {f"bgp-peer-group/{slug}" for slug in BGP_GROUPS}:
-        report("provider-bgp-inventory", "plan", "The estate carries exactly the three authored peer groups.")
+    if by_kind["bgp_peer_group"] - {"bgp-peer-group/ix-route-servers"} != {f"bgp-peer-group/{slug}" for slug in BGP_GROUPS}:
+        report("provider-bgp-inventory", "plan", "The estate carries exactly the three authored peer groups, plus the exchange group.")
     for slug, (name, weight, description) in BGP_POLICIES.items():
         key = f"bgp-routing-policy/{slug}"
         if kind(key) != "bgp_routing_policy" or attrs(key) != {"name": name, "weight": weight, "description": description} or refs(key):
@@ -1846,6 +2255,38 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 router, f"{name_of(ce)} customer{label}", f"asn/customer/{ckey}", "customer",
                 f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
                 address_of(subif, family), remote_address=address_of(wan, family), tenant=tenant, status=LIFE[stage]["bgp"])
+    # Exchange route servers (K8): two sessions per in-service IX port, over
+    # the IPv6-only peering LAN, to route servers sharing the exchange's AS.
+    # The LAN, our member address and the route servers are the exchange's:
+    # no tenant, and a route server's address binds no interface of ours.
+    # Without ipv6_pool the port stays and the sessions are omitted.
+    exchange_group = "bgp-peer-group/ix-route-servers"
+    live_ports = sorted((port, metro, key) for port, (metro, key, live) in ix_ports.items() if live)
+    for port, metro, key in live_ports if 6 in families else ():
+        router = port.rsplit("/if/", 1)[0]
+        member = address_of(port, 6)
+        lan = ip_interface(attrs(member)["address"]).network if member else None
+        lans = prefixes_by_vrf_network[(CORE, str(lan))] if lan else []
+        if member is None or refs(member).get("tenant") or len(lans) != 1 or refs(lans[0]).get("tenant") or lan.prefixlen != 64:
+            report("provider-exchange", key, "The exchange port holds one member address on the exchange's untenanted "
+                   "IPv6 peering /64.")
+        name, short = IXES[metro]
+        for n in range(1, IX_ROUTE_SERVERS + 1):
+            servers = list(ips_by_vrf_address[(CORE, 6, int(lan[n]))]) if lan else []
+            server = servers[0] if len(servers) == 1 else None
+            if server is not None and (refs(server).get("tenant") or refs(server).get("assigned_object") or
+                                       attrs(server).get("description") != f"{short} route server {n}"):
+                report("provider-exchange", server, "A route server's address is the exchange's: unassigned, untenanted "
+                       "and named for its server.")
+            expected_sessions[f"bgp-session/ix/{metro}/rs-{n}"] = peering(
+                router, f"{short} route server {n} IPv6", f"asn/ix/{metro}", "ix-route-servers",
+                f"Route-server peering on the {name} peering LAN over {attrs(key).get('cid')}", member, remote_address=server)
+    want_group = 6 in families and bool(live_ports)
+    if (exchange_group in by_kind["bgp_peer_group"]) is not want_group or (want_group and (
+            refs(exchange_group) != {"local_as": "asn/operator"} or
+            attrs(exchange_group) != {"name": "IX route servers", "description": "Route-server peerings on internet exchange peering LANs"})):
+        report("provider-bgp-group", exchange_group, "The IX route servers group exists exactly when an addressed exchange "
+               "port peers; it carries the operator's identity and no policies.")
     if by_kind["bgp_session"] != set(expected_sessions):
         report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair and every client against both "
                "reflectors, each recorded from both ends, each transit handoff and each private-L3 attachment.")
@@ -1869,7 +2310,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     # customer power the carrier does not inventory.
     findings.extend(validate_power(objects, catalog, sorted(infrastructure), children, peers, cable_of,
                                    poe_watts=poe_watts, optics_watts=optics_watts))
-    findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),
+    findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops), tms=any(
+                    refs(d).get("device_type") == "hardware/ddos-mitigation" for d in by_kind["device"])),
                     peak=recipe["noc_peak_mbps"], reserve=recipe["reserve_fraction"], strict_sites=False,
                     network_offsets=DC_OFFSETS, poe_watts=poe_watts, optics_watts=optics_watts))
     return findings
@@ -1982,7 +2424,10 @@ def discovery_lab(plan, catalog):
     # exactly as their routed /31 adjacencies in the production graph.
     by_name = {o["attrs"]["name"]: k for k, o in production.items() if o["kind"] == "device"}
     mirrors = {d: by_name.get(objects[d]["attrs"]["name"].removeprefix("lab-")) for d in devices}
-    pes = {k for k, o in production.items() if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"}
+    # Only an in-service PE is mirrored: never a decommissioning relic or a
+    # planned or staged successor.
+    pes = {k for k, o in production.items() if o["kind"] == "device" and o["refs"].get("role") == "role/provider-edge"
+           and o["attrs"].get("status") == "active"}
     order = plan.get("reservations", {}).get("provider-pop-order") or {"": 0}
     first = {k for k in pes if production[k]["refs"].get("site") == f"site/pop-{min(order, key=order.get)}"}
     ends = defaultdict(set)

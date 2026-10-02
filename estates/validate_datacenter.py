@@ -25,7 +25,13 @@ WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
          # Provider PoP plant and premises kit, restated (catalog/README.md
          # planning allowances; the PE's 320 W is checked by validate_provider).
          "aggregation": 300, "pop-mgmt": 120, "oob-server": 40,
-         "nid": 52, "nid-10g": 90, "ce-small": 40}
+         "nid": 52, "nid-10g": 90, "ce-small": 40,
+         # Lived-in carrier (v0.18), restated from the cited maxima: ACX5048 AC
+         # 365 W (Juniper ACX5000 hardware guide), Meinberg M300 PWR1 20 W and
+         # MetroNID TE 13 W (pinned library types), Arbor TMS HD 1000 327 W
+         # (NETSCOUT SECPDS_004_EN-2201). The MX80 relic and the MX304
+         # successor are never powered, so they carry no allowance.
+         "aggregation-legacy": 365, "time-server": 20, "nid-legacy": 13, "ddos-mitigation": 327}
 NETWORK_OFFSETS = {"management": 0, "applications": 6, "database": 7,
                    "backup": 8, "wan": 9, "storage": 10}
 

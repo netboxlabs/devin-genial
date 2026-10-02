@@ -368,7 +368,9 @@ class FootprintGates(unittest.TestCase):
         self.check("provider-oob", lambda: self.o[f"ip/{modem}"]["refs"].update(vrf="vrf/provider"))
 
     def test_cabinet_elevation_holds_exact_units(self):
-        self.assertEqual(self.o[f"device/{POP}/pe-a"]["attrs"]["position"], 37)
+        # Every unit comes from the cabinet's frozen install ledger, top-down.
+        ledger = self.plan["reservations"][f"provider-cabinet-u/rack/{POP}/r01"]
+        self.assertEqual(self.o[f"device/{POP}/pe-a"]["attrs"]["position"], ledger["pe-a"])
         self.assertEqual(self.o[f"device/{POP}/r01-osp"]["attrs"]["position"], 42)
         self.check("provider-device-inventory", lambda: self.o[f"device/{POP}/agg-a"]["attrs"].update(position=30))
         self.check("provider-rack-geometry", lambda: self.o[f"device/{POP}/console-01"]["refs"].update(rack=f"rack/{POP}/r03"))
@@ -422,9 +424,14 @@ class FootprintGates(unittest.TestCase):
         self.check("provider-dia-address", lambda: self.o[f"prefix/dia/{DIA}"]["attrs"].update(prefix="10.9.9.0/29"))
 
     def test_no_access_attachment_on_a_pe_physical_port(self):
+        # A free SFP+ position on either PE (xe-0/1/5 is the exchange port here).
+        free = next(f"device/{POP}/pe-{s}/if/xe-0/1/{n}" for s in "ab" for n in range(8)
+                    if not any(f"device/{POP}/pe-{s}/if/xe-0/1/{n}" in o["refs"].values()
+                               for o in self.plan["objects"] if o["kind"] == "cable"))
+
         def attach_on_pe():
             rear = self.peer(f"circuit/customer/{SPOKE}/Z")
-            self.cable(self.front(rear))["refs"].update(b=f"device/{POP}/pe-a/if/xe-0/1/5")
+            self.cable(self.front(rear))["refs"].update(b=free)
         self.check("provider-port-use", attach_on_pe)
 
 
@@ -444,33 +451,49 @@ class ShowcaseProxies(unittest.TestCase):
     def test_scale_density_and_variety(self):
         from collections import Counter
         premises = [s for s in self.of("site") if s["key"].startswith("site/ce-")]
-        pes = [d for d in self.of("device") if d["refs"].get("role") == "role/provider-edge"]
+        # PEs in service: MX80 relics and MX304 successors carry no customer.
+        pes = [d for d in self.of("device") if d["refs"].get("role") == "role/provider-edge" and d["attrs"]["status"] == "active"]
         self.assertLessEqual(len(self.plan["objects"]), 40000)
         self.assertGreaterEqual(len(premises) / len(pes), 10)
-        # About 9-10 private-L3 CE peers per PE, recomputed from the sessions.
+        # About 10-11 private-L3 CE peers per PE (v0.18 adds thirty branches), recomputed from the sessions.
         peers = Counter(s["refs"]["device"] for s in self.of("bgp_session")
                         if s["key"].startswith("bgp-session/customer/") and not s["key"].endswith("/ipv6"))
-        self.assertTrue(9 <= sum(peers.values()) / len(pes) <= 10)
+        self.assertTrue(10 <= sum(peers.values()) / len(pes) <= 11)
         self.assertGreaterEqual(len({s["attrs"]["description"] for s in premises}), 4)
 
     def test_s1_s3_cabinet_fill_and_pop_inventory(self):
         from collections import Counter
         site = "site/pop-chicago-cermak"
+        # NetBox utilisation: every positioned device whatever its status,
+        # blanking excluded (lived-in DESIGN §3 Cermak table: 19U and 15U).
         fill = {rack: sum(self.o[d["refs"]["device_type"]]["attrs"]["u_height"] for d in self.of("device")
-                          if d["refs"].get("rack") == rack and d["attrs"].get("position") is not None)
+                          if d["refs"].get("rack") == rack and d["attrs"].get("position") is not None
+                          and not self.o[d["refs"]["device_type"]]["attrs"].get("exclude_from_utilization"))
                 for rack in (f"rack/pop-chicago-cermak/r0{n}" for n in (1, 2))}
-        self.assertEqual([round(100 * u / 42, 1) for u in fill.values()], [23.8, 19.0])
-        roles = Counter(d["refs"]["role"] for d in self.of("device") if d["refs"].get("site") == site)
-        self.assertEqual(roles, Counter({"role/provider-edge": 2, "role/aggregation": 2, "role/patch-panel": 4,
-                                         "role/cable-management": 6, "role/management": 1, "role/console-server": 1,
-                                         "role/pdu": 4}))
+        self.assertEqual([round(100 * u / 42, 1) for u in fill.values()], [45.2, 35.7])
+        roles = Counter((d["refs"]["role"], d["attrs"]["status"]) for d in self.of("device") if d["refs"].get("site") == site)
+        # L2: the founding PoP's layers — MX80 relics, the MX304 successor pair
+        # (planned, or staged once received), the cold spare, M300 and TMS.
+        mx304 = next(d["attrs"]["status"] for d in self.of("device") if d["key"] == f"device/{site.removeprefix('site/')}/pe-a2")
+        self.assertIn(mx304, ("planned", "staged"))
+        self.assertEqual(roles, Counter({("role/provider-edge", "active"): 2, ("role/provider-edge", "decommissioning"): 2,
+                                         ("role/provider-edge", mx304): 2, ("role/aggregation", "active"): 2,
+                                         ("role/aggregation", "inventory"): 1, ("role/patch-panel", "active"): 4,
+                                         ("role/cable-management", "active"): 12, ("role/management", "active"): 1,
+                                         ("role/console-server", "active"): 1, ("role/time-server", "active"): 1,
+                                         ("role/ddos-mitigation", "staged"): 1, ("role/pdu", "active"): 4}))
+        # L3: every edge PoP is exactly one cabinet.
+        racks = Counter(r["refs"]["site"] for r in self.of("rack") if r["refs"]["site"].startswith("site/pop-"))
+        self.assertEqual(sorted(Counter(racks.values()).items()), [(1, 6), (2, 6)])
 
     def test_s5_wan_map_arcs(self):
         terms = {}
         for t in self.of("circuit_termination"):
             terms.setdefault(t["refs"]["circuit"], set()).add(self.o[t["refs"]["termination"]]["kind"])
         arcs = sum(kinds == {"site"} for kinds in terms.values())
-        self.assertTrue(320 <= arcs <= 340, arcs)
+        # 305 premises plus 36 second hub attachments, spans and the two NOC links;
+        # exchange ports end on a peering LAN and former customers on nothing.
+        self.assertTrue(350 <= arcs <= 370, arcs)
 
     def test_s8_s9_first_page_order(self):
         from collections import Counter

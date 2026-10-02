@@ -87,7 +87,8 @@ class ProviderBgpShapeTests(unittest.TestCase):
             elif remote not in reflectors:
                 clients.add(remote)
         routers = {key for key, obj in self.objects.items()
-                   if obj["kind"] == "device" and obj["refs"].get("role") == "role/provider-edge"}
+                   if obj["kind"] == "device" and obj["refs"].get("role") == "role/provider-edge"
+                   and obj["attrs"]["status"] == "active"}  # a relic or planned successor never peers
         self.assertEqual(clients, routers - reflectors)
         # Every adjacency is recorded from both ends, so each loopback in the
         # BGP view belongs to a named device; exactly once per direction.
@@ -154,6 +155,8 @@ class ProviderBgpDualStackTests(unittest.TestCase):
 
     def test_every_session_has_an_ipv6_twin_on_ipv6_addresses(self):
         sessions = of_kind(self.plan, "bgp_session")
+        # Exchange route-server sessions ride the IPv6-only peering LAN: no IPv4 twin.
+        sessions = {key: obj for key, obj in sessions.items() if not key.startswith("bgp-session/ix/")}
         v4 = {key for key in sessions if not key.endswith("/ipv6")}
         self.assertEqual({key + "/ipv6" for key in v4}, set(sessions) - v4)
         for key in v4:
@@ -169,6 +172,49 @@ class ProviderBgpDualStackTests(unittest.TestCase):
             else:
                 remote = ip_interface(self.objects[twin["refs"]["remote_address"]]["attrs"]["address"])
                 self.assertEqual(remote.version, 6, key)
+
+    def test_each_live_exchange_port_peers_with_two_route_servers(self):
+        sessions = {k: o for k, o in of_kind(self.plan, "bgp_session").items() if k.startswith("bgp-session/ix/")}
+        live = [o for o in self.objects.values() if o["kind"] == "circuit" and o["key"].startswith("circuit/ix/")
+                and o["attrs"]["status"] == "active"]
+        self.assertTrue(live)
+        self.assertEqual(len(sessions), 2 * len(live))
+        for obj in sessions.values():
+            exchange = self.objects[obj["refs"]["remote_as"]]
+            self.assertTrue(65536 <= exchange["attrs"]["asn"] <= 65551)
+            self.assertEqual(obj["refs"]["peer_group"], "bgp-peer-group/ix-route-servers")
+            server = self.objects[obj["refs"]["remote_address"]]
+            self.assertNotIn("assigned_object", server["refs"])
+            self.assertNotIn("tenant", server["refs"])
+            self.assertEqual(self.objects[obj["refs"]["device"]]["attrs"]["status"], "active")
+        self.assertEqual(set(BGP_FIELDS), set(BGP_KINDS))  # the kind set stays closed
+
+    def test_exchange_sessions_are_exact_and_never_on_an_out_of_service_pe(self):
+        key = next(k for k in of_kind(self.plan, "bgp_session") if k.startswith("bgp-session/ix/"))
+        missing = deepcopy(self.plan)
+        missing["objects"] = [o for o in missing["objects"] if o["key"] != key]
+        self.assertIn("provider-bgp-inventory", {f["code"] for f in validate(missing)})
+        tenanted = deepcopy(self.plan)
+        server = index(tenanted)[index(tenanted)[key]["refs"]["remote_address"]]
+        server["refs"]["tenant"] = "tenant"
+        self.assertIn("provider-exchange", {f["code"] for f in validate(tenanted)})
+        relic = next((k for k, o in self.objects.items() if o["kind"] == "device"
+                      and o["refs"].get("role") == "role/provider-edge" and o["attrs"]["status"] != "active"), None)
+        if relic:
+            moved = deepcopy(self.plan)
+            index(moved)[key]["refs"]["device"] = relic
+            self.assertIn("provider-bgp-session", {f["code"] for f in validate(moved)})
+
+    def test_without_ipv6_the_exchange_port_stays_and_peers_with_nothing(self):
+        plan = generate(recipe())
+        objects = index(plan)
+        self.assertTrue(any(k.startswith("circuit/ix/") for k in objects))
+        self.assertFalse(any(k.startswith("bgp-session/ix/") or k == "bgp-peer-group/ix-route-servers" for k in objects))
+        group = deepcopy(plan)
+        group["objects"].append(dict(key="bgp-peer-group/ix-route-servers", kind="bgp_peer_group",
+                                     attrs={"name": "IX route servers", "description": "x"},
+                                     refs={"local_as": "asn/operator"}, meta={}))
+        self.assertIn("provider-bgp-group", {f["code"] for f in validate(group)})
 
     def test_a_missing_ipv6_twin_is_rejected(self):
         plan = deepcopy(self.plan)

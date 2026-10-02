@@ -18,12 +18,13 @@ from .model import hardware_catalog, redate_serial, serial_pattern, vendor_seria
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
           "25gbase-x-sfp28": ("sfp28", 25000000),
-          "100gbase-x-qsfp28": ("qsfp28", 100000000)}
+          "100gbase-x-qsfp28": ("qsfp28", 100000000),
+          "400gbase-x-qsfpdd": ("qsfpdd", 400000000)}
 # Restated: how an optic cage form factor reads in its bay-type name.
-_CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP28"}
+_CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP28", "qsfpdd": "QSFP-DD"}
 # A smaller module in a larger backward-compatible cage, at that module's own
 # rate. Everything else must match the cage's own form factor exactly.
-_DOWNRATED = {("sfp", "sfpp", 1000000), ("sfpp", "sfp28", 10000000)}
+_DOWNRATED = {("sfp", "sfpp", 1000000), ("sfpp", "sfp28", 10000000), ("qsfp28", "qsfpdd", 100000000)}
 # Detachable fibre optics: duplex LC on single-mode; duplex LC (SR) or MPO-12
 # (SR4) on multimode. Both ends of a channel use the same connector.
 _FIBRE_CONNECTORS = {"smf": {"lc"}, "mmf": {"lc", "mpo"}}
@@ -180,8 +181,13 @@ def analyze(plan, catalog=None):
                 isinstance(attrs(key).get("name"), str)) else None
 
     def awaiting(port):
-        """A cage whose one cable is planned: it faces a handoff not yet in service and may stay shut."""
-        return len(cables[port]) == 1 and attrs(cables[port][0][0]).get("status") == "planned"
+        """A cage whose one cable is planned or decommissioning: it faces a handoff
+        not (or no longer) in service, or a chassis not yet in service, and may stay shut."""
+        return len(cables[port]) == 1 and attrs(cables[port][0][0]).get("status") in ("planned", "decommissioning")
+
+    # A chassis racked but not in service (NetBox's own meanings): its pluggables
+    # and captive AOC ends share its state, never an in-service part's.
+    not_in_service = ("planned", "staged")
 
     module_parts, reserved, checked_types, serials = {}, defaultdict(int), set(), defaultdict(list)
     namespace = recipe.get("namespace") if isinstance(recipe, dict) else None
@@ -255,6 +261,20 @@ def analyze(plan, catalog=None):
                 status not in ({"active", "planned", "staged"} if waiting else {"active"}) or len(bindings[module]) != 1 or
                 kind(bindings[module][0]) != "interface"):
             report("optics-module", module, "Optical module needs one enabled cage directly owned by its chassis without a parent module, unique occupancy, active status and exactly one real interface binding.")
+
+    for module, part in module_parts.items():
+        # One assembly, one state: a captive AOC end follows both chassis it joins.
+        # An optic facing a circuit keeps that handoff's lifecycle instead (above).
+        ports = bindings[module][:1]
+        if ports and any(kind(peer) != "interface" for _, peer in cables[ports[0]]):
+            continue
+        if part.get("assembly") and ports and len(cables[ports[0]]) == 1:
+            ports = [*ports, cables[ports[0]][0][1]]
+        states = {attrs(refs(p).get("device")).get("status") for p in ports} & set(not_in_service)
+        if states and (attrs(module).get("status") != ("staged" if "staged" in states else "planned") or
+                       ("serial" in attrs(module)) != ("staged" in states)):
+            report("optics-module", module, "An optic in a chassis not yet in service shares its state: staged with its "
+                   "serial on site, or planned without one; a captive AOC end follows the staged chassis it joins.")
 
     for owner, mw in reserved.items():
         extra[owner] = int((Decimal(mw) * multiplier / 1000).to_integral_value(rounding=ROUND_CEILING))
@@ -332,8 +352,12 @@ def analyze(plan, catalog=None):
             if length > maximum:
                 return None, route, length, "exceeds the complete local-channel length policy"
             staged = {attrs(c).get("status") for c in route} - {"connected"}
-            if staged and kind(peer) not in {"circuit_termination", "front_port", "rear_port"}:
-                return None, route, length, "requires connected cables unless it faces a circuit not in service"
+            # A planned jumper may join two cages directly when a chassis on
+            # either end is itself planned or staged (pre-cabled, not in service).
+            pending = (staged == {"planned"} and kind(peer) == "interface" and len(route) == 1 and
+                       any(attrs(refs(end).get("device")).get("status") in not_in_service for end in (start, peer)))
+            if staged and not pending and kind(peer) not in {"circuit_termination", "front_port", "rear_port"}:
+                return None, route, length, "requires connected cables unless it faces a circuit or chassis not in service"
             if kind(peer) == "interface":
                 if refs(refs(peer).get("device")).get("site") != site:
                     return None, route, length, "cannot join different sites with a short local optical channel"
