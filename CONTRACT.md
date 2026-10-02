@@ -52,10 +52,12 @@ DNS label (2–20 characters, ending alphanumeric). Canonical keys do not change
 when display conventions change. Generic cable numbers use the existing
 reservation mechanism; access-channel labels derive from immutable endpoint keys.
 Generated devices omit asset tags; serials are descriptive, not matching keys.
-Rack asset tags are globally unique. Tags exceeding the pinned native 50-character
-limit retain 33 characters and a 16-hex SHA256 suffix of the full original label;
-existing shorter tags are unchanged. The digest includes full namespace, site,
-room, equipment group and ordinal, and validation rejects duplicate tags.
+Rack asset tags are globally unique: `<NAMESPACE>-<nnnnn>`, the uppercase
+namespace (at most 20 characters, the cross-estate separator) and a five-digit
+number from the permanent estate-wide `asset-tags` ledger in rack creation
+order, so growth appends tags. Validation rejects duplicate tags. A rack's
+`facility_id` is its room-scoped cabinet code (room tag, row, zone letter and
+bay: `DH-02-C03`).
 
 Units follow the target field contract: interface/circuit speeds and commit rates
 are kb/s; VM `memory` and `disk` and host `memory_mb`/`disk_mb` budgets are MB
@@ -201,7 +203,7 @@ actual containment, occupants, cable lengths and the panel/outlet sequence.
 For headquarters, the map covers occupied endpoint floors; each floor's actual
 serving switches, patch panels, management connections and rack power must be
 local to its room. Secondary room keys are `location/<site>/idf-02`, etc.
-Device/rack reservation scopes and rack asset tags include that room; rack
+Device/rack reservation scopes and the rack `facility_id` include that room; rack
 display names can repeat across different locations. Direct-terminated fiber
 uplinks join access/management switches to the MDF distribution devices.
 Their lengths derive from room-coordinate Manhattan distance plus ten metres.
@@ -237,7 +239,8 @@ Inlet `allocated_draw` and `maximum_draw` are integer watts. `planned_watts`
 contracts distinguish synthetic planning allowances from hardware facts. Normal
 inlet allocations sum to the device allowance; each supply reserves the whole
 allowance for failover. Feed budgets use single-phase voltage × amperage × maximum
-utilization. A PDU's own input port carries the same two fields, totalled from
+utilization: 208 V × 20 A per US cabinet feed, 120 V × 20 A for the single
+circuit of a single-CE premises (one PDU and panel, both supplies on it). A PDU's own input port carries the same two fields, totalled from
 the member inlets cabled to that PDU's outlets: `allocated_draw` sums their
 normal per-port splits and `maximum_draw` sums their full device allowances.
 NetBox does not derive them, and an absent input draw makes every upstream feed

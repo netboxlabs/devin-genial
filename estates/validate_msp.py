@@ -321,7 +321,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for room, (space_type, origin, desks) in rooms.items():
             if (kind_of(room) != "location" or meta(room).get("space_type") != space_type or
                     meta(room).get("floor") != 1 or meta(room).get("position_m") != origin or
-                    refs(room).get("parent") != f"location/{sid}/floor-01" or attrs(room).get("status") != "active" or
+                    refs(room).get("parent") is not None or attrs(room).get("status") != "active" or
                     (desks is not None and meta(room).get("capacity", {}).get("workstations") != desks)):
                 report("msp-room-placement", room, "Managed-office rooms must occupy their fixed active ground-floor "
                                                     "positions with their installed desk capacity.")

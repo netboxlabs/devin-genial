@@ -24,6 +24,7 @@ from .validate_school import validate as validate_school
 from .equipment import validate as validate_equipment
 from .model import DesignError, resolve_hardware, selected_alias, serial_pattern
 from .naming import COHORT_LABELS, disclaimer
+from .places import FLAT_KINDS
 
 
 # Independent expectations for the authored bank services. These are demo intent,
@@ -1145,6 +1146,11 @@ def _validate(plan):
                     report("location-floor", room, "Room or floor coordinates disagree with its declared level.")
                 if meta(room).get("space_type") == "floor":
                     valid_parent = meta(parent).get("space_type") == "building"
+                elif contract.get("kind") in FLAT_KINDS:
+                    # A single-level premises hangs its rooms from the site,
+                    # and a carrier PoP its cage from the leased suite.
+                    valid_parent = floor == 1 and (parent is None or (
+                        meta(parent).get("space_type") == "suite" and refs(parent).get("parent") is None))
                 else:
                     valid_parent = meta(parent).get("space_type") == "floor" and meta(parent).get("floor") == floor
                 if not valid_parent:

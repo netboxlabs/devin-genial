@@ -223,7 +223,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3–100 m complete known local SMF paths; no carrier-span or optical-loss claim. Server eth1/eth2 use a generic third-party SFP-10G-LR, duplex LC SMF, 10 km nominal reach and an authored 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host × 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Server eth1/eth2 use a generic third-party SFP-10G-LR, duplex LC SMF, 10 km nominal reach and an authored 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -377,6 +377,18 @@
       "checked": "2026-10-01",
       "representation": "observed-lab-output",
       "purpose": "ghcr.io/nokia/srlinux:26.7.2 (sha256:0096fe3ebcafabb7253492e2060425fe027a168e0e066766d1e85efbb0b48be8, arm64) under containerlab 0.79.0 reports chassis type 7220 IXR-D2L, serial 'Sim Serial No.' and, through the orb-agent 2.15.0 nokia_srl driver, platform 'NOKIA_SRL v26.7.2' (lab/discovery/README.md). The catalog keeps those strings verbatim so real discovery of the lab matches its records; the devicetype-library model string '7220 IXR-D2L 25/100GE' is the labelled deviation. The container emulates no power supply, fan or optic."
+    },
+    "pdu-120-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9563.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "7e46d35cada5721c38d95f47e090002c74ced287e03e56fd357f6f839a4584ff",
+      "license": "CC0-1.0"
+    },
+    "fibre-panel-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/FCE1U.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "9516247769b5794e27e4cd5a27b255c8ecadcb95c46f59cdcc467601274514d4",
+      "license": "CC0-1.0"
     }
   },
   "hardware_lines": {
@@ -2563,6 +2575,21 @@
       "description": "Verified Panduit DP24688TGY: 24 front 8P8C jacks mapped one-to-one to 110 punchdown rear terminations; passive.",
       "serial_format": "{yy}@######@"
     },
+    "fibre-panel": {
+      "manufacturer": "Panduit",
+      "model": "Opticom Rack Mount Fiber Enclosure, 1 RU, 4 Ports",
+      "slug": "panduit-fce1u",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [],
+      "power_ports": [],
+      "source_ids": [
+        "fibre-panel-chassis"
+      ],
+      "description": "Verified Panduit FCE1U: 1 RU rack-mount fiber enclosure with four adapter-panel bays; passive, unpowered.",
+      "airflow": "passive",
+      "serial_format": "{yy}@######@"
+    },
     "pdu": {
       "manufacturer": "APC",
       "model": "AP9572",
@@ -2642,6 +2669,68 @@
         "pdu-chassis"
       ],
       "description": "Verified APC AP9572 Basic Rack PDU: Zero U, 16A 208/230V, one C20 inlet and fifteen C13 outlets; no network management.",
+      "airflow": "passive",
+      "serial_format": "5A{yyww}E#####"
+    },
+    "pdu-120": {
+      "manufacturer": "APC",
+      "model": "AP9563",
+      "slug": "apc-ap9563",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [],
+      "power_ports": [
+        {
+          "name": "Source",
+          "type": "nema-5-20p"
+        }
+      ],
+      "power_outlets": [
+        {
+          "name": "Outlet 1",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 2",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 3",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 4",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 5",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 6",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 7",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 8",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 9",
+          "type": "nema-5-20r"
+        },
+        {
+          "name": "Outlet 10",
+          "type": "nema-5-20r"
+        }
+      ],
+      "source_ids": [
+        "pdu-120-chassis"
+      ],
+      "description": "Verified APC AP9563 Basic Rack PDU: 1U, 20A 120V, one NEMA 5-20P inlet and ten NEMA 5-20R outlets; no network management.",
       "airflow": "passive",
       "serial_format": "5A{yyww}E#####"
     },

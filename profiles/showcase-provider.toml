@@ -1,7 +1,9 @@
 # NetBox Labs community showcase: one Great Lakes regional carrier seeded ALONE
 # onto a dedicated tenant's main (a second estate cannot pass the fresh-load
 # occupancy gate). 12 PoPs, three per metro, and 12 private-L3 enterprise
-# customers whose names echo the other industry profiles; dual-stack; Juniper
+# customers whose names echo the other industry profiles; each premises is the
+# carrier's CPE plus managed switch (lan_endpoints = 0: a carrier does not
+# inventory its customers' desktops); dual-stack; Juniper
 # access beside the MX204 PEs, Arista leaf/spine kept. Fictional design inputs.
 # Runbook: .claude/skills/showcase-tenant/SKILL.md.
 profile = "provider-backbone"
@@ -78,7 +80,7 @@ metro = "milwaukee"
 [[customers]]
 key = "lakeshore-health"
 hub_pop = "cleveland-flats"
-lan_endpoints = 12
+lan_endpoints = 0
 site_peak_mbps = 100
 sites = [
   { pop = "cleveland-flats", count = 2 },
@@ -89,7 +91,7 @@ sites = [
 [[customers]]
 key = "great-lakes-credit"
 hub_pop = "detroit-dearborn"
-lan_endpoints = 8
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "detroit-dearborn", count = 2 },
@@ -101,7 +103,7 @@ sites = [
 [[customers]]
 key = "harbor-logistics"
 hub_pop = "milwaukee-oak-creek"
-lan_endpoints = 6
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "milwaukee-oak-creek", count = 1 },
@@ -114,7 +116,7 @@ sites = [
 [[customers]]
 key = "riverbend-schools"
 hub_pop = "detroit-corktown"
-lan_endpoints = 12
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "detroit-corktown", count = 3 },
@@ -125,7 +127,7 @@ sites = [
 [[customers]]
 key = "northpoint-retail"
 hub_pop = "chicago-pilsen"
-lan_endpoints = 4
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "chicago-pilsen", count = 3 },
@@ -136,7 +138,7 @@ sites = [
 [[customers]]
 key = "summit-legal"
 hub_pop = "chicago-loop"
-lan_endpoints = 8
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "chicago-loop", count = 1 },
@@ -148,7 +150,7 @@ sites = [
 [[customers]]
 key = "keystone-foods"
 hub_pop = "milwaukee-west-allis"
-lan_endpoints = 6
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "milwaukee-west-allis", count = 1 },
@@ -159,7 +161,7 @@ sites = [
 [[customers]]
 key = "crescent-energy"
 hub_pop = "chicago-loop"
-lan_endpoints = 6
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "chicago-loop", count = 2 },
@@ -170,7 +172,7 @@ sites = [
 [[customers]]
 key = "lakemont-university"
 hub_pop = "cleveland-flats"
-lan_endpoints = 12
+lan_endpoints = 0
 site_peak_mbps = 200
 sites = [
   { pop = "cleveland-flats", count = 1 },
@@ -180,7 +182,7 @@ sites = [
 [[customers]]
 key = "meridian-plastics"
 hub_pop = "detroit-new-center"
-lan_endpoints = 6
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "detroit-new-center", count = 2 },
@@ -191,7 +193,7 @@ sites = [
 [[customers]]
 key = "cedar-regional-bank"
 hub_pop = "chicago-cermak"
-lan_endpoints = 8
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "chicago-cermak", count = 2 },
@@ -204,7 +206,7 @@ sites = [
 [[customers]]
 key = "northgate-power"
 hub_pop = "detroit-corktown"
-lan_endpoints = 4
+lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
   { pop = "detroit-corktown", count = 1 },
