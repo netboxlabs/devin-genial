@@ -133,3 +133,31 @@ class Story(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnseedOrderTest(unittest.TestCase):
+    """Pool contents and pools go before BOMs; vendors and courier last; nothing unrecorded."""
+
+    def test_deletes_recorded_rows_in_protection_order(self):
+        import json, os, tempfile
+        from unittest import mock
+        from estates import lifecycle
+        receipt = {"target": "https://t.example", "courier": 9,
+                   "pools": {"p": {"pool": 5}}, "vendors": {"r": 7}, "vendor_accounts": {"r": 8},
+                   "boms": {"b": {"bom": 4, "purchase_orders": {"r": 6}, "shipments": {"r": 3}}}}
+        calls = []
+        client = mock.Mock(base="https://t.example")
+        client.all.side_effect = lambda path: [{"id": 1}] if "pool_id=5" in path else []
+        client.request.return_value = (200, {"count": 0})
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+            json.dump(receipt, handle)
+        with mock.patch.object(lifecycle, "Client", return_value=client), \
+             mock.patch.object(lifecycle, "_delete", side_effect=lambda c, p: calls.append(p) or True), \
+             mock.patch.dict(os.environ, {"LIFECYCLE_WRITES": "1"}):
+            lifecycle.unseed(handle.name, url="https://t.example", token="x")
+        self.assertEqual(calls, ["spare-item-allocations/1/", "spare-items/1/", "spares-pools/5/",
+                                 "shipments/3/", "purchase-orders/6/", "boms/4/",
+                                 "vendor-accounts/8/", "vendors/7/", "couriers/9/"])
+        with mock.patch.dict(os.environ, {"LIFECYCLE_WRITES": ""}):
+            with self.assertRaises(lifecycle.LoadError):
+                lifecycle.unseed(handle.name, url="https://t.example", token="x")

@@ -105,6 +105,14 @@ lifecycle-check plan out:
 seed-lifecycle out target receipt='':
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
 
+# Remove exactly the floorplan rows a seed receipt recorded (before teardown-main)
+unseed-geometry receipt target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.geometry unseed {{quote(receipt)}} {{quote(target)}}
+
+# Remove exactly the procurement rows a seed receipt recorded (before teardown-main)
+unseed-lifecycle receipt target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle unseed {{quote(receipt)}} {{quote(target)}}
+
 # Regenerate docs/schema-map.md (kind -> NetBox model -> endpoint -> identity -> delivery)
 schema-map:
     python3 -m estates.schema_map

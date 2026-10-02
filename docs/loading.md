@@ -270,8 +270,10 @@ Live findings on a 0.3.1 Cloud tenant: BOM and PO creates require `status`
 (`"status":["This field is required."]`) despite the schema; a shipment
 requires `courier_account` explicitly (`null` is accepted); installing from an
 unreceived delivery is refused (`Shipment has not been received.`) and a
-repeat install too (`This object has already been installed.`). For removal,
-delete each pool's allocations and spare items, then pools, deliveries, POs,
+repeat install too (`This object has already been installed.`). For removal, run
+`LIFECYCLE_WRITES=1 just unseed-lifecycle RECEIPT TARGET`, which deletes exactly
+the rows the seed receipt recorded in this order (verified on `crsk8600`, full
+showcase estate, 2026-10-02): delete each pool's allocations and spare items, then pools, deliveries, POs,
 BOMs, vendor accounts, vendors and the courier: allocations protect a pool,
 pools protect their site and location (so `teardown-main` cannot remove an
 estate until its lifecycle rows are gone), and BOM/PO children refuse

@@ -21,7 +21,9 @@ import hashlib
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 from .model import canonical, digest
 from .turbobulk import Client, LoadError, _write_receipt
@@ -510,6 +512,39 @@ def default_receipt(artifact_dir, target):
     return Path("build/load-receipts") / f"{slug}-geometry-{suffix}.json"
 
 
+def unseed(receipt_path, *, url, token):
+    """Delete exactly the rows a seed receipt recorded: shapes, then layers, then floorplans.
+
+    Shapes reference racks, so they must go before `teardown-main`; rows the
+    receipt does not name are never touched and a rerun is safe (404 = gone).
+    """
+    if os.environ.get("GEOMETRY_WRITES", "").strip().lower() not in ("1", "true", "yes", "on"):
+        raise LoadError("removing floorplan geometry requires GEOMETRY_WRITES=1 in the environment")
+    receipt = json.loads(Path(receipt_path).read_text())
+    client = Client(url, token)
+    if receipt.get("target") != client.base:
+        raise LoadError(f"receipt {receipt_path} belongs to {receipt.get('target')}, not {client.base}")
+    endpoints = {"shape": "shapes/", "layer": "layers/", "floorplan": "floorplans/"}
+    deleted = {}
+    for kind in ("shape", "layer", "floorplan"):
+        ids = [row["id"] for row in receipt["records"] if row["kind"] == kind and row.get("id")]
+        for row_id in ids:
+            request = urllib.request.Request(f"{client.base}{API}{endpoints[kind]}{row_id}/",
+                                             headers=client.headers, method="DELETE")
+            try:
+                with client.opener.open(request, timeout=120):
+                    pass
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    raise LoadError(f"DELETE {kind} {row_id} returned HTTP {exc.code}") from exc
+        survivors = [i for i in ids
+                     if client.request(f"{API}{endpoints[kind]}?id={i}", branch=False)[1].get("count")]
+        if survivors:
+            raise LoadError(f"{kind} rows survived removal: {survivors[:10]}")
+        deleted[kind] = len(ids)
+    return {"deleted": deleted, "receipt": str(receipt_path), "success": True}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Derive, verify and seed deterministic floorplan geometry for the physical-geometry plugin")
@@ -524,6 +559,9 @@ def main(argv=None):
     p.add_argument("directory", type=Path)
     p.add_argument("target")
     p.add_argument("--receipt", type=Path)
+    p = sub.add_parser("unseed", help="delete exactly the rows a seed receipt recorded (GEOMETRY_WRITES=1)")
+    p.add_argument("receipt", type=Path)
+    p.add_argument("target")
     args = parser.parse_args(argv)
     try:
         if args.command == "build":
@@ -535,6 +573,9 @@ def main(argv=None):
             result = check(args.directory, args.plan)
             print(f"{result['artifact']}: {result['checks']} — {result['floorplans']} floorplans "
                   f"({result['authored_floorplans']} authored), {result['shapes']} rack shapes")
+        elif args.command == "unseed":
+            token = os.environ.get("NETBOX_TOKEN") or parser.error("NETBOX_TOKEN is required")
+            print(json.dumps(unseed(args.receipt, url=args.target, token=token), sort_keys=True))
         else:
             token = os.environ.get("NETBOX_TOKEN")
             if not token:
