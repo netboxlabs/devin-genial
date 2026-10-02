@@ -1700,8 +1700,11 @@ def _generate(recipe,previous=None):
     as_of=date.fromisoformat(recipe["as_of"])
     def installed(sid,c,pop,n):
         if pop==anchor_pop(c) and n==1: return onboarded[c["key"]]
-        day=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=w.choose(sid,"premises-install",range(7,366)))
-        return min(day,as_of-timedelta(days=1))
+        # A customer adds premises over the years after signing (at most six),
+        # never before the serving PoP is ready: spread, not piled after a launch.
+        start=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=7)
+        reach=max(1,min((as_of-timedelta(days=1)-start).days,2190))
+        return min(start+timedelta(days=w.choose(sid,"premises-install",range(reach))),as_of-timedelta(days=1))
     w.provider_service_records=defaultdict(list)
     placed=_premises_places(w,entries,points)
     attachments=[_customer(w,sid,c,pop,n,pop_sites,placed,installed(sid,c,pop,n)) for sid,c,pop,n in entries]

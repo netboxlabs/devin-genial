@@ -156,6 +156,9 @@ def _stub_models(w):
 
     Remove at integration: every alias below is WP-A's pinned model.
     """
+    if all(alias in w.catalog["models"] for alias in (PE_LEGACY, PE_SUCCESSOR, DDOS, TIMING)):
+        return
+    w.catalog = {**w.catalog, "models": dict(w.catalog["models"])}  # never mutate the shared catalog
     models = w.catalog["models"]
     def clone(alias, base, **changes):
         if alias not in models:
@@ -380,7 +383,7 @@ def build(site):
                    day=None, removed=None, text=None, legacy=False)) for position, alias in _blanking(occupied)]
         for position, _, item in sorted(placed + blanks, key=lambda row: -row[0]):
             alias, label = item["alias"], item["label"]
-            if alias in PASSIVE and not label.endswith(("osp", "demarc")):
+            if alias in (CABLE_MANAGER_1U, CABLE_MANAGER_2U, BLANKING_1U, BLANKING_2U):
                 label = f"{rack_name.lower()}-{'blank' if alias in (BLANKING_1U, BLANKING_2U) else 'cm'}-{position}"
             _role(w, ROLES[alias])
             key = devices[label] = site.device(alias, label, ROLES[alias], rack=rack, position=position)
