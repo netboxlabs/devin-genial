@@ -53,15 +53,17 @@ class SpanScenarioTests(unittest.TestCase):
 
     def test_actual_customer_paths_and_headroom_have_executable_witnesses(self):
         e = self.envelope
-        self.assertEqual(e["subject"], "circuit/backbone/seed-01")
+        self.assertEqual(e["subject"], "circuit/backbone/chicago-west-a/detroit-south-a")
         site = "site/ce-harbor-logistics-cleveland-east-001"
         hub = "site/ce-harbor-logistics-chicago-west-001"
         self.assertEqual(e["affected"]["premises"], [site])
         self.assertEqual(e["affected"]["hubs"], [hub])
         self.assertEqual(e["affected"]["unchanged_premises_sharing_increased_load"], ["site/ce-harbor-logistics-detroit-south-001"])
-        expected = ["pair/pop-cleveland-east", "circuit/backbone/seed-02", "pair/pop-detroit-south", "circuit/backbone/seed-03", "pair/pop-chicago-west"]
+        # Cleveland reaches the Chicago hub through Detroit on carrier A's span;
+        # with it offline the path crosses Detroit's PE pair onto carrier B's.
+        expected = ["circuit/backbone/cleveland-east-a/detroit-south-a", "pair/pop-detroit-south", "circuit/backbone/chicago-west-b/detroit-south-b"]
         before, after = (next(row for row in e["paths"][stage] if row["site"] == site) for stage in ("baseline", "changed"))
-        self.assertEqual([hop["edge"] for hop in before["hops"]], [e["subject"]])
+        self.assertEqual([hop["edge"] for hop in before["hops"]], ["circuit/backbone/cleveland-east-a/detroit-south-a", e["subject"], "pair/pop-chicago-west"])
         self.assertEqual([hop["edge"] for hop in after["hops"]], expected)
         objects = {obj["key"]: obj for obj in self.baseline["objects"]}
         for stage, paths in e["paths"].items():
@@ -86,7 +88,8 @@ class SpanScenarioTests(unittest.TestCase):
                 field = "baseline_kbps" if stage == "baseline" else "maintenance_kbps"
                 self.assertEqual(row[field], summed[(row["edge"], row["from_pe"], row["to_pe"])] )
         active = [row for row in e["capacity"]["directions"] if row["maintenance_state"] == "active"]
-        self.assertEqual(min(Decimal(row["headroom_kbps"]) for row in active), 79900000)
+        # 10G leased commitment, 20% reserve, two 50 Mbps spokes on one direction.
+        self.assertEqual(min(Decimal(row["headroom_kbps"]) for row in active), 7900000)
 
     def test_exact_findings_include_lost_additional_failure_margin(self):
         e = self.envelope
@@ -94,8 +97,8 @@ class SpanScenarioTests(unittest.TestCase):
         actual = Counter((row["code"], row["object"]) for row in validate(e["plans"]["changed"]))
         self.assertEqual(actual, Counter((row["code"], row["object"]) for row in e["expected_findings"]))
         self.assertEqual(Counter(row["code"] for row in e["expected_findings"]), {
-            "optics-path": 2, "provider-circuit-path": 1, "provider-link-connectivity": 5,
-            "provider-router-connectivity": 4, "provider-customer-route": 2})
+            "optics-path": 2, "provider-circuit-path": 1, "provider-link-connectivity": 2,
+            "provider-router-connectivity": 2, "provider-customer-route": 1})
         self.assertNotIn(("provider-backbone-connectivity", "plan"), actual)
         self.assertTrue(verify(e)["modeled_routes_reachable"])
 
@@ -127,9 +130,10 @@ class SpanScenarioTests(unittest.TestCase):
         for row in self.envelope["capacity"]["directions"]:
             if row["edge"] != self.envelope["subject"]:
                 continue
-            self.assertEqual(row["limit_kbps"], 100000000)
-            self.assertEqual(Decimal(row["usable_kbps"]), 80000000)
-            self.assertEqual(Decimal(row["baseline_available_kbps"]), 80000000)
+            # The 10G commitment, not the 100G handoff, is the span's limit.
+            self.assertEqual(row["limit_kbps"], 10000000)
+            self.assertEqual(Decimal(row["usable_kbps"]), 8000000)
+            self.assertEqual(Decimal(row["baseline_available_kbps"]), 8000000)
             self.assertEqual(row["maintenance_state"], "offline")
             self.assertEqual(Decimal(row["maintenance_available_kbps"]), 0)
             self.assertEqual(Decimal(row["headroom_kbps"]), 0)
@@ -150,7 +154,7 @@ class SpanScenarioTests(unittest.TestCase):
                     self.assertIn(row["object"], {end["site"] for end in self.envelope["edges"][self.envelope["subject"]]["ends"]})
 
     def test_unavailable_unused_wrong_profile_and_unhealthy_subjects_fail(self):
-        for subject in ("circuit/backbone/seed-02", "circuit/transit/a", "circuit/noc/a", "device/pop-chicago-west/pe-a", "missing", 1):
+        for subject in ("circuit/backbone/cleveland-east-b/detroit-south-b", "circuit/transit/a", "circuit/noc/a", "device/pop-chicago-west/pe-a", "missing", 1):
             with self.subTest(subject=subject), self.assertRaises(DesignError):
                 create(self.baseline, subject)
         offline = deepcopy(self.baseline)
@@ -191,7 +195,7 @@ class SpanScenarioTests(unittest.TestCase):
             elif field in ("expected_findings", "resilience"): e[field].pop()
             elif field == "restoration": e[field]["baseline_sha256"] = "forged"
             elif field == "execution": e[field]["applied_to_target"] = True
-            else: e[field]["span"] = "circuit/backbone/seed-03"
+            else: e[field]["span"] = "circuit/backbone/cleveland-east-a/detroit-south-a"
             with self.subTest(field=field), self.assertRaises(DesignError): verify(e)
         for malformed in ({}, None, {"schema_version": True, "scenario": "provider-span-maintenance"}):
             with self.assertRaises(DesignError): verify(malformed)
@@ -203,8 +207,8 @@ class SpanScenarioTests(unittest.TestCase):
         for field in ("subject", "selection", "paths", "edges", "premises", "capacity", "contacts", "expected_findings"):
             self.assertEqual(e[field], self.envelope[field], field)
         self.assertTrue(verify(e)["exact_inverse_restoration"])
-        explicit = create(self.baseline, "circuit/backbone/seed-03")
-        self.assertEqual(explicit["subject"], "circuit/backbone/seed-03")
+        explicit = create(self.baseline, "circuit/backbone/cleveland-east-a/detroit-south-a")
+        self.assertEqual(explicit["subject"], "circuit/backbone/cleveland-east-a/detroit-south-a")
         self.assertTrue(verify(explicit)["one_circuit_status_changed"])
 
     def test_frozen_scenario_survives_independent_growth_and_explicit_selection(self):
@@ -256,19 +260,20 @@ class SpanScenarioTests(unittest.TestCase):
 
     def test_larger_mesh_can_retain_checked_margin_and_same_pe_flow(self):
         raw = recipe()
-        raw["pops"].extend([dict(key="milwaukee-north", metro="milwaukee"), dict(key="chicago-east", metro="chicago")])
+        raw["pops"].extend([dict(key="chicago-east", metro="chicago"), dict(key="chicago-north", metro="chicago"),
+                            dict(key="detroit-east", metro="detroit"), dict(key="detroit-north", metro="detroit"),
+                            dict(key="cleveland-west", metro="cleveland"), dict(key="cleveland-south", metro="cleveland")])
         for entry in raw["customers"][0]["sites"]:
             entry["count"] = 4
-        raw["customers"][0]["sites"].extend([dict(pop="milwaukee-north", count=2), dict(pop="chicago-east", count=2)])
+        raw["customers"][0]["sites"].extend([dict(pop="chicago-east", count=2), dict(pop="detroit-east", count=2)])
         raw["customers"].append(dict(key="zeta-retail", hub_pop="cleveland-east", site_peak_mbps=400,
                                      sites=[dict(pop="chicago-west", count=1), dict(pop="cleveland-east", count=1)]))
         grown = generate(raw, previous=self.baseline)
-        # The generator version participates in stable choices, so which spans
-        # carry declared customer paths reshuffles per version: pick the span
-        # that keeps the checked margin (empty resilience) under this version.
-        # How many premises it touches is incidental to that property.
-        e = create(grown, "circuit/backbone/seed-03")
-        self.assertEqual(len(e["affected"]["premises"]), 2)
+        # Growth dual-homes the new Chicago PoPs onto the old one, so the owned
+        # fiber between them can go offline and every checked further failure
+        # still leaves a path. How many premises it touches is incidental.
+        e = create(grown, "circuit/backbone/chicago-east-a/chicago-west-a")
+        self.assertTrue(e["affected"]["premises"])
         self.assertEqual(e["resilience"], [])
         self.assertEqual(len(e["expected_findings"]), 3)
         self.assertTrue(verify(e)["checked_further_failure_margin_retained"])

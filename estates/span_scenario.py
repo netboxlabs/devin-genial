@@ -81,10 +81,12 @@ def _graph(plan):
             obj = objects[circuit]
             _require(obj["attrs"].get("status") == "active" and sides[0]["site"] != sides[1]["site"],
                      "eligible leased spans must be active between different PoPs")
-            rate = min([obj["attrs"]["commit_rate"]] + [value[field] for value in sides for field in ("speed_kbps", "port_speed_kbps")])
+            # Owned dark fiber purchases no commitment: its limit is the lit port.
+            commit = [obj["attrs"]["commit_rate"]] if "commit_rate" in obj["attrs"] else []
+            rate = min(commit + [value[field] for value in sides for field in ("speed_kbps", "port_speed_kbps")])
             edges[circuit] = dict(key=circuit, kind="span", ends=sides, limit_kbps=rate,
                 circuit=circuit, provider=obj["refs"]["provider"], provider_account=obj["refs"]["provider_account"],
-                commit_rate_kbps=obj["attrs"]["commit_rate"])
+                commit_rate_kbps=obj["attrs"].get("commit_rate"))
     for key, obj in sorted(objects.items()):
         if obj["kind"] != "cable":
             continue

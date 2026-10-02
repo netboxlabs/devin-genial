@@ -2,12 +2,17 @@
 
 from collections import Counter
 from copy import deepcopy
+from pathlib import Path
+import tomllib
 import unittest
 
 from estates.generate import generate
 from estates.model import DesignError
 from estates.validate import validate
 from estates.validate_provider import _loads
+
+
+ROOT = Path(__file__).parents[1]
 
 
 class ProviderValidationTests(unittest.TestCase):
@@ -56,7 +61,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("provider-noc-diversity", self.codes())
 
     def test_span_requires_both_real_sites_and_local_physical_channels(self):
-        circuit = "circuit/backbone/seed-01"
+        circuit = "circuit/backbone/chicago-west-a/detroit-south-a"
         for mutation in ("wrong-site", "planned-patch", "mark-only", "virtual-port"):
             with self.subTest(mutation=mutation):
                 self.setUp()
@@ -299,7 +304,7 @@ class ProviderValidationTests(unittest.TestCase):
                 for scope, slots in self.plan[field].items():
                     self.assertTrue(slots.items() <= grown[field][scope].items(), scope)
         bad = deepcopy(grown)
-        bad["reservations"]["provider-parents/aaa-new/a"] = {"device/pop-aaa-new/pe-a": 0}
+        bad["reservations"]["provider-backbone-spans"]["circuit/backbone/aaa-new-a/aaa-new-b"] = len(bad["reservations"]["provider-backbone-spans"])
         self.assertIn("provider-allocation", {o["code"] for o in validate(bad)})
         recipe["customers"][0]["site_peak_mbps"] += 1
         with self.assertRaises(DesignError):
@@ -373,6 +378,91 @@ class ProviderValidationTests(unittest.TestCase):
         self.setUp()
         self.objects["asn/operator"]["attrs"]["asn"] = []
         self.assertIn("asn-identity", self.codes())
+
+
+class ProviderRealismTests(unittest.TestCase):
+    """The showcase carrier: geography, carriers, numbering and one timeline."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.baseline = generate(tomllib.loads((ROOT / "profiles/showcase-provider.toml").read_text()))
+
+    def setUp(self):
+        self.plan = deepcopy(self.baseline)
+        self.objects = {o["key"]: o for o in self.plan["objects"]}
+
+    def codes(self):
+        return {finding["code"] for finding in validate(self.plan)}
+
+    def spans(self):
+        return {k: o for k, o in self.objects.items() if o["kind"] == "circuit" and k.startswith("circuit/backbone/")}
+
+    def test_backbone_follows_the_lakeshore_with_owned_metro_fiber(self):
+        self.assertEqual(validate(self.plan), [])
+        metro = {f"site/pop-{p['key']}": p["metro"] for p in self.plan["recipe"]["pops"]}
+        pairs = Counter()
+        for key, span in self.spans().items():
+            a, z = (metro[self.objects[f"{key}/{side}"]["refs"]["termination"]] for side in "AZ")
+            if a == z:
+                self.assertEqual(span["refs"]["provider"], "provider/operator", key)
+                self.assertNotIn("commit_rate", span["attrs"])
+                self.assertLess(span["attrs"]["distance"], 40, key)
+            else:
+                pairs[frozenset((a, z))] += 1
+                self.assertIn(span["attrs"]["commit_rate"], (10000000, 100000000), key)
+        # Milwaukee-Chicago-Detroit-Cleveland, two diverse spans per adjacency;
+        # nothing crosses Lake Michigan and Cleveland never skips Detroit.
+        self.assertEqual(pairs, {frozenset(("milwaukee", "chicago")): 2, frozenset(("chicago", "detroit")): 2,
+                                 frozenset(("detroit", "cleveland")): 2})
+        for key, span in self.spans().items():
+            self.assertNotIn("seed", key + span["attrs"]["cid"] + span["attrs"]["description"])
+
+    def test_carrier_numbering_and_public_space(self):
+        asns = {k: o["attrs"]["asn"] for k, o in self.objects.items() if o["kind"] == "asn"}
+        for key in ("asn/operator", "asn/transit-a", "asn/transit-b"):
+            self.assertTrue(64496 <= asns[key] <= 64511, key)
+            self.assertEqual(self.objects[key]["refs"]["rir"], "rir/arin")
+        self.assertEqual(self.objects["rir/arin"]["attrs"]["name"], "ARIN")
+        self.assertEqual(self.objects["ipv6/aggregate"]["refs"]["rir"], "rir/arin")
+        loopback = self.objects["ip/device/pop-chicago-cermak/pe-a/if/lo0"]["attrs"]["address"]
+        self.assertTrue(loopback.startswith("192.0.2."), loopback)
+        self.assertFalse([k for k in self.objects if k.startswith("root/customer/")])
+        # Customer slots, ASNs and route distinguishers follow onboarding order.
+        slots = self.plan["reservations"]["provider-customers"]
+        self.assertEqual(sorted(slots, key=slots.get), [c["key"] for c in self.plan["recipe"]["customers"]])
+        operator = asns["asn/operator"]
+        first = self.plan["recipe"]["customers"][0]["key"]
+        self.assertEqual(self.objects[f"vrf/customer/{first}"]["attrs"]["rd"], f"{operator}:1001")
+        for label in ("transport-a", "transport-b", "transit-a", "transit-b"):
+            email = self.objects[f"contact/provider/{label}"]["attrs"]["email"]
+            self.assertFalse(email.endswith(self.plan["recipe"]["namespace"] + ".example"), email)
+
+    def test_mutations_of_the_realism_obligations_fail(self):
+        spans = sorted(self.spans())
+        dark = next(k for k in spans if self.objects[k]["refs"]["provider"] == "provider/operator")
+        leased = [k for k in spans if self.objects[k]["refs"]["provider"].startswith("provider/transport-")]
+        hub = "circuit/customer/ce-lakeshore-health-cleveland-flats-001"
+        second = "circuit/customer/ce-great-lakes-credit-detroit-dearborn-001"
+        cases = (
+            ("provider-backbone-geography", lambda: self.objects[dark]["attrs"].update(distance=1.0)),
+            ("provider-backbone-diversity", lambda: [self.objects[k]["refs"].update(provider="provider/transport-a",
+                provider_account="provider-account/provider/transport-a") for k in leased]),
+            ("provider-circuit-path", lambda: self.objects[dark]["attrs"].update(commit_rate=10000000)),
+            ("provider-timeline", lambda: self.objects[hub]["attrs"].update(install_date="2010-01-01")),
+            ("provider-timeline", lambda: self.objects[second]["attrs"].update(install_date="2018-01-01")),
+            ("provider-premises-geography", lambda: self.objects["site/ce-lakeshore-health-cleveland-flats-001"]["attrs"].update(
+                latitude=self.objects["site/pop-cleveland-flats"]["attrs"]["latitude"],
+                longitude=self.objects["site/pop-cleveland-flats"]["attrs"]["longitude"])),
+            ("provider-carrier-identity", lambda: self.objects["provider/transport-b"]["attrs"].update(name="Meridian Transport")),
+            ("provider-asn", lambda: self.objects["asn/transit-a"]["attrs"].update(asn=self.objects["asn/transit-b"]["attrs"]["asn"])),
+            ("provider-public-space", lambda: self.plan["objects"].remove(self.objects["aggregate/public/203.0.113.0/24"])),
+        )
+        for code, mutate in cases:
+            with self.subTest(code=code):
+                self.setUp()
+                mutate()
+                self.plan["contracts"] = []
+                self.assertIn(code, self.codes())
 
 
 if __name__ == "__main__":

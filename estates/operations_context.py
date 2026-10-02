@@ -57,7 +57,7 @@ def enrich(world):
         # way hunt groups do; a per-area ledger would make them unique.
         line = int(digest(["contact-phone", key]), 16) % 100
         return add("contact", key, {"name": name, "title": roles[role], "phone": f"+1 {area}-555-{100 + line:04}",
-                   "email": f"{mailbox}@{ns}.example", "description": description},
+                   "email": mailbox if "@" in mailbox else f"{mailbox}@{ns}.example", "description": description},
                    {"groups": [f"contact-group/{role}"]})
 
     def assign(target, contact_key, role, suffix="", priority="primary"):
@@ -129,15 +129,19 @@ def enrich(world):
         provider = refs["provider"]
         name = world.obj(provider)["attrs"]["name"]
         if provider not in provider_desks:
-            provider_desks[provider] = contact(f"contact/{provider}", f"{name} support desk", "carrier", f"carrier-{provider.removeprefix('provider/')}.support",
+            # A third-party carrier's desk answers from its own mail domain.
+            domain = world.obj(provider)["meta"].get("support_domain")
+            provider_desks[provider] = contact(f"contact/{provider}", f"{name} support desk", "carrier",
+                f"support@{domain}" if domain else f"carrier-{provider.removeprefix('provider/')}.support",
                 (f"Capacity and handoff coordination for {name}. Tenant technical desks handle local troubleshooting."
                  if world.recipe["profile"] == "provider-backbone" else
                  f"Circuit identifiers, contracted capacity and handoff coordination for {name}; customer-side troubleshooting stays with the tenant technical desk."))
         assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
         term = terms[key]
         site_name = world.obj(term["refs"]["termination"])["attrs"]["name"]
-        journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "Order placed",
-            f"Ordered {rate_kbps(attrs['commit_rate'])} from {name}; quote {attrs['cid']} on every call to the carrier.")
+        if "commit_rate" in attrs:  # owned fiber has no purchased commitment to request
+            journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "Order placed",
+                f"Ordered {rate_kbps(attrs['commit_rate'])} from {name}; quote {attrs['cid']} on every call to the carrier.")
         if world.recipe["profile"] == "provider-backbone":
             far = far_terms[key]
             far_target = world.obj(far["refs"]["termination"])

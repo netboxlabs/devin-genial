@@ -96,8 +96,9 @@ class OperationsContextTests(unittest.TestCase):
                 self.assert_code(plan, "operations-journal-facts")
 
     def test_handoff_form_follows_actual_z_kind_not_circuit_name(self):
-        for subject, other in (("circuit/transit/a", "circuit/backbone/seed-01"),
-                               ("circuit/backbone/seed-01", "circuit/transit/a")):
+        plan, objects = self.provider_plan()
+        span = min(key for key in objects if key.startswith("circuit/backbone/") and objects[key]["kind"] == "circuit")
+        for subject, other in (("circuit/transit/a", span), (span, "circuit/transit/a")):
             plan, objects = self.provider_plan()
             objects[f"{subject}/Z"]["refs"]["termination"] = objects[f"{other}/Z"]["refs"]["termination"]
             with self.subTest(subject=subject):

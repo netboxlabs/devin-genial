@@ -53,7 +53,8 @@ class ProviderIntegrationTests(unittest.TestCase):
         for key, name in (("site/a", "Chicago PoP"), ("site/z", "Detroit PoP")):
             world.add("site", key, {"name": name, "physical_address": name + " address", "time_zone": "America/Chicago"}, {"tenant": "tenant"},
                       {"geography": {"city": name.split()[0]}})
-        world.add("provider", "provider/transport", {"name": "Span carrier"})
+        # A third-party carrier's support desk answers from its own domain.
+        world.add("provider", "provider/transport", {"name": "Span carrier"}, {}, {"support_domain": "span-carrier.example"})
         world.add("provider_account", "account/span", {"account": "span-account"}, {"provider": "provider/transport"})
         world.add("provider_network", "carrier/transit", {"name": "Transit network"}, {"provider": "provider/transport"})
         world.add("circuit", "circuit/span", {"cid": "SPAN-001", "commit_rate": 100000000, "install_date": "2026-01-01"}, {"provider": "provider/transport", "tenant": "tenant", "provider_account": "account/span"})

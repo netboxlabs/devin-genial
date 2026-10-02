@@ -324,10 +324,14 @@ def _context(plan, objects, kinds):
                     or account.get("refs", {}).get("owner") != "owner/operations"):
                 fail("operations-provider-account", key, "WAN procurement must retain its actual provider and procurement lineage; acquisition does not renew the account.")
         provider_name = attrs(provider).get("name", "")
-        contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name, f"carrier-{provider.removeprefix('provider/')}.support")
+        # A provider-backbone third-party carrier answers from its own domain.
+        own_domain = recipe.get("profile") == "provider-backbone" and provider != "provider/operator"
+        contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
+                                 None if own_domain else f"carrier-{provider.removeprefix('provider/')}.support")
         expect_assignment(key, contact, "carrier", "/carrier", "secondary")
-        expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
-                    (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
+        if "commit_rate" in data or recipe.get("profile") != "provider-backbone":  # owned fiber purchases nothing
+            expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
+                        (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
         local = terms[key]
         if len(local) != 1 or objects.get(local[0]["refs"].get("termination"), {}).get("kind") != "site":
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
@@ -483,7 +487,8 @@ def _context(plan, objects, kinds):
         description = data.get("description", "")
         responsibility = re.fullmatch(responsibility_forms[role], description) if isinstance(description, str) else None
         if (name != expected_name or data.get("title") != roles[role][0]
-                or data.get("email") != f"{mailbox}@{ns}.example" or len(mailbox) > 64
+                or (data.get("email") != f"{mailbox}@{ns}.example" or len(mailbox) > 64 if mailbox is not None else
+                    not (own := re.fullmatch(r"support@([a-z0-9-]{1,40})\.example", str(data.get("email")))) or own.group(1) == ns)
                 or not responsibility or responsibility.group(1) != scope or len(description) > 200
                 or set(data) != {"name", "title", "phone", "email", "description"}
                 or obj["refs"] != {"groups": [f"contact-group/{role}"]}):

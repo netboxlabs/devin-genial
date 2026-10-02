@@ -133,7 +133,7 @@ just scenario-check build/span-maintenance/scenario.json
 ```
 
 An optional third argument pins a canonical span key from the graph, such as
-`circuit/backbone/seed-01`. Unused spans, customer/transit circuits and missing or
+`circuit/backbone/chicago-west-a/detroit-south-a`. Unused spans, customer/transit circuits and missing or
 unavailable subjects are rejected. Saved scenario checking retains its selected
 span; creating a new scenario after growth can choose a different one.
 

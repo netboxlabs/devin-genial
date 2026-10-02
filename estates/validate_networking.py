@@ -196,8 +196,10 @@ def validate(plan, catalog=None):
     seen_asns = set()
     ranges = [(key, attrs(key).get("start"), attrs(key).get("end")) for key in by_kind["asn_range"]]
     for key, start, end in ranges:
-        if type(start) is not int or type(end) is not int or not 4200000000 <= start <= end <= 4294967294:
-            report("asn-range", key, "Authored routing allocation must be inside the private 32-bit ASN range.")
+        # Private 32-bit, or an RFC 5398 documentation block (the provider's public ASNs).
+        if type(start) is not int or type(end) is not int or not any(
+                low <= start <= end <= high for low, high in ((4200000000, 4294967294), (64496, 64511), (65536, 65551))):
+            report("asn-range", key, "Authored routing allocation must be inside the private 32-bit or a documentation ASN range.")
     for key in by_kind["asn"]:
         number = attrs(key).get("asn")
         if type(number) is not int or number in seen_asns:
