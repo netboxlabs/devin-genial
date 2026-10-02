@@ -259,6 +259,10 @@ def validate(plan):
             report("ipv6-address", key, "LAN host ordinals must avoid reserved IPv6 interface identifiers.")
         if purpose == "radio" and not str(attrs(owner).get("type", "")).startswith("ieee802.11"):
             report("ipv6-policy", owner, "The diagnostic /64 policy is only for the actual addressed radios.")
+        if (purpose == "routed" and provider and attrs(owner).get("type") == "virtual" and
+                attrs(owner).get("name") == f"{attrs(refs(owner).get('parent')).get('name')}.0" and
+                refs(refs(owner).get("parent")).get("device") == refs(owner).get("device")):
+            owner = refs(owner)["parent"]  # a Junos unit 0 stands for its physical port
         if purpose == "routed" and provider and (kind(owner) != "interface" or
                 attrs(owner).get("type") in (None, "virtual", "bridge", "lag") or
                 refs(refs(owner).get("device")).get("role") not in {

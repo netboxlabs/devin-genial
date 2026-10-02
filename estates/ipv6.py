@@ -172,6 +172,9 @@ created on a spare interface or an unmodeled far end of a circuit.
         if policy == "radio":
             radio_owners[prefix].append(assigned)
         device = world.objects.get(owner["refs"].get("device"), {})
+        parent = world.objects.get(owner["refs"].get("parent"), {})
+        if policy == "routed" and owner["attrs"].get("name") == f"{parent.get('attrs', {}).get('name')}.0":
+            owner = parent  # a Junos unit 0 stands for its physical port
         if policy == "routed" and provider and (owner["kind"] != "interface" or
                 owner["attrs"].get("type") in (None, "virtual", "bridge", "lag") or
                 device.get("refs", {}).get("role") not in {

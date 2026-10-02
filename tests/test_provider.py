@@ -227,9 +227,10 @@ class ProviderTests(unittest.TestCase):
                 self.assertEqual(loop.network.prefixlen,32)
                 self.assertNotIn(int(loop.ip)%256,(0,255))
                 self.assertNotIn('vrf',primary['refs'])  # the core is the global table
-                # Out-of-band: fxp0 is cabled and addressed in Carrier Management.
+                # Out-of-band: fxp0 is cabled and addressed (on unit fxp0.0) in Carrier Management.
                 fxp=o['key']+'/if/fxp0'
-                self.assertEqual([i['refs']['vrf'] for i in assigned if i['refs']['assigned_object']==fxp],['vrf/provider'])
+                self.assertEqual(objects[fxp+'.0']['refs']['parent'],fxp)
+                self.assertEqual([i['refs']['vrf'] for i in assigned if i['refs']['assigned_object']==fxp+'.0'],['vrf/provider'])
                 self.assertTrue(any(fxp in c['refs'].values() for c in p['objects'] if c['kind']=='cable'))
 
     def test_catalog_mode_is_bounded_and_psu_names_keep_source_spaces(self):

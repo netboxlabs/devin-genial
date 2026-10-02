@@ -364,9 +364,26 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return ({value for value in values if isinstance(value, str)} if isinstance(values, list) else set()) | (
             {refs(port)["untagged_vlan"]} if isinstance(refs(port).get("untagged_vlan"), str) else set())
 
+    def l3(port):
+        """Where a port's addresses live: a PoP Junos device's physical port is
+        addressed on its logical unit 0 (<port>.0, a virtual child carrying the
+        routing context), never bare; every other port carries its own."""
+        device = refs(port).get("device")
+        if (refs(device).get("platform") != "platform/juniper-junos" or not str(refs(device).get("site")).startswith("site/pop-")
+                or attrs(port).get("type") in (None, "virtual", "lag", "bridge")):
+            return port
+        units = [u for u in child("parent", port, "interface") if attrs(u).get("name") == f"{attrs(port).get('name')}.0"]
+        unit = units[0] if len(units) == 1 else None
+        if (unit is None or attrs(unit).get("type") != "virtual" or refs(unit).get("device") != device or
+                attrs(unit).get("enabled") is not attrs(port).get("enabled") or refs(port).get("vrf") or
+                child("assigned_object", port, "ip_address")):
+            return None
+        return unit
+
     def address(port, network, vrf, host=None, tenant=None):
         # This policy still owns the exact IPv4 /31, /32 and site subnets.
         # Required IPv6 companions are checked separately, not counted as extras.
+        port = l3(port)
         ips = [key for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses]
         if len(ips) != 1:
             return False
@@ -532,7 +549,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             good &= address(port, network, vrf, host, tenant) and not vlans(port)
         # An opaque transit peer has no native remote address owner.
         actual = ips_by_vrf_address[(vrf, 4, int(network[0]))] | ips_by_vrf_address[(vrf, 4, int(network[1]))]
-        expected = {key for port in endpoints for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses}
+        expected = {key for port in endpoints for key in child("assigned_object", l3(port), "ip_address") if key in ipv4_addresses}
         if not good or actual != expected:
             report("provider-routed-address", link, "Routed prefix, exact local endpoint ownership, /31 masks and VRF must match the reserved real link; opaque transit has one local owner.")
 
@@ -724,7 +741,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-router-racks", site, "The two real provider routers must occupy different rack lanes.")
         for router in (pe_a, pe_b):
             expected_ports = {p["name"] for p in catalog.get("provider-edge", {}).get("interfaces", [])} | {"lo0", "lo0.0"}
-            actual_ports = {attrs(port).get("name") for port in child("device", router, "interface")}
+            # Logical units of addressed data ports are checked by l3().
+            actual_ports = {attrs(port).get("name") for port in child("device", router, "interface")
+                            if not (attrs(port).get("type") == "virtual" and refs(port).get("parent") and
+                                    attrs(port).get("name") == f"{attrs(refs(port)['parent']).get('name')}.0" and
+                                    refs(port).get("parent") != f"{router}/if/lo0")}
             if actual_ports != expected_ports:
                 report("provider-port-inventory", router, "PE interfaces must match the pinned chassis and the one in-band loopback.")
             def in_use(port):
@@ -1287,7 +1308,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     # --- BGP inventory: documentation records, never applied configuration ---
     def ipv4_of(port):
-        found = [key for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses]
+        found = [key for key in child("assigned_object", l3(port), "ip_address") if key in ipv4_addresses]
         return found[0] if len(found) == 1 else None
 
     def name_of(key):
@@ -1333,7 +1354,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     def address_of(port, family):
         if family == 4:
             return ipv4_of(port)
-        found = [key for key in child("assigned_object", port, "ip_address")
+        found = [key for key in child("assigned_object", l3(port), "ip_address")
                  if isinstance(attrs(key).get("address"), str) and ":" in attrs(key)["address"]]
         return found[0] if len(found) == 1 else None
 

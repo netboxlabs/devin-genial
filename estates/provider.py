@@ -1145,6 +1145,33 @@ def _apply_lifecycle(w,entries):
             obj["attrs"]["termination_date"] = (as_of+timedelta(days=w.choose(key,"disconnect",range(21,61)))).isoformat()
 
 
+def _junos_units(w):
+    """Junos addresses an interface on a logical unit: et-0/0/1.0, never bare et-0/0/1.
+
+    Every address on a physical port of a PoP's Junos device (PE data ports,
+    fxp0, a Junos management switch's routed uplinks) moves to a virtual
+    ``<port>.0`` child that also carries the routing context; the physical
+    port keeps its cable, optic, speed and MAC. Address keys are identities
+    (BGP sessions name them), so only the assignment moves. lo0.0 follows the
+    same rule in operations._loopback_units.
+    """
+    units = {}
+    for ip in [o for o in w.objects.values() if o["kind"] == "ip_address"]:
+        port = w.objects.get(ip["refs"].get("assigned_object"),{})
+        if port.get("kind") != "interface" or port["attrs"].get("type") in (None,"virtual","lag","bridge"):
+            continue
+        device = w.objects[port["refs"]["device"]]
+        if device["refs"].get("platform") != "platform/juniper-junos" or not device["refs"]["site"].startswith("site/pop-"):
+            continue
+        if port["key"] not in units:
+            units[port["key"]] = w.add("interface",f"{port['key']}.0",
+                dict(name=f"{port['attrs']['name']}.0",type="virtual",enabled=port["attrs"].get("enabled",True)),
+                dict(device=device["key"],parent=port["key"],**({"vrf":port["refs"]["vrf"]} if port["refs"].get("vrf") else {})))
+        ip["refs"]["assigned_object"] = units[port["key"]]
+    for key in units:
+        w.objects[key]["refs"].pop("vrf",None)  # the routing context is the unit's
+
+
 # The serving PE optic of a premises not yet in service.
 OPTIC_STAGE = {"planned":"planned","provisioning":"staged"}
 
@@ -1272,6 +1299,7 @@ def _generate(recipe,previous=None):
         management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
     equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w)
     _apply_lifecycle(w,entries)
+    _junos_units(w)
     operations.supporting_records(w)
     bgp.enrich(w)
     discovery_lab.add_discovery_lab(w)

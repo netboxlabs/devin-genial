@@ -168,6 +168,30 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
                 mutate()
                 self.assertIn(code, self.codes())
 
+    # --- Junos addresses logical units, never bare ports -------------------
+
+    def test_pe_addresses_live_on_unit_zero(self):
+        pes = {d["key"] for d in self.of("device") if d["refs"]["role"] == "role/provider-edge"}
+        for ip in self.of("ip_address"):
+            port = self.o[ip["refs"]["assigned_object"]]
+            if port.get("refs", {}).get("device") in pes:
+                self.assertEqual(port["attrs"]["type"], "virtual", port["key"])
+                self.assertTrue(port["attrs"]["name"].endswith(".0"), port["key"])
+                parent = self.o[port["refs"]["parent"]]
+                self.assertEqual(port["attrs"]["name"], parent["attrs"]["name"] + ".0")
+                self.assertNotIn("vrf", parent["refs"])
+        # Customer handoff units carry the customer VRF; BGP cites the unit address.
+        session = self.o["bgp-session/customer/ce-lakeshore-health-cleveland-flats-001/b"]
+        unit = self.o[self.o[session["refs"]["local_address"]]["refs"]["assigned_object"]]
+        self.assertTrue(unit["attrs"]["name"].startswith("xe-0/1/") and unit["attrs"]["name"].endswith(".0"))
+        self.assertEqual(unit["refs"]["vrf"], "vrf/customer/lakeshore-health")
+
+    def test_bare_port_address_is_refused(self):
+        unit = next(i for i in self.of("interface") if i["attrs"]["name"] == "et-0/0/1.0")
+        ip = next(a for a in self.of("ip_address") if a["refs"]["assigned_object"] == unit["key"])
+        ip["refs"]["assigned_object"] = unit["refs"]["parent"]
+        self.assertIn("provider-routed-address", self.codes())
+
     def test_untruthful_dual_homed_tag_is_refused(self):
         site = next(s for s in self.of("site") if s["key"].startswith("site/pop-")
                     and "tag/dual-homed" not in s["refs"].get("tags", []))

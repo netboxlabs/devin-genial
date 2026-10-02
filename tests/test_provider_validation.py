@@ -194,7 +194,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("provider-management-mode", self.codes())
         self.setUp()
         self.objects[f"ip/{fxp0}"]["refs"].pop("vrf")
-        self.objects[fxp0]["refs"].pop("vrf")
+        self.objects[f"{fxp0}.0"]["refs"].pop("vrf")  # Junos addresses fxp0 on unit 0
         self.assertIn("provider-management-mode", self.codes())
         # The console server's independent broadband path: cut, or re-homed
         # into the carrier's own management context, it no longer counts.
