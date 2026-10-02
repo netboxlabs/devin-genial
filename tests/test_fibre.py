@@ -208,5 +208,284 @@ class LagAndQinq(unittest.TestCase):
         self.assertIn(_candidate_bucket_key(inner, ids), _row_bucket_keys("vlan", {"vid": 10}))
 
 
+# --- DESIGN §7 plan-level gates: independent validators with failing mutations ---
+
+GATE_RECIPE = dict(profile="provider-backbone", namespace="fibre-gates", name="Lakeside Carrier", seed=7,
+                   as_of="2026-09-01",
+                   pops=[dict(key="chicago-loop", metro="chicago"), dict(key="detroit-corktown", metro="detroit"),
+                         dict(key="cleveland-flats", metro="cleveland"), dict(key="chicago-pilsen", metro="chicago")],
+                   customers=[dict(key="anchor-bank", name="Anchor Bank", hub_pop="chicago-loop", lan_endpoints=0,
+                                   sites=[dict(pop="chicago-loop", count=2), dict(pop="detroit-corktown")]),
+                              dict(key="brightpath", name="Brightpath Media", service="dia", commit_mbps=200,
+                                   sites=[dict(pop="detroit-corktown")]),
+                              dict(key="colo-large", name="Colo Large", service="dia", commit_mbps=5000,
+                                   sites=[dict(pop="cleveland-flats")]),
+                              dict(key="alder-dental", name="Alder Dental", service="dia", managed=True, commit_mbps=50,
+                                   sites=[dict(pop="chicago-loop")]),
+                              dict(key="calumet-steel", name="Calumet Steel", service="epl", rate_mbps=200,
+                                   sites=[dict(pop="chicago-loop"), dict(pop="cleveland-flats")])])
+POP, HUB, SPOKE = "pop-chicago-loop", "ce-anchor-bank-chicago-loop-001", "ce-anchor-bank-chicago-loop-002"
+DIA, MANAGED, EPL = "ce-brightpath-detroit-corktown-001", "ce-alder-dental-chicago-loop-001", "ce-calumet-steel-chicago-loop-001"
+
+
+class FootprintGates(unittest.TestCase):
+    """Each §7 gate holds on a generated estate and fails when its obligation is broken."""
+
+    @classmethod
+    def setUpClass(cls):
+        from estates.generate import generate
+        cls.baseline = generate(GATE_RECIPE)
+
+    def setUp(self):
+        from copy import deepcopy
+        self.plan = deepcopy(self.baseline)
+        self.o = {obj["key"]: obj for obj in self.plan["objects"]}
+
+    def codes(self):
+        from estates.validate import validate
+        return {finding["code"] for finding in validate(self.plan)}
+
+    def cable(self, end):
+        return next(o for o in self.plan["objects"] if o["kind"] == "cable" and end in o["refs"].values())
+
+    def peer(self, end):
+        cable = self.cable(end)
+        return next(v for v in cable["refs"].values() if v != end)
+
+    def front(self, rear):
+        return next(k for k, o in self.o.items() if o["kind"] == "front_port" and o["refs"].get("rear_port") == rear)
+
+    def check(self, code, mutate):
+        """Mutate the current plan, require the finding, then restore a fresh copy."""
+        mutate()
+        self.assertIn(code, self.codes())
+        self.setUp()
+
+    def test_the_gate_estate_validates_clean(self):
+        from estates.validate import validate
+        self.assertEqual(validate(self.plan), [])
+
+    def test_aggregation_lag_is_straight_intra_cabinet_and_four_wide(self):
+        agg, pe = f"device/{POP}/agg-a", f"device/{POP}/pe-a"
+        members = [k for k, o in self.o.items() if o["kind"] == "interface" and o["refs"].get("lag") == f"{agg}/if/ae0"]
+        self.assertEqual(len(members), 4)
+        for member in members:
+            self.assertEqual(self.o[self.o[self.peer(member)]["refs"]["device"]]["refs"]["rack"], self.o[agg]["refs"]["rack"])
+        self.check("provider-aggregation-lag", lambda: self.o[members[0]]["refs"].pop("lag"))
+        self.check("provider-aggregation-lag", lambda: self.o[f"{pe}/if/xe-0/1/3"]["refs"].pop("lag"))
+
+    def test_service_vlans_ride_only_their_home_side(self):
+        att = self.o[f"device/{POP}/agg-a/if/ae0"]["refs"]["tagged_vlans"]
+        homed = next(v for v in att if v.endswith("/customer"))
+        self.assertNotIn(homed, self.o[f"device/{POP}/agg-b/if/ae0"]["refs"]["tagged_vlans"])
+        self.check("provider-home-vlans", lambda: self.o[f"device/{POP}/pe-b/if/ae1"]["refs"]["tagged_vlans"].append(homed))
+        self.check("provider-home-vlans", lambda: self.o[f"device/{POP}/agg-a/if/ae0"]["refs"]["tagged_vlans"].remove(homed))
+
+    def test_nid_and_ce_kits_follow_the_service(self):
+        # A hub has two NIDs; single-NID services carry no CE.
+        self.assertIn(f"device/{HUB}/nid-02", self.o)
+        self.assertNotIn(f"device/{DIA}/edge-01", self.o)
+        self.check("provider-nid", lambda: self.o[f"device/{DIA}/nid-01"]["refs"].update(rack=f"rack/{MANAGED}/network-01"))
+        self.check("provider-nid", lambda: self.o[f"ip/device/{HUB}/nid-01/if/Management"]["attrs"].update(address="10.255.255.2/25"))
+        self.check("provider-customer-edge", lambda: self.o[f"device/{SPOKE}/edge-01"]["refs"].update(device_type="hardware/edge"))
+        self.check("provider-device-inventory", lambda: self.plan["objects"].remove(self.o[f"device/{HUB}/nid-02"]))
+
+    def test_multi_device_premises_use_one_mpoe_cabinet(self):
+        rack = f"rack/{HUB}/network-01"
+        self.assertEqual((self.o[rack]["attrs"]["name"], self.o[rack]["refs"]["rack_type"]), ("MPOE-1", "rack-type/mpoe-cabinet"))
+        self.check("provider-mpoe-cabinet", lambda: self.o[rack]["refs"].update(rack_type="rack-type/42u"))
+        self.check("provider-mpoe-cabinet", lambda: self.o[f"rack/{MANAGED}/network-01"]["refs"].update(tenant="tenant/cust-alder-dental"))
+
+    def test_panels_map_one_to_one(self):
+        front = f"device/{POP}/r01-osp/front/1"
+        self.assertEqual(self.o[front]["refs"]["rear_port"], f"device/{POP}/r01-osp/rear/1")
+        self.check("provider-panel-mapping", lambda: self.o[front]["refs"].update(rear_port=f"device/{POP}/r01-osp/rear/2"))
+
+    def test_trace_halves_s6a_and_s6b(self):
+        # S6a: CE wan1 -> NID port 3, one labelled hop.
+        wan, uni = f"device/{HUB}/edge-01/if/wan1", f"device/{HUB}/nid-01/if/3"
+        self.assertEqual(self.peer(wan), uni)
+        self.assertTrue(self.cable(wan)["attrs"]["label"])
+        # S6b: NID port 1 -> term A, term Z -> OSP rear -> front -> AGG UNI.
+        circuit = f"circuit/customer/{HUB}"
+        self.assertEqual(self.peer(f"device/{HUB}/nid-01/if/1"), f"{circuit}/A")
+        rear = self.peer(f"{circuit}/Z")
+        self.assertEqual(self.o[self.o[rear]["refs"]["device"]]["refs"]["device_type"], "hardware/osp-panel")
+        uni = self.peer(self.front(rear))
+        self.assertEqual(self.o[uni]["refs"]["device"], f"device/{POP}/agg-a")
+
+        def skip_panel():
+            self.cable(f"{circuit}/Z")["refs"].update(a=f"{circuit}/Z", b=uni)
+            self.plan["objects"].remove(self.cable(self.front(rear)))
+        self.check("provider-circuit-path", skip_panel)
+        self.check("provider-customer-handoff", lambda: self.plan["objects"].remove(self.cable(wan)))
+
+    def test_every_local_circuit_end_has_a_complete_path(self):
+        rear = self.peer(f"circuit/customer/{SPOKE}/Z")
+        self.check("provider-path-complete", lambda: self.plan["objects"].remove(self.cable(self.front(rear))))
+
+    def test_colo_demarc_is_the_hotels_and_lands_only_carrier_cross_connects(self):
+        demarc = f"device/{POP}/r01-demarc"
+        self.assertTrue(self.o[demarc]["refs"]["tenant"].startswith("tenant/colo/"))
+        self.check("provider-device-inventory", lambda: self.o[demarc]["refs"].update(tenant="tenant"))
+        transit = next(t for t in ("circuit/transit/a/A", "circuit/transit/b/A")
+                       if self.o[t]["refs"]["termination"] == f"site/{POP}")
+        self.assertEqual(self.cable(transit)["attrs"]["label"], self.o[transit]["attrs"]["xconnect_id"])
+        self.check("provider-cross-connect", lambda: self.cable(transit)["attrs"].update(label="CHI-R01-999"))
+
+    def test_owned_spans_land_on_the_osp_panel(self):
+        span = next(k for k, o in self.o.items() if o["kind"] == "circuit" and k.startswith("circuit/backbone/")
+                    and o["refs"]["provider"] == "provider/operator")
+        term = f"{span}/A"
+        rear = self.peer(term)
+        self.assertEqual(self.o[self.o[rear]["refs"]["device"]]["refs"]["device_type"], "hardware/osp-panel")
+
+        def to_demarc():
+            # Re-land the owned fibre on the same position of the colo panel.
+            panel = self.o[rear]["refs"]["device"].replace("-osp", "-demarc")
+            position = rear.rsplit("/", 1)[1]
+            port = self.peer(self.front(rear))
+            self.cable(term)["refs"].update(a=f"{panel}/rear/{position}", b=term)
+            self.cable(self.front(rear))["refs"].update(a=f"{panel}/front/{position}", b=port)
+        self.check("provider-circuit-path", to_demarc)
+
+    def test_epl_is_port_based_qinq_with_exactly_two_terminations(self):
+        l2vpn = "l2vpn/epl/calumet-steel"
+        self.assertEqual(self.o[l2vpn]["attrs"]["type"], "epl")
+        uni = self.o[f"device/{EPL}/nid-01"]
+        subif = self.o[f"l2vpn/epl/calumet-steel/{EPL}"]["refs"]["assigned_object"]
+        agg_uni = next(k for k, o in self.o.items() if o["kind"] == "interface" and o["attrs"].get("mode") == "q-in-q")
+        self.assertEqual(self.o[self.o[agg_uni]["refs"]["qinq_svlan"]]["attrs"]["qinq_role"], "svlan")
+        self.check("provider-epl", lambda: self.plan["objects"].remove(self.o[f"l2vpn/epl/calumet-steel/{EPL}"]))
+        self.check("provider-attachment", lambda: self.o[agg_uni]["attrs"].update(mode="tagged"))
+        self.check("provider-epl", lambda: self.o[l2vpn]["attrs"].update(identifier=1))
+        self.assertTrue(uni and subif)
+
+    def test_lte_modem_is_uncabled_and_its_circuit_end_marked_connected(self):
+        modem = f"device/{POP}/console-01/if/Cellular Interface (LTE)"
+        self.assertEqual(self.o[modem]["attrs"]["type"], "lte")
+        self.check("provider-oob", lambda: self.o[f"circuit/oob/chicago-loop/A"]["attrs"].pop("mark_connected"))
+        self.check("provider-oob", lambda: self.o[f"ip/{modem}"]["refs"].update(vrf="vrf/provider"))
+
+    def test_cabinet_elevation_holds_exact_units(self):
+        self.assertEqual(self.o[f"device/{POP}/pe-a"]["attrs"]["position"], 37)
+        self.assertEqual(self.o[f"device/{POP}/r01-osp"]["attrs"]["position"], 42)
+        self.check("provider-device-inventory", lambda: self.o[f"device/{POP}/agg-a"]["attrs"].update(position=30))
+        self.check("provider-rack-geometry", lambda: self.o[f"device/{POP}/console-01"]["refs"].update(rack=f"rack/{POP}/r03"))
+
+    def test_every_pop_cable_follows_the_cable_policy(self):
+        fxp0 = f"device/{POP}/pe-a/if/fxp0"
+        self.check("provider-cable-policy", lambda: self.cable(fxp0)["attrs"].pop("label"))
+        self.check("operations-cable-colour", lambda: self.cable(fxp0)["attrs"].update(color="2196f3"))
+
+    def test_site_scoped_two_site_circuits_are_the_expected_arcs(self):
+        term = f"circuit/customer/{SPOKE}/A"
+        self.check("provider-wan-arcs", lambda: self.o[term]["refs"].update(termination=f"location/{SPOKE}"))
+
+    def test_asn_labels_name_their_holder_in_thirty_characters(self):
+        self.assertLessEqual(max(len(o["attrs"]["description"]) for o in self.o.values() if o["kind"] == "asn"), 30)
+        self.check("provider-asn-text", lambda: self.o["asn/customer/anchor-bank"]["attrs"].update(
+            description="Anchor Bank private VPN routing identity"))
+
+    def test_ibgp_is_recorded_from_both_ends(self):
+        mirror = "bgp-session/ibgp/pop-cleveland-flats/pe-a/pop-chicago-loop/pe-a"
+        self.assertIn(mirror, self.o)
+        self.check("provider-bgp-inventory", lambda: self.plan["objects"].remove(self.o[mirror]))
+
+    def test_premises_stand_three_hundred_metres_apart(self):
+        def stack():
+            a, b = self.o[f"site/{HUB}"]["attrs"], self.o[f"site/{SPOKE}"]["attrs"]
+            b.update(latitude=a["latitude"] + 0.001, longitude=a["longitude"])  # about 111 m north
+        self.check("provider-premises-spacing", stack)
+
+    def test_object_ceiling(self):
+        from unittest.mock import patch
+        import estates.validate_provider as vp
+        with patch.object(vp, "OBJECT_CEILING", len(self.plan["objects"]) - 1):
+            self.assertIn("provider-object-ceiling", self.codes())
+
+    def test_lag_capacity_holds_after_one_member_loss(self):
+        from unittest.mock import patch
+        import estates.validate_provider as vp
+        # The 5 Gbps DIA's side, re-run with 2 Gbps members: four carry
+        # 8 Gbps x 0.8 = 6.4 Gbps (steady state holds), three only 4.8 Gbps,
+        # so the loss of one member is the finding.
+        from estates.validate import validate
+        with patch.object(vp, "LAG_MEMBER_KBPS", 2000000):
+            findings = validate(self.plan)
+        capacity = [f for f in findings if f["code"] == "provider-aggregation-capacity"]
+        self.assertTrue(capacity)
+        self.assertTrue(all("after one member loss" in f["message"] for f in capacity))
+
+    def test_dia_addressing_and_customer_owned_handoffs(self):
+        self.check("provider-dia-address", lambda: self.o[f"device/{DIA}/nid-01/if/3"]["attrs"].pop("mark_connected"))
+        self.check("provider-dia-address", lambda: self.o[f"prefix/dia/{DIA}"]["attrs"].update(prefix="10.9.9.0/29"))
+
+    def test_no_access_attachment_on_a_pe_physical_port(self):
+        def attach_on_pe():
+            rear = self.peer(f"circuit/customer/{SPOKE}/Z")
+            self.cable(self.front(rear))["refs"].update(b=f"device/{POP}/pe-a/if/xe-0/1/5")
+        self.check("provider-port-use", attach_on_pe)
+
+
+class ShowcaseProxies(unittest.TestCase):
+    """DESIGN §7 offline plan proxies, measured on the showcase recipe before any screen is judged."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tomllib
+        from estates.generate import generate
+        cls.plan = generate(tomllib.loads((Path(__file__).parents[1] / "profiles/showcase-provider.toml").read_text()))
+        cls.o = {obj["key"]: obj for obj in cls.plan["objects"]}
+
+    def of(self, kind):
+        return [obj for obj in self.plan["objects"] if obj["kind"] == kind]
+
+    def test_scale_density_and_variety(self):
+        from collections import Counter
+        premises = [s for s in self.of("site") if s["key"].startswith("site/ce-")]
+        pes = [d for d in self.of("device") if d["refs"].get("role") == "role/provider-edge"]
+        self.assertLessEqual(len(self.plan["objects"]), 40000)
+        self.assertGreaterEqual(len(premises) / len(pes), 10)
+        # About 9-10 private-L3 CE peers per PE, recomputed from the sessions.
+        peers = Counter(s["refs"]["device"] for s in self.of("bgp_session")
+                        if s["key"].startswith("bgp-session/customer/") and not s["key"].endswith("/ipv6"))
+        self.assertTrue(9 <= sum(peers.values()) / len(pes) <= 10)
+        self.assertGreaterEqual(len({s["attrs"]["description"] for s in premises}), 4)
+
+    def test_s1_s3_cabinet_fill_and_pop_inventory(self):
+        from collections import Counter
+        site = "site/pop-chicago-cermak"
+        fill = {rack: sum(self.o[d["refs"]["device_type"]]["attrs"]["u_height"] for d in self.of("device")
+                          if d["refs"].get("rack") == rack and d["attrs"].get("position") is not None)
+                for rack in (f"rack/pop-chicago-cermak/r0{n}" for n in (1, 2))}
+        self.assertEqual([round(100 * u / 42, 1) for u in fill.values()], [23.8, 19.0])
+        roles = Counter(d["refs"]["role"] for d in self.of("device") if d["refs"].get("site") == site)
+        self.assertEqual(roles, Counter({"role/provider-edge": 2, "role/aggregation": 2, "role/patch-panel": 4,
+                                         "role/cable-management": 6, "role/management": 1, "role/console-server": 1,
+                                         "role/pdu": 4}))
+
+    def test_s5_wan_map_arcs(self):
+        terms = {}
+        for t in self.of("circuit_termination"):
+            terms.setdefault(t["refs"]["circuit"], set()).add(self.o[t["refs"]["termination"]]["kind"])
+        arcs = sum(kinds == {"site"} for kinds in terms.values())
+        self.assertTrue(320 <= arcs <= 340, arcs)
+
+    def test_s8_s9_first_page_order(self):
+        from collections import Counter
+        # NetBox orders names with its natural_sort collation: case is not a
+        # primary key, so "R01 CM-36" does not lead lowercase hostnames.
+        sites = sorted(self.of("site"), key=lambda s: s["attrs"]["name"].casefold())[:10]
+        with_ce = {d["refs"]["site"] for d in self.of("device") if d["refs"].get("role") == "role/customer-edge"}
+        self.assertFalse([s for s in sites if s["key"].startswith("site/ce-") and s["key"] not in with_ce])
+        devices = sorted(self.of("device"), key=lambda d: d["attrs"]["name"].casefold())[:25]
+        makers = {self.o[self.o[d["refs"]["device_type"]]["refs"]["manufacturer"]]["attrs"]["name"] for d in devices}
+        self.assertGreaterEqual(len(makers), 3)
+        self.assertGreaterEqual(len(Counter(d["refs"]["role"] for d in devices)), 2)
+        passive = sum(d["refs"]["role"] in ("role/patch-panel", "role/cable-management", "role/pdu") for d in devices)
+        self.assertLessEqual(passive, 5)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -75,74 +75,6 @@ PASSIVE = (OSP_PANEL, COLO_PANEL, CABLE_MANAGER_1U, CABLE_MANAGER_2U, BLANKING_1
 PLANT_ALIASES = (AGGREGATION, POP_MANAGEMENT, POP_OOB, POP_PDU, *PASSIVE)
 
 
-def _ports(prefix, names, kind, **extra):
-    return [dict(name=f"{prefix}{n}", type=kind, **extra) for n in names]
-
-
-def _panel(ports, front, rear, model, manufacturer, part, slug):
-    names = [f"Port {n}" for n in range(1, ports+1)]
-    return dict(manufacturer=manufacturer, model=model, slug=slug, part_number=part, u_height=1,
-                is_full_depth=False, is_powered=False, interfaces=[], power_ports=[],
-                front_ports=[dict(name=n, type=front) for n in names],
-                rear_ports=[dict(name=n, type=rear) for n in names], source_ids=[],
-                serial_format="{yy}@######", stub=True)
-
-
-def _generic(model, slug, height, **extra):
-    return dict(manufacturer="Generic", model=model, slug=slug, u_height=height, is_full_depth=False,
-                is_powered=False, interfaces=[], power_ports=[], source_ids=[], serial_format="{yy}@######",
-                stub=True, **extra)
-
-
-_JUNOS = dict(name="Juniper Junos", slug="juniper-junos", svi_format="irb.{vid}")
-
-# ponytail: STUB catalog entries mirroring WP-A's published aliases and port
-# names, used only while catalog/hardware.json lacks the alias. A real entry
-# always wins (ensure_models); delete this table once WP-A's catalog merges.
-STUB_MODELS = {
-    AGGREGATION: dict(
-        manufacturer="Juniper", model="ACX5448-M", slug="juniper-acx5448-m", part_number="ACX5448-M",
-        u_height=1, is_full_depth=True, airflow="front-to-rear",
-        interfaces=[dict(name="em0", type="1000base-t", mgmt_only=True),
-                    *_ports("xe-0/0/", range(44), "10gbase-x-sfpp"),
-                    *_ports("et-0/1/", range(6), "100gbase-x-qsfp28")],
-        uni_ports=[f"xe-0/0/{n}" for n in range(40)], lag_ports=[f"xe-0/0/{n}" for n in range(40, 44)],
-        power_ports=[dict(name="power0", type="iec-60320-c14"), dict(name="power1", type="iec-60320-c14")],
-        console_ports=[dict(name="console0", type="rj-45")], source_ids=[],
-        serial_format="DK{yyww}######", platform=_JUNOS, stub=True),
-    POP_MANAGEMENT: dict(
-        manufacturer="Juniper", model="EX3400-24T", slug="juniper-ex3400-24t", part_number="EX3400-24T",
-        u_height=1, is_full_depth=True, airflow="front-to-rear",
-        interfaces=[*_ports("ge-0/0/", range(24), "1000base-t"), *_ports("xe-0/2/", range(4), "10gbase-x-sfpp"),
-                    *_ports("et-0/1/", range(2), "juniper-vcp"), dict(name="me0", type="1000base-t", mgmt_only=True)],
-        access_ports=[f"ge-0/0/{n}" for n in range(24)], uplink_ports=[f"xe-0/2/{n}" for n in range(4)],
-        power_ports=[dict(name="Power Supply 0", type="iec-60320-c14"), dict(name="Power Supply 1", type="iec-60320-c14")],
-        console_ports=[dict(name="Console", type="rj-45")], source_ids=[],
-        serial_format="NX{yyww}#####", platform=_JUNOS, stub=True),
-    POP_OOB: dict(
-        manufacturer="Opengear", model="OM2216-L", slug="opengear-om2216-l", part_number="OM2216-L",
-        u_height=1, is_full_depth=False,
-        interfaces=[dict(name="eth0", type="1000base-t", mgmt_only=True), dict(name="eth1", type="1000base-t", mgmt_only=True),
-                    dict(name="Cellular Interface (LTE)", type="lte")],
-        power_ports=[dict(name="PS1", type="iec-60320-c14"), dict(name="PS2", type="iec-60320-c14")],
-        console_ports=[dict(name="Console", type="rj-45")],
-        console_server_ports=_ports("Port ", range(1, 17), "rj-45"), source_ids=[],
-        serial_format="2216{yyww}####", stub=True),
-    POP_PDU: dict(
-        manufacturer="APC", model="AP8941", slug="apc-ap8941", part_number="AP8941", u_height=0, is_full_depth=False,
-        interfaces=[dict(name="Network", type="100base-tx", mgmt_only=True)],
-        power_ports=[dict(name="Power Port 1", type="nema-l6-30p")],
-        power_outlets=[dict(name=f"Power Outlet {n}", type="iec-60320-c19" if n % 8 == 0 else "iec-60320-c13")
-                       for n in range(1, 25)],
-        source_ids=[], airflow="passive", serial_format="5A{yyww}E#####", stub=True),
-    OSP_PANEL: _panel(48, "lc", "splice", "FMS-K2BI-L1A1-48-SP", "CommScope", "FMS-K2BI-L1A1-48-SP", "commscope-fms-48"),
-    COLO_PANEL: _panel(24, "lc", "lc", "LC-24-port Fiber Patch Panel", "Generic", "LC-24", "generic-lc-24"),
-    CABLE_MANAGER_1U: _generic("Cable Management Panel 1U", "generic-cable-management-1u", 1),
-    CABLE_MANAGER_2U: _generic("Cable Management Panel 2U", "generic-cable-management-2u", 2),
-    BLANKING_1U: _generic("Blanking Panel 1U", "generic-blanking-1u", 1, exclude_from_utilization=True),
-    BLANKING_2U: _generic("Blanking Panel 2U", "generic-blanking-2u", 2, exclude_from_utilization=True),
-}
-
 ROLES = {"provider-edge": "provider-edge", AGGREGATION: "aggregation", POP_MANAGEMENT: "management",
          POP_OOB: "console-server", OSP_PANEL: "patch-panel", COLO_PANEL: "patch-panel",
          CABLE_MANAGER_1U: "cable-management", CABLE_MANAGER_2U: "cable-management",
@@ -181,9 +113,7 @@ LABEL_CAPACITY = 1000
 
 
 def ensure_models(w):
-    """Fill only the plant aliases the catalog does not yet carry (see STUB_MODELS)."""
-    for alias, spec in STUB_MODELS.items():
-        w.catalog["models"].setdefault(alias, spec)
+    """Register the PoP plant's catalog device types (catalog/hardware.json carries every alias)."""
     for alias in (*PLANT_ALIASES, "provider-edge"):
         device_type(w, alias)
 
@@ -560,7 +490,7 @@ def far_end(objects, endpoint, peers=None):
         seen.add(endpoint)
         node = objects[endpoint]
         if node["kind"] == "front_port":
-            other = node["refs"]["rear_port"]
+            other = node["refs"].get("rear_port")  # an unmapped front port stops the path
         else:
             front = endpoint.replace("/rear/", "/front/")
             other = front if objects.get(front, {}).get("refs", {}).get("rear_port") == endpoint else None
