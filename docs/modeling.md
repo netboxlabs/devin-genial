@@ -235,9 +235,25 @@ routers are named from its key (`chicago-cermak-pe-a`), and a customer premises
 from its customer key, metro and permanent allocation slot
 (`lakeshore-health-cle0269-gw01`, the same slot its facility code carries), so
 they stay unique and growth-stable. PoP keys shaped like those stems or like the
-NOC's `dc01` are refused. Provider customer and PoP VLANs are named for their
-segment (`Clients`, `Management`) inside their site-scoped VLAN group; other
-profiles' shared VLANs keep `<site> <Role>` names.
+NOC's `dc01` are refused. Every VLAN in every profile is named for its segment
+(`Clients`, `Management`, `POS`) inside its site-scoped VLAN group: NetBox holds
+VLAN names unique per group (`unique_group_name`, pinned 4.7.2
+`ipam/models/vlans.py`), so the site prefix only repeated the group.
+
+Every prefix and VLAN carries an IPAM role (`ipam.Role`) so the Role column,
+prefix heatmap and IPAM radial map colour by purpose. One authored set lives in
+`naming.IPAM_ROLES` — Backbone, Transit, Loopbacks, Management, Users, Voice,
+Wireless, Guest, Servers, Storage, Security, Payments, Clinical, Operational
+technology, Customer and Reserved, weighted in that order — and an estate emits
+only the roles it uses. `naming.prefix_role` derives each prefix's role from
+the finished graph: host routes are Loopbacks and /31 or /127 links Transit;
+a prefix bound to a VLAN shares that segment's role (`SEGMENT_ROLES`); any
+other prefix follows its VRF (a provider customer VPN is Customer, a
+per-segment context its segment). Bank onboarding IP ranges are Reserved.
+`validate_networking` re-derives and enforces every assignment (`ipam-role`).
+Role names are namespace-free like device roles; Role is a branch-scoped
+OrganizationalModel and the loader's occupancy gate keeps two estates out of
+one scope.
 
 Descriptions use the words an engineer would put on the record, from shared
 helpers in `estates/naming.py`: device roles read as `Provider edge router` or
@@ -246,8 +262,19 @@ lanes` (`SEGMENT_PURPOSES`), committed rates and handoffs as `100 Gbps backbone
 committed on a 100G handoff` (`bandwidth`/`port_speed`), and routed /31s name
 both ends. Material limitations stay on the record but move to `comments`, out
 of the list view: VM placement notes, external-transit ownership, provider
-accounts and the private-L3 control plane. The estate-wide tag is `Managed`
-(slug `<namespace>-managed`); nothing selects rows by it.
+accounts, the private-L3 control plane and the diagnostic radio link. The estate-wide tag is `Managed`
+(slug `<namespace>-managed`); nothing selects rows by it. Journals state rates
+in operator units (`Committed capacity: 100 Gbps`, `naming.rate_kbps`), WAN
+circuit comments name their procurement cohort in words (`Standard branch
+order: …`, `naming.COHORT_LABELS`), service desks name their workload
+(`Teller API service desk`), and sites carry no boilerplate comment — bank
+branches keep a one-line lineage note. The four automation records (config
+contexts, export templates, webhook, event rule) have no REST-writable
+`comments` in the pinned 4.7 serializers, so their descriptions read
+operationally (`Notify NetOps automation of device changes; disabled until the
+receiver is live`) while the webhook stays on a reserved `.invalid` host and
+its rule ships disabled; that inert limitation is stated here and in
+`estates/automation.py`, and enforced by `validate_operations`.
 
 Panel cable labels use `P` for cabinet patch cord, `H` for horizontal run, `R`
 for room cord, and `D` for an abstracted direct channel. Other cable numbers use

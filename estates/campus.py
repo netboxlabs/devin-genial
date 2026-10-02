@@ -77,7 +77,7 @@ def aggregation(site, network_roles, wan_peak_mbps, compact=False):
         if compact:
             bridge = w.add("interface", f"{parent}/if/branch-lan",
                            {"name": "branch-lan", "type": "bridge", "enabled": True,
-                            "description": "Logical branch LAN bridge; forwarding policy is outside this dataset"},
+                            "description": "Branch LAN bridge"},
                            {"device": parent})
             trunk(site, [bridge], network_roles)
             for name in ("x1", "x2", "port12"):

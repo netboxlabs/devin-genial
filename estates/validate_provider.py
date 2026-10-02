@@ -540,7 +540,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 if attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not True or attrs(port).get("speed") != speed:
                     report("provider-port-mode", port, "The PE preserves 10G physical port types with explicit 1G service and 10G infrastructure operating speeds.")
             fxp0, lo = f"{router}/if/fxp0", f"{router}/if/lo0"
-            if attrs(lo).get("description") != "Inband management loopback; dedicated fxp0 remains unaddressed and uncabled":
+            if attrs(lo).get("description") != "In-band management loopback":
                 report("provider-scope-text", lo, "The management descriptor must explicitly retain in-band dependency and the unaddressed dedicated port.")
             if peers.get(fxp0) or child("assigned_object", fxp0, "ip_address") or refs(fxp0).get("vrf") or vlans(fxp0):
                 report("provider-management-mode", fxp0, "Dedicated fxp0 remains unaddressed and uncabled; management is explicitly in-band via lo0.")

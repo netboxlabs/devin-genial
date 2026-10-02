@@ -38,7 +38,7 @@ class WanTests(unittest.TestCase):
                 self.assertEqual(self.objects[circuit["key"]+"/Z"]["attrs"]["port_speed"], 1000000)
                 installed, observed = date.fromisoformat(circuit["attrs"]["install_date"]), date.fromisoformat(self.plan["recipe"]["as_of"])
                 self.assertLess(installed, observed)
-                self.assertTrue(circuit["attrs"]["comments"].startswith("Procurement record: "))
+                self.assertRegex(circuit["attrs"]["comments"], r"^(Standard branch|Data center aggregation|Retained Birch contract) order: [a-z]")
 
     def test_custom_tiers_round_up_after_carrier_and_retained_minima(self):
         plan = generate(self.baseline["recipe"] | {"wan_tiers_mbps": [50, 250, 1000]})

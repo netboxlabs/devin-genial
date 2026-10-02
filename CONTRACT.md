@@ -37,6 +37,15 @@ of keys). `meta` contains generator-only reasoning and assertions, never sent as
 ordinary NetBox fields. Nested references must resolve to exactly one canonical
 object. Builder output contains no database IDs.
 
+Every profile emits `role` (NetBox `ipam.Role`: `name`, `slug`, `weight`,
+`description`) under keys `ip-role/<role>`, only for roles the estate uses, and
+every `prefix` and `vlan` carries a `role` reference to one (bank reserved
+`ip_range`s too). The role set and the derivation — host route → `loopbacks`,
+/31 or /127 → `transit`, VLAN-bound → the VLAN segment's role, otherwise the
+VRF (`vrf/customer/<key>` → `customer`, else its segment) — live in
+`estates/naming.py` (`IPAM_ROLES`, `SEGMENT_ROLES`, `prefix_role`); an
+unmapped segment is a hard error. `validate_networking` reports `ipam-role`.
+
 Device/VM display names are site-local; their full Diode identity includes scoped
 site/cluster and tenant references. DNS retains the complete namespace as a valid
 DNS label (2–20 characters, ending alphanumeric). Canonical keys do not change

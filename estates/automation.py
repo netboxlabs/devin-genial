@@ -7,7 +7,9 @@ them; `estates/diode.py` excludes them from the wire package and records the
 omission in its manifest (LOADER_ONLY_KINDS).
 
 Nothing here executes. Config-context data is documentation intent, never
-applied configuration; the export templates are template text for NetBox to
+applied configuration. None of these four models exposes a REST-writable
+``comments`` field in the pinned 4.7 serializers, so their descriptions read
+operationally and this limitation is stated here and in docs/modeling.md; the export templates are template text for NetBox to
 render on request; the webhook points at a host in the reserved `.invalid`
 top-level domain (RFC 2606) and its event rule ships disabled, so the estate
 dispatches nothing.
@@ -106,7 +108,7 @@ def enrich(world):
     endpoints = _service_addresses(world)
     add("config_context", "config-context/global",
         {"name": "Global service baseline", "weight": 100, "is_active": True,
-         "description": "Estate-derived service endpoints for automation; documentation data, not applied configuration",
+         "description": "Service endpoints and DNS resolvers for automation tooling",
          "data": _context_data(ns, endpoints)})
 
     roles = [role for role in SWITCH_ROLES if role in world.objects]
@@ -114,7 +116,7 @@ def enrich(world):
         raise DesignError("Automation context needs an access or leaf switching role in the estate")
     add("config_context", "config-context/switching",
         {"name": "Switch platform baseline", "weight": 1000, "is_active": True,
-         "description": "Reference intent for this estate's switching roles; no device configuration is generated or applied",
+         "description": "Switch logging, edge-port and management defaults for config templates",
          "data": {"logging": {"severity": "informational"},
                   "ports": {"disable_unused": True, "edge_protection": True},
                   "management": {"in_band_vlan_only": True}}},
@@ -135,9 +137,9 @@ def enrich(world):
                   {"name": f"{ns} NetOps automation endpoint", "payload_url": WEBHOOK_URL,
                    "http_method": "POST", "http_content_type": "application/json",
                    "ssl_verification": True,
-                   "description": "Inert demo inventory: a reserved .invalid endpoint, and no enabled rule calls it"})
+                   "description": "NetOps automation receiver; placeholder .invalid host until a real one is set"})
     add("event_rule", "event-rule/device-change",
         {"name": f"{ns} Device change notification", "object_types": ["dcim.device"],
          "event_types": list(EVENT_TYPES), "action_type": "webhook", "enabled": False,
-         "description": "Wiring only: disabled so device changes emit no request; enable it deliberately during a demo"},
+         "description": "Notify NetOps automation of device changes; disabled until the receiver is live"},
         {"action_object": webhook})

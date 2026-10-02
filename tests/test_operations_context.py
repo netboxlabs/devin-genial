@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from estates.generate import generate
+from estates.naming import rate_kbps
 from estates.diode import export
 from estates.validate_operations import validate
 
@@ -52,14 +53,14 @@ class OperationsContextTests(unittest.TestCase):
             header = f"{data['install_date']} — Circuit handoff plan\n"
             if remote["kind"] == "provider_network":
                 expected = (f"Circuit: {data['cid']}\nA termination: {local['attrs']['name']}\n"
-                    f"Z network boundary: {remote['attrs']['name']}\nA handoff: {a['attrs']['port_speed']} kbps\n"
+                    f"Z network boundary: {remote['attrs']['name']}\nA handoff: {rate_kbps(a['attrs']['port_speed'])}\n"
                     f"Recorded service date: {data['install_date']}\nRemote interface and owner: unknown.\n"
                     "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
                 self.assertNotIn("Z handoff:", note["attrs"]["comments"])
             else:
                 # Preserve the pre-correction wording for actual two-site circuits.
                 expected = (f"Circuit: {data['cid']}\nA termination: {local['attrs']['name']}\nZ termination: {remote['attrs']['name']}\n"
-                    f"A handoff: {a['attrs']['port_speed']} kbps\nZ handoff: {z['attrs']['port_speed']} kbps\n"
+                    f"A handoff: {rate_kbps(a['attrs']['port_speed'])}\nZ handoff: {rate_kbps(z['attrs']['port_speed'])}\n"
                     f"Recorded service date: {data['install_date']}\nUse both termination records to coordinate the local handoffs.")
             self.assertEqual(note["attrs"], {"kind": "info", "comments": header + expected})
             self.assertEqual(note["refs"], {"assigned_object": key})
@@ -76,14 +77,14 @@ class OperationsContextTests(unittest.TestCase):
         note = objects[f"journal/{circuit['key']}/handoff-plan"]
         note["attrs"]["comments"] = (f"{data['install_date']} — Circuit handoff plan\nCircuit: {data['cid']}\n"
             f"A termination: {local['attrs']['name']}\nZ termination: {remote['attrs']['name']}\n"
-            f"A handoff: {a['attrs']['port_speed']} kbps\nZ handoff: {z['attrs']['port_speed']} kbps\n"
+            f"A handoff: {rate_kbps(a['attrs']['port_speed'])}\nZ handoff: {rate_kbps(z['attrs']['port_speed'])}\n"
             f"Recorded service date: {data['install_date']}\nUse both termination records to coordinate the local handoffs.")
         self.assert_code(plan, "operations-journal-facts")
 
     def test_external_handoff_facts_and_unknown_remote_scope_are_checked(self):
         mutations = (("A termination: ", "A termination: wrong "),
                      ("Z network boundary: ", "Z network boundary: wrong "),
-                     ("A handoff: 10000000 kbps", "A handoff: 1000000 kbps"),
+                     ("A handoff: 10 Gbps", "A handoff: 1 Gbps"),
                      ("Remote interface and owner: unknown.", "Remote interface and owner: transit-router xe-0/0/0."),
                      ("the Z record identifies an external network boundary.", "both local physical handoffs are installed."))
         for before, after in mutations:
@@ -206,7 +207,7 @@ class OperationsContextTests(unittest.TestCase):
 
     def test_journal_facts_and_added_execution_claim_are_rejected(self):
         for key, before, after in (
-                ("journal/circuit/dc-01/a/1/capacity-request", "1000000 kbps", "999999 kbps"),
+                ("journal/circuit/dc-01/a/1/capacity-request", "Committed capacity: 1 Gbps", "Committed capacity: 999.999 Mbps"),
                 ("journal/circuit/dc-01/a/1/handoff-plan", "summit-dc-01", "summit-dc-02"),
                 ("journal/vm/dc-01/inventory-api/001/resource-plan", "8192 MB", "16384 MB"),
                 ("journal/vm/dc-01/inventory-api/001/listener-plan", "tcp/443", "tcp/444")):

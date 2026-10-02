@@ -40,6 +40,8 @@ opt-in list silently missed VRFs, FHRP groups, tunnels and the crypto records
 for three releases.
 """
 
+import ipaddress
+
 # Kinds whose ``name`` IS a cross-estate identity rather than a label, so the
 # namespace has to stay in it.  Each entry needs a reason, not a convenience:
 #
@@ -177,6 +179,17 @@ def segment_purpose(role):
     return SEGMENT_PURPOSES.get(role, f"{titleize(role)} network")
 
 
+# How a WAN circuit's procurement cohort reads in its comments.  The cohort key
+# stays the persisted identity in the circuit's procurement metadata.
+COHORT_LABELS = {
+    "dc-aggregation": "Data center aggregation", "retained-birch": "Retained Birch contract",
+    "cedar-standard": "Standard branch", "district-standard": "Standard school",
+    "health-system-standard": "Standard clinic", "chain-standard": "Standard store",
+    "campus-standard": "Standard building", "managed-standard": "Standard customer office",
+    "plant-standard": "Standard plant", "substation-standard": "Standard substation",
+}
+
+
 def bandwidth(mbps):
     """A committed rate the way a circuit order reads it: 50 Mbps, 1 Gbps, 100 Gbps."""
     if mbps >= 1000 and mbps % 1000 == 0:
@@ -189,3 +202,81 @@ def port_speed(mbps):
     if mbps >= 1000 and mbps % 1000 == 0:
         return f"{int(mbps) // 1000}G"
     return f"{mbps:g}M"
+
+
+def rate_kbps(kbps):
+    """A NetBox kbps field rendered for prose: 100000000 -> 100 Gbps."""
+    return bandwidth(kbps / 1000)
+
+
+# IPAM roles (ipam.Role) drive the Role column, the prefix heatmap and the
+# radial IPAM map's colouring, so every prefix and VLAN carries one.  One small
+# authored set serves every profile; an estate emits only the roles it uses.
+# Order is the NetBox ``weight`` (lower sorts first).  Names are namespace-free
+# like device roles: Role is an OrganizationalModel (name and slug globally
+# unique) and branch-scoped, and the loader's fresh-load occupancy gate already
+# keeps a second estate out of one scope.
+IPAM_ROLES = {
+    "backbone": ("Backbone", "Provider backbone and PoP infrastructure"),
+    "transit": ("Transit", "Routed transit and point-to-point links"),
+    "loopbacks": ("Loopbacks", "Router loopback addresses"),
+    "management": ("Management", "Network device management"),
+    "users": ("Users", "Staff, student, office and handheld endpoints"),
+    "voice": ("Voice", "IP telephony"),
+    "wireless": ("Wireless", "Wireless client access"),
+    "guest": ("Guest", "Isolated visitor access"),
+    "servers": ("Servers", "Application, database and research compute"),
+    "storage": ("Storage", "Storage and backup networks"),
+    "security": ("Security", "Physical security cameras"),
+    "payments": ("Payments", "Point-of-sale and ATM endpoints"),
+    "clinical": ("Clinical", "Clinical workstations, imaging and medical devices"),
+    "ot": ("Operational technology", "Plant-floor and substation equipment segments"),
+    "customer": ("Customer", "Address space allocated to customer VPNs"),
+    "reserved": ("Reserved", "Addresses held for onboarding and growth"),
+}
+
+# The IPAM role each addressed segment (the VLAN/VRF role key) belongs to.  An
+# unlisted segment is a hard error, so a new segment cannot ship role-less.
+SEGMENT_ROLES = {
+    "management": "management", "users": "users", "staff": "users", "students": "users",
+    "clients": "users", "office": "users", "backoffice": "users", "logistics": "users",
+    "voice": "voice", "wireless": "wireless", "guest": "guest",
+    "applications": "servers", "database": "servers", "research": "servers",
+    "storage": "storage", "backup": "storage", "security": "security",
+    "pos": "payments", "atm": "payments",
+    "clinical": "clinical", "medical": "clinical", "imaging": "clinical",
+    "process": "ot", "supervisory": "ot", "protection": "ot", "telemetry": "ot", "station": "ot",
+    "wan": "transit", "conduit": "transit", "recovery": "transit",
+    "provider": "backbone",
+}
+
+
+def segment_role(segment):
+    try:
+        return SEGMENT_ROLES[segment]
+    except KeyError:
+        raise ValueError(f"segment {segment!r} has no IPAM role in naming.SEGMENT_ROLES") from None
+
+
+def prefix_role(key, prefix, vrf, vlan):
+    """The IPAM role key of one prefix, from facts the finished graph carries.
+
+    Host routes are loopbacks and /31 or /127 links are transit whatever VRF
+    holds them; a prefix bound to a VLAN shares that segment's role; anything
+    else follows its VRF — a provider customer VPN (``vrf/customer/<key>``), or
+    the segment its per-segment routing context is named for.  The IPv6 infrastructure
+    reservations name their purpose in their permanent key.
+    """
+    net = ipaddress.ip_network(prefix, strict=False)
+    if net.prefixlen == net.max_prefixlen:
+        return "loopbacks"
+    if net.max_prefixlen - net.prefixlen == 1:
+        return "transit"
+    if key.startswith("ipv6/infrastructure/"):
+        return "loopbacks" if key.endswith("/loopbacks") else "transit"
+    if vlan:
+        return segment_role(vlan.rsplit("/", 1)[-1])
+    parts = str(vrf).split("/")
+    if parts[:2] == ["vrf", "customer"] and len(parts) == 3:
+        return "customer"
+    return segment_role(parts[-1])

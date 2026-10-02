@@ -32,6 +32,16 @@ SERVICES = (
 )
 
 
+# What a branch's design lineage means to the people who visit it; the
+# design/lineage/acquisition keys themselves stay in the site's metadata.
+LINEAGE_NOTES = {
+    ("modern", "native"): "Current standard branch design.",
+    ("inherited", "independent"): "Birch Bank branch pending acquisition; original Birch design and contracts.",
+    ("inherited", "acquired"): "Acquired from Birch Bank; original Birch design and contracts retained.",
+    ("refreshed", "acquired"): "Acquired from Birch Bank; access switching refreshed to the current standard, Birch contracts retained.",
+}
+
+
 def branch(site, demand):
     w = site.w
     places.arrange(site, demand)
@@ -193,7 +203,7 @@ def _generate(recipe, previous=None, transition=None):
         state = "acquired" if site.acquired else "independent" if site.lineage == "birch" else "native"
         w.obj(site.key)["meta"].update(branch_size=size, lifecycle_cohort=cohort,
                                      branch_design=site.design, lineage=site.lineage, acquisition_state=state)
-        w.obj(site.key)["attrs"]["comments"] += f" Design: {site.design}; lineage: {site.lineage}; acquisition state: {state}. Procurement history; no vendor EOL claims."
+        w.obj(site.key)["attrs"]["comments"] = LINEAGE_NOTES[site.design, state]
         branch(site, BRANCHES[size])
     equipment.enrich(w)
     networking.enrich(w)
