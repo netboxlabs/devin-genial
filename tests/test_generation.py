@@ -4,6 +4,7 @@ from copy import deepcopy
 import re
 import unittest
 
+from estates.operations_context import allocation_ledgers
 from estates.bank import generate
 from estates.model import DesignError, ROOT, canonical, recipe_from_file, resolve_recipe
 from estates.validate import validate
@@ -36,7 +37,7 @@ class GenerationTests(unittest.TestCase):
         changed = generate(self.baseline["recipe"] | {"seed": 43})
         self.assertEqual(validate(changed), [])
         self.assertEqual(changed["allocations"], self.baseline["allocations"])
-        self.assertEqual(changed["reservations"], self.baseline["reservations"])
+        self.assertEqual(allocation_ledgers(changed), allocation_ledgers(self.baseline))
         self.assertNotEqual(changed["objects"], self.baseline["objects"])
         for original, variant in zip(self.baseline["objects"], changed["objects"], strict=True):
             with self.subTest(object=original["key"]):

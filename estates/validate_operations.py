@@ -326,7 +326,10 @@ def _context(plan, objects, kinds):
         if code is None:
             ok = False
         elif code[1] is None:
-            ok = date.fromordinal(earliest).year <= code[0] <= date.fromordinal(latest).year
+            # redate_serial prints the ISO year (a manufacture on 30 December
+            # 2019 is ISO 2020-W01), so compare ISO years, not calendar years.
+            ok = (date.fromordinal(earliest).isocalendar()[0] <= code[0]
+                  <= date.fromordinal(latest).isocalendar()[0])
         else:
             try:
                 monday = date.fromisocalendar(code[0], code[1], 1).toordinal()
