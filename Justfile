@@ -199,7 +199,8 @@ drift-check output='build/discovery-drift':
 # deviations, and rendering them is UI-side evidence this repo does not claim.
 drift-ingest output='build/discovery-drift':
     python3 -m estates drift-check {{quote(output)}}
-    set -a; [ -f .env ] && . ./.env; set +a; \
+    [ -n "${DIODE_TARGET:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; \
+    echo "Diode target: $DIODE_TARGET" >&2; \
     [ "$DIODE_WRITES" = "1" ] || { echo "DIODE_WRITES=1 not attested" >&2; exit 2; }; \
     for phase in {{quote(output)}}/observed/phase-*.json; do \
       python3 -m netboxlabs.diode.scripts.dryrun_replay --target "$DIODE_TARGET" \

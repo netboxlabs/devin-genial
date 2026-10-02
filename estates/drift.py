@@ -13,12 +13,14 @@ target-side evidence under the Cloud qualification protocol.
 
 from collections import Counter, defaultdict
 from copy import deepcopy
+from datetime import date, timedelta
 from ipaddress import ip_address as _ip, ip_interface, ip_network
 import re
 
 from . import __version__
 from .diode import SDK_VERSION, _References, _deferred_fields, _index
-from .model import SERIAL_DIGITS, SERIAL_LETTERS, DesignError, canonical, digest
+from .model import (SERIAL_DIGITS, SERIAL_LETTERS, SERIAL_SPACE, DesignError, canonical, digest,
+                    hardware_catalog, redate_serial, vendor_serial)
 from .power_scenario import _healthy as _healthy_plan
 from .report import _cell, _table
 
@@ -45,6 +47,11 @@ NETBOX_46_KINDS = frozenset({
     "device", "device_role", "device_type", "interface", "ip_address", "location",
     "manufacturer", "platform", "rack", "site", "tag", "tenant", "tenant_group", "vlan",
     "vlan_group", "vrf",
+    # Reviewed for the provider PoP path: MACAddress became a model in NetBox
+    # 4.2 and Module/ModuleBay/ModuleType predate it; all exist on 4.6. The
+    # 4.7 module_bay_type a full ModuleBay record would carry is never reached,
+    # because the payload names a bay only through its thin identity.
+    "mac_address", "module", "module_bay", "module_type",
 })
 NETBOX_47_ONLY_KINDS = frozenset({
     "cooling_source", "cooling_feed", "cooling_intake", "cooling_outflow", "module_bay_type",
@@ -82,6 +89,16 @@ LIMITATIONS = [
     "later growth may legitimately claim them. Regenerate the drift twin after growing the estate.",
     "Undocumented objects cannot be withdrawn by re-ingesting documented state. Clearing them requires target-side removal.",
     "Drift is confined to one selected site so the walkthrough stays inspectable; it is not an estate-wide error rate.",
+]
+# The provider PoP path observes no VLAN and claims nothing about routing.
+POP_LIMITATIONS = [
+    *LIMITATIONS[:4],
+    "Observed addresses and MAC addresses are unused in the bound baseline but are not reserved by the estate "
+    "allocator; later growth may legitimately claim them. Regenerate the drift twin after growing the estate.",
+    *LIMITATIONS[5:],
+    "PoP discovery is modeled as a collector reading chassis, interface, address, MAC and module inventory off the "
+    "carrier's own equipment. No routing-protocol state, BGP session, optical diagnostic or customer-premises "
+    "observation is expressed or claimed.",
 ]
 
 
@@ -185,7 +202,90 @@ def _site_subjects(objects, children, site, ranks):
             "endpoints": endpoints[:4]}
 
 
+def _cabled_peer(objects, children, port):
+    """The far end of the one cable terminating on `port`, or None."""
+    for field, near in (("a", "b"), ("b", "a")):
+        for cable in children[(field, port)]:
+            if objects[cable]["kind"] == "cable":
+                return objects[cable]["refs"].get(near)
+    return None
+
+
+def _pop_subjects(objects, children, site):
+    """Every provider-native drift subject one PoP offers, or None.
+
+    Only what a carrier's own discovery reads off its PoP equipment: the PE
+    pair, the management switch and the console server. Each subject is a
+    permanent property of the PoP build — the PE-to-PE link, the management
+    port cabled to the second PE's dedicated management port, the PE's
+    primary loopback, the PE's power supplies — never a port that customer or
+    backbone growth later consumes, so appending PoPs or customers keeps them.
+    """
+    devices = {}
+    for key in children[("site", site)]:
+        obj = objects[key]
+        if obj["kind"] == "device" and obj["attrs"].get("status") == "active" and obj["attrs"].get("serial"):
+            devices.setdefault(obj["refs"].get("role"), []).append(key)
+    for keys in devices.values():
+        keys.sort(key=_natural)
+    edges = devices.get("role/provider-edge", [])
+    if len(edges) < 2 or not devices.get("role/management") or not devices.get("role/console-server"):
+        return None
+    edge, peer = edges[:2]
+    switch, console = devices["role/management"][0], devices["role/console-server"][0]
+
+    def interfaces(device):
+        return sorted((key for key in children[("device", device)] if objects[key]["kind"] == "interface"),
+                      key=_natural)
+
+    link = next((key for key in interfaces(edge)
+                 if objects[key]["attrs"].get("enabled") is True and objects[key]["attrs"].get("description")
+                 and objects.get(_cabled_peer(objects, children, key), {}).get("refs", {}).get("device") == peer
+                 and objects.get(objects[key]["refs"].get("module"), {}).get("attrs", {}).get("serial")), None)
+    peer_management = [key for key in interfaces(peer) if objects[key]["attrs"].get("mgmt_only")]
+    port = next((key for key in interfaces(switch)
+                 if objects[key]["attrs"].get("enabled") is True
+                 and _cabled_peer(objects, children, key) in peer_management), None)
+    loopback, management = _addressed(objects, edge), _addressed(objects, console)
+    console_mac = management and objects[management["interface"]]["refs"].get("primary_mac_address")
+    # Power supplies are the modules a power port draws through, not optics.
+    supplies = sorted({objects[key]["refs"]["module"] for key in children[("device", peer)]
+                       if objects[key]["kind"] == "power_port" and isinstance(objects[key]["refs"].get("module"), str)},
+                      key=_natural)
+    if (link is None or port is None or loopback is None or management is None or len(supplies) < 2
+            or objects.get(console_mac, {}).get("kind") != "mac_address"):
+        return None
+    return {"site": site, "provider_edge": edge, "peer_provider_edge": peer, "core_link": link,
+            "core_link_optic": objects[link]["refs"]["module"],
+            "management_switch": switch, "management_port": port,
+            "loopback_ip": loopback["ip"], "loopback_interface": loopback["interface"],
+            "console_server": console, "console_interface": management["interface"], "console_mac": console_mac,
+            "unobserved_power_supply": supplies[1]}
+
+
+def _select_pop(plan, objects, children):
+    # ponytail: the permanent provider-pop-order ledger, never name order, so
+    # appending a PoP that sorts earlier cannot move the anchor.
+    order = plan.get("reservations", {}).get("provider-pop-order", {})
+    sites = sorted((key for key, obj in objects.items()
+                    if obj["kind"] == "site" and key.removeprefix("site/pop-") in order),
+                   key=lambda key: (order[key.removeprefix("site/pop-")], key))
+    for site in sites:
+        subjects = _pop_subjects(objects, children, site)
+        if subjects is not None:
+            return subjects
+    raise DesignError(
+        f"{LABEL}: no PoP in the provider-pop-order ledger offers an active PE pair joined by an optic-fitted "
+        "link, a management switch cabled to the second PE's management port, an addressed console server with a "
+        "MAC address, and two PE power supplies; regenerate the provider baseline from a supported recipe")
+
+
 def _select(plan, objects, children):
+    # A carrier's discovery reads its own PoP equipment, never its customers'
+    # LANs (a CE-only premises has no endpoint to drift at all), so the
+    # provider profile always takes the PoP subject set.
+    if plan["recipe"].get("profile") == "provider-backbone":
+        return _select_pop(plan, objects, children)
     # ponytail: permanent allocation order, not lexicographic. Site reservations
     # are append-only, so growing the estate never moves the anchor site onto a
     # newer one; lexicographic order would, the first time a "br-m…" appeared
@@ -202,12 +302,13 @@ def _select(plan, objects, children):
         f"{LABEL}: no site offers an active access switch with four drift-eligible ports and four addressed "
         "endpoint devices. Data-center-only estates (enterprise-data-center) model fabric, not campus access; "
         "generate a baseline from a profile with branch, campus, office or plant access - regional-bank, "
-        "school-district, hospital-clinics, provider-backbone, retail-chain, university-campus, msp, "
-        "manufacturing or utility.")
+        "school-district, hospital-clinics, retail-chain, university-campus, msp, manufacturing or "
+        "utility - or from provider-backbone, whose drift subjects are its own PoP equipment.")
 
 
-def _holding_prefix(objects, address, vrf):
-    """The most specific documented prefix containing this address in its VRF."""
+def _holding_prefix(objects, address, vrf, pool=False):
+    """The most specific documented prefix containing this address in its VRF
+    (with `pool`, the most specific one large enough to hold another host)."""
     host = ip_interface(address).ip
     best, best_length = None, -1
     for key in sorted(objects):
@@ -215,19 +316,22 @@ def _holding_prefix(objects, address, vrf):
         if obj["kind"] != "prefix" or obj["refs"].get("vrf") != vrf:
             continue
         network = ip_network(obj["attrs"]["prefix"])
-        if network.version == host.version and host in network and network.prefixlen > best_length:
+        if (network.version == host.version and host in network and network.prefixlen > best_length
+                and not (pool and network.prefixlen > 30)):
             best, best_length = key, network.prefixlen
     return best
 
 
-def _unused_address(objects, documented, vrf, taken):
+def _unused_address(objects, documented, vrf, taken, pool=False):
     """Highest unused host in the documented prefix holding `documented`.
 
     Descending keeps the choice stable while the estate's own allocators append
     upward. Documented addresses and documented ranges are both avoided; the
     result is still not an allocator reservation, only an unused address today.
+    `pool` instead holds a host route (a /32 loopback) in the most specific
+    documented pool around it, and keeps the documented host-route length.
     """
-    holder = _holding_prefix(objects, documented, vrf)
+    holder = _holding_prefix(objects, documented, vrf, pool)
     _require(holder is not None, f"no documented prefix in this VRF contains {documented}; the observed payload "
                                  "must place a discovered address inside documented space")
     network = ip_network(objects[holder]["attrs"]["prefix"])
@@ -250,7 +354,7 @@ def _unused_address(objects, documented, vrf, taken):
         if _holding_prefix(objects, f"{candidate}/{network.prefixlen}", vrf) != holder:
             continue
         taken.add(candidate)
-        return holder, f"{candidate}/{network.prefixlen}"
+        return holder, f"{candidate}/{ip_interface(documented).network.prefixlen if pool else network.prefixlen}"
     raise DesignError(f"{LABEL}: documented prefix {network} has no unused host address in its top 256 for an "
                       "undocumented discovery record; grow the estate into a larger block or choose another baseline")
 
@@ -300,16 +404,8 @@ def _created(key, kind, item, attrs, refs):
     return dict(key=key, kind=kind, attrs=attrs, refs=refs, meta={"drift_item": item, "undocumented": True})
 
 
-def _items(objects, children, subjects):
-    """Build the exact drift set: one owning item per observed record."""
-    site, switch = subjects["site"], subjects["switch"]
-    management_ip, management_interface = subjects["management_ip"], subjects["management_interface"]
-    ports, endpoints = subjects["drift_ports"], subjects["endpoints"]
-    first, second, third, fourth = endpoints
-    management_vrf = objects[management_ip]["refs"].get("vrf")
-    taken = set()
-    items, observed = [], {}
-
+def _collectors(objects, items, observed):
+    """The shared emit/add pair: one owning item per observed record."""
     def emit(record):
         _require(record["key"] not in observed, f"{record['key']} is already owned by another drift item")
         observed[record["key"]] = record
@@ -331,6 +427,27 @@ def _items(objects, children, subjects):
                         "; ".join(sorted({"re-ingest the documented record" if row["change_type"] == "update"
                                           else "requires target-side removal" for row in changes}))),
         })
+
+    return emit, add
+
+
+def _items(objects, children, subjects, as_of=None):
+    """Build the exact drift set for the selected subject path."""
+    if "provider_edge" in subjects:
+        return _pop_items(objects, children, subjects, as_of)
+    return _campus_items(objects, children, subjects)
+
+
+def _campus_items(objects, children, subjects):
+    """The campus-access drift set: one owning item per observed record."""
+    site, switch = subjects["site"], subjects["switch"]
+    management_ip, management_interface = subjects["management_ip"], subjects["management_interface"]
+    ports, endpoints = subjects["drift_ports"], subjects["endpoints"]
+    first, second, third, fourth = endpoints
+    management_vrf = objects[management_ip]["refs"].get("vrf")
+    taken = set()
+    items, observed = [], {}
+    emit, add = _collectors(objects, items, observed)
 
     # 1. Undocumented object: a spare access switch patched in from stores.
     stem = re.sub(r"\d+$", "", objects[switch]["attrs"]["name"]) or objects[switch]["attrs"]["name"] + "-"
@@ -524,13 +641,164 @@ def _items(objects, children, subjects):
     return items, observed
 
 
+def _replacement_serial(objects, key, as_of):
+    """A spare's serial drawn in the part's own catalog format and dated as
+    manufactured 4-20 weeks before the baseline's as-of date, never after it.
+
+    Devices take their model's `serial_format`; optics their manufacturer's
+    optics format - the same sources the estate's own serials expand from.
+    """
+    record = objects[key]
+    catalog = hardware_catalog()
+    if record["kind"] == "device":
+        fmt = catalog["models"].get(record["meta"].get("hardware"), {}).get("serial_format")
+    else:
+        maker = objects[objects[record["refs"]["module_type"]]["refs"]["manufacturer"]]["attrs"]["name"]
+        formats = catalog["optics"]["serial_formats"]
+        fmt = formats.get(maker, formats["Generic"])
+    _require(isinstance(fmt, str), f"{key} has no catalog serial format for a replacement part")
+    used = {obj["attrs"].get("serial") for obj in objects.values()}
+    for attempt in range(64):
+        n = int(_token(key, "replacement-part", attempt), 16)
+        made = date.fromisoformat(as_of[:10]) - timedelta(days=28 + n % 113)
+        serial = redate_serial(fmt, vendor_serial(fmt, n % len(SERIAL_SPACE)), made)
+        if serial not in used:
+            return serial
+    raise DesignError(f"{LABEL}: no unused replacement serial could be drawn for {key}")
+
+
+def _observed_mac(objects, key, documented):
+    """A replacement NIC's MAC: the documented vendor OUI, a redrawn NIC half
+    that no documented MAC record already holds."""
+    used = {obj["attrs"]["mac_address"].upper() for obj in objects.values() if obj["kind"] == "mac_address"}
+    for attempt in range(64):
+        nic = int(_token(key, "replacement-mac", attempt), 16) & 0xFFFFFF
+        observed = documented.upper()[:9] + ":".join(f"{(nic >> shift) & 0xFF:02X}" for shift in (16, 8, 0))
+        if observed not in used:
+            return observed
+    raise DesignError(f"{LABEL}: no unused replacement MAC address could be drawn for {key}")
+
+
+def _pop_items(objects, children, subjects, as_of):
+    """The provider-native drift set: what a carrier's discovery reads at one PoP."""
+    site, edge, peer = subjects["site"], subjects["provider_edge"], subjects["peer_provider_edge"]
+    link, optic = subjects["core_link"], subjects["core_link_optic"]
+    console, console_interface = subjects["console_server"], subjects["console_interface"]
+    name = lambda key: objects[key]["attrs"]["name"]
+    pop = objects[site]["attrs"]["name"]
+    items, observed = [], {}
+    emit, add = _collectors(objects, items, observed)
+
+    # 1. Undocumented object: a second /32 staged on the PE's identity loopback.
+    loopback_ip = subjects["loopback_ip"]
+    _, staged = _unused_address(objects, objects[loopback_ip]["attrs"]["address"],
+                                objects[loopback_ip]["refs"].get("vrf"), set(), pool=True)
+    staged_ip = f"drift/ip/{site}/staged-loopback"
+    emit(_created(staged_ip, "ip_address", "undocumented-loopback-address",
+                  {"address": staged, "status": "active",
+                   "description": f"Discovered second address on {name(edge)} {name(subjects['loopback_interface'])}"},
+                  {field: value for field, value in objects[loopback_ip]["refs"].items()
+                   if field in ("vrf", "tenant")} | {"assigned_object": subjects["loopback_interface"]}))
+    add("undocumented-loopback-address", "undocumented-object", subject=staged_ip, records=[staged_ip],
+        story=(f"An engineer staged a second /32 on {name(edge)}'s {name(subjects['loopback_interface'])} ahead of "
+               "a planned renumbering and never removed it or recorded it. The collector reads both addresses off "
+               "the interface; the address plan has never heard of the second one."),
+        deviation=(f"One created IP address {staged} on the matched documented interface "
+                   f"{name(subjects['loopback_interface'])}. The documented loopback "
+                   f"{objects[loopback_ip]['attrs']['address']} is untouched."))
+
+    # 2-3. Drift vs intent, one maintenance visit: an optic swap and a port note.
+    documented_optic = objects[optic]["attrs"]["serial"]
+    replacement_optic = _replacement_serial(objects, optic, as_of)
+    emit(_mutated(objects, optic, "replaced-optic-serial", attrs={"serial": replacement_optic}))
+    add("replaced-optic-serial", "drift-vs-intent", subject=optic, records=[optic],
+        fields=[{"field": "serial", "documented": documented_optic, "observed": replacement_optic}],
+        story=(f"During a maintenance visit a field technician swapped the optic in {name(edge)} {name(link)}, the "
+               f"link to {name(peer)}, for a like-for-like spare from PoP stock. Discovery reads the new "
+               "transceiver's serial from the same cage; the module record still carries the old part."),
+        deviation=(f"One changed attribute on the matched Module in bay {name(edge)} / "
+                   f"{objects[objects[optic]['refs']['module_bay']]['attrs']['name']}: serial {documented_optic} "
+                   f"becomes {replacement_optic}. The bay and module type match, so the module is updated rather "
+                   "than created."))
+
+    documented_description = objects[link]["attrs"]["description"]
+    observed_description = f"{documented_description} | optic swapped, CHG pending"
+    emit(_mutated(objects, link, "pe-link-description-drift", attrs={"description": observed_description}))
+    add("pe-link-description-drift", "drift-vs-intent", subject=link, records=[link],
+        fields=[{"field": "description", "documented": documented_description, "observed": observed_description}],
+        story=("The same technician annotated the router port description to flag the swap for the change record. "
+               "The router now says one thing and documented intent another. Read it next to replaced-optic-serial: "
+               "they are the same visit."),
+        deviation=f"One changed attribute on the matched Interface {name(link)} of {name(edge)}: description.")
+
+    # 4. Drift vs intent: a management port left shut after a maintenance window.
+    port = subjects["management_port"]
+    emit(_mutated(objects, port, "management-port-shut", attrs={"enabled": False}))
+    add("management-port-shut", "drift-vs-intent", subject=port, records=[port],
+        fields=[{"field": "enabled", "documented": True, "observed": False}],
+        story=(f"The {name(subjects['management_switch'])} port facing {name(peer)}'s dedicated management port was "
+               "shut during a maintenance window and never re-enabled. Documented state still presents that "
+               "management path as live."),
+        deviation=(f"One changed attribute on the matched Interface {name(port)} of "
+                   f"{name(subjects['management_switch'])}: enabled."))
+
+    # 5. Drift vs intent: a like-for-like console server replacement.
+    documented_serial = objects[console]["attrs"]["serial"]
+    replacement_serial = _replacement_serial(objects, console, as_of)
+    documented_mac = subjects["console_mac"]
+    new_mac = f"drift/mac/{site}/replacement-console"
+    replacement_mac = _observed_mac(objects, new_mac, objects[documented_mac]["attrs"]["mac_address"])
+    emit(_created(new_mac, "mac_address", "replaced-console-server",
+                  {"mac_address": replacement_mac}, {"assigned_object": console_interface}))
+    emit(_mutated(objects, console_interface, "replaced-console-server", refs={"primary_mac_address": new_mac}))
+    emit(_mutated(objects, console, "replaced-console-server", attrs={"serial": replacement_serial}))
+    add("replaced-console-server", "drift-vs-intent", subject=console, records=[new_mac, console_interface, console],
+        fields=[{"field": "serial", "documented": documented_serial, "observed": replacement_serial},
+                {"field": "primary_mac_address", "documented": objects[documented_mac]["attrs"]["mac_address"],
+                 "observed": replacement_mac}],
+        story=(f"{name(console)} failed and was replaced like-for-like from spares. The replacement kept the name, "
+               "the rack position and every cable, so it matches the documented device - and discovery reports a "
+               "new chassis serial and "
+               f"a new MAC address on {name(console_interface)}."),
+        deviation=(f"Three deviations from one swap: the matched Device {name(console)} has its serial changed, MAC "
+                   f"address {replacement_mac} is created on {name(console_interface)}, and that interface's "
+                   "primary MAC changes to it. The plugin matches a MAC address on its value and assigned interface, "
+                   "so the new one is created rather than the old one edited; the old record stays on the target "
+                   "until removed there."))
+
+    # 6. Documented but not observed. Diode carries no absence signal.
+    supply = subjects["unobserved_power_supply"]
+    add("power-supply-not-observed", "documented-not-observed", subject=supply, records=[],
+        story=(f"The collector's inventory walk of {name(peer)} returned one power supply. "
+               f"{objects[objects[supply]['refs']['module_bay']]['attrs']['name']} is documented as installed: "
+               "either it was pulled for RMA or the collector never read the bay, and documented state cannot "
+               "tell the difference."),
+        deviation=("No deviation is produced by this payload. A Diode IngestRequest has no absence, tombstone or "
+                   "delete representation, and the reconciler defines only create, update and noop change types. "
+                   "Detecting it means comparing documented inventory against the observed set on the target side."))
+
+    # 7. Data quality: a second collector lower-cases serials.
+    documented_peer_serial = objects[peer]["attrs"]["serial"]
+    _require(documented_peer_serial.lower() != documented_peer_serial,
+             f"{name(peer)}'s documented serial has no upper-case letter for the casing drift item")
+    emit(_mutated(objects, peer, "serial-case-drift", attrs={"serial": documented_peer_serial.lower()}))
+    add("serial-case-drift", "data-quality", subject=peer, records=[peer],
+        fields=[{"field": "serial", "documented": documented_peer_serial, "observed": documented_peer_serial.lower()}],
+        story=(f"Two collectors poll {pop}, and one lower-cases serials. {name(peer)} is unchanged; only the "
+               "transcription differs, and every serial-keyed report and support-contract lookup now splits in two."),
+        deviation=("One changed attribute on the matched Device: serial casing. Serial is in none of the plugin's "
+                   "published Device matchers (name with site and tenant, asset tag, primary IPs, rack position), "
+                   "so the record is updated, not duplicated."))
+    return items, observed
+
+
 def _derive(baseline):
     """Recompute the complete drift envelope from one frozen healthy baseline."""
     _healthy_plan(baseline, LABEL)
     fingerprint = digest(baseline)
     objects, children = _graph(baseline)
     subjects = _select(baseline, objects, children)
-    items, observed = _items(objects, children, subjects)
+    items, observed = _items(objects, children, subjects, baseline["recipe"]["as_of"])
 
     declared = Counter(key for item in items for key in item["records"])
     _require(sorted(declared) == sorted(observed),
@@ -631,7 +899,8 @@ def _derive(baseline):
             "selection": subjects, "items": items, "counts": counts,
             "observed": {"directory": "observed", "records": selected, "ingestion_entities": entities},
             "observed_plan": observed_plan, "inverse": inverse, "checks": checks,
-            "target": dict(TARGET), "execution": dict(EXECUTION), "limitations": list(LIMITATIONS),
+            "target": dict(TARGET), "execution": dict(EXECUTION),
+            "limitations": list(POP_LIMITATIONS if "provider_edge" in subjects else LIMITATIONS),
             "sources": list(SOURCES)}
 
 
@@ -679,6 +948,8 @@ def markdown(envelope, baseline):
             return key
         attrs = record["attrs"]
         name = attrs.get("name", attrs.get("address", attrs.get("mac_address", key)))
+        if record["kind"] == "module":  # a module has no name; its bay does
+            name = (objects.get(record["refs"]["module_bay"]) or {}).get("attrs", {}).get("name", key)
         owner = record["refs"].get("device")
         return f"{label(owner)} / {name}" if isinstance(owner, str) and record["kind"] != "device" else name
 
