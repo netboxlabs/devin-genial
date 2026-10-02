@@ -18,6 +18,7 @@ topology = "incremental-mesh"
 noc_pop_a = "chicago-cermak"
 noc_pop_b = "detroit-new-center"
 noc_peak_mbps = 200
+discovery_lab = true
 
 [hardware]
 access = "juniper"
