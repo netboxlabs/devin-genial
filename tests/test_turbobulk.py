@@ -1834,3 +1834,22 @@ class GlobalTableIdentity(unittest.TestCase):
         self.assertEqual(turbobulk._candidate_bucket_key(address, {}), ("address-vrf", "192.0.2.1/32", None))
         self.assertIn(("prefix-vrf", "10.0.0.0/8", None),
                       turbobulk._row_bucket_keys("prefix", {"prefix": "10.0.0.0/8", "vrf": None}))
+
+
+class GenericRefContentTypes(unittest.TestCase):
+    """Every generic-ref target a profile emits must have a content type, or the load
+    dies at preflight (found live: 0.16 circuit terminations scoped to a Location)."""
+
+    def test_every_required_content_type_is_mapped(self):
+        from estates import turbobulk
+        from estates.generate import generate
+        import tomllib
+        from pathlib import Path
+        recipes = [{"profile": p} for p in ("regional-bank", "provider-backbone", "hospital-clinics",
+                                             "university-campus", "manufacturing", "utility")]
+        recipes.append(tomllib.loads(Path("profiles/showcase-provider.toml").read_text()))
+        for recipe in recipes:
+            with self.subTest(recipe=recipe.get("name") or recipe["profile"]):
+                objects = {o["key"]: o for o in generate(recipe)["objects"]}
+                missing = turbobulk._required_content_types(objects) - set(turbobulk.CONTENT_TYPES)
+                self.assertEqual(missing, set())

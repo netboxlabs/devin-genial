@@ -737,6 +737,9 @@ def main(argv=None):
                 f"{obj['kind']}.{ref}" for obj in objects.values()
                 for ref in set(obj["refs"]) - SUPPORTED_REFS.get(obj["kind"], set())
                 if obj["kind"] in SPECS})
+            from .turbobulk import CONTENT_TYPES, _required_content_types
+            unsupported_refs += sorted(f"generic-ref target {kind} has no content type"
+                                       for kind in _required_content_types(objects) - set(CONTENT_TYPES))
             rest_kinds = sorted(set(kinds) & REST_CREATE_KINDS)
             loadable = not uncovered and not unsupported_refs
             # Verdict first, on stdout, so `just load-check … | tail` shows the
@@ -878,6 +881,9 @@ def main(argv=None):
         else:
             detail = f"; receipt: {receipt}"
         print(f"Load failed: {exc}{detail}", file=os.sys.stderr)
+        if os.environ.get("GENIAL_TRACEBACK"):
+            import traceback
+            traceback.print_exc()
         return 2
 
 

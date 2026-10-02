@@ -462,6 +462,7 @@ CONTENT_TYPES = {
     "console_server_port": ("dcim", "consoleserverport"),
     "device": ("dcim", "device"),
     "site": ("dcim", "site"),
+    "location": ("dcim", "location"),
     "provider_network": ("circuits", "providernetwork"),
     "interface": ("dcim", "interface"),
     "vm_interface": ("virtualization", "vminterface"),
