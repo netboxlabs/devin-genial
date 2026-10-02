@@ -593,9 +593,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             term = sides[side][0] if len(sides[side]) == 1 else None
             good &= attrs(term).get("port_speed") == speed
             if port is not None:
-                # A local handoff terminates in the room its equipment stands in.
+                # A local handoff terminates on its site (Visual Explorer maps
+                # only site-scoped ends) and names its equipment's room.
                 room = refs(refs(port).get("device")).get("location")
-                good &= (refs(term).get("termination") == room and kind(room) == "location" and refs(room).get("site") == site and
+                good &= (refs(term).get("termination") == site and kind(site) == "site" and kind(room) == "location" and
+                         refs(room).get("site") == site and attrs(term).get("description") == f"Local routed handoff, {attrs(room).get('name')}" and
                          kind(port) == "interface" and attrs(port).get("type") not in ("virtual", "lag", None) and
                          attrs(port).get("speed") == speed and peers.get(term) == port and active_path(term))
                 cross_connect(term, port, site, provider)
@@ -633,7 +635,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         good_address = (len(address_lines) == 3 and number.isdecimal() and int(number) > 0 and street in streets and
                         address_lines[1:] == [f"{locality}, {state}", "United States"])
         description = {"pop": "Provider routing, local management and carrier handoffs",
-                       "customer": "Private-L3 customer premises and wired office",
+                       "customer": "Private-L3 customer premises and wired office" if customer and customer["lan_endpoints"]
+                                   else "Private-L3 customer premises; CE hands off to the customer's own LAN",
                        "dc": "Provider NOC services, inventory and monitoring"}[category]
         if attrs(site).get("description") != description:
             report("provider-scope-text", site, "Facility description must state its modeled role without adding unmodeled availability or execution guarantees.")

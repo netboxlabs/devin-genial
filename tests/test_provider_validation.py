@@ -283,13 +283,17 @@ class ProviderValidationTests(unittest.TestCase):
                 self.strip()
                 self.assertIn("provider-asn", self.codes())
 
-    def test_local_handoffs_terminate_in_their_equipment_room(self):
+    def test_local_handoffs_terminate_on_their_site_and_name_their_room(self):
+        # Site scope: Visual Explorer's WAN map resolves only dcim.site ends.
         term = self.term(f"circuit/customer/{self.customer}", "A")
-        self.assertEqual(term["refs"]["termination"], f"location/{self.customer}")
-        for target in (f"site/{self.customer}", "location/pop-chicago-west"):
-            with self.subTest(target=target):
+        self.assertEqual(term["refs"]["termination"], f"site/{self.customer}")
+        self.assertEqual(term["attrs"]["description"], f"Local routed handoff, {self.objects[f'location/{self.customer}']['attrs']['name']}")
+        for field, value in (("termination", f"location/{self.customer}"), ("termination", "site/pop-chicago-west"),
+                             ("description", "Local routed handoff, Cage Z99")):
+            with self.subTest(field=field, value=value):
                 self.setUp()
-                self.term(f"circuit/customer/{self.customer}", "A")["refs"]["termination"] = target
+                term = self.term(f"circuit/customer/{self.customer}", "A")
+                (term["refs"] if field == "termination" else term["attrs"])[field] = value
                 self.strip()
                 self.assertIn("provider-circuit-path", self.codes())
 
@@ -581,7 +585,7 @@ class ProviderRealismTests(unittest.TestCase):
         metro = {f"site/pop-{p['key']}": p["metro"] for p in self.plan["recipe"]["pops"]}
         pairs = Counter()
         for key, span in self.spans().items():
-            a, z = (metro[self.objects[self.objects[f"{key}/{side}"]["refs"]["termination"]]["refs"]["site"]] for side in "AZ")
+            a, z = (metro[self.objects[f"{key}/{side}"]["refs"]["termination"]] for side in "AZ")
             if a == z:
                 self.assertEqual(span["refs"]["provider"], "provider/operator", key)
                 self.assertNotIn("commit_rate", span["attrs"])
