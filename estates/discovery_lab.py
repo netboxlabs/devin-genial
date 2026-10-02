@@ -154,7 +154,7 @@ def add_discovery_lab(world):
     # Each mirrored production port takes the next free front-panel cage of the
     # same speed class, in natural production-interface order per node.
     free = {n["prod"]: {"fast": list(FAST), "slow": list(SLOW)} for n in nodes}
-    by_prod, ports = {n["prod"]: n for n in nodes}, {}
+    ports = {}
     for node in nodes:
         for iface in sorted((i for pair in prod_links for d, i in pair if d == node["prod"]), key=natural):
             pool = free[node["prod"]]["fast" if (objects[iface]["attrs"].get("speed") or 0) >= 100_000_000 else "slow"]
