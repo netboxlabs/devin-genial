@@ -268,9 +268,10 @@ mounted in a single rack unit from the bottom rail upward, so a lane can never
 need more than eleven units: an enclosed four-post 24U cabinet (APC AR3104) is
 the honest size for it, where a 42U cabinet would be three-quarters empty by
 construction — a rendered PoP cabinet already read `21% utilized`. A provider
-PoP cabinet also carries the real passive content a carrier cage holds: one
-Panduit FCE1U 1U fibre enclosure per PE cabinet (pinned library type; its
-adapter-panel bays are not modeled and no circuit is routed through it). A
+PoP cabinet holds no fibre enclosure of its own: one with no ports or cables
+was a prop, and a carrier handoff's patch position is the carrier hotel's
+meet-me-room panel, recorded on the termination's `pp_info` (see the
+provider section). A
 single-CE premises — a provider customer office, one CE and one switch — takes
 the small-room kit instead: a 13U Panduit R2P26 two-post rack, one 1U APC AP9563
 120 V PDU at the top unit on one 120 V / 20 A branch circuit, and no console
@@ -661,16 +662,17 @@ just generate profiles/school-wireless.toml build/school-optics
 Use `report.md`'s **Installed optics and local paths** section to answer “Which
 part is installed here, what does it connect to, and who would coordinate work?”
 Open the named interface, follow its installed module and bay, then inspect the
-module type's source-linked attributes. The report shows actual support contacts
+module type's datasheet attributes. The report shows actual support contacts
 and complete known local cable paths, including passive ports when present.
 All five final representatives passed initial/repeat live ingestion and native
 inspection on the pinned stack. The final offline scale and SDK results are
 indexed in [GOAL.md](../GOAL.md); these do not prove optical loss budgets or a
 large live load.
 
-The finite [catalog](../catalog/README.md) selects LR/LX/LR4 (and long-reach LH/ER4 Lite) parts for reviewed
-Cisco, Juniper, Arista and Fortinet cages, plus an explicit reference-server
-transceiver. The alternate Juniper access and leaf lines carry their own
+The finite [catalog](../catalog/README.md) selects SR/SR4 multimode parts for
+in-room jumpers and LR/LX/LR4 (and long-reach LH/ER4 Lite) single-mode parts
+for everything that leaves the room, for reviewed Cisco, Juniper, Arista and
+Fortinet cages, plus explicit generic server transceivers. The alternate Juniper access and leaf lines carry their own
 reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives a 1G part (LX, or LH past 10 km of owned
 fiber) even though its cage can also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
 one active optical cable, two captive end modules, one shared assembly serial.
@@ -678,8 +680,21 @@ The existing cable label remains stable and its comments show the assembly
 serial. The two end records are not two independently replaceable purchases.
 Unused cages remain empty; fixed copper ports do not receive optical modules.
 
+Reach follows the run, not the cage (since 0.16.0). A direct jumper between
+two cages in one room, no longer than the shortest reviewed multimode reach
+(100 m, SR4 on OM4), runs OM4 multimode with SR (duplex LC) or SR4 (MPO-12)
+optics when both cages take a reviewed multimode part: PE pairs, PE-to-
+management-switch uplinks, NOC leaf-server and leaf-spine links. Building
+backbones between rooms, carrier handoffs and owned spans stay single-mode. A
+cage with no reviewed multimode part keeps single-mode on its jumper — the
+FortiGate 100F, because no primary source confirms `FN-TRAN-SFP+SR` on it —
+and a channel through LC patch panels stays single-mode until the passive lane
+model covers MPO. `optics-reach-class` refuses a 10 km part on a jumper a
+reviewed short-reach pair would serve; the medium decides the part, so the
+multimode cable and both SR ends always agree.
+
 Source-backed host fit, protocol and medium are separate checks. The authored
-local SMF envelope is 3–100m; catalog reach is not an optical loss budget or
+local envelope is 3–100 m; catalog reach is not an optical loss budget or
 measured receive power. A third-party carrier's circuit termination ends the
 local path: it does not reveal the carrier's intercity span or remote optic.
 The operator's own fiber does not end there (since 0.16.0): on a circuit the
@@ -699,9 +714,9 @@ from conservative authored reservations; each AOC end reserves 3.5W rather than
 claiming a verified whole-assembly power split. This is planning reserve, not
 measured consumption or an efficiency calculation.
 
-Optic replacement notes use a fixed catalog cage on each rack's permanent
-equipment anchor. They identify the installed part, serial and bay;
-new occupied ports do not rewrite older journal text. Native
+No journal restates an installed optic: its part, serial, bay and interface
+are the module's own fields (the 0.16 optic and PSU replacement notes were
+dropped for that reason). Native
 [`Interface.module` ownership](https://github.com/netbox-community/netbox/blob/v4.7.0/netbox/dcim/models/device_components.py)
 uses cascading deletion. Preserve these records during growth: no module removal,
 hot-swap or executed optic replacement is modeled.
@@ -741,11 +756,25 @@ mutation in `tests/test_estate_hygiene.py`.
   as uninformative. NetBox's `Tag.object_types` restriction is declared in
   `naming.TAGS` and enforced offline; it is not yet written to the target (the
   TurboBulk path cannot carry that many-to-many).
-- **Taxonomy lists only what is used.** Device and rack roles and regions
-  nothing references are dropped, as are the passive cabling types (patch
-  panel, wall outlet) a direct-patching estate never installs. Other device
-  types, platforms and makers stay a fixed library so growth and scenario
-  snapshots never delete one.
+- **Taxonomy lists only what is used.** Device and rack roles, regions, device
+  types, module types, module-bay types, module-type profiles and makers
+  nothing references are dropped (since 0.16.0 for hardware types): a spare
+  console-server size, the generic endpoint in a carrier that inventories no
+  customer desks, or an AOC no cage holds is shelf clutter. Growth that later
+  installs a pruned type creates it again. One lineage is kept: while a bank
+  carries its acquired-branch line (`inherited-access`), that device type and
+  the part definitions it and the access line a refresh installs can take
+  stay, so the refresh snapshot neither adds nor deletes a shared type
+  (`optics.RETAINED`). PSU module types carry no profile: the catalog pins
+  only each supply's model, and a profile whose one attribute was a source URL
+  read as provenance, not a spec sheet. NetBox's builtin `Power supply`
+  profile wants voltage and wattage the catalog does not pin, and the loader
+  cannot reference a pre-existing builtin row (the allowlist excuses one only
+  when disjoint from the plan).
+- **The switch baseline targets switches that exist.** The `Switch platform
+  baseline` config context scopes every switching role some device holds
+  (access, management, distribution, stack, leaf, spine), never a role with
+  no devices; `automation-context` refuses an idle one.
 - **One colour palette.** Device roles, rack roles, tags, module-bay types,
   inventory-item roles and circuit/virtual-circuit types share one authored
   palette (`naming.PALETTE`): no two coloured records in an estate repeat a hex,
@@ -774,8 +803,7 @@ mutation in `tests/test_estate_hygiene.py`.
   fiber span counts its handoff port) — information the hub-site and
   dual-homed tags do not already carry. Rack groups are not emitted: grouped by
   room kind they only mirrored the site groups (data-model review HIER-6).
-- **Racks take their type.** Every rack, the network-lab cabinet included,
-  references the catalog rack type for its height and carries no per-rack
+- **Racks take their type.** Every rack references the catalog rack type for its height and carries no per-rack
   `form_factor` or `width` (deprecated in NetBox 4.7, removed in 5.0).
   `Rack.save()` copies a type's physical fields onto the rack; TurboBulk skips
   save, so the loader performs that copy at insert time
@@ -791,7 +819,18 @@ mutation in `tests/test_estate_hygiene.py`.
   untagged VLAN from a modeless interface — so its VLAN is the one its own
   address's prefix is bound to; the independent checks re-derive it that way
   (`validate_networking.routed_vlan_view`) and refuse an SVI that claims a mode.
-  A virtual interface with a parent is an 802.1Q unit and keeps its access VLAN.
+  The same holds for a host's own port (since 0.16.0): only a switch's
+  non-management port (`role/access`, `management`, `distribution`, `stack`,
+  `leaf`, `spine`) carries an access-mode VLAN. A PE `fxp0`, console-server
+  `NET1`, server `BMC`, a switch's own `Management1`, a firewall `mgmt`, a
+  CE `port1` and an endpoint's `eth0` carry no mode; their segment is their
+  address's prefix VLAN, read through the same view (`interface-host-mode`
+  refuses one that claims access mode). A host's tagged trunk (hypervisor
+  uplink, firewall or AP trunk) does tag frames and keeps `tagged`; a virtual
+  child of a tagged parent is an 802.1Q unit and keeps its access VLAN, and an
+  L2VPN attachment with a VLAN translation policy keeps its mode. A child of
+  an untagged parent (the CE `Clients` unit on `port1`) is routed and
+  carries none.
   Junos addresses the loopback on logical unit 0: the PE's `lo0` carries a
   virtual `lo0.0` child that holds its IPv4/IPv6 loopbacks, and BGP peers from
   it. Like-for-like optical links carry their cage rate as `speed`. Links
@@ -848,15 +887,20 @@ the retained Birch portfolio even after acquisition or access-hardware refresh;
 provider customers, NOC, transit and transport retain separate accounts. Changing
 technical ownership does not silently renew a commercial contract.
 
-Journals are short operational lines, not restatements of the record they sit
-on, and their kind follows the event: completed events are `success`, an open
-action is `warning`, everything else `info`. Each site has a `Site access` note
-(book visits through the facilities desk, info); each circuit an `Order placed`
-note (rate, carrier and cid, info) and an `In service` note (carrier, site and
-port rate on the recorded service date, success — the provider backbone keeps
-its two-ended `Circuit handoff plan`); the first VM in each site/workload a
-`First instance placed` note naming its host (success). Facts come from the
-actual site, provider, circuit, host and module records. Each entry's
+Journals carry only what their record cannot show (since 0.16.0): the change
+ticket an event ran under and who confirmed it — never a cid, termination,
+rate, serial, cabinet, U position or module the record already holds. Their
+kind follows the event: completed events are `success`, a problem is
+`warning`, everything else `info`. Each site has a `Site access` note (book
+visits through the facilities desk, info). Each in-service circuit has one
+`Handed over` note (success): `Accepted into service under change CHGnnnnnnn.`,
+plus, for a third-party carrier, that carrier's support desk confirming the
+handover and closing its ticket. One third-party delivery in five, chosen per
+circuit by a namespace-keyed hash (so neither a reseed nor growth moves one),
+also has a `Delivery slipped` warning 5–20 days before its handover: the
+carrier missed the committed date and was escalated. The first VM in each
+site/workload has a `First instance placed` note naming its host (success).
+The change ticket is a seeded per-subject choice. Each entry's
 `created` timestamp is its own event date at 15:00 UTC, so the Journal list
 reads as history rather than as the day it was loaded: TurboBulk inserts a
 supplied `created` column as-is (it skips only auto primary keys; a missing
@@ -876,21 +920,15 @@ re-derives the chain and reports `operations-serial-date` and
 `operations-journal-date`.
 
 The first eligible infrastructure device by permanent U position in each rack
-has an `Installed` note (model, serial, room, cabinet, U position and its
-management interface; success), dated by that device's own install. Where that device has an installed PSU module,
-a `Keep a spare PSU` note asks for a like-for-like part on hand for that bay
-(warning); it does not claim a spare does or does not exist, since the
-lifecycle sidecar may stock one. New racks gain stories without rewriting
-existing rack history. When that device's first fixed optical cage is
-occupied, an `Optic replacement note` names its interface, bay, installed part
-and serial, and whether a failure replaces the transceiver or the whole AOC
-assembly. Dates follow each site's own timeline, read from the graph: a
-site's service day is its first circuit's install date (a PoP's first span, a
-premises' access circuit), the `Installed` note falls 7–37 days before it, and
-site, VM, spare-PSU and optic notes never predate it; a site without circuits
-keeps the `as_of`-anchored window. The fixed
-cage is chosen before occupancy; later port growth cannot change the note's
-subject. See [installed optics](#installed-optics-policy) for the assembly and
+has an `Installed` note (success): racked and cabled under its change ticket,
+the visit booked through the site's facilities desk (a PoP's carrier-hotel
+remote hands). It is dated by that device's own install, 7–37 days before the
+site's service day; site and VM notes never predate the service day either,
+and a site without circuits keeps the `as_of`-anchored window. New racks gain
+stories without rewriting existing rack history. The 0.15 `Order placed`,
+`Circuit handoff plan`, `Keep a spare PSU` and `Optic replacement note`
+entries restated their record's own fields and were dropped; see [installed
+optics](#installed-optics-policy) for the assembly and
 native deletion limits.
 
 Ordinary growth retains existing journal text and contact identities. This matters
@@ -1071,9 +1109,11 @@ NetBox cannot see stays on the carrier's provider network. Every carrier
 handoff into a PoP (leased spans, transit, NOC private lines and out-of-band
 broadband) records the carrier hotel's cross-connect order (`xconnect_id`,
 `XC-` plus seven digits, ledger `provider-cross-connects`), and a fibre handoff
-its position on the PE cabinet's own 1U enclosure (`pp_info`,
-`chicago-cermak-odf-a, panel 1, port 2`; ledger
-`provider-odf-positions/<enclosure>`, four panels of twelve ports). The
+its position on the carrier hotel's meet-me-room panel — the hotel's panel, not
+the operator's (`pp_info`, `Meet-me room panel MMR-17, port 4`; ledger
+`provider-mmr-positions/<pop site>` from a stable per-PoP start, 48 ports per
+panel). The operator models no fibre enclosure: 0.16 builds before this one
+racked a 1U ODF per PE cabinet with no ports or cables, a prop. The
 operator's own circuits carry neither. Access circuits record `distance`: the
 premises-to-PoP great-circle distance times the 1.3 route factor, which the
 optic chooser reads directly.
@@ -1186,7 +1226,7 @@ source of truth for what discovery must find.
 
 | Record | What it is |
 | --- | --- |
-| Room and rack | `Network Lab` under the NOC's floor, cabinet `L01` (rack role Network). |
+| Room | `Network Lab` under the NOC's floor. The routers stand there unracked: a container occupies no rack unit. They stay devices with primary IPs (not VMs) so Orb device discovery matches them. |
 | Lab routers | `lab-<production name>` for the first PoP's PE pair (permanent `provider-pop-order` ledger) plus PE A's first-ordered backbone neighbour; a fourth node adds PE B's. Device type `Nokia 7220 IXR-D2L`, platform `NOKIA_SRL v26.7.2`, role `Lab Router`, serial `Sim Serial No.`. |
 | Ports | All 58 front-panel ports from the pinned devicetype-library file plus `mgmt0`, `system0` and `.0` subinterfaces, each physical port with its SR Linux MAC. |
 | Links | One cable per routed /31 adjacency among the mirrored production routers; 100G production ports map onto the D2L's QSFP28 cages 49–56. |
@@ -1211,8 +1251,8 @@ exactly when the key enables them, with the requested node count),
 circuit, power, console or module; lab cables join only lab ports),
 `lab-address` (lab addresses only from 198.18.0.0/15, that space only in the
 lab, every address in a lab prefix), `lab-hardware` (model, serial, platform,
-the complete front panel and MACs), `lab-placement` (the NOC's Network Lab room
-and rack) and `lab-mirror` (the first PoP's PE pair and neighbours, cabled
+the complete front panel and MACs), `lab-placement` (the NOC's Network Lab room,
+located but never racked) and `lab-mirror` (the first PoP's PE pair and neighbours, cabled
 exactly as their routed /31 adjacencies). `tests/test_discovery_lab.py` holds a
 failing mutation for each. Turning the lab on or off, or changing its size,
 requires a new baseline; with it off no lab record is emitted, and turning it
