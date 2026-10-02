@@ -117,6 +117,40 @@ position 1:1 (front `Port n` ↔ rear `Port n`). Passive models carry
 | `pop-cabinet` | APC AR3100 NetShelter SX 42U, 600 × 1070 mm, `4-post-cabinet` |
 | `mpoe-cabinet` | KOSCAB kos-shts-9u55x45x50ds 9U wall cabinet, `wall-cabinet` |
 
+## Lived-in carrier aliases (catalog 0.15, generator 0.18)
+
+Stable aliases for the v0.18 provider history, services and second NID
+generation. Every model is pinned to the library commit above. The deviations
+and the dated evidence are in
+[Lived-in carrier models](#lived-in-carrier-models). Port names are the exact
+catalog names.
+
+| Alias | Model | Ports and fields the builders use |
+| --- | --- | --- |
+| `aggregation-legacy` | Juniper ACX5048-AC, 1U | Same contract as `aggregation`. `uni_ports` = `xe-0/0/0`–`39`; `lag_ports` = `xe-0/0/40`–`43`; `xe-0/0/44`–`47` 10G SFP+ spare; `et-0/0/48`–`53` **40G** QSFP+, unused (no 100G cage). A 1G UNI keeps the `xe-` name with `speed` 1000000, a declared normalization. Mgmt is `em0` (1000BASE-T, cabled); `em1` (SFP, mgmt_only) stays uncabled. RJ45 `Console`. PSU bays `Power Supply 0`/`1` hold JPSU-650W-AC-AFO and give C14 inlets **`PSU 0`** / **`PSU 1`** (with the space) |
+| `provider-edge-legacy` | Juniper MX80, 2U (the relic) | `fxp0` mgmt; `xe-0/0/0`–`3` 10G **XFP**; RJ45 `Console`; fixed C14 `PEM0`/`PEM1` (no space). MIC and fan bays are not modelled. Relics are uncabled and unpowered, so no optics are installed |
+| `provider-edge-successor` | Juniper MX304 (`JNP304`), 2U, not full depth, with one JNP304-LMCIC16 line card in bay `LCMIC0` | `et-0/0/0`–`15`, typed `400gbase-x-qsfpdd` (the pinned LMIC type), configured at 100G (`speed` 100000000) with QSFP28 optics. `pair_port` = `et-0/0/0`; `tms_port` = `et-0/0/1` (100G to the TMS over the generic AOC). The rest are spare. **No power ports, no console, no management port**: the pinned chassis has bays only, and neither the PSUs nor the Routing Engine are modelled for a planned or staged chassis |
+| `ddos-mitigation` | Arbor TMS HD 1000, 2U | `1`–`4` 100G QSFP28; `5`–`12` 10G SFP+; `Management` 1000BASE-T mgmt_only (cabled to the PoP mgmt switch); RJ45 `Console`. `offramp_ports` = [`1`, `2`] (1 ↔ PE-A2, 2 ↔ PE-B2, the MX304s). PSU bays `PSU 1`/`PSU 2` hold the labelled-fiction `TMS AC PSU (authored)` and give C14 inlets **`PSU1`** / **`PSU2`** |
+| `time-server` | Meinberg Lantime M300, 1U | `lan0` 100BASE-TX spare; `lan1` 1000BASE-TX; `management_port` = `lan1` (cabled to the mgmt switch). DE-9 console `serial`, uncabled. One fixed C14 `PWR1` (single supply) |
+| `nid-legacy` | Accedian MetroNID TE, 1U | Same contract as `nid`: `nni_port` `B_Network` (1G SFP); `uni_port` `A_Client` (1G SFP, the customer's 1000BASE-LX handoff); `management_interface` `Management` (virtual, builder-created, in-band). `Monitor-1`/`2` 1000BASE-T spare; `C_Management` mgmt_only, uncabled; RJ45 `Console`. Power ports `AC Power Adapter` and `Dual DC Power`, both `dc-terminal` (no PDU outlet fits; mark them connected) |
+
+**MX204 port-speed limit (declared fact; it explains the refresh).** Juniper's
+[port-speed page](https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-mx-routers.html),
+Table 3 "Valid Port Speed Combinations at Port Level (MX204)", allows only these
+PIC0 modes while all eight PIC1 10G ports are active: 100/100/100/0,
+100/100/10-40/10-40 and 100/10-40/10-40/10-40. 100/100/100/100 and
+100/100/100/10-40 both require PIC1 = 0. The provider PE runs 100/100/100/0 with
+eight 10G ports, so `et-0/0/3` stays disabled. **No fourth 100G link fits an
+MX204 that uses all its SFP+ ports.** The TMS therefore attaches to the MX304
+successor, never to an MX204. The page is archived at
+`build/catalog-evidence/lived-in/mx_speed.html`.
+
+Platforms: the three Juniper aliases declare `Juniper Junos`; `ddos-mitigation`
+declares `Arbor TMS` (slug `arbor-tms`); `time-server` declares `LANTIME OS`
+(slug `meinberg-lantime-os`); `nid-legacy` declares none, like `nid-10g`.
+Device roles are not catalog data. The DDoS Mitigation and Time Server roles
+belong to the provider builder.
+
 ## Selectable vendor lines
 
 `hardware_lines` declares the three role families whose model the recipe may
