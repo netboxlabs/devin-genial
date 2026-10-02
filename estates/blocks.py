@@ -35,8 +35,9 @@ PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  # Juniper ACX5000 hardware guide; Meinberg M300 PWR1 max 20 W and
                  # the MetroNID TE 13 W from the pinned library types. The MX80
                  # relic and the planned/staged MX304 are never powered.
-                 # TODO(WP-A): ddos-mitigation allowance pending the TMS figure.
-                 "aggregation-legacy": 365, "time-server": 20, "nid-legacy": 13}
+                 # Arbor TMS HD1000: 327 W with one Packet Processing Module per
+                 # the NETSCOUT data sheet SECPDS_004_EN-2201 (catalog/README.md).
+                 "aggregation-legacy": 365, "time-server": 20, "nid-legacy": 13, "ddos-mitigation": 327}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the
