@@ -98,8 +98,9 @@ def problems(catalog):
     tports = ports.get("ddos-mitigation", {})
     if (any(tports.get(p, {}).get("type") != "100gbase-x-qsfp28" for p in tms.get("offramp_ports", [])) or
             len(tms.get("offramp_ports", [])) != 2 or not tports.get("Management", {}).get("mgmt_only")
-            # Labelled fiction: the unpinned supply says so in its own model name and source.
-            or not all(c["model"].endswith("(authored)") for c in tms.get("configured_modules", [{"model": ""}]))
+            # Labelled fiction: the unpinned supply is declared by its authored
+            # source; its record keeps an operational name (record-disclaimer).
+            or not all(c["model"] == "TMS AC PSU" for c in tms.get("configured_modules", [{"model": ""}]))
             or "authored-tms-psu" not in tms.get("source_ids", [])):
         out.append("ddos-mitigation ports")
     ts = m.get("time-server", {})

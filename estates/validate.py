@@ -58,6 +58,9 @@ BANK_BRANCH_ENDPOINTS = {"s": (12, 2, 2, 2), "m": (36, 4, 4, 4), "l": (84, 6, 8,
 BRANCH_DESIGNS = {"modern": ("access", 2), "inherited": ("inherited-access", 1), "refreshed": ("access", 2)}
 # Endpoint families whose devices are wall-powered and never racked.
 ENDPOINT_FAMILIES = ("endpoint", "atm", "ap")
+# Device statuses that carry no live management path: not yet in service
+# (ordered, staged, a boxed or racked cold spare) or being retired.
+OUT_OF_SERVICE = frozenset({"planned", "staged", "inventory", "decommissioning", "offline"})
 
 
 def _full_catalog():
@@ -450,7 +453,11 @@ def _validate(plan):
     term_kinds = {"interface", "front_port", "rear_port", "power_port", "power_outlet", "power_feed", "circuit_termination", "console_port", "console_server_port"}
     for circuit in by_kind["circuit"]:
         terms = [term for term in children[("circuit", circuit)] if kind(term) == "circuit_termination"]
-        if sorted(attrs(term).get("term_side", "") for term in terms) != ["A", "Z"]:
+        # A decommissioned circuit that carries its termination date has been
+        # withdrawn and may keep no terminations. Any other circuit needs both ends.
+        withdrawn = attrs(circuit).get("status") == "decommissioned" and bool(attrs(circuit).get("termination_date"))
+        sides = sorted(attrs(term).get("term_side", "") for term in terms)
+        if sides != ["A", "Z"] and not (withdrawn and not sides):
             report("circuit-terminations", circuit, "A complete generated circuit needs exactly A and Z terminations.")
         for term in terms:
             target = refs(term).get("termination")
@@ -1324,6 +1331,8 @@ def _validate(plan):
                 hardware = catalog.get(meta(device).get("hardware"), {})
                 if not any(port.get("mgmt_only") for port in hardware.get("interfaces", [])):
                     continue
+                if attrs(device).get("status", "active") in OUT_OF_SERVICE:
+                    continue  # a chassis on order, staged, spare or retired is managed by nobody yet (or any longer)
                 primary = refs(refs(device).get("primary_ip4")).get("assigned_object")
                 virtual_management_roles = {"role/distribution", "role/leaf", "role/wan-edge", "role/management"}
                 if recipe.get("profile") == "provider-backbone":

@@ -115,14 +115,22 @@ class SharedDepthTests(unittest.TestCase):
         for profile in PROFILES:
             with self.subTest(profile=profile):
                 plan, objects = self.stripped(profile)
-                notes = [o for o in plan["objects"] if o["kind"] == "journal_entry"
-                         and objects[o["refs"]["assigned_object"]]["kind"] == "device"]
+                device_notes = [o for o in plan["objects"] if o["kind"] == "journal_entry"
+                                and objects[o["refs"]["assigned_object"]]["kind"] == "device"]
+                notes = [o for o in device_notes if o["key"].endswith("/equipment-record")]
                 racks = {objects[o["refs"]["assigned_object"]]["refs"]["rack"] for o in notes}
                 subjects = {o["refs"]["assigned_object"] for o in notes}
                 self.assertEqual(len(racks), len(subjects))
                 # One installation event per cabinet; no restating PSU or optic notes.
                 self.assertEqual(len(notes), len(racks))
-                self.assertTrue(all(o["key"].endswith("/equipment-record") for o in notes))
+                # Only the provider plant adds dated device history (generations,
+                # spares, successors, exchange ports), never a PSU or optic note.
+                others = {o["key"].rsplit("/", 1)[1] for o in device_notes if o not in notes}
+                if profile == "provider-backbone":
+                    self.assertTrue(others)
+                    self.assertFalse({e for e in others if "psu" in e or "optic" in e})
+                else:
+                    self.assertEqual(others, set())
                 self.assertEqual(operations_findings(plan), [])
                 for event in ("equipment-record",):
                     key = next(o["key"] for o in notes if o["key"].endswith('/'+event))
@@ -139,7 +147,8 @@ class SharedDepthTests(unittest.TestCase):
                         elif mutation == "executed":
                             note["attrs"]["comments"] += "\nReplacement executed successfully."
                         else:
-                            note["attrs"]["comments"] = "2099-01-01" + note["attrs"]["comments"][10:]
+                            title, rest = note["attrs"]["comments"].split(" · ", 1)
+                            note["attrs"]["comments"] = f"{title} · 2099-01-01{rest[10:]}"
                         self.assertTrue(any(f["code"].startswith("operations-journal") for f in operations_findings(broken)), mutation)
 
 

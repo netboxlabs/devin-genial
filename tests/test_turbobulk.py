@@ -1840,6 +1840,14 @@ class GenericRefContentTypes(unittest.TestCase):
     """Every generic-ref target a profile emits must have a content type, or the load
     dies at preflight (found live: 0.16 circuit terminations scoped to a Location)."""
 
+    def test_rack_journals_resolve_to_the_rack_content_type(self):
+        from estates import turbobulk
+        objects = {"rack/x": {"key": "rack/x", "kind": "rack", "attrs": {}, "refs": {}},
+                   "journal/rack/x/removed/a": {"key": "journal/rack/x/removed/a", "kind": "journal_entry",
+                                                "attrs": {}, "refs": {"assigned_object": "rack/x"}}}
+        self.assertIn("rack", turbobulk._required_content_types(objects))
+        self.assertEqual(turbobulk.CONTENT_TYPES["rack"], ("dcim", "rack"))
+
     def test_every_required_content_type_is_mapped(self):
         from estates import turbobulk
         from estates.generate import generate
