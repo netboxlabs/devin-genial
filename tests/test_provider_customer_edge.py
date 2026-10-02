@@ -47,7 +47,9 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
         self.assertTrue(orders)
         for journal in orders:
             self.assertNotIn("carrier", journal["attrs"]["comments"])
-            self.assertIn("Service order for", journal["attrs"]["comments"])
+            # Who ordered it and its change; rate and service ID stay on the circuit.
+            self.assertIn("\nOrdered by ", journal["attrs"]["comments"])
+            self.assertNotIn("bps", journal["attrs"]["comments"])
         # Third-party carriers still escalate through their own desks.
         leased = {c["key"] for c in self.of("circuit") if c["refs"]["provider"] != "provider/operator"}
         self.assertEqual(leased, leased & carrier_desk)
@@ -243,7 +245,9 @@ class LifecycleEquipmentTests(unittest.TestCase):
         self.assertEqual(circuit["attrs"]["status"], "deprovisioning")
         self.assertGreater(circuit["attrs"]["termination_date"], self.plan["recipe"]["as_of"])
         journal = self.o["journal/circuit/customer/ce-harbor-logistics-cleveland-east-001/disconnect-order"]
-        self.assertIn(circuit["attrs"]["termination_date"], journal["attrs"]["comments"])
+        # The date is the circuit's own field; the journal cites its change.
+        self.assertNotIn(circuit["attrs"]["termination_date"], journal["attrs"]["comments"])
+        self.assertIn("Disconnect ordered under change CHG", journal["attrs"]["comments"])
         self.assertEqual(journal["attrs"]["kind"], "warning")
 
     def test_lifecycle_equipment_counterexamples_are_refused(self):

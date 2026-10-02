@@ -826,7 +826,8 @@ mutation in `tests/test_estate_hygiene.py`.
   `leaf`, `spine`) carries an access-mode VLAN. A PE `fxp0`, console-server
   `NET1`, server `BMC`, a switch's own `Management1`, a firewall `mgmt`, a
   CE `port1` and an endpoint's `eth0` carry no mode; their segment is their
-  address's prefix VLAN, read through the same view (`interface-host-mode`
+  address's prefix VLAN (a Junos port's, through its untagged `.0` unit), read
+  through the same view (`interface-host-mode`
   refuses one that claims access mode). A host's tagged trunk (hypervisor
   uplink, firewall or AP trunk) does tag frames and keeps `tagged`; a virtual
   child of a tagged parent is an 802.1Q unit and keeps its access VLAN, and an
