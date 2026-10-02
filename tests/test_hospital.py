@@ -6,6 +6,7 @@ from pathlib import Path
 import tomllib
 import unittest
 
+from estates.operations_context import allocation_ledgers
 from estates.validate_optics import analyze as analyze_optics
 from estates.validate_poe import analyze as analyze_poe
 
@@ -122,7 +123,7 @@ class HospitalTests(unittest.TestCase):
         for seed in (0,7,12345):
             variant = generate(raw | {"seed":seed})
             self.assertEqual(validate(variant), [])
-            self.assertEqual(variant["reservations"],plan["reservations"])
+            self.assertEqual(allocation_ledgers(variant),allocation_ledgers(plan))
             self.assertEqual(canonical(generate(variant["recipe"])),canonical(variant))
             self.assertNotEqual(canonical(variant),canonical(plan))
 

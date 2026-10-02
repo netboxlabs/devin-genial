@@ -49,7 +49,9 @@ class ProviderLifecycleTests(unittest.TestCase):
                 self.assertEqual(o[f"site/{sid}"]["attrs"]["status"], site)
                 self.assertEqual(o[f"device/{sid}/edge-01"]["attrs"]["status"], device)
                 self.assertEqual(o[f"circuit/customer/{sid}"]["attrs"]["status"], circuit)
-                self.assertEqual(o[f"ip/device/{sid}/edge-01/if/wan1"]["attrs"]["status"], ip)
+                # A hub's CE is the FortiGate 100F (wan1); a spoke's the small CE (ge-0/0/0).
+                wan = "wan1" if sid in ("ce-harbor-logistics-chicago-west-001", "ce-maple-schools-detroit-south-001") else "ge-0/0/0"
+                self.assertEqual(o[f"ip/device/{sid}/edge-01/if/{wan}"]["attrs"]["status"], ip)
                 self.assertEqual(o[f"bgp-session/customer/{sid}"]["attrs"]["status"], bgp)
                 self.assertEqual("install_date" in o[f"circuit/customer/{sid}"]["attrs"], circuit in ("active", "deprovisioning"))
         self.assertEqual(o["virtual-circuit/customer/maple-schools"]["attrs"]["status"], "planned")
@@ -64,7 +66,7 @@ class ProviderLifecycleTests(unittest.TestCase):
         sid = "ce-maple-schools-detroit-south-001"
         cases = ((f"circuit/customer/{sid}", "install_date", "2026-01-01", "provider-timeline"),
                  (f"site/{sid}", "status", "active", "provider-site-context"),
-                 (f"device/ce-harbor-logistics-cleveland-east-001/edge-01", "status", "active", "provider-device-inventory"),
+                 (f"device/ce-harbor-logistics-cleveland-east-001/edge-01", "status", "active", "provider-customer-edge"),
                  (f"ip/device/{sid}/edge-01/if/wan1", "status", "active", "provider-routed-address"),
                  (f"bgp-session/customer/{sid}", "status", "active", "provider-bgp-session"),
                  (f"circuit/customer/ce-harbor-logistics-detroit-south-001", "status", "active", "provider-circuit-path"),
@@ -159,7 +161,10 @@ class ProviderValidationTests(unittest.TestCase):
                 self.setUp()
                 term = self.term(circuit, "Z")
                 cable = self.cable(term["key"])
-                port = next(value for value in cable["refs"].values() if value != term["key"])
+                # The span lands on a panel rear; the PE port is behind its mapped front.
+                rear = next(value for value in cable["refs"].values() if value != term["key"])
+                front = next(k for k, o in self.objects.items() if o["kind"] == "front_port" and o["refs"].get("rear_port") == rear)
+                port = next(value for value in self.cable(front)["refs"].values() if value != front)
                 if mutation == "wrong-site":
                     term["refs"]["termination"] = self.term(circuit, "A")["refs"]["termination"]
                 elif mutation == "planned-patch":
@@ -175,7 +180,8 @@ class ProviderValidationTests(unittest.TestCase):
     def test_router_mode_and_active_status_are_obligations(self):
         for key, field, value in ((f"{self.pe}/if/et-0/0/3", "enabled", True),
                                   (f"{self.pe}/if/et-0/0/0", "speed", 200000000),
-                                  (f"{self.pe}/if/xe-0/1/0", "speed", 10000000)):
+                                  (f"{self.pe}/if/xe-0/1/0", "speed", 1000000),
+                                  (f"{self.pe}/if/xe-0/1/5", "enabled", True)):
             with self.subTest(key=key, field=field):
                 self.setUp()
                 self.objects[key]["attrs"][field] = value
@@ -196,14 +202,15 @@ class ProviderValidationTests(unittest.TestCase):
         self.objects[f"ip/{fxp0}"]["refs"].pop("vrf")
         self.objects[f"{fxp0}.0"]["refs"].pop("vrf")  # Junos addresses fxp0 on unit 0
         self.assertIn("provider-management-mode", self.codes())
-        # The console server's independent broadband path: cut, or re-homed
-        # into the carrier's own management context, it no longer counts.
-        console = "device/pop-chicago-west/console-01/if/NET2"
-        self.setUp()
-        self.plan["objects"].remove(self.cable(console))
-        self.assertIn("provider-oob", self.codes())
+        # The console server's independent cellular path: re-homed into the
+        # carrier's own management context, or its circuit end claiming a
+        # traced cable instead of a marked connection, it no longer counts.
+        console = "device/pop-chicago-west/console-01/if/Cellular Interface (LTE)"
         self.setUp()
         self.objects[f"ip/{console}"]["refs"]["vrf"] = "vrf/provider"
+        self.assertIn("provider-oob", self.codes())
+        self.setUp()
+        self.term("circuit/oob/chicago-west", "A")["attrs"].pop("mark_connected")
         self.assertIn("provider-oob", self.codes())
         self.setUp()
         self.cable(f"{self.pe}/if/xe-0/1/6")["attrs"]["status"] = "planned"
@@ -287,9 +294,9 @@ class ProviderValidationTests(unittest.TestCase):
         # Site scope: Visual Explorer's WAN map resolves only dcim.site ends.
         term = self.term(f"circuit/customer/{self.customer}", "A")
         self.assertEqual(term["refs"]["termination"], f"site/{self.customer}")
-        self.assertEqual(term["attrs"]["description"], f"Local routed handoff, {self.objects[f'location/{self.customer}']['attrs']['name']}")
+        self.assertEqual(term["attrs"]["description"], f"Customer demarcation, {self.objects[f'location/{self.customer}']['attrs']['name']}")
         for field, value in (("termination", f"location/{self.customer}"), ("termination", "site/pop-chicago-west"),
-                             ("description", "Local routed handoff, Cage Z99")):
+                             ("description", "Customer demarcation, Cage Z99")):
             with self.subTest(field=field, value=value):
                 self.setUp()
                 term = self.term(f"circuit/customer/{self.customer}", "A")
@@ -331,7 +338,7 @@ class ProviderValidationTests(unittest.TestCase):
 
     def test_customer_tenant_account_route_target_and_asn_cannot_be_swapped(self):
         cases = (("virtual-circuit/customer/harbor-logistics", "tenant", "tenant", "provider-customer-service"),
-                 ("provider-account/customer/harbor-logistics", "provider", "provider/transit-a", "provider-customer-service"),
+                 ("provider-account/customer/harbor-logistics", "provider", "provider/transit-a", "provider-account"),
                  ("vrf/customer/harbor-logistics", "export_targets", [], "provider-customer-routing"),
                  (f"site/{self.customer}", "asns", ["asn/operator"], "provider-asn-consumer"))
         for key, field, value, code in cases:
@@ -350,7 +357,7 @@ class ProviderValidationTests(unittest.TestCase):
             (f"{device}/if/eth0", "untagged_vlan", f"vlan/{self.customer}/management", "provider-customer-endpoint"),
             (device, "location", f"location/{self.customer}", "provider-device-inventory"),
             (f"device/{self.customer}/edge-01/if/Clients", "parent", f"device/{self.customer}/edge-01/if/port2", "provider-customer-gateway"),
-            ("device/pop-chicago-west/console-01/if/NET1", "vrf", f"vrf/customer/harbor-logistics", "provider-console-management")):
+            ("device/pop-chicago-west/console-01/if/eth0", "vrf", f"vrf/customer/harbor-logistics", "provider-management-mode")):
             with self.subTest(key=key, field=field):
                 self.setUp()
                 self.objects[key]["refs"][field] = value
@@ -362,15 +369,18 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("provider-customer-gateway", self.codes())
 
     def test_small_premises_kit_cannot_hide_a_pop_or_premises_defect(self):
-        """Single-feed and console-free applies only to the validator's own premises list."""
-        # A premises is one circuit and one PDU, every supply still on a live local path.
-        pdus = {o["key"] for o in self.plan["objects"] if o["kind"] == "device"
-                and o["refs"].get("site") == f"site/{self.customer}" and o["refs"]["role"] == "role/pdu"}
-        self.assertEqual(len(pdus), 1)
-        self.assertEqual({self.objects[p]["refs"]["device_type"] for p in pdus}, {"hardware/pdu-120"})
-        feed = next(o for o in self.plan["objects"] if o["kind"] == "power_feed" and o["refs"]["rack"]
-                    == self.objects[f"device/{self.customer}/edge-01"]["refs"]["rack"])
-        self.assertEqual((feed["attrs"]["voltage"], feed["attrs"]["amperage"]), (120, 20))
+        """Customer power applies only to the validator's own premises kit."""
+        # A premises' carrier kit runs on customer power: no PDU, feed or panel
+        # is inventoried, and every supply is marked connected.
+        site = f"site/{self.customer}"
+        self.assertFalse([o for o in self.plan["objects"] if o["kind"] in ("power_feed", "power_panel")
+                          and (o["refs"].get("site") == site or self.objects.get(o["refs"].get("rack"), {}).get("refs", {}).get("site") == site)])
+        self.assertFalse([o for o in self.plan["objects"] if o["kind"] == "device" and o["refs"].get("site") == site
+                          and o["refs"]["role"] == "role/pdu"])
+        supply = f"device/{self.customer}/nid-01/power/PSA"
+        self.objects[supply]["attrs"].pop("mark_connected")
+        self.assertIn("provider-nid", self.codes())
+        self.setUp()
         # Moving a PoP switch's B supply onto its A PDU is still a diversity finding.
         switch = "device/pop-chicago-west/mgmt-01"
         ports = sorted(o["key"] for o in self.plan["objects"] if o["kind"] == "power_port" and o["refs"]["device"] == switch)
@@ -412,7 +422,7 @@ class ProviderValidationTests(unittest.TestCase):
         second = "device/pop-chicago-west/pe-b"
         self.objects[second]["refs"]["rack"] = self.objects[self.pe]["refs"]["rack"]
         self.strip()
-        self.assertIn("provider-router-racks", self.codes())
+        self.assertIn("provider-device-inventory", self.codes())
         for mutation in ("missing", "module", "allowance", "path"):
             with self.subTest(mutation=mutation):
                 self.setUp()
@@ -428,23 +438,25 @@ class ProviderValidationTests(unittest.TestCase):
                 self.strip()
                 self.assertIn("provider-power-path" if mutation == "path" else "provider-psu-inventory", self.codes())
 
-    def test_pop_rack_coordinates_and_actual_cross_rack_patch_length_are_checked(self):
-        rack = "rack/pop-chicago-west/network-02"
-        # Bayed beside network-01: one cabinet width along the row.
+    def test_pop_cage_cabinet_positions_and_cable_policy_are_checked(self):
+        rack = "rack/pop-chicago-west/r02"
+        # Bayed beside R01: one cabinet width along the cage row.
         self.assertEqual(self.objects[rack]["meta"]["position_m"], [1.6, 1.0, 0])
-        pair = self.cable(f"{self.pe}/if/et-0/0/0")
-        self.assertEqual(pair["attrs"]["length"], 4)
-        pair["attrs"]["length"] = 3
-        self.assertIn("provider-cable-geometry", self.codes())
-        self.setUp()
         self.objects[rack]["meta"]["position_m"] = [1.0, 1.0, 0]
         self.plan["contracts"] = []
         self.assertIn("provider-rack-geometry", self.codes())
+        # Every PoP cable states its label, medium, colour and length.
+        for field in ("label", "length", "color"):
+            with self.subTest(field=field):
+                self.setUp()
+                self.cable(f"{self.pe}/if/et-0/0/0")["attrs"].pop(field)
+                self.assertIn("provider-cable-policy", self.codes())
 
     def test_ledger_corruption_cannot_suppress_required_topology(self):
         for scope, value in (("provider-pop-order", {}), ("provider-customers", {"harbor-logistics": True}),
                              ("provider-link-prefixes", []), (f"provider-transport-ports/{self.pe}", {}),
-                             ("provider-service-ports/chicago-west", {"noc/a": 0, self.customer: 0})):
+                             ("provider-agg-home/chicago-west", {self.customer: 0}),
+                             ("provider-service-ports/chicago-west", {"noc/a": 0})):
             with self.subTest(scope=scope):
                 self.setUp()
                 self.plan["reservations"][scope] = value
@@ -552,7 +564,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertNotEqual(objects["provider-account/operator/noc"]["attrs"]["account"], objects["provider-account/customer/noc"]["attrs"]["account"])
         self.assertNotIn("tenant", objects["provider-account/customer/noc"]["refs"])
         objects["provider-account/customer/noc"]["refs"]["tenant"] = "tenant/cust-noc"
-        self.assertIn("provider-customer-service", {o["code"] for o in validate(plan)})
+        self.assertIn("provider-account", {o["code"] for o in validate(plan)})
 
     def test_malformed_native_virtual_reference_and_asn_return_findings(self):
         term = f"virtual-circuit-termination/{self.customer}"

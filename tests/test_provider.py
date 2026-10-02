@@ -39,9 +39,14 @@ def physical_router_graph(plan):
             a,b=o["refs"]["a"],o["refs"]["b"]; peers[a]=b;peers[b]=a
             if owner.get(a) in routers and owner.get(b) in routers:
                 edges.add(tuple(sorted((owner[a],owner[b]))))
+    # A PoP handoff lands on a panel rear port; its mapped front reaches the PE.
+    front_of = {o["refs"]["rear_port"]:k for k,o in objects.items() if o["kind"]=="front_port" and o["refs"].get("rear_port")}
+    def far(end):
+        port = peers.get(end)
+        return peers.get(front_of.get(port)) if objects.get(port,{}).get("kind")=="rear_port" else port
     for k,o in objects.items():
         if o["kind"]=="circuit":
-            a,b=owner.get(peers.get(k+"/A")),owner.get(peers.get(k+"/Z"))
+            a,b=owner.get(far(k+"/A")),owner.get(far(k+"/Z"))
             if a in routers and b in routers: edges.add(tuple(sorted((a,b))))
     return routers,edges
 
@@ -215,8 +220,10 @@ class ProviderTests(unittest.TestCase):
             # The upstream assigned the /31 and holds its even address.
             self.assertEqual(ipaddress.ip_interface(known[0]['attrs']['address']).ip,net[1])
             self.assertNotIn('vrf',known[0]['refs'])
+            # The operator's aggregates cover all three RFC 5737 blocks (0.17
+            # re-pack); the upstream's /28 stays outside every operator pool.
             self.assertFalse(any(net.subnet_of(ipaddress.ip_network(o['attrs']['prefix']))
-                                 for o in p['objects'] if o['kind']=='aggregate'))
+                                 for o in p['objects'] if o['kind']=='prefix' and o['key'].startswith(('prefix/public/','prefix/dia/'))))
         for o in p['objects']:
             if o['kind']=='device' and o['refs'].get('role')=='role/provider-edge':
                 primary=objects[o['refs']['primary_ip4']]
@@ -262,7 +269,9 @@ class ProviderTests(unittest.TestCase):
             raw=example();raw['customers'][0][field]=value;cases.append(raw)
         raw=example();raw['customers'][0]['site_peak_mbps']=500;cases.append(raw)
         raw=example();raw['reserve_fraction']=.4;raw['noc_peak_mbps']=800;cases.append(raw)
-        raw=example();raw['customers'][0]['sites'][0]['count']=12;cases.append(raw)
+        # More than the 80 aggregation UNIs of one PoP.
+        raw=example();raw['customers']=[dict(key=f'c{i}',service='private-l3',hub_pop='chicago-west',site_peak_mbps=1,
+            sites=[dict(pop='chicago-west',count=12),dict(pop='detroit-south')]) for i in range(7)];cases.append(raw)
         raw=example()
         for pop in raw['pops']:pop['metro']='chicago'
         cases.append(raw)
@@ -291,7 +300,7 @@ class ProviderTests(unittest.TestCase):
         for mutation in ('cable','ledger','catalog'):
             changed=deepcopy(p)
             if mutation=='cable':next(o for o in changed['objects'] if o['kind']=='cable')['attrs']['status']='planned'
-            elif mutation=='ledger':changed['reservations']['provider-service-ports/chicago-west']['noc/a']=11
+            elif mutation=='ledger':changed['reservations']['provider-agg-home/chicago-west']['ce-harbor-logistics-chicago-west-001']=11
             else:changed['hardware_digest']='wrong'
             with self.subTest(mutation=mutation),self.assertRaises(DesignError):generate(p['recipe'],previous=changed)
 
@@ -307,7 +316,8 @@ class ProviderTests(unittest.TestCase):
         for obj in plan['objects']:
             if obj['kind']=='device':self.assertLessEqual(len(obj['attrs']['name']),64,obj['key'])
             if obj['kind']=='ip_address':self.assertTrue(all(len(label)<=63 for label in obj['attrs'].get('dns_name','').split('.')),obj['key'])
-            if obj['kind']=='rack' and obj['attrs']['status']!='planned':self.assertLessEqual(len(obj['attrs']['asset_tag']),50,obj['key'])
+            # A contracted (reserved) cage position has no installed cabinet to tag.
+            if obj['kind']=='rack' and obj['attrs']['status'] not in ('planned','reserved'):self.assertLessEqual(len(obj['attrs']['asset_tag']),50,obj['key'])
             if obj['kind']=='vlan':self.assertLessEqual(len(obj['attrs']['name']),64,obj['key'])
             if obj['kind'] in {'provider','contact'}:
                 self.assertLessEqual(len(obj['attrs']['name']),100,obj['key'])

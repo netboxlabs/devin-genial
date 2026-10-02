@@ -3,6 +3,14 @@
 The authored policy is restated here; construction helpers and explanatory
 contracts are deliberately not validation authorities. Routing is inventory
 intent, never an executed reachability or convergence test.
+
+v0.17 regional-carrier footprint (build/footprint-design/DESIGN.md §§2-5, §7):
+every PoP is a carrier-hotel cage of two installed 42U cabinets holding a PE,
+an aggregation switch, an operator OSP panel and the colo's demarc panel, with
+the management switch and cellular console server in R01; every customer
+premises is a NID-terminated access circuit into one aggregation side, with a
+carrier CE in an MPOE wall cabinet where the service is managed. Every gate
+below re-derives its obligation from the recipe, the ledgers and the graph.
 """
 
 from collections import Counter, defaultdict, deque
@@ -16,7 +24,7 @@ from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
-from .naming import role_label, titleize
+from .naming import bandwidth, port_speed, role_label, titleize
 # Authored address localities (suburbs map to their metro); geography data, not builder policy.
 from .places import ADDRESS_STREETS, LOCALITIES, MILWAUKEE_COUNTY, carrier_suite
 
@@ -30,70 +38,94 @@ SERVICE_POLICY = (("identity", "premises", 128, 4, 8192, 100000, 443),
                   ("dns", "pops", 16, 2, 4096, 40000, 53),
                   ("monitoring", "pops", 16, 4, 16384, 200000, 443),
                   ("provisioning", "premises", 128, 4, 8192, 100000, 443))
-# The BGP obligation, restated here rather than read from estates/bgp.py. These
-# records document an intended peering: nothing is configured, applied or
-# established anywhere in this generator. Records carry operational fields only
-# (the limitation lives in docs/modeling.md and the report), and the reviewed
-# kind set and field set stay closed: a policy *rule*, a community, a prefix
-# list or a session-state field would read as configuration and is refused.
 SPAN_KEY = re.compile(r"circuit/backbone/([a-z][a-z0-9-]{0,19})-([ab])/([a-z][a-z0-9-]{0,19})-([ab])")
 # Metro centres (lat, lon), restated from the authored geography.
 METRO_POINTS = {"chicago": (41.8781, -87.6298), "detroit": (42.3314, -83.0458),
                 "cleveland": (41.4993, -81.6944), "milwaukee": (43.0389, -87.9065)}
-# Carrier-owned public space (RFC 5737) and AS numbers (RFC 5398), restated.
-PUBLIC_POOLS = {"loopbacks": ip_network("192.0.2.0/24"), "pair": ip_network("198.51.100.0/25"),
-                "backbone": ip_network("203.0.113.0/24")}
-PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/25", "203.0.113.0/24")
-# Each upstream's own transit assignment: outside every operator aggregate.
+# Carrier-owned public space (RFC 5737, re-packed in 0.17) and AS numbers
+# (RFC 5398), restated. The backbone takes the first half of 192.0.2.0/24;
+# customer DIA takes every remaining documentation block except the upstreams'
+# /28s, and managed-DIA CE links a /26 of it.
+PUBLIC_POOLS = {"loopbacks": ip_network("192.0.2.0/27"), "pair": ip_network("192.0.2.32/27"),
+                "backbone": ip_network("192.0.2.64/26")}
+PUBLIC_AGGREGATES = ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")
+DIA_POOLS = ("192.0.2.128/25", "198.51.100.0/25", "198.51.100.128/26", "203.0.113.0/24")
+DIA_LINK_POOL = ip_network("203.0.113.192/26")
+DIA_NETWORKS = [net for pool in DIA_POOLS for net in ip_network(pool).subnets(new_prefix=29)
+                if not net.overlaps(DIA_LINK_POOL)]
+# Each upstream's own transit assignment: outside the operator's tenancy.
 UPSTREAM_POOLS = {"a": ip_network("198.51.100.224/28"), "b": ip_network("198.51.100.240/28")}
-# The out-of-band ISP's RFC 6598 /30 per PoP console server, IPv4 only.
+# The cellular out-of-band carrier's RFC 6598 /30 per PoP console server.
 OOB_POOL = ip_network("100.64.0.0/24")
 DOCUMENTATION_ASNS = range(64496, 64512)
+LOOPBACK_SLOTS = 30
 ROUTE_FACTOR = 1.3
 # A premises sits in its serving PoP's area: within this distance, and nearer
-# it than any other same-metro PoP allocated before the premises.
+# it than any other same-metro PoP allocated before the premises; premises
+# stand on a street grid at least this far apart.
 PREMISES_KM = 25
-# Leased inter-metro spans are 100G wavelengths on the 100G port they land on.
+PREMISES_SPACING_M = 300
 LEASED_COMMIT = 100000000
 CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b", "oob")
-# Routing contexts, restated: the core is the global table (no VRF);
-# PoP/NOC/CE management is the Carrier Management VRF with a hub-and-spoke
-# management extranet to every customer VRF.
 CORE, MANAGEMENT, OOB = None, "vrf/provider", "vrf/oob"
 HUB_RT, SPOKE_RT = 9000, 9001
-FXP0_HOSTS = (4, 5)
-# The serving PE optic of a premises not yet in service: planned (not yet
+FXP0_HOSTS, AGG_EM0_HOSTS, PDU_HOSTS, OOB_HOST = (4, 5), (6, 7), (8, 9, 10, 11), 3
+# Services, tiers and the access layer, restated (DESIGN §§2-3).
+SERVICES = ("private-l3", "dia", "epl")
+LARGE_TIERS = (2000, 5000)
+UNIS_PER_SIDE, LAG_MEMBERS, LAG_MEMBER_KBPS = 40, 4, 10000000
+ATTACHMENTS_PER_POP = 2 * UNIS_PER_SIDE
+SERVICE_VLAN_BASE, NID_VIDS = 1001, {"a": 4001, "b": 4002}
+EPL_VCID_BASE = 10001
+PE_LAG, AGG_LAG = "ae1", "ae0"
+PE_LAG_MEMBERS = tuple(f"xe-0/1/{n}" for n in range(4))
+PE_NOC_PORT, PE_MGMT_PORT, PE_TRANSIT_PORT = "xe-0/1/4", "xe-0/1/6", "xe-0/1/7"
+# Cage and cabinet grammar: four bays in one row at 0.6 m pitch, two installed.
+CAGE_BAYS, INSTALLED_BAYS, CABINET_U = 4, 2, 42
+RESERVED_CABINET = "Contracted cabinet position, not installed"
+# Each installed cabinet, top-down (DESIGN §5 table): U -> (device stem, hardware).
+ELEVATION = {"a": {42: ("r01-osp", "osp-panel"), 40: ("r01-cm-40", "cable-manager-2u"),
+                   39: ("r01-demarc", "demarc-panel"), 38: ("r01-cm-38", "cable-manager-1u"),
+                   37: ("pe-a", "provider-edge"), 36: ("r01-cm-36", "cable-manager-1u"),
+                   35: ("agg-a", "aggregation"), 34: ("mgmt-01", "pop-mgmt"), 33: ("console-01", "oob-server")},
+             "b": {42: ("r02-osp", "osp-panel"), 40: ("r02-cm-40", "cable-manager-2u"),
+                   39: ("r02-demarc", "demarc-panel"), 38: ("r02-cm-38", "cable-manager-1u"),
+                   37: ("pe-b", "provider-edge"), 36: ("r02-cm-36", "cable-manager-1u"),
+                   35: ("agg-b", "aggregation")}}
+# Colour by function at a PoP and the meet-me room's own panel numbering.
+MMR_PP = re.compile(r"Meet-me room panel (MMR-\d{2}), port ([1-9]|[1-3]\d|4[0-8])")
+# Every PoP cable states these (DESIGN §5 cable policy).
+CABLE_POLICY_FIELDS = ("label", "type", "color", "length")
+# Generated-object ceiling (DESIGN §3).
+OBJECT_CEILING = 40000
+ASN_TEXT = 30
+# The serving optic of a premises not yet in service: planned (not yet
 # received, no serial) or staged (on hand, serialized), in a shut cage.
 PENDING_OPTIC = {"planned": "planned", "provisioning": "staged"}
-# Customers' own LAN plans, restated: several customers deliberately number
-# from the same space, each inside its own VRF; a plan overlapping the
-# carrier's address_pool is skipped.
+# Customers' own LAN plans, restated: several customers number from the same
+# space, each inside its own VRF; a plan overlapping address_pool is skipped.
 CUSTOMER_LAN_PLANS = tuple(ip_network(p) for p in ("172.20.0.0/16", "192.168.0.0/16", "172.24.0.0/16", "10.10.0.0/16"))
 BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
 BGP_FIELDS = {"bgp_routing_policy": {"name", "weight", "description"},
               "bgp_peer_group": {"name", "description"},
               "bgp_session": {"name", "status", "description"}}
-# The service note must point at the documented CE-to-PE sessions, never deny
-# them: the BGP inventory above is emitted for every premises.
 VIRTUAL_CIRCUIT_NOTE = "Each premises' CE-to-PE peering is in the Customer Private L3 BGP peer group."
 BGP_POLICIES = {
-    "transit-in": ("Transit Import", 100,
-                   "Import policy for upstream transit peers"),
-    "transit-out": ("Transit Export", 110,
-                    "Export policy for upstream transit peers"),
-    "customer-in": ("Customer Import", 200,
-                    "Import policy for private L3 customer edges"),
-    "customer-out": ("Customer Export", 210,
-                     "Export policy for private L3 customer edges"),
+    "transit-in": ("Transit Import", 100, "Import policy for upstream transit peers"),
+    "transit-out": ("Transit Export", 110, "Export policy for upstream transit peers"),
+    "customer-in": ("Customer Import", 200, "Import policy for private L3 customer edges"),
+    "customer-out": ("Customer Export", 210, "Export policy for private L3 customer edges"),
 }
 BGP_GROUPS = {
-    "ibgp-core": ("iBGP Core", "Internal peerings between provider edge loopbacks",
-                  (), (), True),
+    "ibgp-core": ("iBGP Core", "Internal peerings between provider edge loopbacks", (), (), True),
     "transit": ("Transit Upstream", "External upstream peerings at the backbone transit handoffs",
                 ("transit-in",), ("transit-out",), False),
     "customer": ("Customer Private L3", "Customer edge peerings on private-L3 access circuits",
                  ("customer-in",), ("customer-out",), False),
 }
+SERVICE_LABELS = {"private-l3": "Private L3 VPN", "dia": "Dedicated internet access", "epl": "Ethernet private line"}
+CIRCUIT_PHRASES = {"private-l3": "private L3 VPN", "dia": "dedicated internet", "epl": "Ethernet private line"}
+CID_CODES = {"private-l3": "PL3", "dia": "DIA", "epl": "EPL"}
 
 
 # Premises lifecycle, restated from the recipe: an onboarding customer is
@@ -134,12 +166,34 @@ def _operator_code(name):
     return code if len(code) >= 2 else (words[0][:3].upper() if words else "OPR")
 
 
+def _holder(name, limit=ASN_TEXT):
+    """Restated: an AS holder's name cut on a word boundary to fit graph labels."""
+    if len(name) <= limit:
+        return name
+    cut = name[:limit + 1].rsplit(" ", 1)[0].rstrip(" ,&-") if " " in name[:limit + 1] else ""
+    return cut if cut else name[:limit]
+
+
 def _integer(value, low, high):
     return type(value) is int and low <= value <= high
 
 
 def _key(value):
     return isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9-]{0,19}", value) is not None
+
+
+def _handoff(rate, usable):
+    """Restated: the physical handoff an attachment needs (1G, else the 10G tier)."""
+    need = Decimal(rate) * (2 - usable)
+    return 1000 if need <= 1000 else 10000 if need <= 10000 else None
+
+
+def _name(customer):
+    return customer.get("name") or titleize(customer["key"])
+
+
+def _site_peak(customer, pop):
+    return next(e for e in customer["sites"] if e["pop"] == pop).get("site_peak_mbps", customer["site_peak_mbps"])
 
 
 def _recipe(recipe):
@@ -163,8 +217,8 @@ def _recipe(recipe):
             tiers != sorted(set(tiers)) or tiers[-1] != 1000):
         raise ValueError("Customer commitments need strictly increasing integer tiers ending at 1000 Mbps.")
     raw_pops, customers = recipe.get("pops"), recipe.get("customers")
-    if not isinstance(raw_pops, list) or not 3 <= len(raw_pops) <= 64:
-        raise ValueError("Provider demand needs 3–64 distinct keyed PoPs.")
+    if not isinstance(raw_pops, list) or not 3 <= len(raw_pops) <= LOOPBACK_SLOTS // 2:
+        raise ValueError(f"Provider demand needs 3–{LOOPBACK_SLOTS // 2} distinct keyed PoPs (two PE loopbacks each in the /27).")
     pops = {}
     for item in raw_pops:
         if (not isinstance(item, dict) or not _key(item.get("key")) or item["key"] in pops or
@@ -179,47 +233,67 @@ def _recipe(recipe):
             not _integer(noc_peak, 1, 800) or Decimal(noc_peak) > 1000 * usable):
         raise ValueError("The NOC needs two distinct requested PoPs and headroom on each 1 Gbps handoff.")
     if not isinstance(customers, list) or not 1 <= len(customers) <= 256:
-        raise ValueError("Provider demand needs 1–256 keyed private-L3 customers.")
+        raise ValueError("Provider demand needs 1–256 keyed customers.")
     if (not _integer(recipe.get("asn_base"), 4200000000, 4294967294 - 1023) or
             (recipe["asn_base"] - 4200000000) % 1024):
         raise ValueError("The complete 1024-ASN block must remain in the private 32-bit range.")
-    demand, seen, occupancy = {}, set(), Counter((noc_a, noc_b))
+    demand, seen, names, occupancy = {}, set(), set(), Counter()
     for item in customers:
-        if (not isinstance(item, dict) or not _key(item.get("key")) or item["key"] in seen or
-                item.get("service") != "private-l3" or not isinstance(item.get("hub_pop"), str) or item["hub_pop"] not in pops or
-                not _integer(item.get("site_peak_mbps"), 1, 800) or not _integer(item.get("lan_endpoints"), 0, 12) or
-                type(item.get("hub_commit_mbps")) is not int or item["hub_commit_mbps"] not in tiers or
-                not isinstance(item.get("sites"), list) or not 1 <= len(item["sites"]) <= len(pops) or
-                item.get("status", "active") not in ("active", "planned")):
-            raise ValueError("Customer keys, service, fixed hub commitment, installed LAN demand and status must be bounded.")
+        service = item.get("service") if isinstance(item, dict) else None
+        if (service not in SERVICES or not _key(item.get("key")) or item["key"] in seen or
+                item.get("status", "active") not in ("active", "planned") or
+                not isinstance(item.get("sites"), list) or
+                ("name" in item and (not isinstance(item["name"], str) or not 1 <= len(item["name"]) <= 60))):
+            raise ValueError("Customer keys, service, status, display name and site entries must be bounded.")
         seen.add(item["key"])
-        entries, premises = set(), []
+        if _name(item) in names:
+            raise ValueError("Customer display names must be distinct.")
+        names.add(_name(item))
+        low, high = {"private-l3": (2, len(pops)), "dia": (1, 1), "epl": (2, 2)}[service]
+        if not low <= len(item["sites"]) <= high:
+            raise ValueError("A private-L3 customer spans two or more PoPs, a DIA customer one premises and an EPL two ends.")
+        entries = set()
         for entry in item["sites"]:
             if (not isinstance(entry, dict) or not isinstance(entry.get("pop"), str) or entry["pop"] not in pops or
-                    entry["pop"] in entries or not _integer(entry.get("count"), 1, 12) or
+                    entry["pop"] in entries or not _integer(entry.get("count"), 1, 12 if service == "private-l3" else 1) or
                     entry.get("status", "active") not in ("active", "planned", "decommissioning") or
-                    (item.get("status", "active") == "planned" and entry.get("status", "planned") != "planned")):
-                raise ValueError("Customer site entries need distinct valid PoPs, 1–12 premises each and a "
-                                 "lifecycle status; every entry of a planned customer is planned.")
+                    (item.get("status", "active") == "planned" and entry.get("status", "planned") != "planned") or
+                    ("site_peak_mbps" in entry and (service != "private-l3" or not _integer(entry["site_peak_mbps"], 1, 800)))):
+                raise ValueError("Customer site entries need distinct valid PoPs, bounded counts and a lifecycle status; "
+                                 "every entry of a planned customer is planned.")
             entries.add(entry["pop"])
-            # The hub premises takes a second service position for its second circuit.
-            occupancy[entry["pop"]] += entry["count"] + (entry["pop"] == item["hub_pop"])
+            occupancy[entry["pop"]] += entry["count"] + (service == "private-l3" and entry["pop"] == item.get("hub_pop"))
             for ordinal in range(1, entry["count"] + 1):
                 sid = f"ce-{item['key']}-{entry['pop']}-{ordinal:03}"
                 if sid in demand:
                     raise ValueError("Composed customer site identities collide; choose unambiguous customer/PoP keys.")
                 demand[sid] = (item, entry["pop"], ordinal)
-                premises.append(sid)
-        if len(entries) < 2 or item["hub_pop"] not in entries:
-            raise ValueError("Every private service needs a real hub and premises at two or more PoPs.")
-        if item.get("status", "active") == "active" and _stage(item, item["hub_pop"]) != "active":
-            raise ValueError("An active customer's hub premises stays active; its spokes route through it.")
-        if Decimal(len(premises) - 1) * item["site_peak_mbps"] > Decimal(item["hub_commit_mbps"]) * usable:
-            raise ValueError("Purchased hub commitment cannot cover the declared customer spoke-to-hub peak after reserve.")
-        if Decimal(item["site_peak_mbps"]) > 1000 * usable:
-            raise ValueError("Customer peak cannot fit the physical 1 Gbps handoff after reserve.")
-    if any(count > 12 for count in occupancy.values()):
-        raise ValueError("Combined customer and NOC attachments exceed the actual twelve service ports at a PoP.")
+        if service == "private-l3":
+            if (not isinstance(item.get("hub_pop"), str) or item["hub_pop"] not in entries or
+                    not _integer(item.get("site_peak_mbps"), 1, 800) or not _integer(item.get("lan_endpoints"), 0, 12) or
+                    type(item.get("hub_commit_mbps")) is not int or item["hub_commit_mbps"] not in tiers or
+                    not isinstance(item.get("branch"), str) or not re.fullmatch(r"[a-z][a-z ]{1,23}", item["branch"])):
+                raise ValueError("A private-L3 customer needs a hub at one of its PoPs, bounded peaks and LAN demand, "
+                                 "a tiered hub commitment and a branch noun.")
+            if item.get("status", "active") == "active" and _stage(item, item["hub_pop"]) != "active":
+                raise ValueError("An active customer's hub premises stays active; its spokes route through it.")
+            spokes = sum(_site_peak(item, e["pop"]) * (e["count"] - (e["pop"] == item["hub_pop"])) for e in item["sites"])
+            if spokes > item["hub_commit_mbps"] * usable:
+                raise ValueError("Purchased hub commitment cannot cover the declared customer spoke-to-hub peak after reserve.")
+            if any(_site_peak(item, e["pop"]) > 1000 * usable for e in item["sites"]):
+                raise ValueError("Customer peak cannot fit the physical 1 Gbps handoff after reserve.")
+        else:
+            rate = item.get("commit_mbps" if service == "dia" else "rate_mbps")
+            if type(rate) is not int or rate not in (*tiers, *LARGE_TIERS) or _handoff(rate, usable) is None:
+                raise ValueError("A DIA commitment or EPL rate is a tier that fits the 1G or 10G handoff after reserve.")
+            if service == "dia" and (type(item.get("managed")) is not bool or
+                                     (item["managed"] and _handoff(rate, usable) > 1000)):
+                raise ValueError("DIA declares managed or not; managed DIA fits the small CE's 1G handoff.")
+    if any(count > ATTACHMENTS_PER_POP for count in occupancy.values()):
+        raise ValueError(f"Customer attachments exceed the {ATTACHMENTS_PER_POP} aggregation UNIs of a PoP.")
+    dia = [c for c in customers if c["service"] == "dia"]
+    if len(dia) > len(DIA_NETWORKS) or sum(c["managed"] for c in dia) > DIA_LINK_POOL.num_addresses // 2:
+        raise ValueError("DIA demand exceeds the documentation /29s or the managed-DIA public /31s.")
     return pops, customers, demand, pool, usable
 
 
@@ -290,25 +364,49 @@ def _workloads(premises, pops):
     return result
 
 
+def premises_description(customer, role, rate_mbps, other=None):
+    """Restated site description policy: what a premises contains and how it is served."""
+    tier = bandwidth(rate_mbps)
+    if customer["service"] == "dia":
+        return (f"Managed internet, {tier}; NID and carrier CE in the MPOE cabinet" if customer["managed"] else
+                f"Dedicated internet demarcation, {tier}; customer firewall not inventoried")
+    if customer["service"] == "epl":
+        return f"Ethernet private line end to {other}, {tier}; customer Ethernet equipment not inventoried"
+    if role == "hub":
+        return f"Dual-homed VPN hub, {tier} commit; two NIDs and the CE in the MPOE cabinet"
+    if customer["lan_endpoints"] > 0:
+        return f"Managed {customer['branch']}, {tier} tier, with a carrier-managed office LAN"
+    return f"Managed {customer['branch']}, {tier} tier; NID and CE in the MPOE cabinet"
+
+
 def validate(plan, catalog, *, objects, children, peers, component_of,
              component_members, cable_of, path_lengths, poe_watts=None, optics_watts=None):
     recipe, findings = plan.get("recipe", {}), []
     if recipe.get("profile") != "provider-backbone":
         return findings
+
+    def report(code, key, message):
+        findings.append(dict(code=code, object=key, message=message))
+
     # The recipe declares the vendor line; every port name below follows the
     # resolved catalog entry rather than one vendor's naming.
     access_alias = selected_alias(recipe, "access")
     access_spec = catalog.get(access_alias, {})
     access_ports = access_spec.get("access_ports", [])
-    access_uplinks = access_spec.get("uplink_ports", [])
     access_mgmt = next((p["name"] for p in access_spec.get("interfaces", []) if p.get("mgmt_only")), None)
-
-    def report(code, key, message):
-        findings.append(dict(code=code, object=key, message=message))
-
-    if len(access_ports) < 3 or len(access_uplinks) < 2 or access_mgmt is None:
-        report("provider-access-catalog", "catalog", "The selected access line must supply its ordered "
-               "access ports, at least two uplinks and one management port.")
+    agg_spec, mgmt_spec = catalog.get("aggregation", {}), catalog.get("pop-mgmt", {})
+    unis, agg_lag_ports = agg_spec.get("uni_ports", []), agg_spec.get("lag_ports", [])
+    copper, mgmt_uplinks = mgmt_spec.get("access_ports", []), mgmt_spec.get("uplink_ports", [])
+    oob_spec = catalog.get("oob-server", {})
+    lte = next((p["name"] for p in oob_spec.get("interfaces", []) if p.get("type") == "lte"), None)
+    eth0 = next((p["name"] for p in oob_spec.get("interfaces", []) if p.get("mgmt_only") and p.get("type") != "lte"), None)
+    pdu_net = next((p["name"] for p in catalog.get("pdu-switched", {}).get("interfaces", []) if p.get("mgmt_only")), None)
+    if (len(access_ports) < 3 or access_mgmt is None or len(unis) != UNIS_PER_SIDE or len(agg_lag_ports) != LAG_MEMBERS or
+            len(copper) < 9 or len(mgmt_uplinks) < 2 or None in (lte, eth0, pdu_net) or
+            any(not catalog.get(a, {}).get(f) for a in ("nid", "nid-10g") for f in ("nni_port", "uni_port")) or
+            any(not catalog.get(a, {}).get("wan_ports") for a in ("ce-small", "edge"))):
+        report("provider-access-catalog", "catalog", "The selected access line, aggregation switch, PoP management "
+               "switch, console server, PDU, NIDs and CEs must supply their ordered service, LAG and management ports.")
         return findings
 
     try:
@@ -316,10 +414,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     except (ValueError, TypeError, OverflowError) as exc:
         report("provider-recipe", "plan", str(exc))
         return findings
-
-    def hub_premises(sid):
-        customer = premises[sid][0]
-        return f"ce-{customer['key']}-{customer['hub_pop']}-001"
 
     if poe_watts is None:
         _, poe_watts = analyze_poe(plan, catalog)
@@ -332,32 +426,83 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     def refs(key):
         return objects.get(key, {}).get("refs", {}) if isinstance(key, str) else {}
 
+    def meta(key):
+        return objects.get(key, {}).get("meta", {}) if isinstance(key, str) else {}
+
     def kind(key):
         return objects.get(key, {}).get("kind") if isinstance(key, str) else None
 
     def child(field, key, wanted):
         return [item for item in children[(field, key)] if kind(item) == wanted] if isinstance(key, str) else []
 
-    # The lifecycle stage of the premises being checked; "active" elsewhere.
+    # Premises lifecycle stage of the records being checked ("active" elsewhere).
     now = ["active"]
-    # PE service handoffs of premises not yet in service stay shut (filled below).
-    shut = set()
 
     def life(field):
         return LIFE[now[0]][field]
 
-    def active_path(port):
-        """An in-service path; at a non-active premises, the path in its own lifecycle status."""
-        if not isinstance(port, str) or not peers.get(port):
-            return False
+    by_kind = defaultdict(set)
+    ipv4_addresses = {}
+    ips_by_vrf_address = defaultdict(set)
+    prefixes_by_vrf_network = defaultdict(list)
+    for key, obj in objects.items():
+        by_kind[obj["kind"]].add(key)
+        if obj["kind"] == "ip_address" and isinstance(attrs(key).get("address"), str):
+            try:
+                value = ip_interface(attrs(key)["address"])
+                if value.version == 4:
+                    ipv4_addresses[key] = value
+                if isinstance(refs(key).get("vrf"), (str, type(None))):
+                    ips_by_vrf_address[(refs(key).get("vrf"), value.version, int(value.ip))].add(key)
+            except ValueError:
+                pass  # The shared format check reports malformed addresses.
+        if obj["kind"] == "prefix" and isinstance(refs(key).get("vrf"), (str, type(None))) and isinstance(attrs(key).get("prefix"), str):
+            prefixes_by_vrf_network[(refs(key).get("vrf"), attrs(key)["prefix"])].append(key)
+
+    # --- Passive plant: 1:1 panel mappings and the far end a cable end reaches ---
+    # ``peers`` resolves a port's terminal peer through passive paths; these
+    # checks need the immediate cable end as well.
+    adjacent = {}
+    for cable in by_kind["cable"]:
+        a, b = refs(cable).get("a"), refs(cable).get("b")
+        if isinstance(a, str) and isinstance(b, str):
+            adjacent[a], adjacent[b] = b, a
+    rear_of, front_of = {}, {}
+    for front in by_kind["front_port"]:
+        rear = refs(front).get("rear_port")
+        if kind(rear) == "rear_port":
+            rear_of[front] = rear
+            front_of.setdefault(rear, front)
+
+    def walk(end):
+        """(far end, [(panel port reached, its mapped mate)]) from one cable end through 1:1 panels."""
+        route, seen, current = [], set(), end
+        while True:
+            other = adjacent.get(current)
+            if other is None:
+                return None, route
+            if kind(other) not in ("front_port", "rear_port"):
+                return other, route
+            mate = rear_of.get(other) if kind(other) == "front_port" else front_of.get(other)
+            route.append((other, mate))
+            if mate is None or mate in seen:
+                return None, route
+            seen.add(mate)
+            current = mate
+
+    def path_cables(port):
         members = component_members.get(component_of.get(port), ())
-        cables = {cable_of[p] for p in members if p in cable_of}
+        return {cable_of[p] for p in members if p in cable_of}
+
+    def path_ok(port):
+        """An in-service path; at a non-active premises, the path in its own lifecycle status."""
+        cables = path_cables(port)
+        members = component_members.get(component_of.get(port), ())
         devices = {refs(p).get("device") for p in members} - {None}
-        # The serving PE stays active while a premises it serves is not.
-        return bool(cables) and all(attrs(c).get("status") == life("cable") for c in cables) and all(
-            attrs(d).get("status") in {"active", life("device")} for d in devices) and (
-            now[0] != "active" or all(attrs(d).get("status") == "active" for d in devices)) and all(
-            attrs(p).get("enabled") is (p not in shut) for p in (port, peers[port]) if kind(p) == "interface")
+        # The serving PoP equipment stays active while a premises it serves is not.
+        return (bool(cables) and all(attrs(c).get("status") == life("cable") for c in cables) and
+                all(attrs(d).get("status") in {"active", life("device")} for d in devices) and
+                (now[0] != "active" or all(attrs(d).get("status") == "active" for d in devices)))
 
     def vlans(port):
         values = refs(port).get("tagged_vlans", [])
@@ -381,8 +526,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return unit
 
     def address(port, network, vrf, host=None, tenant=None):
-        # This policy still owns the exact IPv4 /31, /32 and site subnets.
-        # Required IPv6 companions are checked separately, not counted as extras.
+        # This policy owns the exact IPv4 /31, /32 and site subnets; required
+        # IPv6 companions are checked separately, not counted as extras.
         port = l3(port)
         ips = [key for key in child("assigned_object", port, "ip_address") if key in ipv4_addresses]
         if len(ips) != 1:
@@ -395,41 +540,21 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     def primary(device, port):
         key = refs(device).get("primary_ip4")
-        return key in ipv4_addresses and refs(key).get("assigned_object") == port and attrs(key).get("status") == life("ip")
+        return key in ipv4_addresses and refs(key).get("assigned_object") == l3(port) and attrs(key).get("status") == life("ip")
 
-    def physical(a, b, speed=None):
-        return (kind(a) == kind(b) == "interface" and peers.get(a) == b and active_path(a) and
+    def cabled(a, b, speed=None):
+        """A direct one-cable link between two physical interfaces."""
+        return (kind(a) == kind(b) == "interface" and adjacent.get(a) == b and path_ok(a) and
                 all(attrs(p).get("type") not in (None, "virtual", "lag") for p in (a, b)) and
                 (speed is None or all(attrs(p).get("speed") == speed for p in (a, b))))
 
-    by_kind = defaultdict(set)
-    ipv4_addresses = {}
-    ips_by_vrf_address = defaultdict(set)
-    prefixes_by_vrf_network = defaultdict(list)
-    local_cables = defaultdict(set)
-    for key, obj in objects.items():
-        by_kind[obj["kind"]].add(key)
-        if obj["kind"] == "ip_address" and isinstance(attrs(key).get("address"), str):
-            try:
-                address_value = ip_interface(attrs(key)["address"])
-                if address_value.version == 4:
-                    ipv4_addresses[key] = address_value
-                if isinstance(refs(key).get("vrf"), (str, type(None))):
-                    ips_by_vrf_address[(refs(key).get("vrf"), address_value.version, int(address_value.ip))].add(key)
-            except ValueError:
-                pass  # The shared format check reports malformed addresses.
-        if obj["kind"] == "prefix" and isinstance(refs(key).get("vrf"), (str, type(None))) and isinstance(attrs(key).get("prefix"), str):
-            prefixes_by_vrf_network[(refs(key).get("vrf"), attrs(key)["prefix"])].append(key)
-        if obj["kind"] == "cable":
-            for end in (refs(key).get("a"), refs(key).get("b")):
-                owner = refs(end).get("device")
-                site = refs(owner).get("site") if owner else refs(end).get("termination")
-                if kind(site) == "location":
-                    site = refs(site).get("site")
-                if not isinstance(site, str):
-                    site = refs(refs(end).get("power_panel")).get("site")
-                if isinstance(site, str):
-                    local_cables[site].add(key)
+    # --- Sites, ledgers and allocations ---
+    targets = {}  # attachment target -> (premises sid, NID ordinal)
+    for sid, (customer, pop, ordinal) in premises.items():
+        hub = customer["service"] == "private-l3" and pop == customer["hub_pop"] and ordinal == 1
+        targets[sid] = (sid, 1)
+        if hub:
+            targets[f"{sid}/b"] = (sid, 2)
     expected_sites = {"site/dc-01"} | {f"site/pop-{key}" for key in pops} | {f"site/{sid}" for sid in premises}
     if by_kind["site"] != expected_sites:
         report("provider-site-inventory", "plan", "Actual PoP, customer and NOC sites must exactly match requested demand.")
@@ -446,8 +571,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         small_slots = [slot for sid, slot in allocations.items() if sid != "dc-01"]
         if any(not _integer(slot, 256, pool.num_addresses // 256 - 257) for slot in small_slots) or len(set(small_slots)) != len(small_slots):
             raise ValueError("PoP/customer /24s must be distinct and avoid the complete NOC and infrastructure /16s.")
-        # The backbone span ledger: every key names both PE ends, and the
-        # ordinal is the permanent order carriers alternate in.
         span_ledger = reservations.get("provider-backbone-spans")
         if (not isinstance(span_ledger, dict) or not span_ledger or
                 sorted(span_ledger.values()) != list(range(len(span_ledger)))):
@@ -461,75 +584,70 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         launch = _ledger(reservations, "provider-pop-launch", pops, 64)
         if set(launch.values()) != set(range(len(pops))):
             raise ValueError("PoP launch order must retain one contiguous permanent ordinal per requested PoP.")
-        if "provider-span-upgrades" in reservations:
-            raise ValueError("Leased spans are 100G wavelengths; the retired provider-span-upgrades ledger must be absent.")
-    except ValueError as exc:
-        report("provider-allocation", "plan", str(exc))
-        return findings
-
-    ordered = sorted(pops, key=order.get)
-    routers = {f"device/pop-{pop}/pe-{side}" for pop in pops for side in ("a", "b")}
-    pop_of = lambda router: router.split("/")[1].removeprefix("pop-")
-    metro_of = lambda router: pops[pop_of(router)]["metro"]
-    # Carrier policy, restated: same-metro spans are owned dark fiber; spans
-    # between metros alternate the two transport carriers in ledger order.
-    span_provider, alternation = {}, Counter()
-    for key, (a, b) in spans.items():
-        if metro_of(a) == metro_of(b):
-            span_provider[key] = "provider/operator"
-        else:
-            pair = frozenset((metro_of(a), metro_of(b)))
-            span_provider[key] = f"provider/transport-{'ab'[alternation[pair] % 2]}"
-            alternation[pair] += 1
-    # Inter-metro spans may only join neighbouring metros along the lakeshore,
-    # derived here by longitude rather than the builder's spanning tree.
-    chain = sorted({item["metro"] for item in pops.values()}, key=lambda m: METRO_POINTS[m][1])
-    neighbours = {frozenset(pair) for pair in zip(chain, chain[1:])}
-    for key, (a, b) in spans.items():
-        if metro_of(a) != metro_of(b) and frozenset((metro_of(a), metro_of(b))) not in neighbours:
-            report("provider-backbone-geography", key, "An inter-metro span must join neighbouring metros; it may not skip a metro or cross a lake.")
-    for pair in neighbours:
-        between = [key for key, (a, b) in spans.items() if frozenset((metro_of(a), metro_of(b))) == pair]
-        sides = {metro: {end for key in between for end in spans[key] if metro_of(end) == metro} for metro in pair}
-        if (len(between) < 2 or {refs(k).get("provider") for k in between} != {"provider/transport-a", "provider/transport-b"} or
-                any(len(ends) < 2 for ends in sides.values())):
-            report("provider-backbone-diversity", "plan", f"Metros {' and '.join(sorted(pair))} need two spans from two "
-                   "different carriers, landing on two different PEs at each end.")
-    expected_transport = defaultdict(set)
-    for circuit, ends in spans.items():
-        for router in ends:
-            expected_transport[router].add(circuit)
-    service_targets = defaultdict(set)
-    for side in ("a", "b"):
-        service_targets[recipe[f"noc_pop_{side}"]].add(f"noc/{side}")
-    for sid, (_, pop, _) in premises.items():
-        service_targets[pop].add(sid)
-        if sid == hub_premises(sid):
-            service_targets[pop].add(f"{sid}/b")
-    try:
-        transport_ports = {router: _ledger(reservations, f"provider-transport-ports/{router}", expected_transport[router], 2) for router in routers}
-        service_ports = {pop: _ledger(reservations, f"provider-service-ports/{pop}", service_targets[pop], 12) for pop in pops}
-        private = {f"management/pop-{pop}/{s}" for pop in pops for s in ("a", "b")}
-        private |= {f"circuit/customer/{sid}" for sid in premises} | {f"circuit/noc/{s}" for s in ("a", "b")}
-        private |= {f"circuit/customer/{sid}/b" for sid in premises if sid == hub_premises(sid)}
+        for retired in ("provider-span-upgrades", "provider-service-ports"):
+            if any(scope == retired or scope.startswith(retired + "/") for scope in reservations):
+                raise ValueError(f"The retired {retired} ledger must be absent: access lands on the aggregation layer.")
+        routers = {f"device/pop-{pop}/pe-{side}" for pop in pops for side in ("a", "b")}
+        expected_transport = defaultdict(set)
+        for circuit, ends in spans.items():
+            for router in ends:
+                expected_transport[router].add(circuit)
+        transport_ports = {router: _ledger(reservations, f"provider-transport-ports/{router}", expected_transport[router], 2)
+                           for router in routers}
+        # Access: the alternating home-side ledger and the per-side UNI ledger.
+        at_pop = defaultdict(list)
+        for target, (sid, _) in targets.items():
+            at_pop[premises[sid][1]].append(target)
+        homes = {pop: _ledger(reservations, f"provider-agg-home/{pop}", at_pop[pop], ATTACHMENTS_PER_POP) for pop in pops}
+        side_of = {target: "ab"[homes[premises[sid][1]][target] % 2] for target, (sid, _) in targets.items()}
+        uni_slots = {}
+        for pop in pops:
+            for side in ("a", "b"):
+                mine = [t for t in at_pop[pop] if side_of[t] == side]
+                if mine or f"provider-agg-uni/{pop}/{side}" in reservations:
+                    uni_slots.update(_ledger(reservations, f"provider-agg-uni/{pop}/{side}", mine, UNIS_PER_SIDE))
+        vid_slots = {}
+        for pop in pops:
+            if at_pop[pop] or f"provider-service-vlans/{pop}" in reservations:
+                vid_slots.update(_ledger(reservations, f"provider-service-vlans/{pop}", at_pop[pop], 4001 - SERVICE_VLAN_BASE))
+        nid_slots = _ledger(reservations, "provider-nid-management", pops, 64)
+        nid_device = {target: f"device/{sid}/nid-{n:02}" for target, (sid, n) in targets.items()}
+        nid_hosts = {}
+        for pop in pops:
+            for side in ("a", "b"):
+                mine = [nid_device[t] for t in at_pop[pop] if side_of[t] == side]
+                if mine or f"provider-nid-hosts/{pop}/{side}" in reservations:
+                    nid_hosts.update(_ledger(reservations, f"provider-nid-hosts/{pop}/{side}", mine, 125))
+        dia = [sid for sid, (c, _, _) in premises.items() if c["service"] == "dia"]
+        dia_slots = _ledger(reservations, "provider-dia-29", dia, len(DIA_NETWORKS)) if dia or "provider-dia-29" in reservations else {}
+        managed = [sid for sid in dia if premises[sid][0]["managed"]]
+        dia_links = (_ledger(reservations, "provider-dia-31", managed, DIA_LINK_POOL.num_addresses // 2)
+                     if managed or "provider-dia-31" in reservations else {})
+        epl_keys = [c["key"] for c in customers if c["service"] == "epl"]
+        vcids = _ledger(reservations, "provider-epl-vcid", epl_keys, 1 << 20) if epl_keys or "provider-epl-vcid" in reservations else {}
+        private = {f"management/pop-{pop}/{s}" for pop in pops for s in ("a", "b")} | {f"circuit/noc/{s}" for s in ("a", "b")}
+        private |= {f"circuit/customer/{t}" for t, (sid, _) in targets.items() if premises[sid][0]["service"] == "private-l3"}
         link_slots = _ledger(reservations, "provider-link-prefixes", private, 16384)
         lan_slots = {c["key"]: _ledger(reservations, f"provider-customer-lans/{c['key']}",
                                        [sid for sid, (item, _, _) in premises.items() if item["key"] == c["key"]], 255)
-                     for c in customers if not c["lan_endpoints"]}
+                     for c in customers if c["service"] == "private-l3" and not c["lan_endpoints"]}
         if any(scope.startswith("provider-customer-lans/") and scope.removeprefix("provider-customer-lans/") not in lan_slots
                for scope in reservations):
-            raise ValueError("Only CE-only customers number premises LANs from their own plan.")
+            raise ValueError("Only CE-only private-L3 customers number premises LANs from their own plan.")
         public = {"pair": ("provider-pair-links", {f"pair/pop-{pop}" for pop in pops}),
                   "backbone": ("provider-span-links", set(spans)),
                   "transit": ("provider-transit-links", {f"circuit/transit/{s}" for s in ("a", "b")})}
         public_slots = {family: _ledger(reservations, scope, keys, 2 if family == "transit" else PUBLIC_POOLS[family].num_addresses // 2)
                         for family, (scope, keys) in public.items()}
-        # Loopbacks take host .1 onward of their /24: never .0, never .255.
-        loop_slots = _ledger(reservations, "provider-loopbacks", routers, PUBLIC_POOLS["loopbacks"].num_addresses - 2)
+        loop_slots = _ledger(reservations, "provider-loopbacks", routers, LOOPBACK_SLOTS)
         oob_slots = _ledger(reservations, "provider-oob-links", pops, OOB_POOL.num_addresses // 4)
     except ValueError as exc:
         report("provider-allocation", "plan", str(exc))
         return findings
+
+    ordered = sorted(pops, key=order.get)
+    pop_of = lambda router: router.split("/")[1].removeprefix("pop-")
+    metro_of = lambda router: pops[pop_of(router)]["metro"]
     infra = int(pool.broadcast_address) - 65535
     link_network = {key: ip_network((infra + 2 * slot, 31)) for key, slot in link_slots.items()}
     for family, slots in public_slots.items():
@@ -546,73 +664,131 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         good = (kind(prefix) == "prefix" and attrs(prefix).get("prefix") == str(network) and
                 attrs(prefix).get("status") == life("prefix") and refs(prefix).get("vrf") == vrf and refs(prefix).get("tenant") == tenant)
         for host, port in zip(hosts, endpoints):
-            good &= address(port, network, vrf, host, tenant) and not vlans(port)
-        # An opaque transit peer has no native remote address owner.
+            good &= address(port, network, vrf, host, tenant)
         actual = ips_by_vrf_address[(vrf, 4, int(network[0]))] | ips_by_vrf_address[(vrf, 4, int(network[1]))]
         expected = {key for port in endpoints for key in child("assigned_object", l3(port), "ip_address") if key in ipv4_addresses}
         if not good or actual != expected:
-            report("provider-routed-address", link, "Routed prefix, exact local endpoint ownership, /31 masks and VRF must match the reserved real link; opaque transit has one local owner.")
+            report("provider-routed-address", link, "Routed prefix, exact local endpoint ownership, /31 masks and VRF must match "
+                   "the reserved real link; opaque transit has one local owner.")
 
-    adjacency = {router: [] for router in routers}
-    capacity = {}
+    # Carrier policy, restated: same-metro spans are owned dark fiber; spans
+    # between metros alternate the two transport carriers in ledger order.
+    span_provider, alternation = {}, Counter()
+    for key, (a, b) in spans.items():
+        if metro_of(a) == metro_of(b):
+            span_provider[key] = "provider/operator"
+        else:
+            pair = frozenset((metro_of(a), metro_of(b)))
+            span_provider[key] = f"provider/transport-{'ab'[alternation[pair] % 2]}"
+            alternation[pair] += 1
+    chain = sorted({item["metro"] for item in pops.values()}, key=lambda m: METRO_POINTS[m][1])
+    neighbours = {frozenset(pair) for pair in zip(chain, chain[1:])}
+    for key, (a, b) in spans.items():
+        if metro_of(a) != metro_of(b) and frozenset((metro_of(a), metro_of(b))) not in neighbours:
+            report("provider-backbone-geography", key, "An inter-metro span must join neighbouring metros; it may not skip a metro or cross a lake.")
+    for pair in neighbours:
+        between = [key for key, (a, b) in spans.items() if frozenset((metro_of(a), metro_of(b))) == pair]
+        sides = {metro: {end for key in between for end in spans[key] if metro_of(end) == metro} for metro in pair}
+        if (len(between) < 2 or {refs(k).get("provider") for k in between} != {"provider/transport-a", "provider/transport-b"} or
+                any(len(ends) < 2 for ends in sides.values())):
+            report("provider-backbone-diversity", "plan", f"Metros {' and '.join(sorted(pair))} need two spans from two "
+                   "different carriers, landing on two different PEs at each end.")
 
-    def edge(key, a, b, rate):
-        if a in adjacency and b in adjacency:
-            adjacency[a].append((key, b, key))
-            adjacency[b].append((key, a, key))
-            capacity[key] = rate
+    # --- Circuit handoffs: site scope, panel landing and the carrier hotel ---
+    cross_connects, mmr_positions = Counter(), Counter()
+    landed = defaultdict(set)  # panel device -> owning party of the circuits it lands
 
-    cross_connects, panel_positions = Counter(), Counter()
+    def land(term, port, site, provider):
+        """A PoP or NOC handoff lands through the right panel in the port's own
+        cabinet and reaches ``port``; a premises handoff is one direct cable."""
+        far, route = walk(term)
+        device = refs(port).get("device")
+        carrier = provider != "provider/operator"
+        if str(site).startswith("site/pop-"):
+            if len(route) != 1 or far != port:
+                return False
+            rear, front = route[0]
+            panel = refs(rear).get("device")
+            landed[panel].add("carrier" if carrier else "operator")
+            wanted = "hardware/demarc-panel" if carrier else "hardware/osp-panel"
+            position = attrs(rear).get("name")
+            ledger = reservations.get(f"fibre-panel-positions/{panel}", {})
+            return (kind(rear) == "rear_port" and kind(front) == "front_port" and refs(panel).get("device_type") == wanted and
+                    refs(panel).get("rack") == refs(device).get("rack") and refs(panel).get("site") == site and
+                    attrs(front).get("name") == position and position == f"Port {ledger.get(term, -2) + 1}")
+        if site == "site/dc-01":
+            if len(route) != 1 or far != port:
+                return False
+            rear, _ = route[0]
+            panel = refs(rear).get("device")
+            return refs(panel).get("device_type") == "hardware/patch-panel" and refs(panel).get("rack") == refs(device).get("rack")
+        return not route and far == port
 
     def cross_connect(term, port, site, provider):
-        """Carrier handoffs into a PoP record the hotel cross-connect; fibre ones the hotel's meet-me-room panel position."""
+        """A carrier's handoff into a PoP records the hotel cross-connect (the cable from the
+        colo panel carries it as its label) and, for fibre, its meet-me-room panel position."""
         carrier_pop = port is not None and provider != "provider/operator" and str(site).startswith("site/pop-")
         xc, pp = attrs(term).get("xconnect_id"), attrs(term).get("pp_info")
-        device = refs(port).get("device") if port else None
-        fibre = (bool(device) and re.fullmatch(r"device/pop-[^/]+/pe-[ab]", device) is not None
-                 and attrs(port).get("type") != "1000base-t")
-        match = re.fullmatch(r"Meet-me room panel (MMR-\d{2}), port ([1-9]|[1-3]\d|4[0-8])", str(pp)) if fibre else None
+        fibre = carrier_pop and attrs(port).get("type") != "1000base-t"
+        match = MMR_PP.fullmatch(str(pp)) if pp is not None else None
         if carrier_pop:
             cross_connects[xc] += 1
             if match:
-                panel_positions[(site, match[1], match[2])] += 1
+                mmr_positions[(site, match[1], match[2])] += 1
         if ((xc is not None) != carrier_pop or (carrier_pop and not re.fullmatch(r"XC-[1-9]\d{6}", str(xc))) or
-                (pp is not None) != (carrier_pop and fibre) or (pp is not None and not match)):
+                (carrier_pop and attrs(cable_of.get(term)).get("label") != xc) or
+                (pp is not None) != bool(fibre) or (pp is not None and not match)):
             report("provider-cross-connect", term, "A carrier's handoff into a PoP records its carrier-hotel cross-connect, "
-                   "and a fibre handoff its position on the hotel's meet-me-room panel; no other termination carries either.")
+                   "labelled on the cross-connect cable, and a fibre handoff its meet-me-room panel position; no other "
+                   "termination carries either.")
 
-    def circuit(key, port_a, port_z, site_a, site_z, provider, speed, commitment, tenant="tenant", account=None):
+    def circuit(key, port_a, port_z, site_a, site_z, provider, speed, commitment, tenant="tenant", account=None,
+                circuit_type=None, texts=None):
         terms = child("circuit", key, "circuit_termination")
         sides = {side: [term for term in terms if attrs(term).get("term_side") == side] for side in ("A", "Z")}
         good = (kind(key) == "circuit" and attrs(key).get("status") == life("circuit") and
                 attrs(key).get("commit_rate") == commitment and refs(key).get("provider") == provider and
-                refs(key).get("tenant") == tenant and len(terms) == 2 and all(len(value) == 1 for value in sides.values()))
+                refs(key).get("tenant") == tenant and len(terms) == 2 and all(len(value) == 1 for value in sides.values()) and
+                (circuit_type is None or refs(key).get("type") == circuit_type))
         if account is not None:
             good &= refs(key).get("provider_account") == account and refs(account).get("provider") == provider
         for side, port, site in (("A", port_a, site_a), ("Z", port_z, site_z)):
             term = sides[side][0] if len(sides[side]) == 1 else None
-            good &= attrs(term).get("port_speed") == speed
             if port is not None:
                 # A local handoff terminates on its site (Visual Explorer maps
-                # only site-scoped ends) and names its equipment's room.
-                room = refs(refs(port).get("device")).get("location")
-                good &= (refs(term).get("termination") == site and kind(site) == "site" and kind(room) == "location" and
-                         refs(room).get("site") == site and attrs(term).get("description") == f"Local routed handoff, {attrs(room).get('name')}" and
+                # only site-scoped ends), at its handoff speed, never marked
+                # connected, reaches its port through the right panel and
+                # names the room its equipment stands in.
+                room = attrs(refs(refs(port).get("device")).get("location")).get("name")
+                text = (texts or {}).get(side, f"Local routed handoff, {room}")
+                good &= (refs(term).get("termination") == site and kind(site) == "site" and
+                         attrs(term).get("description") == text and
+                         attrs(term).get("port_speed") == speed and attrs(term).get("mark_connected") is not True and
                          kind(port) == "interface" and attrs(port).get("type") not in ("virtual", "lag", None) and
-                         attrs(port).get("speed") == speed and peers.get(term) == port and active_path(term))
+                         attrs(port).get("speed") == speed and land(term, port, site, provider) and path_ok(term))
                 cross_connect(term, port, site, provider)
             else:
                 good &= (refs(term).get("termination") == site and kind(site) == "provider_network" and
-                         refs(site).get("provider") == provider and not peers.get(term))
+                         refs(site).get("provider") == provider and not adjacent.get(term))
                 cross_connect(term, None, site, provider)
         if not good:
-            report("provider-circuit-path", key, "Circuit needs its active purchased commitment, correct provider/account/tenant, actual A/Z sites and both local physical handoffs; only transit may have an opaque remote end.")
+            report("provider-circuit-path", key, "Circuit needs its purchased commitment, provider/account/tenant/type, "
+                   "site-scoped local ends and complete physical handoffs through the right panel; only transit "
+                   "and the cellular service have an opaque remote end.")
         return bool(good)
 
+    # --- Facilities ---
     site_metros = {f"pop-{pop}": item["metro"] for pop, item in pops.items()}
     site_metros.update({sid: pops[pop]["metro"] for sid, (_, pop, _) in premises.items()})
     site_metros["dc-01"] = pops[recipe["noc_pop_a"]]["metro"]
-    infrastructure = []
+
+    def rate_of(customer, pop, hub):
+        if customer["service"] == "private-l3":
+            return customer["hub_commit_mbps"] if hub else next(
+                t for t in recipe["wan_tiers_mbps"] if Decimal(t) * usable >= _site_peak(customer, pop))
+        return customer["commit_mbps"] if customer["service"] == "dia" else customer["rate_mbps"]
+
+    descriptions = defaultdict(set)
     for site in sorted(expected_sites):
         sid = site.removeprefix("site/")
         customer = premises[sid][0] if sid in premises else None
@@ -625,8 +801,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         address_lines = str(attrs(site).get("physical_address")).split("\n")
         locality = address_lines[1].partition(", ")[0] if len(address_lines) == 3 else None
         locality = locality if LOCALITIES.get(locality) == city else city
-        # A real street of an anchor in that locality and a positive house
-        # number; Chicago's grid may flip a street's North/South or East/West.
         number, _, street = address_lines[0].partition(" ")
         direction, _, rest = street.partition(" ")
         streets = {name for (place, _), names in ADDRESS_STREETS.items() if place == locality for name in names}
@@ -634,152 +808,193 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             street = next((name for name in streets if name.partition(" ")[2] == rest), street)
         good_address = (len(address_lines) == 3 and number.isdecimal() and int(number) > 0 and street in streets and
                         address_lines[1:] == [f"{locality}, {state}", "United States"])
-        description = {"pop": "Provider routing, local management and carrier handoffs",
-                       "customer": "Private-L3 customer premises and wired office" if customer and customer["lan_endpoints"]
-                                   else "Private-L3 customer premises; CE hands off to the customer's own LAN",
-                       "dc": "Provider NOC services, inventory and monitoring"}[category]
+        if customer:
+            pop, ordinal = premises[sid][1], premises[sid][2]
+            hub = customer["service"] == "private-l3" and pop == customer["hub_pop"] and ordinal == 1
+            other = next((titleize(e["pop"]) for e in customer["sites"] if e["pop"] != pop), None)
+            description = premises_description(customer, "hub" if hub else "spoke", rate_of(customer, pop, hub), other)
+            descriptions[customer["key"]].add(attrs(site).get("description"))
+        else:
+            description = {"pop": "Provider routing, local management and carrier handoffs",
+                           "dc": "Provider NOC services, inventory and monitoring"}[category]
         if attrs(site).get("description") != description:
-            report("provider-scope-text", site, "Facility description must state its modeled role without adding unmodeled availability or execution guarantees.")
+            report("provider-scope-text", site, "Facility description must state what it contains and how it is served, "
+                   "without unmodeled availability or execution guarantees.")
         if (kind(site) != "site" or attrs(site).get("status") != life("site") or refs(site).get("tenant") != tenant or
                 refs(site).get("region") != region or refs(site).get("group") != group or attrs(site).get("time_zone") != zone or
                 not good_address or kind(region) != "region" or kind(group) != "site_group" or
                 refs(region).get("parent") != f"region/{recipe['namespace']}/us/{state_code.lower()}"):
             report("provider-site-context", site, "Site ownership, functional group, address, metro/state and time zone must match the actual requested facility.")
         room = f"location/{sid}"
-        # Single-level premises: rooms hang from the site; a PoP's cage from
-        # its leased carrier-hotel suite.
         required_rooms = {room: ("equipment_room", 1, [24, 18, 0], f"{room}/suite" if category == "pop" else None)}
         if category == "pop":
             required_rooms[f"{room}/suite"] = ("suite", 1, [0, 0, 0], None)
             if [attrs(f"{room}/suite").get("name"), attrs(room).get("name")] != list(carrier_suite(sid)):
                 report("provider-room-geometry", room, "A PoP cage and its suite keep their authored carrier-hotel names.")
-        if customer and customer["lan_endpoints"]:
+        elif category == "customer" and attrs(room).get("name") != "MPOE":
+            report("provider-room-geometry", room, "A premises' carrier equipment stands in its MPOE room.")
+        if customer and customer["service"] == "private-l3" and customer["lan_endpoints"]:
             required_rooms[f"{room}/office-01"] = ("office", 1, [8, 18, 0], None)
-        actual_rooms = set(child("site", site, "location"))
-        if actual_rooms != set(required_rooms):
-            report("provider-room-inventory", site, "Each bounded facility needs its real building, ground floor, equipment room and requested customer office.")
+        if category != "dc" and set(child("site", site, "location")) != set(required_rooms):
+            report("provider-room-inventory", site, "Each bounded facility needs its real equipment room (a PoP's cage inside "
+                   "its suite) and requested customer office.")
         for key, (function, floor, point, parent) in required_rooms.items():
-            metadata = objects.get(key, {}).get("meta", {})
+            if category == "dc":
+                break
+            metadata = meta(key)
             if (kind(key) != "location" or attrs(key).get("status") != life("site") or refs(key).get("site") != site or
                     refs(key).get("tenant") != tenant or refs(key).get("parent") != parent or
                     metadata.get("space_type") != function or metadata.get("floor") != floor or metadata.get("position_m") != point or
                     (function == "office" and metadata.get("capacity") != {"workstations": 12})):
                 report("provider-room-geometry", key, "Facility rooms must retain their fixed local geometry, capacity, ownership and containment.")
-        if sid == "dc-01":
-            continue
-        devices = child("site", site, "device")
-        expected = {} if customer else {f"device/{sid}/console-01": ("console-server", "console-server")}
-        if customer:
-            expected[f"device/{sid}/edge-01"] = ("customer-edge", "edge")
-            if customer["lan_endpoints"]:
-                expected[f"device/{sid}/access-01"] = ("access", access_alias)
-            expected.update({f"device/{sid}/pc-{n:03}": ("workstation", "endpoint") for n in range(1, customer["lan_endpoints"] + 1)})
-        else:
-            expected.update({f"device/{sid}/pe-{side}": ("provider-edge", "provider-edge") for side in ("a", "b")})
-            expected[f"device/{sid}/mgmt-01"] = ("management", access_alias)
-        for key, (role, hardware) in expected.items():
-            location = f"{room}/office-01" if role == "workstation" else room
-            if (kind(key) != "device" or attrs(key).get("status") != life("device") or refs(key).get("site") != site or
-                    refs(key).get("tenant") != tenant or refs(key).get("role") != f"role/{role}" or
-                    refs(key).get("device_type") != f"hardware/{hardware}" or refs(key).get("location") != location):
-                report("provider-device-inventory", key, "Requested devices need their exact active hardware, role, tenant and local room.")
-            if role != "workstation":
-                infrastructure.append(key)
-                if role in {"provider-edge", "customer-edge"} and attrs(key).get("description") != f"{role_label(role)} at {attrs(site).get('name')}":
-                    report("provider-scope-text", key, "Router description must retain its actual local role; modeled paths do not establish availability or running forwarding.")
-                rack = refs(key).get("rack")
-                if customer and not customer["lan_endpoints"]:
-                    # A CE-only CE stands in the customer's own rack on
-                    # customer power: neither is the carrier's inventory.
-                    supplies = child("device", key, "power_port")
-                    if (rack is not None or attrs(key).get("position") is not None or not supplies or
-                            any(attrs(p).get("mark_connected") is not True or peers.get(p) for p in supplies)):
-                        report("provider-rack-placement", key, "A CE-only CE stands unracked in the customer's equipment room, "
-                               "its supplies marked connected to customer power the carrier does not inventory.")
-                elif kind(rack) != "rack" or refs(rack).get("site") != site or refs(rack).get("location") != room or attrs(rack).get("status") != life("rack"):
-                    report("provider-rack-placement", key, "Network and serial equipment must occupy an active rack in their local equipment room.")
-        actual = {device for device in devices if refs(device).get("role") not in {"role/pdu", "role/patch-panel", "role/wall-outlet"}}
-        if customer and not customer["lan_endpoints"] and (
-                set(devices) != set(expected) or child("site", site, "rack") or child("site", site, "power_panel")):
-            report("provider-device-inventory", site, "A CE-only premises inventories its CE alone: no carrier rack, PDU or "
-                   "power panel stands in the customer's equipment room.")
-        if actual != set(expected):
-            report("provider-device-inventory", site, "Active non-passive site inventory must exactly match the bounded PoP or customer composition.")
-        for device in expected:
-            if expected[device][0] in {"workstation", "console-server"} or customer:
-                continue
-            port = f"{device}/console_port/Console"
-            peer = peers.get(port)
-            server = refs(peer).get("device")
-            if (kind(port) != "console_port" or kind(peer) != "console_server_port" or
-                    server != f"device/{sid}/console-01" or not active_path(port)):
-                report("provider-console-path", device, "Every PE, CPE and management/access switch requires its own active local serial console path.")
     now[0] = "active"
+    # Descriptions vary with what a premises is: a multi-site customer's hub
+    # reads differently from its branches, and an EPL's two ends name each other.
+    for customer in customers:
+        sites = [sid for sid, (c, _, _) in premises.items() if c["key"] == customer["key"]]
+        if len(sites) >= 2 and len(descriptions[customer["key"]]) < 2:
+            report("provider-scope-text", f"tenant/cust-{customer['key']}", "A multi-site customer's premises descriptions "
+                   "distinguish its hub, branches or line ends.")
 
-    for sid, (customer, pop, ordinal) in premises.items():
-        if _stage(customer, pop) in PENDING_OPTIC:
-            for target in (sid, f"{sid}/b"):
-                if (slot := service_ports[pop].get(target)) is not None:
-                    shut.add(f"device/pop-{pop}/pe-{'ab'[slot % 2]}/if/xe-0/1/{slot // 2}")
+    # --- PoP plant: cage, cabinets, elevation, panels and power ---
+    infrastructure = []
+    for pop in ordered:
+        sid, site, room = f"pop-{pop}", f"site/pop-{pop}", f"location/pop-{pop}"
+        city = METROS[pops[pop]["metro"]][0]
+        cage = str(attrs(room).get("name", "")).removeprefix("Cage ")
+        racks = {f"rack/{sid}/r{bay + 1:02}": bay for bay in range(CAGE_BAYS)}
+        if set(child("site", site, "rack")) != set(racks) or by_kind["rack_reservation"]:
+            report("provider-rack-geometry", site, "A PoP cage holds exactly its four contracted cabinet positions, with no rack reservation.")
+        for rack, bay in racks.items():
+            installed = bay < INSTALLED_BAYS
+            if (kind(rack) != "rack" or attrs(rack).get("name") != f"R{bay + 1:02}" or attrs(rack).get("u_height") != CABINET_U or
+                    attrs(rack).get("status") != ("active" if installed else "reserved") or refs(rack).get("location") != room or
+                    refs(rack).get("rack_type") != "rack-type/42u" or attrs(rack).get("facility_id") != f"{cage}-{bay + 1:02}" or
+                    meta(rack).get("position_m") != [round(1.0 + 0.6 * bay, 1), 1.0, 0] or
+                    (not installed and attrs(rack).get("description") != RESERVED_CABINET) or
+                    (not installed and (child("rack", rack, "device") or child("rack", rack, "power_feed")))):
+                report("provider-rack-geometry", rack, "Cage positions R01-R04 stand in one row at the cabinet pitch: R01/R02 "
+                       "installed 42U AR3100, R03/R04 contracted positions with no equipment, feeds or PDUs.")
+        expected = {}
+        colo = f"tenant/colo/{city.lower()}"
+        for side, stack in ELEVATION.items():
+            rack = f"rack/{sid}/r0{1 + 'ab'.index(side)}"
+            for position, (stem, alias) in stack.items():
+                expected[f"device/{sid}/{stem}"] = (alias, rack, position)
+            for feed in ("a", "b"):
+                expected[f"device/{sid}/pdu-r0{1 + 'ab'.index(side)}-{feed}"] = ("pdu-switched", rack, None)
+        roles = {"provider-edge": "provider-edge", "aggregation": "aggregation", "pop-mgmt": "management",
+                 "oob-server": "console-server", "osp-panel": "patch-panel", "demarc-panel": "patch-panel",
+                 "cable-manager-1u": "cable-management", "cable-manager-2u": "cable-management", "pdu-switched": "pdu"}
+        names = {"osp-panel": "{rack} OSP Panel", "demarc-panel": "{rack} Colo Demarc", "cable-manager-1u": "{rack} CM-{u}",
+                 "cable-manager-2u": "{rack} CM-{u}"}
+        for device, (alias, rack, position) in expected.items():
+            rack_name = attrs(rack).get("name", "")
+            name = (names[alias].format(rack=rack_name, u=position) if alias in names else
+                    f"{rack_name} PDU-{device[-1].upper()}" if alias == "pdu-switched" else None)
+            if (kind(device) != "device" or attrs(device).get("status") != "active" or refs(device).get("site") != site or
+                    refs(device).get("tenant") != (colo if alias == "demarc-panel" else "tenant") or
+                    refs(device).get("role") != f"role/{roles[alias]}" or refs(device).get("device_type") != f"hardware/{alias}" or
+                    refs(device).get("location") != room or refs(device).get("rack") != rack or
+                    attrs(device).get("position") != position or (position is not None and attrs(device).get("face") != "front") or
+                    (name is not None and attrs(device).get("name") != name)):
+                report("provider-device-inventory", device, "Each cage device holds its exact hardware, role, tenant, cabinet "
+                       "and unit: the DESIGN §5 elevation, with the colo demarc panel the carrier hotel's.")
+            if alias in ("aggregation", "pop-mgmt", "oob-server"):
+                infrastructure.append(device)
+        if set(child("site", site, "device")) != set(expected):
+            report("provider-device-inventory", site, "The PoP inventory is exactly its elevation: PE, aggregation and panels per "
+                   "side, management switch and console server in R01, four PDUs, and the hygiene rule's cable managers.")
+        # Fill: the plan's per-cabinet rack-unit utilisation, recomputed from
+        # each device's own type height (blanking panels are excluded).
+        for side in ELEVATION:
+            rack = f"rack/{sid}/r0{1 + 'ab'.index(side)}"
+            want = sum(catalog.get(alias, {}).get("u_height", 0) for _, alias in ELEVATION[side].values())
+            have = sum(catalog.get(meta(d).get("hardware") or str(refs(d).get("device_type")).removeprefix("hardware/"), {}).get("u_height", 0)
+                       for d in child("rack", rack, "device") if attrs(d).get("position") is not None and
+                       not catalog.get(str(refs(d).get("device_type")).removeprefix("hardware/"), {}).get("exclude_from_utilization"))
+            if have != want:
+                report("provider-rack-geometry", rack, f"Cabinet utilisation is the elevation's {want}U, recomputed from installed devices.")
+        # Panels: every front position maps 1:1 onto the same rear position.
+        for panel, (count, front_type) in ((f"device/{sid}/r0{n}-{kind_}", spec) for n in (1, 2) for kind_, spec in
+                                           (("osp", (48, "lc")), ("demarc", (24, "lc")))):
+            fronts = child("device", panel, "front_port")
+            rears = {attrs(r).get("name"): r for r in child("device", panel, "rear_port")}
+            if (len(fronts) != count or len(rears) != count or
+                    any(rear_of.get(f) != rears.get(attrs(f).get("name")) or attrs(f).get("rear_port_position") != 1 or
+                        attrs(f).get("type") != front_type for f in fronts)):
+                report("provider-panel-mapping", panel, "Each panel front position maps one-to-one onto the same-numbered rear position.")
+        # Console paths: each managed chassis' RJ-45 console reaches the console server.
+        console = f"device/{sid}/console-01"
+        for device in (f"device/{sid}/pe-a", f"device/{sid}/pe-b", f"device/{sid}/agg-a", f"device/{sid}/agg-b", f"device/{sid}/mgmt-01"):
+            ports = [p for p in child("device", device, "console_port") if attrs(p).get("type") == "rj-45"]
+            if len(ports) != 1 or refs(adjacent.get(ports[0])).get("device") != console or kind(adjacent.get(ports[0])) != "console_server_port":
+                report("provider-console-path", device, "Every PE, aggregation and management switch needs its own serial console path to the PoP console server.")
+
+    # --- PEs: ports, loopback, LAG, power ---
+    nid_vlan = {(pop, side): f"vlan/pop-{pop}/{side}/nid-management" for pop in pops for side in ("a", "b")}
+    homed_vlans = defaultdict(set)  # (pop, side) -> service VLANs homed on that side
+    used_pe_ports = {router: {f"{router}/if/et-0/0/0", f"{router}/if/{PE_MGMT_PORT}", f"{router}/if/fxp0",
+                              *(f"{router}/if/{p}" for p in PE_LAG_MEMBERS)} for router in routers}
+    for key, ends in spans.items():
+        for router in ends:
+            used_pe_ports[router].add(f"{router}/if/et-0/0/{1 + transport_ports[router][key]}")
+    for side in ("a", "b"):
+        used_pe_ports[f"device/pop-{recipe[f'noc_pop_{side}']}/pe-{side}"].add(f"device/pop-{recipe[f'noc_pop_{side}']}/pe-{side}/if/{PE_NOC_PORT}")
+    for index, side in enumerate(("a", "b")):
+        router = f"device/pop-{ordered[index]}/pe-{side}"
+        used_pe_ports[router].add(f"{router}/if/{PE_TRANSIT_PORT}")
     for pop in ordered:
         sid, site = f"pop-{pop}", f"site/pop-{pop}"
-        # The two cabinets are bayed together on the first row of the network
-        # zone: one cabinet width apart, both one metre inside the room.
-        rack_points = {f"rack/{sid}/network-01": [1.0, 1.0, 0], f"rack/{sid}/network-02": [1.6, 1.0, 0]}
-        if set(child("site", site, "rack")) != set(rack_points) or any(
-                objects.get(rack, {}).get("meta", {}).get("position_m") != point for rack, point in rack_points.items()):
-            report("provider-rack-geometry", site, "The two PoP network cabinets must retain their distinct fixed positions in the local equipment room.")
-        for cable in local_cables[site]:
-            racks = []
-            for end in (refs(cable).get("a"), refs(cable).get("b")):
-                owner = refs(end).get("device") or end
-                racks.append(refs(owner).get("rack"))
-            length = 3
-            if all(isinstance(rack, str) and rack in rack_points for rack in racks) and racks[0] != racks[1]:
-                length = math.ceil(sum(abs(a-b) for a, b in zip(rack_points[racks[0]], rack_points[racks[1]])) + 3)
-            if attrs(cable).get("length_unit") != "m" or attrs(cable).get("length") != length:
-                report("provider-cable-geometry", cable, "Local PoP patches require the fixed cabinet distance plus 3m slack; same-rack and opaque circuit tails use the authored 3m allowance.")
         pe_a, pe_b = (f"device/{sid}/pe-{side}" for side in ("a", "b"))
-        if refs(pe_a).get("rack") == refs(pe_b).get("rack"):
-            report("provider-router-racks", site, "The two real provider routers must occupy different rack lanes.")
         for router in (pe_a, pe_b):
-            expected_ports = {p["name"] for p in catalog.get("provider-edge", {}).get("interfaces", [])} | {"lo0", "lo0.0"}
-            # Logical units of addressed data ports are checked by l3().
-            actual_ports = {attrs(port).get("name") for port in child("device", router, "interface")
-                            if not (attrs(port).get("type") == "virtual" and refs(port).get("parent") and
-                                    attrs(port).get("name") == f"{attrs(refs(port)['parent']).get('name')}.0" and
-                                    refs(port).get("parent") != f"{router}/if/lo0")}
-            if actual_ports != expected_ports:
-                report("provider-port-inventory", router, "PE interfaces must match the pinned chassis and the one in-band loopback.")
+            if attrs(router).get("description") != (f"{role_label('provider-edge')} at {attrs(site).get('name')}; "
+                                                     "MX204 SFP+ ports exhausted at 8, next platform MX304"):
+                report("provider-scope-text", router, "The PE states its role and the MX204 port ceiling with its MX304 growth path.")
+            physical = {p["name"] for p in catalog.get("provider-edge", {}).get("interfaces", [])}
+            ports = child("device", router, "interface")
+            names = {attrs(p).get("name"): p for p in ports}
+            logical = {name for name, port in names.items() if name not in physical}
+            subifs = {name for name in logical if re.fullmatch(rf"{PE_LAG}\.\d+", name)}
+            units = {name for name in logical if name.endswith(".0") and name[:-2] in physical}
+            if (not physical <= set(names) or logical - subifs - units != {"lo0", "lo0.0", PE_LAG} or
+                    any(refs(names[name]).get("parent") != f"{router}/if/{PE_LAG}" or attrs(names[name]).get("type") != "virtual"
+                        for name in subifs)):
+                report("provider-port-inventory", router, "PE interfaces are the pinned chassis plus lo0/lo0.0, the ae1 access LAG, "
+                       "its ae1.<vid> service units and the .0 units of addressed ports.")
+
             def in_use(port):
-                # Unused ports are shut on every role (operations finalize).
-                return bool(peers.get(port) or child("assigned_object", port, "ip_address")
-                            or child("parent", port, "interface"))
+                return bool(adjacent.get(port) or child("assigned_object", l3(port) or port, "ip_address"))
             for n in range(4):
                 port = f"{router}/if/et-0/0/{n}"
                 if (attrs(port).get("type") != "100gbase-x-qsfp28" or attrs(port).get("enabled") is not (n < 3 and in_use(port)) or
-                        (n < 3 and attrs(port).get("speed") != 100000000) or
-                        (n == 3 and (peers.get(port) or child("assigned_object", port, "ip_address")))):
+                        (n < 3 and attrs(port).get("speed") != 100000000) or (n == 3 and adjacent.get(port))):
                     report("provider-port-mode", port, "The installed MX204 mode exposes three active 100G cages and leaves the fourth unavailable.")
+            speeds = {**{p: 10000000 for p in PE_LAG_MEMBERS}, PE_NOC_PORT: 1000000, PE_MGMT_PORT: 10000000, PE_TRANSIT_PORT: 10000000}
             for n in range(8):
-                port = f"{router}/if/xe-0/1/{n}"
-                speed = 1000000 if n < 6 else 10000000
-                if (attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not (in_use(port) and port not in shut) or
-                        attrs(port).get("speed") != speed):
-                    report("provider-port-mode", port, "The PE preserves 10G physical port types with explicit 1G service and 10G infrastructure operating speeds; unused ports are shut.")
-            # Junos addresses the loopback on logical unit 0: lo0.0, a child of lo0.
-            fxp0, lo, unit = f"{router}/if/fxp0", f"{router}/if/lo0", f"{router}/if/lo0.0"
+                name = f"xe-0/1/{n}"
+                port = f"{router}/if/{name}"
+                used = port in used_pe_ports[router]
+                if (attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not used or
+                        (used and attrs(port).get("speed") != speeds.get(name)) or
+                        (name in PE_LAG_MEMBERS) != (refs(port).get("lag") == f"{router}/if/{PE_LAG}")):
+                    report("provider-port-mode", port, "PE SFP+ ports: xe-0/1/0-3 the 10G ae1 members, xe-0/1/4 the 1G NOC handoff, "
+                           "xe-0/1/6 the 10G management uplink, xe-0/1/7 the 10G transit handoff; unused ports are shut.")
+            actual = {p for p in ports if adjacent.get(p)}
+            if actual != used_pe_ports[router]:
+                report("provider-port-use", router, "Only the reserved PE ports are cabled: pair, transport, LAG members, NOC, "
+                       "management and transit. No access attachment lands on a PE physical port.")
+            lo, unit = f"{router}/if/lo0", f"{router}/if/lo0.0"
             if attrs(lo).get("description") != "Backbone router identity loopback":
                 report("provider-scope-text", lo, "The loopback descriptor must state its role as the router's backbone identity.")
             loopnet = ip_network((int(PUBLIC_POOLS["loopbacks"].network_address) + loop_slots[router] + 1, 32))
             matching_prefixes = prefixes_by_vrf_network[(CORE, str(loopnet))]
             if (attrs(lo).get("type") != "virtual" or attrs(lo).get("enabled") is not True or refs(lo).get("device") != router or
-                    attrs(unit).get("name") != "lo0.0" or attrs(unit).get("type") != "virtual" or refs(unit).get("parent") != lo or
-                    refs(unit).get("device") != router or child("assigned_object", lo, "ip_address") or
-                    not address(unit, loopnet, CORE, 0, "tenant") or not primary(router, unit) or len(matching_prefixes) != 1 or
-                    attrs(matching_prefixes[0]).get("status") != "active" or int(loopnet.network_address) % 256 in (0, 255)):
-                report("provider-loopback", router, "Each PE needs its own active reserved /32 prefix and primary lo0.0 address in the global "
-                       "table, never the network or broadcast address of a /24.")
+                    attrs(unit).get("type") != "virtual" or refs(unit).get("parent") != lo or
+                    child("assigned_object", lo, "ip_address") or not address(unit, loopnet, CORE, 0, "tenant") or
+                    not primary(router, unit) or len(matching_prefixes) != 1 or attrs(matching_prefixes[0]).get("status") != "active"):
+                report("provider-loopback", router, "Each PE needs its own active reserved /32 prefix and primary lo0.0 address "
+                       "from the documentation loopback /27, in the global table.")
             supplies = {f"{router}/power/PEM {n}" for n in range(2)}
             if set(child("device", router, "power_port")) != supplies:
                 report("provider-psu-inventory", router, "Each MX204 must retain both real populated PEM 0 and PEM 1 supply inlets.")
@@ -789,62 +1004,75 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             for n in range(2):
                 port = f"{router}/power/PEM {n}"
                 bay, module = f"{router}/module-bay/Power Supply {n}", f"{router}/module/Power Supply {n}"
-                module_type = refs(module).get("module_type")
-                outlet = peers.get(port)
+                outlet = adjacent.get(port)
                 pdu, inlet = refs(outlet).get("device"), refs(outlet).get("power_port")
-                feed = peers.get(inlet)
+                feed = adjacent.get(inlet)
                 panel = refs(feed).get("power_panel")
                 good = (kind(bay) == "module_bay" and attrs(bay).get("position") == f"PEM {n}" and attrs(bay).get("enabled") is True and
                         refs(bay).get("device") == router and kind(module) == "module" and attrs(module).get("status") == "active" and
                         refs(module).get("device") == router and refs(module).get("module_bay") == bay and
-                        attrs(module_type).get("model") == "JPSU-650W-AC-AO" and refs(port).get("module") == module and
+                        attrs(refs(module).get("module_type")).get("model") == "JPSU-650W-AC-AO" and refs(port).get("module") == module and
                         attrs(port).get("type") == "iec-60320-c14" and type(attrs(port).get("allocated_draw")) is int and
                         attrs(port).get("allocated_draw") == quotient + (n < remainder) and
                         type(attrs(port).get("maximum_draw")) is int and attrs(port).get("maximum_draw") == allowance)
                 if not good:
-                    report("provider-psu-inventory", port, "Each installed AO module must own its matching named C14 inlet, with the exact split of chassis plus PoE/optics allowances and the full total on failover.")
+                    report("provider-psu-inventory", port, "Each installed AO module must own its matching named C14 inlet, with the exact "
+                           "split of chassis plus PoE/optics allowances and the full total on failover.")
                 if (kind(outlet) != "power_outlet" or kind(inlet) != "power_port" or refs(inlet).get("device") != pdu or
-                        kind(feed) != "power_feed" or kind(panel) != "power_panel" or not active_path(port) or not active_path(inlet) or
+                        kind(feed) != "power_feed" or kind(panel) != "power_panel" or not path_ok(port) or not path_ok(inlet) or
                         any(attrs(item).get("status") != "active" for item in (pdu, feed)) or
                         any(refs(item).get("rack") != refs(router).get("rack") for item in (pdu, feed)) or
-                        refs(pdu).get("location") != f"location/{sid}" or refs(panel).get("location") != f"location/{sid}" or refs(panel).get("site") != site):
-                    report("provider-power-path", port, "Each PE supply must reach an active PDU/feed in its own rack and a local upstream power panel.")
-                pdus.add(pdu); panels.add(panel)
+                        refs(panel).get("site") != site):
+                    report("provider-power-path", port, "Each PE supply must reach an active PDU/feed in its own cabinet and a local upstream power panel.")
+                pdus.add(pdu)
+                panels.add(panel)
             if None in pdus or None in panels or len(pdus) != 2 or len(panels) != 2:
                 report("provider-power-diversity", router, "The PE's populated supplies require two distinct real PDUs and upstream panels.")
         pair = f"pair/{sid}"
         a, b = f"{pe_a}/if/et-0/0/0", f"{pe_b}/if/et-0/0/0"
         routed(pair, (a, b), CORE)
-        if physical(a, b, 100000000):
-            edge(pair, pe_a, pe_b, 100000000)
-        else:
-            report("provider-pair-path", site, "A connected routed 100G local pair cable must join the two actual PE data ports.")
-        for side, router, number in (("a", pe_a, 1), ("b", pe_b, 2)):
-            a, b = f"device/{sid}/mgmt-01/if/{access_uplinks[number-1]}", f"{router}/if/xe-0/1/6"
-            routed(f"management/{sid}/{side}", (a, b), MANAGEMENT)
-            if not physical(a, b, 10000000):
-                report("provider-management-uplink", site, "PoP management requires two real routed 10G switch uplinks to the separate PE data ports.")
+        if not cabled(a, b, 100000000):
+            report("provider-pair-path", site, "A connected routed 100G inter-cabinet cord must join the two actual PE data ports.")
 
-    site_points = {site: (attrs(site)["latitude"], attrs(site)["longitude"]) for site in expected_sites
-                   if all(type(attrs(site).get(f)) in (int, float) for f in ("latitude", "longitude"))}
-    for key, (a, b) in spans.items():
-        port_a = f"{a}/if/et-0/0/{1 + transport_ports[a][key]}"
-        port_b = f"{b}/if/et-0/0/{1 + transport_ports[b][key]}"
-        provider = span_provider[key]
-        owned = provider == "provider/operator"
-        # Owned fiber is lit at the 100G port and purchases nothing; leased
-        # transport commits 10G unless the upgrade ledger names it.
-        commit = None if owned else LEASED_COMMIT
-        routed(key, (port_a, port_b), CORE)
-        if circuit(key, port_a, port_b, refs(a).get("site"), refs(b).get("site"), provider, 100000000, commit,
-                   account="provider-account/operator/fiber" if owned else f"provider-account/{provider}"):
-            edge(key, a, b, 100000000 if owned else commit)
-        if refs(key).get("type") != ("circuit-type/dark-fiber" if owned else "circuit-type/backbone"):
-            report("provider-circuit-path", key, "Same-metro spans are owned dark fiber; inter-metro spans are leased transport.")
-        ends = [site_points.get(refs(router).get("site")) for router in (a, b)]
-        if all(ends) and (attrs(key).get("distance") != round(_km(*ends) * ROUTE_FACTOR, 1) or attrs(key).get("distance_unit") != "km"):
-            report("provider-backbone-geography", key, "A span's route length must follow its two PoPs' actual positions.")
+    # --- Aggregation: straight intra-cabinet 4x10G LAGs and shut spare UNIs ---
+    attachments = {}  # target -> dict(pop, side, uni, subif, vlan)
+    for target, (sid, n) in targets.items():
+        customer, pop, _ = premises[sid]
+        side = side_of[target]
+        vid = SERVICE_VLAN_BASE + vid_slots[target]
+        attachments[target] = dict(pop=pop, side=side, vid=vid, vlan=f"vlan/pop-{pop}/{vid}/customer",
+                                   uni=f"device/pop-{pop}/agg-{side}/if/{unis[uni_slots[target]]}",
+                                   subif=f"device/pop-{pop}/pe-{side}/if/{PE_LAG}.{vid}")
+        homed_vlans[(pop, side)].add(f"vlan/pop-{pop}/{vid}/customer")
+    for pop in ordered:
+        sid = f"pop-{pop}"
+        for side in ("a", "b"):
+            agg, pe = f"device/{sid}/agg-{side}", f"device/{sid}/pe-{side}"
+            agg_lag, pe_lag = f"{agg}/if/{AGG_LAG}", f"{pe}/if/{PE_LAG}"
+            carried = homed_vlans[(pop, side)] | {nid_vlan[(pop, side)]}
+            members = [p for p in child("lag", agg_lag, "interface")]
+            pe_members = [p for p in child("lag", pe_lag, "interface")]
+            pairs = list(zip([f"{agg}/if/{name}" for name in agg_lag_ports], [f"{pe}/if/{name}" for name in PE_LAG_MEMBERS]))
+            if (len(members) < 2 or len(members) != LAG_MEMBERS or set(members) != {a for a, _ in pairs} or
+                    set(pe_members) != {b for _, b in pairs} or
+                    any(not cabled(a, b, LAG_MEMBER_KBPS) or refs(refs(a).get("device")).get("rack") != refs(refs(b).get("device")).get("rack")
+                        for a, b in pairs)):
+                report("provider-aggregation-lag", agg_lag, "Each side's aggregation switch reaches its own cabinet's PE on a "
+                       "straight four-member 10G LAG, member n to member n.")
+            for lag in (agg_lag, pe_lag):
+                if (attrs(lag).get("type") != "lag" or attrs(lag).get("mode") != "tagged" or attrs(lag).get("enabled") is not True or
+                        set(refs(lag).get("tagged_vlans") or []) != carried):
+                    report("provider-home-vlans", lag, "A side's LAG carries exactly the service VLANs homed on that side and "
+                           "its NID-management VLAN, never the other side's.")
+            used = {a["uni"] for a in attachments.values() if a["pop"] == pop and a["side"] == side}
+            for name in unis:
+                port = f"{agg}/if/{name}"
+                if port not in used and (adjacent.get(port) or attrs(port).get("enabled") is not False or vlans(port)):
+                    report("provider-port-mode", port, "An aggregation UNI with no attachment is shut, uncabled and carries no VLAN.")
+            # In-band management: em0 to the PoP management switch, addressed on em0.0.
+            infrastructure.append(agg)
 
+    # --- PoP management LAN, uplinks and the cellular out-of-band service ---
     def local_network(sid, role, vrf, tenant):
         site = f"site/{sid}"
         container = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
@@ -861,251 +1089,431 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     def svi(port, network, vlan, vrf, host, tenant, parent=None):
         return (kind(port) == "interface" and attrs(port).get("type") == "virtual" and attrs(port).get("enabled") is True and
-                vlans(port) == {vlan} and refs(port).get("parent") == parent and address(port, network, vrf, host, tenant))
+                refs(port).get("parent") == parent and address(port, network, vrf, host, tenant) and
+                (vlan is None or vlans(port) == {vlan}))
 
-    def console_management(sid, switch, network, vlan, vrf, tenant):
-        device = f"device/{sid}/console-01"
-        # The console server's cabled management port is its first catalog
-        # mgmt_only port (Opengear NET1), never a literal name.
-        console_mgmt = next((p["name"] for p in catalog.get("console-server", {}).get("interfaces", [])
-                             if p.get("mgmt_only")), None)
-        port, peer = f"{device}/if/{console_mgmt}", f"{switch}/if/{access_ports[-2]}"
-        if (not physical(port, peer) or vlans(port) != {vlan} or vlans(peer) != {vlan} or
-                not address(port, network, vrf, 3, tenant) or not primary(device, port)):
-            report("provider-console-management", device, "The local console server needs its active management address and actual VLAN channel into the routed site switch.")
-
-    used_pe_ports = {router: {f"{router}/if/et-0/0/0", f"{router}/if/xe-0/1/6", f"{router}/if/fxp0"} for router in routers}
-    for key, ends in spans.items():
-        for router in ends:
-            used_pe_ports[router].add(f"{router}/if/et-0/0/{1 + transport_ports[router][key]}")
-    console_net2 = [p["name"] for p in catalog.get("console-server", {}).get("interfaces", []) if p.get("mgmt_only")][1:2]
-    for pop in pops:
-        sid, vrf = f"pop-{pop}", MANAGEMENT
-        network, vlan = local_network(sid, "management", vrf, "tenant")
-        switch = f"device/{sid}/mgmt-01"
-        port = f"{switch}/if/Vlan10"
-        if not svi(port, network, vlan, vrf, 1, "tenant") or not primary(switch, port):
-            report("provider-management-gateway", switch, "The PoP console subnet requires its actual routed switch SVI and primary management address.")
-        console_management(sid, switch, network, vlan, vrf, "tenant")
-        dedicated = f"{switch}/if/{access_mgmt}"
-        if peers.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
-            report("provider-management-mode", dedicated, "The routed management switch must not duplicate its SVI subnet on the dedicated management port.")
-        # Out-of-band: each PE's dedicated fxp0 on the management LAN, on its own switch port.
+    for pop in ordered:
+        sid, site = f"pop-{pop}", f"site/pop-{pop}"
+        network, vlan = local_network(sid, "management", MANAGEMENT, "tenant")
+        switch, console = f"device/{sid}/mgmt-01", f"device/{sid}/console-01"
+        irb = f"{switch}/if/Vlan10"
+        if not svi(irb, network, None, MANAGEMENT, 1, "tenant") or not primary(switch, irb):
+            report("provider-management-gateway", switch, "The PoP management subnet requires its routed switch interface and primary management address.")
+        pdus = [f"device/{sid}/pdu-r0{n}-{feed}" for n in (1, 2) for feed in ("a", "b")]
+        plan_ports = [(f"device/{sid}/pe-a/if/fxp0", FXP0_HOSTS[0], False), (f"device/{sid}/pe-b/if/fxp0", FXP0_HOSTS[1], False),
+                      (f"device/{sid}/agg-a/if/em0", AGG_EM0_HOSTS[0], True), (f"device/{sid}/agg-b/if/em0", AGG_EM0_HOSTS[1], True),
+                      (f"{console}/if/{eth0}", OOB_HOST, True),
+                      *((f"{pdu}/if/{pdu_net}", host, True) for pdu, host in zip(pdus, PDU_HOSTS))]
+        # The switch port is the access switchport; the host port carries no
+        # 802.1Q mode (the shared view lends it its prefix's segment only).
+        for index, (port, host, is_primary) in enumerate(plan_ports):
+            peer = f"{switch}/if/{copper[index]}"
+            device = refs(port).get("device")
+            if (not cabled(port, peer) or vlans(peer) != {vlan} or attrs(peer).get("mode") != "access" or not vlans(port) <= {vlan} or attrs(port).get("mode") not in (None, "access") or
+                    not attrs(port).get("mgmt_only") or not address(port, network, MANAGEMENT, host, "tenant") or
+                    primary(device, port) is not is_primary):
+                report("provider-management-mode", port, "Every PE fxp0, aggregation em0, console server and switched PDU has its own "
+                       "management-switch copper port, access on the management VLAN, and its Carrier Management address.")
+        dedicated = next((f"{switch}/if/{p['name']}" for p in mgmt_spec.get("interfaces", []) if p.get("mgmt_only")), None)
+        if dedicated and (adjacent.get(dedicated) or child("assigned_object", dedicated, "ip_address")):
+            report("provider-management-mode", dedicated, "The routed management switch must not duplicate its subnet on its dedicated management port.")
         for index, side in enumerate(("a", "b")):
-            fxp0, peer = f"device/{sid}/pe-{side}/if/fxp0", f"{switch}/if/{access_ports[index]}"
-            if (not physical(fxp0, peer) or vlans(fxp0) != {vlan} or vlans(peer) != {vlan} or
-                    attrs(peer).get("mode") != "access" or not address(fxp0, network, vrf, FXP0_HOSTS[index], "tenant")):
-                report("provider-management-mode", fxp0, "Each PE's dedicated fxp0 needs its own cabled management-switch port and "
-                       "Carrier Management address on the PoP management LAN.")
-        # Independent console reachability: broadband from a third ISP on NET2.
-        key, console = f"circuit/oob/{pop}", f"device/{sid}/console-01"
-        net2 = f"{console}/if/{console_net2[0]}" if console_net2 else None
+            a, b = f"{switch}/if/{mgmt_uplinks[index]}", f"device/{sid}/pe-{side}/if/{PE_MGMT_PORT}"
+            routed(f"management/{sid}/{side}", (a, b), MANAGEMENT)
+            if not cabled(a, b, 10000000):
+                report("provider-management-uplink", site, "PoP management requires two real routed 10G switch uplinks to the separate PE ports.")
+        infrastructure.extend((switch, console))
+        # Cellular out-of-band: the LTE modem cannot be cabled (NetBox refuses
+        # it); it holds the cellular carrier's /30, and the circuit's local end
+        # is site-scoped and marked connected. No trace is claimed.
+        key, modem = f"circuit/oob/{pop}", f"{console}/if/{lte}"
         oob = ip_network((int(OOB_POOL.network_address) + 4 * oob_slots[pop], 30))
         prefix = f"prefix/link/oob/{pop}"
-        if (not circuit(key, net2, None, f"site/{sid}", "provider-network/oob", "provider/oob", 1000000, None,
-                        account="provider-account/provider/oob") or refs(key).get("type") != "circuit-type/out-of-band" or
+        terms = {attrs(t).get("term_side"): t for t in child("circuit", key, "circuit_termination")}
+        if (attrs(modem).get("type") != "lte" or adjacent.get(modem) or not address(modem, oob, OOB, 2, "tenant") or primary(console, modem) or
                 attrs(prefix).get("prefix") != str(oob) or refs(prefix).get("vrf") != OOB or attrs(prefix).get("status") != "active" or
-                not address(net2, oob, OOB, 2, "tenant") or primary(console, net2)):
-            report("provider-oob", key, "Each PoP console server needs its independent best-effort broadband circuit on its second "
-                   "management port, addressed from its reserved /30 in the out-of-band context, never the core or management VRF.")
+                kind(key) != "circuit" or refs(key).get("type") != "circuit-type/cellular-oob" or refs(key).get("provider") != "provider/oob" or
+                refs(key).get("provider_account") != "provider-account/provider/oob" or "commit_rate" in attrs(key) or
+                attrs(key).get("status") != "active" or set(terms) != {"A", "Z"} or
+                refs(terms["A"]).get("termination") != site or attrs(terms["A"]).get("mark_connected") is not True or adjacent.get(terms["A"]) or
+                refs(terms["Z"]).get("termination") != "provider-network/oob" or adjacent.get(terms["Z"])):
+            report("provider-oob", key, "Each PoP console server's uncabled LTE modem holds its reserved cellular /30 in the "
+                   "out-of-band context; the Cellular OOB circuit ends site-scoped and marked connected, never traced.")
+        for term in terms.values():
+            cross_connect(term, None, refs(term).get("termination"), "provider/oob")
 
-    def service_port(pop, target):
-        slot = service_ports[pop][target]
-        router = f"device/pop-{pop}/pe-{'a' if slot % 2 == 0 else 'b'}"
-        port = f"{router}/if/xe-0/1/{slot // 2}"
-        used_pe_ports[router].add(port)
-        return router, port
+    # --- Backbone spans, transit and the NOC ---
+    adjacency = {router: [] for router in routers}
+    capacity = {}
 
-    attachments, customer_peerings, transit_peerings = {}, {}, {}
-    stages = {sid: _stage(customer, pop) for sid, (customer, pop, _) in premises.items()}
-    for sid, (customer, pop, ordinal) in premises.items():
-        now[0] = stages[sid]
-        tenant, vrf = f"tenant/cust-{customer['key']}", f"vrf/customer/{customer['key']}"
-        cpe, switch = f"device/{sid}/edge-01", f"device/{sid}/access-01"
-        cpe_wan = f"{cpe}/if/wan1"
-        router, port = service_port(pop, sid)
-        attachments[sid] = router
-        hub = pop == customer["hub_pop"] and ordinal == 1
-        rate = customer["hub_commit_mbps"] if hub else next(t for t in recipe["wan_tiers_mbps"] if Decimal(t) * usable >= customer["site_peak_mbps"])
-        # A hub is dual-homed: wan1 and wan2 into both PEs of its PoP.
-        homes = [(sid, cpe_wan, router, port)]
-        if hub:
-            second, second_port = service_port(pop, f"{sid}/b")
-            homes.append((f"{sid}/b", f"{cpe}/if/wan2", second, second_port))
-            if second == router:
-                report("provider-hub-homing", f"site/{sid}", "A hub's two access circuits land on the two different PEs of its PoP.")
-        for target, wan, pe, pe_port in homes:
-            key = f"circuit/customer/{target}"
-            customer_peerings[target] = (pe, pe_port, cpe, wan, tenant, customer["key"], key, stages[sid])
-            routed(key, (wan, pe_port), vrf, tenant)
-            circuit(key, wan, pe_port, f"site/{sid}", f"site/pop-{pop}", "provider/operator", 1000000, rate * 1000,
-                    tenant, f"provider-account/customer/{customer['key']}")
-            ends = [site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")]
-            route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
-            if (attrs(key).get("distance"), attrs(key).get("distance_unit")) != ((route, "km") if route else (None, None)):
-                report("provider-access-geography", key, "An access circuit records the route length from its premises to its serving PoP.")
-            # Nothing not yet in service looks installed, and a withdrawing
-            # circuit names the day it is disconnected.
-            module = refs(pe_port).get("module")
-            want = PENDING_OPTIC.get(stages[sid], "active")
-            if kind(module) == "module" and (attrs(module).get("status") != want or ("serial" in attrs(module)) == (want == "planned")):
-                report("provider-lifecycle-equipment", module, "The serving PE optic of a premises not yet in service is planned "
-                       "without a serial (onboarding customer) or staged (provisioning); otherwise it is installed.")
-            try:
-                ends_on = date.fromisoformat(attrs(key)["termination_date"]) if "termination_date" in attrs(key) else None
-            except (TypeError, ValueError):
-                ends_on = date.min
-            if (ends_on is not None) != (stages[sid] == "decommissioning") or (ends_on is not None and ends_on <= date.fromisoformat(recipe["as_of"])):
-                report("provider-lifecycle-equipment", key, "Only a deprovisioning access circuit carries its scheduled disconnect date, after as_of.")
-        if (stages[sid] == "planned") == ("serial" in attrs(cpe)):
-            report("provider-lifecycle-equipment", cpe, "A planned CE has not shipped and carries no serial; every other CE does.")
-        lan = f"{cpe}/if/port1"
-        if customer["lan_endpoints"]:
-            clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
-            management, management_vlan = local_network(sid, "management", vrf, tenant)
-            upstream = f"{switch}/if/{access_ports[-1]}"
-            if (not physical(lan, upstream) or any(vlans(p) != {management_vlan, clients_vlan} or attrs(p).get("mode") != "tagged" for p in (lan, upstream)) or
-                    not svi(f"{cpe}/if/Management", management, management_vlan, vrf, 1, tenant, lan) or
-                    not svi(f"{cpe}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
-                    not primary(cpe, f"{cpe}/if/Management") or not svi(f"{switch}/if/Vlan10", management, management_vlan, vrf, 2, tenant) or
-                    not primary(switch, f"{switch}/if/Vlan10")):
-                report("provider-customer-gateway", cpe, "Customer LAN requires the real CPE/switch trunk, separate addressed local management/client gateways and the switch management SVI.")
-        else:
-            # CE only: port1 is a routed handoff into the customer's own LAN,
-            # numbered from the customer's own plan, and the CE is managed on
-            # its own carrier /32 loopback in the customer VRF. The carrier
-            # inventories no customer segment, VLAN, range or site block.
-            loop = f"{cpe}/if/Management"
-            block = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
-            management = ip_network((int(block.network_address) + 1, 32))
-            prefix = f"prefix/{sid}/management"
-            lan_prefix = f"prefix/{sid}/lan"
-            slot = lan_slots.get(customer["key"], {}).get(sid)
-            plans = [plan for plan in CUSTOMER_LAN_PLANS if not plan.overlaps(pool)]
-            routed_lan = (ip_network((int(plans[customer_slots[customer["key"]] % len(plans)].network_address) + 256 * (slot + 1), 24))
-                          if type(slot) is int and plans else None)
-            if (routed_lan is None or attrs(lan_prefix).get("prefix") != str(routed_lan) or refs(lan_prefix).get("vrf") != vrf or
-                    refs(lan_prefix).get("tenant") != tenant or refs(lan_prefix).get("scope_site") != f"site/{sid}" or
-                    refs(lan_prefix).get("vlan") or attrs(lan_prefix).get("status") != life("prefix") or
-                    attrs(lan_prefix).get("description") != f"{titleize(customer['key'])} LAN at {attrs(f'site/{sid}').get('name')}" or
-                    any(routed_lan.overlaps(ip_network(a)) for a in (*PUBLIC_AGGREGATES, str(pool))) or
-                    peers.get(lan) or vlans(lan) or attrs(lan).get("mode") or not address(lan, routed_lan, vrf, 1, tenant)):
-                report("provider-customer-lan", cpe, "A CE-only premises routes its customer's own LAN /24, from the customer's "
-                       "plan outside every carrier pool, on port1 in the customer VRF; no switchport or VLAN carries it.")
-            if (any(kind(k) for k in (f"vlan/{sid}/clients", f"prefix/{sid}/clients", f"prefix/{sid}/reservation",
-                                      f"{cpe}/if/Clients", f"vlan/{sid}/management")) or
-                    any(refs(r).get("vrf") == vrf and ip_network(attrs(lan_prefix).get("prefix") or "0.0.0.0/32").overlaps(
-                        ip_network(attrs(r).get("start_address", "0.0.0.0/32"), strict=False)) for r in by_kind["ip_range"])):
-                report("provider-customer-lan", cpe, "A carrier records no segment, VLAN, address range or site block for a "
-                       "customer LAN it does not run.")
-            if (kind(loop) != "interface" or attrs(loop).get("type") != "virtual" or refs(loop).get("parent") or vlans(loop) or
-                    not address(loop, management, vrf, 0, tenant) or not primary(cpe, loop) or
-                    attrs(prefix).get("prefix") != str(management) or refs(prefix).get("vrf") != vrf or
-                    refs(prefix).get("vlan") or refs(prefix).get("scope_site") != f"site/{sid}"):
-                report("provider-customer-gateway", cpe, "A CE-only premises is managed on its own carrier /32 loopback in the "
-                       "customer VRF; no management VLAN or switched segment exists without a managed LAN.")
-        if objects.get(f"device/{sid}/console-01"):
-            report("provider-device-inventory", sid, "A single-CE premises carries no console server.")
-        for dedicated in (f"{cpe}/if/mgmt", f"{switch}/if/{access_mgmt}"):
-            if peers.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
-                report("provider-management-mode", dedicated, "Customer management uses the routed local LAN; dedicated management ports remain unused.")
-        for n in range(1, customer["lan_endpoints"] + 1):
-            device = f"device/{sid}/pc-{n:03}"
-            clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
-            port, access = f"{device}/if/eth0", f"{switch}/if/{access_ports[n-1]}"
-            if (not physical(port, access) or any(vlans(p) != {clients_vlan} for p in (port, access)) or
-                    not address(port, clients, vrf, tenant=tenant) or not primary(device, port)):
-                report("provider-customer-endpoint", device, "Every requested PC needs its own active access channel, customer VLAN/VRF and actual primary address.")
-            room, closet = f"location/{sid}/office-01", f"location/{sid}"
-            point = [10 + 2 * ((n-1) % 4), 19 + 2 * ((n-1) // 4), 0.8]
-            length = math.ceil(sum(abs(point[i] - (24, 18, 0)[i]) for i in range(3)) + 10)
-            metadata = objects.get(device, {}).get("meta", {})
-            placement = dict(room=room, function="office", floor=1, position_m=point, cable_origin=closet)
-            if (metadata.get("placement") != placement or metadata.get("access_channel_length_m") != length or
-                    path_lengths.get(port) != length or not 0 < length <= 80):
-                report("provider-customer-route", device, "Customer desk positions and actual local channel lengths must follow the fixed office geometry.")
-            members = component_members.get(component_of.get(port), ())
-            passive = {refs(p).get("device") for p in members if kind(p) in {"front_port", "rear_port"}}
-            if recipe["patching"] == "panels":
-                outlets = {d for d in passive if refs(d).get("device_type") == "hardware/wall-outlet"}
-                panels = {d for d in passive if refs(d).get("device_type") == "hardware/patch-panel"}
-                if (len(passive) != 2 or len(outlets) != 1 or len(panels) != 1 or
-                        len({cable_of[p] for p in members if p in cable_of}) != 3 or
-                        any(refs(d).get("location") != room for d in outlets) or any(refs(d).get("location") != closet for d in panels)):
-                    report("provider-customer-patching", device, "Panel channels must use this customer's office outlet and local equipment-room panel.")
-            elif len(members) != 2:
-                report("provider-customer-patching", device, "Direct customer access requires exactly one real cable channel.")
-        used_copper = {f"{switch}/if/{access_ports[n-1]}" for n in range(1, customer["lan_endpoints"] + 1)} | {
-            f"{switch}/if/{access_ports[-1]}"} if customer["lan_endpoints"] else set()
-        actual_copper = {p for p in child("device", switch, "interface") if attrs(p).get("type") == "1000base-t" and peers.get(p)}
-        if actual_copper != used_copper or Decimal(len(used_copper)) > len(access_ports) * usable:
-            report("provider-customer-port-capacity", switch, "Actual customer access attachments must use the finite fixed ports and retain declared copper-port reserve.")
+    def edge(key, a, b, rate):
+        if a in adjacency and b in adjacency:
+            adjacency[a].append((key, b, key))
+            adjacency[b].append((key, a, key))
+            capacity[key] = rate
 
-    now[0] = "active"
+    for pop in pops:
+        sid = f"pop-{pop}"
+        if cabled(f"device/{sid}/pe-a/if/et-0/0/0", f"device/{sid}/pe-b/if/et-0/0/0", 100000000):
+            edge(f"pair/{sid}", f"device/{sid}/pe-a", f"device/{sid}/pe-b", 100000000)
+    site_points = {site: (attrs(site)["latitude"], attrs(site)["longitude"]) for site in expected_sites
+                   if all(type(attrs(site).get(f)) in (int, float) for f in ("latitude", "longitude"))}
+    for key, (a, b) in spans.items():
+        port_a = f"{a}/if/et-0/0/{1 + transport_ports[a][key]}"
+        port_b = f"{b}/if/et-0/0/{1 + transport_ports[b][key]}"
+        provider = span_provider[key]
+        owned = provider == "provider/operator"
+        commit = None if owned else LEASED_COMMIT
+        routed(key, (port_a, port_b), CORE)
+        if circuit(key, port_a, port_b, refs(a).get("site"), refs(b).get("site"), provider, 100000000, commit,
+                   account="provider-account/operator/fiber" if owned else f"provider-account/{provider}",
+                   circuit_type="circuit-type/dark-fiber" if owned else "circuit-type/backbone"):
+            edge(key, a, b, 100000000 if owned else commit)
+        ends = [site_points.get(refs(router).get("site")) for router in (a, b)]
+        if all(ends) and (attrs(key).get("distance") != round(_km(*ends) * ROUTE_FACTOR, 1) or attrs(key).get("distance_unit") != "km"):
+            report("provider-backbone-geography", key, "A span's route length must follow its two PoPs' actual positions.")
+    transit_peerings = {}
+    for index, side in enumerate(("a", "b")):
+        pop = ordered[index]
+        router = f"device/pop-{pop}/pe-{side}"
+        port = f"{router}/if/{PE_TRANSIT_PORT}"
+        key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
+        transit_peerings[side] = (router, port, provider, key)
+        routed(key, (port,), CORE, hosts=(1,))
+        circuit(key, port, None, f"site/pop-{pop}", f"provider-network/transit/{side}", provider, 10000000, 10000000,
+                account=f"provider-account/{provider}", circuit_type="circuit-type/transit")
+        container = f"prefix/upstream/transit-{side}"
+        if (attrs(container).get("prefix") != str(UPSTREAM_POOLS[side]) or "tenant" in refs(container) or
+                any(link_network[key].subnet_of(ip_network(a)) for a in (str(p) for p in PUBLIC_POOLS.values()))):
+            report("provider-public-space", key, "A transit /31 is numbered from its upstream's own recorded assignment, "
+                   "which carries no operator tenancy and sits outside the operator's backbone pools.")
     noc_edges = set()
     for side in ("a", "b"):
         pop = recipe[f"noc_pop_{side}"]
-        if service_ports[pop].get(f"noc/{side}") != 0:
-            report("provider-noc-reservation", "site/dc-01", "Each NOC handoff must retain the first reserved service position at its selected PoP.")
-        router, pe = service_port(pop, f"noc/{side}")
+        router = f"device/pop-{pop}/pe-{side}"
+        pe = f"{router}/if/{PE_NOC_PORT}"
         device = f"device/dc-01/edge-001-{side}"
         port = f"{device}/if/wan1"
         noc_edges.add(device)
         key = f"circuit/noc/{side}"
         routed(key, (port, pe), MANAGEMENT)
-        # Inside the NOC's own metro the operator runs the access tail; into
-        # another metro it leases a 1G private line from a transport carrier.
         local = pops[pop]["metro"] == pops[recipe["noc_pop_a"]]["metro"]
         provider = "provider/operator" if local else f"provider/transport-{side}"
         if (not circuit(key, port, pe, "site/dc-01", f"site/pop-{pop}", provider, 1000000, 1000000,
-                        account="provider-account/operator/noc" if local else f"provider-account/{provider}") or
+                        account="provider-account/operator/noc" if local else f"provider-account/{provider}",
+                        circuit_type="circuit-type/noc-access") or
                 (not local and not attrs(key).get("description", "").startswith("1G Ethernet private line")) or
-                refs(device).get("role") != "role/wan-edge" or
-                refs(device).get("device_type") != "hardware/edge" or refs(device).get("site") != "site/dc-01" or
-                attrs(device).get("status") != "active" or attrs(port).get("type") != "1000base-t" or router not in adjacency):
-            report("provider-noc-wan", key, "The NOC needs each distinct real active 1G edge/circuit path to its selected PoP and independently owned provider /31.")
+                refs(device).get("role") != "role/wan-edge" or refs(device).get("device_type") != "hardware/edge" or
+                refs(device).get("site") != "site/dc-01" or attrs(device).get("status") != "active" or
+                attrs(port).get("type") != "1000base-t"):
+            report("provider-noc-wan", key, "The NOC needs each distinct real active 1G edge/circuit path to its own PE's "
+                   "dedicated NOC port, an owned link in the NOC's metro or a leased private line otherwise.")
     if len({refs(d).get("rack") for d in noc_edges}) != 2:
         report("provider-noc-diversity", "site/dc-01", "The two NOC provider attachments must retain separate local edge racks.")
-    for index, side in enumerate(("a", "b")):
-        pop = ordered[index]
-        router = f"device/pop-{pop}/pe-{side}"
-        port = f"{router}/if/xe-0/1/7"
-        used_pe_ports[router].add(port)
-        key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
-        transit_peerings[side] = (router, port, provider, key)
-        # The upstream holds the even address of the /31 it assigned.
-        routed(key, (port,), CORE, hosts=(1,))
-        circuit(key, port, None, f"site/pop-{pop}", f"provider-network/transit/{side}", provider, 10000000, 10000000,
-                account=f"provider-account/{provider}")
-        container = f"prefix/upstream/transit-{side}"
-        if (attrs(container).get("prefix") != str(UPSTREAM_POOLS[side]) or "tenant" in refs(container) or
-                any(link_network[key].subnet_of(ip_network(a)) for a in PUBLIC_AGGREGATES)):
-            report("provider-public-space", key, "A transit /31 is numbered from its upstream's own recorded assignment, "
-                   "which carries no operator tenancy and sits outside every operator aggregate.")
-    if by_kind["circuit"] != (set(spans) | {f"circuit/customer/{sid}" for sid in premises} |
-                              {f"circuit/customer/{sid}/b" for sid in premises if sid == hub_premises(sid)} | {f"circuit/noc/{s}" for s in ("a", "b")} |
-                              {f"circuit/transit/{s}" for s in ("a", "b")} | {f"circuit/oob/{pop}" for pop in pops}):
-        report("provider-circuit-inventory", "plan", "Physical circuit inventory must exactly cover requested backbone, customer, NOC and external transit attachments.")
-    for router, required in used_pe_ports.items():
-        actual = {p for p in child("device", router, "interface") if peers.get(p)}
-        if actual != required:
-            report("provider-port-use", router, "Only the exact reserved physical PE ports may be cabled; unused service/transport/transit positions remain free.")
 
+    # --- Customer premises: NID, CE, MPOE cabinet and the attachment ---
+    code = _operator_code(recipe["name"])
+    stages = {sid: _stage(customer, pop) for sid, (customer, pop, _) in premises.items()}
+    customer_peerings, flows, side_load = {}, Counter(), Counter()
+    first_attachment = {}
+    for target, (sid, ordinal) in sorted(targets.items()):
+        customer, pop, number = premises[sid]
+        now[0] = stages[sid]
+        service, key = customer["service"], customer["key"]
+        tenant = f"tenant/cust-{key}"
+        hub = service == "private-l3" and pop == customer["hub_pop"] and number == 1
+        rate = rate_of(customer, pop, hub)
+        handoff = 1000 if service == "private-l3" else _handoff(rate, usable)
+        att = attachments[target]
+        side, uni, subif, vlan = att["side"], att["uni"], att["subif"], att["vlan"]
+        nid = f"device/{sid}/nid-{ordinal:02}"
+        alias = "nid-10g" if handoff > 1000 else "nid"
+        spec = catalog.get(alias, {})
+        nni = f"{nid}/if/{spec.get('nni_port')}"
+        nid_uni = f"{nid}/if/{spec.get('uni_port')}"
+        router = f"device/pop-{pop}/pe-{side}"
+        if ordinal == 1:
+            first_attachment[sid] = router
+        circuit_key = f"circuit/customer/{target}"
+        # The access circuit: NID NNI -> circuit -> OSP panel -> home-side UNI.
+        cid = f"{code}-{CID_CODES[service]}-{allocations[sid]:05d}{'-2' if ordinal == 2 else ''}"
+        circuit(circuit_key, nni, uni, f"site/{sid}", f"site/pop-{pop}", "provider/operator", handoff * 1000, rate * 1000,
+                tenant, f"provider-account/customer/{key}", circuit_type=f"circuit-type/{service}-access",
+                texts={"A": f"Customer demarcation, {attrs(f'location/{sid}').get('name')}",
+                       "Z": f"Access fibre landed on AGG-{side.upper()} at {attrs(f'site/pop-{pop}').get('name')}"})
+        if attrs(circuit_key).get("cid") != cid:
+            report("provider-circuit-path", circuit_key, "An access circuit's ID is the operator code, service and premises allocation.")
+        ends = [site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")]
+        route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
+        if (attrs(circuit_key).get("distance"), attrs(circuit_key).get("distance_unit")) != ((route, "km") if route else (None, None)):
+            report("provider-access-geography", circuit_key, "An access circuit records the route length from its premises to its serving PoP.")
+        try:
+            ends_on = date.fromisoformat(attrs(circuit_key)["termination_date"]) if "termination_date" in attrs(circuit_key) else None
+        except (TypeError, ValueError):
+            ends_on = date.min
+        if (ends_on is not None) != (stages[sid] == "decommissioning") or (ends_on is not None and ends_on <= date.fromisoformat(recipe["as_of"])):
+            report("provider-lifecycle-equipment", circuit_key, "Only a deprovisioning access circuit carries its scheduled disconnect date, after as_of.")
+        # Home side: the alternating ledger, the side's UNI, VLAN and PE unit.
+        in_service = stages[sid] in ("active", "decommissioning")
+        epl = service == "epl"
+        mode_ok = ((attrs(uni).get("mode") == "q-in-q" and refs(uni).get("qinq_svlan") == vlan and not refs(uni).get("tagged_vlans"))
+                   if epl else (attrs(uni).get("mode") == "tagged" and set(refs(uni).get("tagged_vlans") or []) == {vlan, nid_vlan[(pop, side)]}))
+        if (kind(vlan) != "vlan" or attrs(vlan).get("vid") != att["vid"] or refs(vlan).get("site") != f"site/pop-{pop}" or
+                refs(vlan).get("tenant") != tenant or attrs(vlan).get("status") != life("vlan") or
+                attrs(vlan).get("qinq_role") != ("svlan" if epl else None) or not mode_ok or
+                attrs(uni).get("enabled") is not in_service or attrs(uni).get("speed") != handoff * 1000 or
+                kind(subif) != "interface" or attrs(subif).get("type") != "virtual" or refs(subif).get("parent") != f"{router}/if/{PE_LAG}" or
+                attrs(subif).get("mode") != "access" or refs(subif).get("untagged_vlan") != vlan or
+                attrs(subif).get("enabled") is not in_service or
+                refs(subif).get("vrf") != (f"vrf/customer/{key}" if service == "private-l3" else None)):
+            report("provider-attachment", target, "An attachment is homed on one side: its service VLAN at the PoP, the UNI "
+                   "(tagged with the side's NID management, or port-based Q-in-Q for an EPL) on that side's aggregation "
+                   "switch and the ae1.<vid> unit on that side's PE; a premises not yet in service keeps both shut.")
+        # Physical lifecycle of the serving optic at the UNI.
+        module = refs(uni).get("module")
+        want = PENDING_OPTIC.get(stages[sid], "active")
+        if kind(module) == "module" and (attrs(module).get("status") != want or ("serial" in attrs(module)) == (want == "planned")):
+            report("provider-lifecycle-equipment", module, "The serving optic of a premises not yet in service is planned "
+                   "without a serial (onboarding customer) or staged (provisioning); otherwise it is installed.")
+        # The NID: carrier demarcation, managed in-band from its home side's /25.
+        nid_net = ip_network((int(pool.broadcast_address) - 65535 + 32768 + 256 * nid_slots[pop] + 128 * "ab".index(side), 25))
+        management = f"{nid}/if/Management"
+        racked = service == "private-l3" or (service == "dia" and customer["managed"])
+        rack = f"rack/{sid}/network-01"
+        if (kind(nid) != "device" or refs(nid).get("role") != "role/nid" or refs(nid).get("tenant") != "tenant" or
+                refs(nid).get("device_type") != f"hardware/{alias}" or attrs(nid).get("status") != life("device") or
+                refs(nid).get("location") != f"location/{sid}" or (refs(nid).get("rack") == rack) is not racked or
+                (not racked and (refs(nid).get("rack") or attrs(nid).get("position") is not None)) or
+                attrs(nid).get("description") != f"Carrier demarcation at {attrs(f'site/{sid}').get('name')}, homed on "
+                                                  f"{titleize(pop)} AGG-{side.upper()}" or
+                attrs(management).get("type") != "virtual" or
+                not address(management, nid_net, MANAGEMENT, 2 + nid_hosts.get(nid, -3), "tenant") or not primary(nid, management) or
+                any(attrs(p).get("mark_connected") is not True or adjacent.get(p) for p in child("device", nid, "power_port"))):
+            report("provider-nid", nid, "Every attachment ends on its own carrier NID (the 10G tier past a 1G handoff), managed "
+                   "in-band from its home side's NID /25, on customer power: racked in the MPOE cabinet where a carrier CE "
+                   "stands beside it, otherwise unracked at the demarcation.")
+        if epl and attrs(management).get("description") != "In-band management carried inside the service S-VLAN":
+            report("provider-nid", management, "An EPL NID's management is declared as carried inside the service S-VLAN.")
+        # Load on the home side's LAG; only in-service premises offer traffic.
+        if stages[sid] == "active":
+            side_load[(pop, side)] += rate if (service != "private-l3" or hub) else _site_peak(customer, pop)
+        if service == "private-l3":
+            vrf = f"vrf/customer/{key}"
+            edge_device = f"device/{sid}/edge-01"
+            wan = f"{edge_device}/if/{catalog.get('edge' if hub else 'ce-small', {}).get('wan_ports', [None, None])[ordinal - 1]}"
+            routed(circuit_key, (wan, subif), vrf, tenant)
+            if not cabled(wan, nid_uni):
+                report("provider-customer-handoff", wan, "The CE's WAN port is one labelled copper hop to its NID's customer port.")
+            customer_peerings[target] = (router, subif, edge_device, wan, tenant, key, circuit_key, stages[sid])
+        elif service == "dia":
+            block = DIA_NETWORKS[dia_slots[sid]]
+            assignment = f"prefix/dia/{sid}"
+            if (attrs(assignment).get("prefix") != str(block) or refs(assignment).get("tenant") != tenant or
+                    refs(assignment).get("vrf") or attrs(assignment).get("status") != life("prefix")):
+                report("provider-dia-address", assignment, "Each DIA premises takes its reserved documentation /29 in the global table.")
+            if customer["managed"]:
+                link = ip_network((int(DIA_LINK_POOL.network_address) + 2 * dia_links[sid], 31))
+                edge_device = f"device/{sid}/edge-01"
+                wan = f"{edge_device}/if/{catalog['ce-small']['wan_ports'][0]}"
+                lan = f"{edge_device}/if/{catalog['ce-small']['lan_ports'][0]}"
+                if (attrs(f"prefix/dia/link/{sid}").get("prefix") != str(link) or not address(subif, link, None, 0, tenant) or
+                        not address(wan, link, None, 1, tenant) or not address(lan, block, None, 1, tenant) or
+                        attrs(lan).get("mark_connected") is not True or adjacent.get(lan) or not cabled(wan, nid_uni)):
+                    report("provider-dia-address", sid, "Managed DIA joins PE and CE on a public /31, routes the /29 to the CE's "
+                           "marked-connected LAN handoff, and cables the CE to its NID.")
+            elif (not address(subif, block, None, 1, tenant) or attrs(nid_uni).get("mark_connected") is not True or
+                  adjacent.get(nid_uni) or attrs(nid_uni).get("label") != "Customer-owned firewall"):
+                report("provider-dia-address", sid, "Unmanaged DIA routes the /29 on the PE unit (.1) and marks the NID's "
+                       "customer port connected to the customer-owned firewall the carrier does not inventory.")
+        else:
+            if (child("assigned_object", subif, "ip_address") or attrs(nid_uni).get("mark_connected") is not True or
+                    adjacent.get(nid_uni) or attrs(nid_uni).get("label") != "Customer Ethernet equipment"):
+                report("provider-epl", sid, "An EPL end carries no address on its PE unit and marks the NID's customer port "
+                       "connected to customer Ethernet equipment the carrier does not inventory.")
+    now[0] = "active"
+    for (pop, side), load in sorted(side_load.items()):
+        for members in (LAG_MEMBERS, LAG_MEMBERS - 1):
+            if Decimal(load) > Decimal(members * LAG_MEMBER_KBPS // 1000) * usable:
+                report("provider-aggregation-capacity", f"device/pop-{pop}/agg-{side}",
+                       f"{load} Mbps of in-service declared access peaks exceed the {members}x10G AGG-PE LAG after reserve "
+                       f"({'steady state' if members == LAG_MEMBERS else 'after one member loss'}).")
+
+    # Premises kit: exact devices, MPOE cabinet and the carrier CE.
+    for sid, (customer, pop, number) in premises.items():
+        now[0] = stages[sid]
+        service, key = customer["service"], customer["key"]
+        site, tenant = f"site/{sid}", f"tenant/cust-{key}"
+        hub = service == "private-l3" and pop == customer["hub_pop"] and number == 1
+        nids = {f"device/{sid}/nid-0{n}" for n in ((1, 2) if hub else (1,))}
+        ce = f"device/{sid}/edge-01"
+        has_ce = service == "private-l3" or (service == "dia" and customer["managed"])
+        lan_switch = service == "private-l3" and customer["lan_endpoints"] > 0
+        expected = nids | ({ce} if has_ce else set())
+        if lan_switch:
+            expected |= {f"device/{sid}/access-01"} | {f"device/{sid}/pc-{n:03}" for n in range(1, customer["lan_endpoints"] + 1)}
+        actual = {d for d in child("site", site, "device") if refs(d).get("role") not in {"role/patch-panel", "role/wall-outlet"}}
+        racks = child("site", site, "rack")
+        rack = f"rack/{sid}/network-01"
+        if actual != expected:
+            report("provider-device-inventory", site, "A premises inventories exactly its kit: NID(s), the carrier CE where the "
+                   "service is managed, and a requested managed LAN.")
+        for device in sorted(expected):
+            room = f"location/{sid}/office-01" if "/pc-" in device else f"location/{sid}"
+            if refs(device).get("location") != room or refs(device).get("site") != site:
+                report("provider-device-inventory", device, "Premises equipment stands in its MPOE room; workstations in the customer office.")
+        if has_ce:
+            ce_alias = "edge" if hub else "ce-small"
+            if (refs(ce).get("device_type") != f"hardware/{ce_alias}" or refs(ce).get("role") != "role/customer-edge" or
+                    refs(ce).get("tenant") != tenant or attrs(ce).get("status") != life("device") or refs(ce).get("rack") != rack or
+                    attrs(ce).get("position") is None or
+                    any(attrs(p).get("mark_connected") is not True or adjacent.get(p) for p in child("device", ce, "power_port"))):
+                report("provider-customer-edge", ce, "A managed premises' carrier CE (the 100F at a hub, the small CE elsewhere) "
+                       "stands in the MPOE cabinet on customer power.")
+            if (racks != [rack] or attrs(rack).get("name") != "MPOE-1" or refs(rack).get("rack_type") != "rack-type/mpoe-cabinet" or
+                    refs(rack).get("tenant") != "tenant" or refs(rack).get("location") != f"location/{sid}" or
+                    attrs(rack).get("status") != life("rack") or child("rack", rack, "power_feed") or child("site", site, "power_panel")):
+                report("provider-mpoe-cabinet", site, "A premises with two or more carrier devices holds them in one carrier MPOE "
+                       "wall cabinet on customer power: no feed, PDU or panel is inventoried.")
+        elif racks or child("site", site, "power_panel"):
+            report("provider-mpoe-cabinet", site, "A single-NID demarcation stands unracked: no cabinet, feed or panel.")
+        if (stages[sid] == "planned") == ("serial" in attrs(ce if has_ce else f"device/{sid}/nid-01")):
+            report("provider-lifecycle-equipment", ce if has_ce else f"device/{sid}/nid-01",
+                   "Planned premises equipment has not shipped and carries no serial; every other unit does.")
+        if service != "private-l3":
+            continue
+        vrf = f"vrf/customer/{key}"
+        lan = f"{ce}/if/{catalog.get('edge' if hub else 'ce-small', {}).get('lan_ports', [None])[0]}"
+        if lan_switch:
+            switch = f"device/{sid}/access-01"
+            clients, clients_vlan = local_network(sid, "clients", vrf, tenant)
+            management, management_vlan = local_network(sid, "management", vrf, tenant)
+            upstream = f"{switch}/if/{access_ports[-1]}"
+            if (not cabled(lan, upstream) or any(vlans(p) != {management_vlan, clients_vlan} or attrs(p).get("mode") != "tagged" for p in (lan, upstream)) or
+                    not svi(f"{ce}/if/Management", management, management_vlan, vrf, 1, tenant, lan) or
+                    not svi(f"{ce}/if/Clients", clients, clients_vlan, vrf, 1, tenant, lan) or
+                    not primary(ce, f"{ce}/if/Management") or not svi(f"{switch}/if/Vlan10", management, management_vlan, vrf, 2, tenant) or
+                    not primary(switch, f"{switch}/if/Vlan10")):
+                report("provider-customer-gateway", ce, "Customer LAN requires the real CE/switch trunk, separate addressed local "
+                       "management/client gateways and the switch management SVI.")
+            for n in range(1, customer["lan_endpoints"] + 1):
+                device = f"device/{sid}/pc-{n:03}"
+                port, access = f"{device}/if/eth0", f"{switch}/if/{access_ports[n-1]}"
+                members = component_members.get(component_of.get(port), ())
+                terminal = [p for p in members if kind(p) not in ("front_port", "rear_port") and p != port]
+                if (terminal != [access] or not path_ok(port) or any(vlans(p) != {clients_vlan} for p in (port, access)) or
+                        not address(port, clients, vrf, tenant=tenant) or not primary(device, port)):
+                    report("provider-customer-endpoint", device, "Every requested PC needs its own active access channel, customer VLAN/VRF and actual primary address.")
+                room, closet = f"location/{sid}/office-01", f"location/{sid}"
+                point = [10 + 2 * ((n-1) % 4), 19 + 2 * ((n-1) // 4), 0.8]
+                length = math.ceil(sum(abs(point[i] - (24, 18, 0)[i]) for i in range(3)) + 10)
+                placement = dict(room=room, function="office", floor=1, position_m=point, cable_origin=closet)
+                if (meta(device).get("placement") != placement or meta(device).get("access_channel_length_m") != length or
+                        path_lengths.get(port) != length or not 0 < length <= 80):
+                    report("provider-customer-route", device, "Customer desk positions and actual local channel lengths must follow the fixed office geometry.")
+                passive = {refs(p).get("device") for p in members if kind(p) in {"front_port", "rear_port"}}
+                if recipe["patching"] == "panels":
+                    outlets = {d for d in passive if refs(d).get("device_type") == "hardware/wall-outlet"}
+                    panels = {d for d in passive if refs(d).get("device_type") == "hardware/patch-panel"}
+                    if (len(passive) != 2 or len(outlets) != 1 or len(panels) != 1 or
+                            any(refs(d).get("location") != room for d in outlets) or any(refs(d).get("location") != closet for d in panels)):
+                        report("provider-customer-patching", device, "Panel channels must use this customer's office outlet and local equipment-room panel.")
+                elif len(members) != 2:
+                    report("provider-customer-patching", device, "Direct customer access requires exactly one real cable channel.")
+            dedicated = f"{switch}/if/{access_mgmt}"
+            if adjacent.get(dedicated) or child("assigned_object", dedicated, "ip_address"):
+                report("provider-management-mode", dedicated, "Customer management uses the routed local LAN; dedicated management ports remain unused.")
+        else:
+            # CE only: the LAN port routes the customer's own LAN /24, from the
+            # customer's own plan, and the CE is managed on its /32 loopback.
+            loop = f"{ce}/if/Management"
+            block = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
+            management = ip_network((int(block.network_address) + 1, 32))
+            lan_prefix = f"prefix/{sid}/lan"
+            slot = lan_slots.get(key, {}).get(sid)
+            lan_plans = [p for p in CUSTOMER_LAN_PLANS if not p.overlaps(pool)]
+            routed_lan = (ip_network((int(lan_plans[customer_slots[key] % len(lan_plans)].network_address) + 256 * (slot + 1), 24))
+                          if type(slot) is int and lan_plans else None)
+            if (routed_lan is None or attrs(lan_prefix).get("prefix") != str(routed_lan) or refs(lan_prefix).get("vrf") != vrf or
+                    refs(lan_prefix).get("tenant") != tenant or refs(lan_prefix).get("scope_site") != site or
+                    refs(lan_prefix).get("vlan") or attrs(lan_prefix).get("status") != life("prefix") or
+                    any(routed_lan.overlaps(ip_network(a)) for a in (*PUBLIC_AGGREGATES, str(pool))) or
+                    adjacent.get(lan) or vlans(lan) or attrs(lan).get("mode") or not address(lan, routed_lan, vrf, 1, tenant)):
+                report("provider-customer-lan", ce, "A CE-only premises routes its customer's own LAN /24, from the customer's "
+                       "plan outside every carrier pool, on its LAN port in the customer VRF; no switchport or VLAN carries it.")
+            if any(kind(k) for k in (f"vlan/{sid}/clients", f"prefix/{sid}/clients", f"prefix/{sid}/reservation", f"{ce}/if/Clients",
+                                     f"vlan/{sid}/management")):
+                report("provider-customer-lan", ce, "A carrier records no segment, VLAN or site block for a customer LAN it does not run.")
+            prefix = f"prefix/{sid}/management"
+            if (attrs(loop).get("type") != "virtual" or refs(loop).get("parent") or vlans(loop) or
+                    not address(loop, management, vrf, 0, tenant) or not primary(ce, loop) or
+                    attrs(prefix).get("prefix") != str(management) or refs(prefix).get("vrf") != vrf or
+                    refs(prefix).get("vlan") or refs(prefix).get("scope_site") != site):
+                report("provider-customer-gateway", ce, "A CE-only premises is managed on its own carrier /32 loopback in the customer VRF.")
+    for sid, (customer, pop, _) in premises.items():
+        if customer["service"] == "dia" and customer["managed"]:
+            now[0] = stages[sid]
+            ce, loop = f"device/{sid}/edge-01", f"device/{sid}/edge-01/if/Management"
+            block = ip_network((int(pool.network_address) + allocations[sid] * 256, 24))
+            management = ip_network((int(block.network_address) + 1, 32))
+            if not address(loop, management, MANAGEMENT, 0, "tenant") or not primary(ce, loop):
+                report("provider-customer-gateway", ce, "A managed-DIA CE is managed on its own /32 loopback in Carrier Management.")
+    now[0] = "active"
+
+    # --- Inventory totals, the cross-connect and panel tenancy ---
+    expected_circuits = (set(spans) | {f"circuit/customer/{t}" for t in targets} | {f"circuit/noc/{s}" for s in ("a", "b")} |
+                         {f"circuit/transit/{s}" for s in ("a", "b")} | {f"circuit/oob/{pop}" for pop in pops})
+    if by_kind["circuit"] != expected_circuits:
+        report("provider-circuit-inventory", "plan", "Physical circuit inventory must exactly cover requested backbone, customer, "
+               "NOC, external transit and cellular out-of-band services.")
     for value, count in cross_connects.items():
         if count > 1:
             report("provider-cross-connect", "plan", f"Cross-connect {value} is recorded on {count} terminations.")
-    for (panel, bay, position), count in panel_positions.items():
+    for (site, bay, position), count in mmr_positions.items():
         if count > 1:
-            report("provider-cross-connect", panel, f"Meet-me room panel {bay} port {position} carries {count} handoffs.")
+            report("provider-cross-connect", site, f"Meet-me room panel {bay} port {position} carries {count} handoffs.")
+    for panel, parties in landed.items():
+        colo = refs(panel).get("device_type") == "hardware/demarc-panel"
+        city = METROS[site_metros[str(refs(panel).get("site")).removeprefix("site/")]][0] if refs(panel).get("site") else ""
+        if parties != {"carrier" if colo else "operator"} or (colo and refs(panel).get("tenant") != f"tenant/colo/{city.lower()}"):
+            report("provider-colo-demarc", panel, "The colo's demarc panel, held by that metro's carrier hotel, lands only carrier "
+                   "cross-connects; the operator's OSP panel lands only owned fibre.")
+    # Every circuit end that is not marked connected has a complete path: its
+    # cable reaches an active interface, through 1:1 panels where it lands on one.
+    for term in sorted(by_kind["circuit_termination"]):
+        if attrs(term).get("mark_connected") is True or kind(refs(term).get("termination")) == "provider_network":
+            continue
+        far, _ = walk(term)
+        if kind(far) != "interface":
+            report("provider-path-complete", term, "A local circuit end has a complete cable path to an interface; only a "
+                   "marked-connected end or a carrier's remote end stops short.")
+    # Visual Explorer's WAN map draws one arc per circuit with two site-scoped ends.
+    arcs = sum(1 for key in by_kind["circuit"]
+               if {kind(refs(t).get("termination")) for t in child("circuit", key, "circuit_termination")} == {"site"}
+               and len(child("circuit", key, "circuit_termination")) == 2)
+    if arcs != len(spans) + len(targets) + 2:
+        report("provider-wan-arcs", "plan", f"{arcs} circuits end on two sites; the map needs exactly one arc per span, "
+               f"access attachment and NOC link ({len(spans) + len(targets) + 2}).")
 
+    # --- Cable policy: every PoP cable is labelled, typed, coloured, lengthed ---
+    pop_sites = {f"site/pop-{pop}" for pop in pops}
+    for cable in sorted(by_kind["cable"]):
+        ends = [refs(cable).get(side) for side in ("a", "b")]
+        here = {refs(refs(e).get("device")).get("site") or refs(refs(e).get("power_panel")).get("site") or
+                (refs(e).get("termination") if kind(e) == "circuit_termination" else None) for e in ends}
+        if here & pop_sites and any(attrs(cable).get(field) in (None, "") for field in CABLE_POLICY_FIELDS):
+            report("provider-cable-policy", cable, "Every PoP cable carries a label, a medium, a colour by function and a length.")
+
+    # --- Routing registry ---
     base = recipe["asn_base"]
     public_asns = ("asn/operator", "asn/transit-a", "asn/transit-b")
-    expected_asns = {f"asn/customer/{key}": base + 256 + slot for key, slot in customer_slots.items()}
+    l3_customers = [c for c in customers if c["service"] == "private-l3"]
+    expected_asns = {f"asn/customer/{c['key']}": base + 256 + customer_slots[c["key"]] for c in l3_customers}
     expected_providers = {"provider/operator", *(f"provider/{label}" for label in CARRIER_NAMES)}
     if kind("provider-network/oob") != "provider_network" or refs("provider-network/oob").get("provider") != "provider/oob":
-        report("provider-oob", "provider-network/oob", "The out-of-band ISP needs its own provider network as the far end of every console circuit.")
+        report("provider-oob", "provider-network/oob", "The cellular carrier needs its own provider network as the far end of every out-of-band circuit.")
     if by_kind["provider"] != expected_providers or by_kind["asn"] != set(expected_asns) | set(public_asns):
-        report("provider-routing-registry", "plan", "Provider and ASN inventories must match actual operator, transport, upstream and customer identities.")
+        report("provider-routing-registry", "plan", "Provider and ASN inventories must match actual operator, transport, upstream "
+               "and private-L3 customer identities.")
     if (kind("rir/private") != "rir" or attrs("rir/private").get("is_private") is not True or
             kind("asn-range/private") != "asn_range" or attrs("asn-range/private").get("start") != base or
             attrs("asn-range/private").get("end") != base + 1023 or refs("asn-range/private").get("rir") != "rir/private"):
@@ -1114,10 +1522,17 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             kind("asn-range/arin") != "asn_range" or refs("asn-range/arin").get("rir") != "rir/arin" or
             (attrs("asn-range/arin").get("start"), attrs("asn-range/arin").get("end")) != (DOCUMENTATION_ASNS[0], DOCUMENTATION_ASNS[-1])):
         report("provider-routing-registry", "rir/arin", "The operator and upstream AS numbers need their public ARIN registry and documentation range.")
+    holders = {"asn/operator": recipe["name"], "asn/transit-a": attrs("provider/transit-a").get("name", ""),
+               "asn/transit-b": attrs("provider/transit-b").get("name", ""),
+               **{f"asn/customer/{c['key']}": _name(c) for c in l3_customers}}
+    for key, holder in holders.items():
+        text = attrs(key).get("description")
+        if not isinstance(text, str) or len(text) > ASN_TEXT or text != _holder(holder):
+            report("provider-asn-text", key, f"An AS label names its holder in at most {ASN_TEXT} characters, cut on a word boundary.")
     for key, number in expected_asns.items():
         if (kind(key) != "asn" or attrs(key).get("asn") != number or refs(key).get("rir") != "rir/private" or
                 refs(key).get("tenant") != f"tenant/cust-{key.rsplit('/', 1)[-1]}"):
-            report("provider-asn", key, "Each customer routing identity must retain its reserved private ASN, registry and customer tenant.")
+            report("provider-asn", key, "Each private-L3 customer routing identity must retain its reserved private ASN, registry and customer tenant.")
     numbers = [attrs(key).get("asn") for key in public_asns]
     for key, number in zip(public_asns, numbers):
         if (kind(key) != "asn" or number not in DOCUMENTATION_ASNS or numbers.count(number) != 1 or refs(key).get("rir") != "rir/arin" or
@@ -1127,9 +1542,24 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     for prefix in PUBLIC_AGGREGATES:
         key = f"aggregate/public/{prefix}"
         if kind(key) != "aggregate" or attrs(key).get("prefix") != prefix or refs(key).get("rir") != "rir/arin":
-            report("provider-public-space", key, "Carrier-owned loopback, link and transit space needs its public ARIN aggregate.")
-    # Third-party carriers are their own companies: distinct from each other and
-    # from every customer, down to the first word of the name.
+            report("provider-public-space", key, "Carrier-owned loopback, link and DIA space needs its public ARIN aggregate.")
+    # Documentation containment: every operator-public address sits in an
+    # operator aggregate; DIA only in its pools; nothing public escapes RFC 5737.
+    aggregates = [ip_network(p) for p in PUBLIC_AGGREGATES]
+    dia_space = [ip_network(p) for p in DIA_POOLS]
+    for key, value in ipv4_addresses.items():
+        if value.ip.is_private or value.ip in OOB_POOL or refs(key).get("vrf") is not None:
+            continue
+        upstream = any(value.network.subnet_of(p) for p in UPSTREAM_POOLS.values())
+        if not upstream and not any(value.network.subnet_of(a) for a in aggregates):
+            report("provider-public-space", key, "A public address must come from the operator's documentation aggregates or an upstream's assignment.")
+        if str(key).startswith("ip/device/pop-") and "ae1." in key and refs(key).get("tenant", "").startswith("tenant/cust-") and not any(
+                value.network.subnet_of(p) for p in dia_space):
+            report("provider-public-space", key, "A DIA customer's public address comes from the DIA documentation pools.")
+    for block in (*DIA_POOLS, str(DIA_LINK_POOL)):
+        key = f"prefix/dia/pool/{block}"
+        if attrs(key).get("prefix") != block or attrs(key).get("status") != "container" or refs(key).get("vrf"):
+            report("provider-public-space", key, "Each DIA documentation pool is a global container.")
     first_words = Counter(str(attrs(key).get("name", "")).split(" ")[0] for key in
                           [f"provider/{label}" for label in CARRIER_NAMES] + sorted(by_kind["tenant"]))
     for label in CARRIER_NAMES:
@@ -1137,100 +1567,123 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if first_words[str(attrs(key).get("name", "")).split(" ")[0]] != 1:
             report("provider-carrier-identity", key, "A carrier's name must not echo another carrier's or a customer's.")
     operator_asn = attrs("asn/operator").get("asn")
-    code = _operator_code(recipe["name"])
     for provider, asn in (("provider/operator", "asn/operator"), ("provider/transit-a", "asn/transit-a"), ("provider/transit-b", "asn/transit-b")):
         if refs(provider).get("asns") != [asn]:
             report("provider-asn-consumer", provider, "Provider ASN association must refer to its own actual operator or upstream identity.")
     for site in expected_sites:
         sid = site.removeprefix("site/")
-        asn = f"asn/customer/{premises[sid][0]['key']}" if sid in premises else "asn/operator"
-        if refs(site).get("asns") != [asn]:
-            report("provider-asn-consumer", site, "Site routing ownership must reference its actual customer or operator ASN.")
+        customer = premises[sid][0] if sid in premises else None
+        asn = (f"asn/customer/{customer['key']}" if customer and customer["service"] == "private-l3" else
+               None if customer else "asn/operator")
+        if refs(site).get("asns") != ([asn] if asn else None):
+            report("provider-asn-consumer", site, "Site routing ownership references its private-L3 customer's or the operator's ASN; "
+                   "a DIA or EPL premises runs no routing identity of its own.")
     hub_rt, spoke_rt = "route-target/management/hub", "route-target/management/spoke"
     if (kind(MANAGEMENT) != "vrf" or refs(MANAGEMENT).get("tenant") != "tenant" or attrs(MANAGEMENT).get("name") != "Carrier Management" or
             attrs(MANAGEMENT).get("enforce_unique") is not True or attrs(MANAGEMENT).get("rd") != f"{operator_asn}:{HUB_RT}" or
             refs(MANAGEMENT).get("import_targets") != [hub_rt, spoke_rt] or refs(MANAGEMENT).get("export_targets") != [hub_rt] or
             attrs(hub_rt).get("name") != f"{operator_asn}:{HUB_RT}" or attrs(spoke_rt).get("name") != f"{operator_asn}:{SPOKE_RT}" or
-            kind(hub_rt) != "route_target" or kind(spoke_rt) != "route_target" or
-            kind("provider-network/operator") != "provider_network" or
-            refs("provider-network/operator").get("provider") != "provider/operator"):
+            kind("provider-network/operator") != "provider_network" or refs("provider-network/operator").get("provider") != "provider/operator"):
         report("provider-routing-domain", MANAGEMENT, "Carrier Management must import the CE spoke and its own hub target and export only the hub, "
                "with the operator's service network beside it.")
     if kind(OOB) != "vrf" or refs(OOB).get("tenant") != "tenant" or refs(OOB).get("import_targets") or refs(OOB).get("export_targets"):
-        report("provider-routing-domain", OOB, "The out-of-band context is the ISP's network: no route target joins it to the carrier.")
-    expected_vcs, expected_terms = set(), set()
-    expected_accounts = {f"provider-account/provider/{label}" for label in CARRIER_NAMES} | {"provider-account/operator/fiber"}
+        report("provider-routing-domain", OOB, "The out-of-band context is the cellular carrier's network: no route target joins it to the carrier.")
+    expected_accounts = ({f"provider-account/provider/{label}" for label in CARRIER_NAMES} | {"provider-account/operator/fiber"} |
+                         {f"provider-account/customer/{c['key']}" for c in customers})
     if any(refs(f"circuit/noc/{side}").get("provider") == "provider/operator" for side in ("a", "b")):
         expected_accounts.add("provider-account/operator/noc")
     for account in expected_accounts:
-        provider = "provider/operator" if account.startswith("provider-account/operator/") else account.removeprefix("provider-account/")
+        provider = ("provider/operator" if account.startswith(("provider-account/operator/", "provider-account/customer/"))
+                    else account.removeprefix("provider-account/"))
         if kind(account) != "provider_account" or refs(account).get("provider") != provider or "tenant" in refs(account):
             report("provider-account", account, "Procurement accounts must reference their actual provider; native accounts have no tenant field.")
-    flows = Counter()
+    if by_kind["provider_account"] != expected_accounts:
+        report("provider-account-inventory", "plan", "Provider accounts must belong to the actual transport, transit, NOC and customer service obligations.")
+
+    # --- Services: private-L3 VPN membership and the EPL ---
+    expected_vcs, expected_terms = set(), set()
     for customer in customers:
         key = customer["key"]
-        tenant, vrf, target = f"tenant/cust-{key}", f"vrf/customer/{key}", f"route-target/customer/{key}"
-        vc, account = f"virtual-circuit/customer/{key}", f"provider-account/customer/{key}"
+        account = f"provider-account/customer/{key}"
+        if attrs(account).get("account") != f"{code}-C{customer_slots[key] + 1:05d}":
+            report("provider-account", account, "A customer's billing account number follows its permanent onboarding slot.")
+        tenant = f"tenant/cust-{key}"
+        if customer["service"] == "epl":
+            l2vpn = f"l2vpn/epl/{key}"
+            terms = child("l2vpn", l2vpn, "l2vpn_termination")
+            ends = {refs(t).get("assigned_object") for t in terms}
+            want = {attachments[sid]["subif"] for sid, (c, _, _) in premises.items() if c["key"] == key}
+            if (kind(l2vpn) != "l2vpn" or attrs(l2vpn).get("type") != "epl" or attrs(l2vpn).get("identifier") != EPL_VCID_BASE + vcids[key] or
+                    refs(l2vpn).get("tenant") != tenant or len(terms) != 2 or ends != want or
+                    len({refs(e).get("device") for e in ends}) != 2 or
+                    attrs(l2vpn).get("status") != ("planned" if customer.get("status") == "planned" else "active")):
+                report("provider-epl", l2vpn, "An EPL is one native epl L2VPN with its ledger VC-ID and exactly two terminations, "
+                       "on the two ends' PE units.")
+            continue
+        if customer["service"] != "private-l3":
+            continue
+        vrf, target = f"vrf/customer/{key}", f"route-target/customer/{key}"
+        vc = f"virtual-circuit/customer/{key}"
         if (attrs(vc).get("description") != f"{titleize(key)} private L3 VPN, hub at {titleize(customer['hub_pop'])}" or
                 attrs(vc).get("comments") != VIRTUAL_CIRCUIT_NOTE):
             report("provider-scope-text", vc, "The service must name its customer and hub and point at its customer BGP peer group.")
-        expected_vcs.add(vc); expected_accounts.add(account)
+        expected_vcs.add(vc)
         if (kind(tenant) != "tenant" or kind(vrf) != "vrf" or refs(vrf).get("tenant") != tenant or attrs(vrf).get("enforce_unique") is not True or
                 attrs(vrf).get("rd") != f"{operator_asn}:{1001 + customer_slots[key]}" or
                 refs(vrf).get("import_targets") != [target, hub_rt] or refs(vrf).get("export_targets") != [target, spoke_rt] or
                 kind(target) != "route_target" or attrs(target).get("name") != f"{operator_asn}:{1001 + customer_slots[key]}" or refs(target).get("tenant") != tenant):
             report("provider-customer-routing", vrf, "Each private customer needs its own tenant VRF and exact symmetric reserved route target.")
-        if (kind(account) != "provider_account" or refs(account).get("provider") != "provider/operator" or "tenant" in refs(account) or
-                attrs(account).get("account") != f"{code}-C{customer_slots[key] + 1:05d}" or
-                kind(vc) != "virtual_circuit" or attrs(vc).get("status") != ("planned" if customer.get("status") == "planned" else "active") or
-                refs(vc).get("provider_network") != "provider-network/operator" or
-                refs(vc).get("provider_account") != account or refs(vc).get("tenant") != tenant or
-                refs(vc).get("type") != "virtual-circuit-type/private-l3"):
-            report("provider-customer-service", vc, "The private-L3 service (planned while its customer onboards) must belong to the correct customer, operator network and customer procurement account.")
+        if (kind(vc) != "virtual_circuit" or attrs(vc).get("status") != ("planned" if customer.get("status") == "planned" else "active") or
+                refs(vc).get("provider_network") != "provider-network/operator" or refs(vc).get("provider_account") != account or
+                refs(vc).get("tenant") != tenant or refs(vc).get("type") != "virtual-circuit-type/private-l3"):
+            report("provider-customer-service", vc, "The private-L3 service must belong to the correct customer, operator network and customer procurement account.")
         members = {sid for sid, (item, _, _) in premises.items() if item["key"] == key}
-        hub = f"ce-{key}-{customer['hub_pop']}-001"
-        for sid, port_name, parent_name in [(sid, "PrivateL3", "wan1") for sid in members] + [(f"{hub}/b", "PrivateL3-2", "wan2")]:
-            if sid.removesuffix("/b") not in members:
+        hub_sid = f"ce-{key}-{customer['hub_pop']}-001"
+        for target, (sid, ordinal) in targets.items():
+            if sid not in members:
                 continue
-            now[0] = stages[sid.removesuffix("/b")]
-            term = f"virtual-circuit-termination/{sid}"
+            now[0] = stages[sid]
+            hub = sid == hub_sid
+            port_name = "PrivateL3" if ordinal == 1 else "PrivateL3-2"
+            ce = f"device/{sid}/edge-01"
+            parent = f"{ce}/if/{catalog.get('edge' if hub else 'ce-small', {}).get('wan_ports', [None, None])[ordinal - 1]}"
+            term, port = f"virtual-circuit-termination/{target}", f"{ce}/if/{port_name}"
             expected_terms.add(term)
-            sid = sid.removesuffix("/b")
-            port, parent = f"device/{sid}/edge-01/if/{port_name}", f"device/{sid}/edge-01/if/{parent_name}"
             if attrs(port).get("description") != "Private L3 VPN attachment over the access circuit":
-                report("provider-scope-text", port, "The virtual interface describes inventory membership over its actual access circuit, not executed tunneling or routing.")
+                report("provider-scope-text", port, "The virtual interface describes inventory membership over its access circuit.")
             if (kind(term) != "virtual_circuit_termination" or refs(term).get("virtual_circuit") != vc or refs(term).get("interface") != port or
-                    attrs(term).get("role") != ("hub" if sid == hub else "spoke") or kind(port) != "interface" or attrs(port).get("type") != "virtual" or attrs(port).get("enabled") is not True or
-                    refs(port).get("device") != f"device/{sid}/edge-01" or refs(port).get("parent") != parent or refs(port).get("vrf") != vrf or
-                    not active_path(parent) or len(child("interface", port, "virtual_circuit_termination")) != 1 or child("assigned_object", port, "ip_address")):
-                report("provider-virtual-membership", term, "Each requested CPE needs exactly one active virtual membership (hub at the customer's hub premises, spoke elsewhere) over its actual physical customer handoff and customer VRF.")
-            # Only an in-service premises offers traffic; planned, provisioning
-            # and decommissioning paths never count as healthy capacity.
-            if sid != hub and stages[sid] == "active":
-                flows[(attachments[sid], attachments[hub])] += customer["site_peak_mbps"] * 1000
+                    attrs(term).get("role") != ("hub" if hub else "spoke") or attrs(port).get("type") != "virtual" or
+                    refs(port).get("parent") != parent or refs(port).get("vrf") != vrf or not path_ok(parent) or
+                    child("assigned_object", port, "ip_address")):
+                report("provider-virtual-membership", term, "Each requested CE attachment needs exactly one virtual membership "
+                       "(hub at the hub premises) over its actual customer handoff and customer VRF.")
+            if not hub and stages[sid] == "active" and stages.get(hub_sid) == "active":
+                flows[(first_attachment[sid], first_attachment[hub_sid])] += _site_peak(customer, premises[sid][1]) * 1000
     now[0] = "active"
     if by_kind["virtual_circuit"] != expected_vcs or by_kind["virtual_circuit_termination"] != expected_terms:
-        report("provider-service-inventory", "plan", "Every requested customer and premise must contribute exactly its private-L3 service membership.")
-    if by_kind["provider_account"] != expected_accounts:
-        report("provider-account-inventory", "plan", "Provider accounts must belong to the actual transport, transit, NOC and customer service obligations.")
+        report("provider-service-inventory", "plan", "Every private-L3 customer and attachment contributes exactly its service membership.")
+
+    # --- Backbone connectivity and customer offered load ---
     for router in adjacency:
         adjacency[router].sort()
     if not _connected(adjacency):
-        report("provider-backbone-connectivity", "plan", "All requested active PEs must be connected through actual pair cables and complete two-sided leased spans.")
+        report("provider-backbone-connectivity", "plan", "All PEs must be connected through actual pair cables and complete two-sided spans.")
     for router in sorted(routers):
         if not _connected(adjacency, removed=router):
             report("provider-router-connectivity", router, "Remaining PEs must remain connected after this single router removal; attached single-homed customers are not protected.")
     for removed in sorted(capacity):
         if not _connected(adjacency, excluded=removed):
-            report("provider-link-connectivity", removed, "The actual active backbone must retain connectivity after each single pair-link or inter-PoP-span removal.")
+            report("provider-link-connectivity", removed, "The actual backbone must retain connectivity after each single pair-link or span removal.")
     for removed in (None, *sorted(spans)):
         loads = _loads(adjacency, flows, excluded=removed)
         if loads is None:
-            report("provider-customer-route", removed or "plan", "The authored customer spoke-to-hub flow needs a complete real PE path in normal operation and after each inter-PoP span loss.")
+            report("provider-customer-route", removed or "plan", "The customer spoke-to-hub flow needs a complete PE path in normal operation and after each span loss.")
             continue
         for (link, origin, destination), load in loads.items():
             if Decimal(load) > Decimal(capacity[link]) * usable:
-                report("provider-route-capacity", link, f"Customer spoke-to-hub flow {load/1000:g} Mbps from {origin} to {destination} exceeds purchased usable capacity after {removed or 'no span'} removal; NOC, transit and other traffic are excluded.")
+                report("provider-route-capacity", link, f"Customer spoke-to-hub flow {load/1000:g} Mbps from {origin} to {destination} "
+                       f"exceeds purchased usable capacity after {removed or 'no span'} removal.")
+
     # --- One timeline: spans before a PoP's customers, customers in slot order ---
     as_of = date.fromisoformat(recipe["as_of"])
 
@@ -1245,8 +1698,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if (day := in_service(key)) is not None:
             for router in ends:
                 first_span[pop_of(router)] = min(day, first_span.get(pop_of(router), day))
-    pending = {f"circuit/customer/{sid}{tail}" for sid, stage in stages.items() if stage in ("planned", "provisioning")
-               for tail in ("", "/b")}
+    pending = {f"circuit/customer/{t}" for t, (sid, _) in targets.items() if stages[sid] in ("planned", "provisioning")}
     for key in sorted(by_kind["circuit"]):
         if key in pending:
             if "install_date" in attrs(key):
@@ -1266,73 +1718,70 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if not starts[customer["key"]]:
             continue
         day, first = min(starts[customer["key"]])
-        if first != f"ce-{customer['key']}-{customer['hub_pop']}-001" or (previous is not None and day < previous):
+        anchor = customer.get("hub_pop") or customer["sites"][0]["pop"]
+        if first != f"ce-{customer['key']}-{anchor}-001" or (previous is not None and day < previous):
             report("provider-timeline", f"provider-account/customer/{customer['key']}",
-                   "Customers onboard in their permanent slot order, each starting with its hub circuit.")
+                   "Customers onboard in their permanent slot order, each starting with its hub (or first) circuit.")
         previous = day
-    # --- Premises sit across the metro, not on top of their serving PoP ---
-    for sid, (_, pop, _) in premises.items():
+
+    # --- Geography: premises across the metro, on a street grid, apart ---
+    placed = []
+    for sid, (_, pop, _) in sorted(premises.items(), key=lambda item: allocations[item[0]]):
         here, there = site_points.get(f"site/{sid}"), site_points.get(f"site/pop-{pop}")
         if not here or not there or sid in recipe.get("site_names", {}):
             continue
-        # PoPs allocated after this premises cannot reassign its area.
         rivals = [site_points.get(f"site/pop-{q}") for q in pops if q != pop and pops[q]["metro"] == pops[pop]["metro"]
                   and allocations.get(f"pop-{q}", 1 << 62) < allocations[sid]]
         if _km(here, there) > PREMISES_KM or any(p and _km(here, p) <= _km(here, there) for p in rivals):
             report("provider-premises-geography", f"site/{sid}", "Customer premises lie in their serving PoP's area: within "
                    f"{PREMISES_KM} km and nearer it than any other same-metro PoP that existed when they were ordered.")
+        if recipe.get("naming", "authored") == "authored" and any(_km(here, point) * 1000 < PREMISES_SPACING_M for point in placed):
+            report("provider-premises-spacing", f"site/{sid}", f"Premises stand at least {PREMISES_SPACING_M} m apart, so "
+                   "map pins and labels never stack.")
+        placed.append(here)
 
-    # --- Dual-homed means it: two carriers, or two provider edges ---
-    # Restated: a site's active WAN access comes from two different third-party
-    # carriers (the operator's own circuits are not a carrier, console
-    # broadband is not WAN access), or its active access circuits land on two
-    # different provider edges.
+    # --- Dual-homed means it: two carriers, or attachments into two PEs ---
     carriers, edges = defaultdict(set), defaultdict(set)
     for key in by_kind["circuit"]:
-        if attrs(key).get("status") != "active" or refs(key).get("type") == "circuit-type/out-of-band":
+        if attrs(key).get("status") != "active" or refs(key).get("type") == "circuit-type/cellular-oob":
             continue
-        ends = {attrs(term).get("term_side"): term for term in child("circuit", key, "circuit_termination")}
-        for side, term in ends.items():
-            place = refs(term).get("termination")
-            site = refs(place).get("site") if kind(place) == "location" else place
+        for term in child("circuit", key, "circuit_termination"):
+            site = refs(term).get("termination")
             if kind(site) != "site":
                 continue
             if refs(key).get("provider") != "provider/operator":
                 carriers[site].add(refs(key).get("provider"))
-            far = refs(peers.get(ends.get("Z" if side == "A" else "A"))).get("device")
-            if refs(key).get("type") == "circuit-type/access" and refs(far).get("role") == "role/provider-edge":
-                edges[site].add(far)
+    for target, att in attachments.items():
+        sid = targets[target][0]
+        if attrs(f"circuit/customer/{target}").get("status") == "active":
+            edges[f"site/{sid}"].add(f"device/pop-{att['pop']}/pe-{att['side']}")
+    for side in ("a", "b"):
+        if attrs(f"circuit/noc/{side}").get("status") == "active":
+            edges["site/dc-01"].add(f"device/pop-{recipe[f'noc_pop_{side}']}/pe-{side}")
     dual = {site for site in expected_sites if len(carriers[site]) >= 2 or len(edges[site]) >= 2}
     tagged = {site for site in expected_sites if "tag/dual-homed" in (refs(site).get("tags") or [])}
     if tagged != dual and not (not tagged and kind("tag/dual-homed") is None and dual in (set(), expected_sites)):
         for site in sorted(tagged ^ dual):
             report("provider-dual-homed", site, "The dual-homed tag marks exactly the sites with active WAN access from two "
-                   "different carriers or into two different provider edges.")
+                   "different carriers or attachments homed on two different provider edges.")
 
     # --- BGP inventory: documentation records, never applied configuration ---
-    def ipv4_of(port):
-        found = [key for key in child("assigned_object", l3(port), "ip_address") if key in ipv4_addresses]
-        return found[0] if len(found) == 1 else None
-
     def name_of(key):
         value = attrs(key).get("name")
         return value if isinstance(value, str) else ""
 
     if extra_bgp := {k for k in by_kind if k.startswith("bgp_")} - BGP_KINDS:
-        report("provider-bgp-inventory", "plan", "Only routing policies, peer groups and sessions "
-               "are modeled; " + ", ".join(sorted(extra_bgp)) + " would read as device configuration.")
+        report("provider-bgp-inventory", "plan", "Only routing policies, peer groups and sessions are modeled; "
+               + ", ".join(sorted(extra_bgp)) + " would read as device configuration.")
     if by_kind["bgp_routing_policy"] != {f"bgp-routing-policy/{slug}" for slug in BGP_POLICIES}:
-        report("provider-bgp-inventory", "plan", "The estate carries exactly the four authored "
-               "named routing policies.")
+        report("provider-bgp-inventory", "plan", "The estate carries exactly the four authored named routing policies.")
     if by_kind["bgp_peer_group"] != {f"bgp-peer-group/{slug}" for slug in BGP_GROUPS}:
-        report("provider-bgp-inventory", "plan", "The estate carries exactly the three authored "
-               "peer groups.")
+        report("provider-bgp-inventory", "plan", "The estate carries exactly the three authored peer groups.")
     for slug, (name, weight, description) in BGP_POLICIES.items():
         key = f"bgp-routing-policy/{slug}"
-        expected = {"name": name, "weight": weight, "description": description}
-        if kind(key) != "bgp_routing_policy" or attrs(key) != expected or refs(key):
-            report("provider-bgp-policy", key, "Each named routing policy must retain its authored "
-                   "name, weight and reference-intent description and carry no rule references.")
+        if kind(key) != "bgp_routing_policy" or attrs(key) != {"name": name, "weight": weight, "description": description} or refs(key):
+            report("provider-bgp-policy", key, "Each named routing policy must retain its authored name, weight and "
+                   "reference-intent description and carry no rule references.")
     for slug, (name, description, imports, exports, internal) in BGP_GROUPS.items():
         key = f"bgp-peer-group/{slug}"
         expected = {"local_as": "asn/operator"}
@@ -1341,12 +1790,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         for field, policies in (("import_policies", imports), ("export_policies", exports)):
             if policies:
                 expected[field] = [f"bgp-routing-policy/{p}" for p in policies]
-        if (kind(key) != "bgp_peer_group" or refs(key) != expected or
-                attrs(key) != {"name": name, "description": description}):
-            report("provider-bgp-group", key, "Each peer group must retain its authored name, the "
-                   "operator's own routing identity and exactly its authored import/export policies.")
-    # Reflectors: PE A at the first permanent PoP and PE A at the first later
-    # PoP in another metro, so no single metro holds both.
+        if kind(key) != "bgp_peer_group" or refs(key) != expected or attrs(key) != {"name": name, "description": description}:
+            report("provider-bgp-group", key, "Each peer group must retain its authored name, the operator's own routing "
+                   "identity and exactly its authored import/export policies.")
     reflector_pops = [ordered[0], next((pop for pop in ordered if pops[pop]["metro"] != pops[ordered[0]]["metro"]), ordered[0])]
     reflectors = [f"device/pop-{pop}/pe-a" for pop in reflector_pops]
     clients = [f"device/pop-{pop}/pe-{side}" for pop in ordered for side in ("a", "b")
@@ -1355,41 +1801,38 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     expected_sessions = {}
 
     def address_of(port, family):
-        if family == 4:
-            return ipv4_of(port)
         found = [key for key in child("assigned_object", l3(port), "ip_address")
-                 if isinstance(attrs(key).get("address"), str) and ":" in attrs(key)["address"]]
+                 if isinstance(attrs(key).get("address"), str) and (":" in attrs(key)["address"]) == (family == 6)]
         return found[0] if len(found) == 1 else None
 
     def peering(local, remote_label, remote_as, group, description, local_address,
                 remote_address=None, remote_prefix=None, tenant=None, status="active"):
-        expected = {"device": local, "site": refs(local).get("site"),
-                    "local_address": local_address, "local_as": "asn/operator",
-                    "remote_as": remote_as, "peer_group": f"bgp-peer-group/{group}"}
+        expected = {"device": local, "site": refs(local).get("site"), "local_address": local_address,
+                    "local_as": "asn/operator", "remote_as": remote_as, "peer_group": f"bgp-peer-group/{group}"}
         if remote_address is not None:
             expected["remote_address"] = remote_address
         else:
             expected["remote_prefix"] = remote_prefix
         if tenant is not None:
             expected["tenant"] = tenant
-        return {"name": f"{name_of(local)} to {remote_label}", "status": status,
-                "description": description}, expected
+        return {"name": f"{name_of(local)} to {remote_label}", "status": status, "description": description}, expected
 
     for family in families:
         tail, label = ("", "") if family == 4 else ("/ipv6", " IPv6")
-        expected_sessions[f"bgp-session/ibgp/{reflectors[0].removeprefix('device/')}/"
-                          f"{reflectors[1].removeprefix('device/')}{tail}"] = peering(
-            reflectors[0], f"{name_of(reflectors[1])} iBGP{label}", "asn/operator", "ibgp-core",
-            "Internal peering between the two backbone route reflectors",
-            address_of(f"{reflectors[0]}/if/lo0.0", family), remote_address=address_of(f"{reflectors[1]}/if/lo0.0", family))
+
+        def ibgp(local, remote, description):
+            expected_sessions[f"bgp-session/ibgp/{local.removeprefix('device/')}/{remote.removeprefix('device/')}{tail}"] = peering(
+                local, f"{name_of(remote)} iBGP{label}", "asn/operator", "ibgp-core", description,
+                address_of(f"{local}/if/lo0.0", family), remote_address=address_of(f"{remote}/if/lo0.0", family))
+        # Every iBGP peering is recorded from both ends, so each loopback in
+        # the BGP view belongs to a named device (the mirror rows).
+        for local, remote in ((reflectors[0], reflectors[1]), (reflectors[1], reflectors[0])):
+            ibgp(local, remote, "Internal peering between the two backbone route reflectors")
         for client in clients:
             for reflector in reflectors:
-                expected_sessions[f"bgp-session/ibgp/{client.removeprefix('device/')}/"
-                                  f"{reflector.removeprefix('device/')}{tail}"] = peering(
-                    client, f"{name_of(reflector)} iBGP{label}", "asn/operator", "ibgp-core",
-                    "Route-reflector client peering to the backbone reflector at "
-                    f"{name_of(refs(reflector).get('site'))}",
-                    address_of(f"{client}/if/lo0.0", family), remote_address=address_of(f"{reflector}/if/lo0.0", family))
+                ibgp(client, reflector, "Route-reflector client peering to the backbone reflector at "
+                     f"{name_of(refs(reflector).get('site'))}")
+                ibgp(reflector, client, f"Route-reflector peering to client {name_of(client)}")
         for side, (router, port, provider, circuit_key) in sorted(transit_peerings.items()):
             local = address_of(port, family)
             network = ip_interface(attrs(local)["address"]).network if local else None
@@ -1398,37 +1841,37 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 router, f"{name_of(provider)} transit{label}", f"asn/transit-{side}", "transit",
                 f"External transit peering over {attrs(circuit_key).get('cid')}", local,
                 remote_prefix=candidates[0] if len(candidates) == 1 else None)
-        for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key, stage) in sorted(customer_peerings.items()):
-            expected_sessions[f"bgp-session/customer/{sid}{tail}"] = peering(
-                router, f"{name_of(cpe)} customer{label}", f"asn/customer/{ckey}", "customer",
+        for target, (router, subif, ce, wan, tenant, ckey, circuit_key, stage) in sorted(customer_peerings.items()):
+            expected_sessions[f"bgp-session/customer/{target}{tail}"] = peering(
+                router, f"{name_of(ce)} customer{label}", f"asn/customer/{ckey}", "customer",
                 f"Private-L3 customer edge peering over {attrs(circuit_key).get('cid')}",
-                address_of(port, family), remote_address=address_of(cpe_wan, family), tenant=tenant,
-                status=LIFE[stage]["bgp"])
+                address_of(subif, family), remote_address=address_of(wan, family), tenant=tenant, status=LIFE[stage]["bgp"])
     if by_kind["bgp_session"] != set(expected_sessions):
-        report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair, "
-               "every other provider edge against both reflectors, each actual transit handoff and "
-               "each actual customer access circuit.")
+        report("provider-bgp-inventory", "plan", "Sessions must cover exactly the reflector pair and every client against both "
+               "reflectors, each recorded from both ends, each transit handoff and each private-L3 attachment.")
     for key, (expected_attrs, expected_refs) in sorted(expected_sessions.items()):
         if None in expected_refs.values():
-            report("provider-bgp-session", key, "The addresses, prefix and endpoints this peering "
-                   "record cites must resolve to exactly one real object each.")
+            report("provider-bgp-session", key, "The addresses, prefix and endpoints this peering record cites must resolve to exactly one real object each.")
             continue
         if kind(key) != "bgp_session" or attrs(key) != expected_attrs or refs(key) != expected_refs:
-            report("provider-bgp-session", key, "Each peering record must be attributed from the "
-                   "actual loopback, handoff address, routing identity and circuit it documents.")
+            report("provider-bgp-session", key, "Each peering record must be attributed from the actual loopback, handoff address, "
+                   "routing identity and circuit it documents.")
     for key in sorted(k for kind_name in BGP_KINDS for k in by_kind[kind_name]):
         if extra := set(attrs(key)) - BGP_FIELDS[kind(key)]:
             report("provider-bgp-scope-text", key, "BGP records carry inventory fields only; "
                    + ", ".join(sorted(extra)) + " would read as configured or established session state.")
 
-    # A CE-only CE runs on customer power the carrier does not inventory.
-    serving = [d for d in infrastructure if d not in routers and refs(d).get("rack") and
-                  stages.get(str(refs(d).get("site")).removeprefix("site/"), "active") == "active"]
-    findings.extend(validate_power(objects, catalog, serving, children, peers, cable_of,
-                                   poe_watts=poe_watts, optics_watts=optics_watts,
-                                   single_feed={f"site/{sid}" for sid in premises}))
+    # --- Scale ceiling ---
+    if len(objects) > OBJECT_CEILING:
+        report("provider-object-ceiling", "plan", f"{len(objects):,} objects exceed the reviewed {OBJECT_CEILING:,} ceiling.")
+
+    # Racked PoP infrastructure runs on modeled A/B power; premises kit on
+    # customer power the carrier does not inventory.
+    findings.extend(validate_power(objects, catalog, sorted(infrastructure), children, peers, cable_of,
+                                   poe_watts=poe_watts, optics_watts=optics_watts))
     findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),
-                    peak=recipe["noc_peak_mbps"], reserve=recipe["reserve_fraction"], strict_sites=False, network_offsets=DC_OFFSETS, poe_watts=poe_watts, optics_watts=optics_watts))
+                    peak=recipe["noc_peak_mbps"], reserve=recipe["reserve_fraction"], strict_sites=False,
+                    network_offsets=DC_OFFSETS, poe_watts=poe_watts, optics_watts=optics_watts))
     return findings
 
 

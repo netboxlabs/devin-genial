@@ -83,9 +83,10 @@ class Provider(unittest.TestCase):
                     and o["refs"].get("group", "").endswith("/customer")}
         self.assertLessEqual(designed, set(hubs["sites"]))
         diversity = next(r for r in hubs["rules"] if r["check_name"] == "circuit_path_diversity")
-        # Two circuits into one CE: the CE is the remaining single point.
-        self.assertTrue(diversity["expected"])
-        self.assertTrue(all(e["cause"] == "all circuits on one device" for e in diversity["expected"]))
+        # A hub's two circuits land on two NIDs (0.17), so the device-diversity
+        # check holds; the CE behind them stays a single point the site
+        # contract states rather than a finding this check predicts.
+        self.assertEqual(diversity["expected"], [])
 
     def test_a_hub_losing_an_active_circuit_is_predicted(self):
         plan = copy.deepcopy(self.plan)

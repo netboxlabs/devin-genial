@@ -4,7 +4,7 @@ from collections import Counter
 from copy import deepcopy
 import unittest
 
-from estates import optics
+from estates import fibre, optics
 from estates.generate import generate
 from estates.model import DesignError, World, canonical, hardware_catalog, recipe_from_file
 
@@ -47,7 +47,28 @@ class OpticsEmitterTests(unittest.TestCase):
                     for value in obj["refs"].values():
                         for target in value if isinstance(value, list) else [value]:
                             self.assertIn(target, objects, (obj["key"], target))
-        self.assertEqual(seen, {(p["manufacturer"], p["model"]) for p in hardware_catalog()["optics"]["parts"].values()})
+        # No dead inventory: every part a sampled estate could host is installed
+        # somewhere, except a longer-reach sibling of an installed part (same
+        # host cage, rate and medium). Owned-run reach depends on how far a
+        # recipe's sites sit apart, so the long-reach rung stays in the catalog
+        # as the shortest part that covers a longer run; it is never a
+        # standalone part no recipe could select. Parts whose host types no
+        # sampled estate emits are stock awaiting their builder.
+        parts = hardware_catalog()["optics"]["parts"]
+        hosts = {o["key"].removeprefix("hardware/") for plan in self.plans.values()
+                 for o in plan["objects"] if o["kind"] == "device_type"}
+        used = [p for p in parts.values() if (p["manufacturer"], p["model"]) in seen]
+
+        def rung_above_used(part):
+            return any(u["rate_kbps"] == part["rate_kbps"] and u["medium"] == part["medium"]
+                       and u["reach_m"] < part["reach_m"]
+                       and any(set(names) & set(u["compatible_interfaces"].get(alias, ()))
+                               for alias, names in part["compatible_interfaces"].items())
+                       for u in used)
+        expected = {(p["manufacturer"], p["model"]) for p in parts.values()
+                    if set(p["compatible_interfaces"]) & hosts and not rung_above_used(p)}
+        self.assertLessEqual(expected, seen)
+        self.assertLessEqual(seen, {(p["manufacturer"], p["model"]) for p in parts.values()})
 
     def test_aoc_is_one_assembly_with_two_captive_ends(self):
         plan = self.plans["school-wireless"]
@@ -70,6 +91,9 @@ class OpticsEmitterTests(unittest.TestCase):
         ports = [o for o in objects.values() if o["kind"] == "interface" and o["attrs"].get("type") == "10gbase-x-sfpp"
                  and o["attrs"].get("speed") == 1000000 and "module" in o["refs"]]
         self.assertTrue(ports)
+        # The owned span plus the local cords the check adds, bounded by the
+        # local-channel maximum, must fit the selected reach.
+        margin = hardware_catalog()["optics"]["local_max_m"]
         models = Counter()
         for port in ports:
             cable = next(c for c in objects.values() if c["kind"] == "cable" and port["key"] in c["refs"].values())
@@ -77,16 +101,20 @@ class OpticsEmitterTests(unittest.TestCase):
             span = optics.owned_span_m(objects, far)
             model = objects[objects[port["refs"]["module"]]["refs"]["module_type"]]["attrs"]["model"]
             models[model] += 1
-            self.assertEqual(model, "SFP-1GE-LX" if span <= 10000 else "SFP-1GE-LH", (port["key"], span))
+            self.assertEqual(model, "SFP-1GE-LX" if span + margin <= 10000 else "SFP-1GE-LH", (port["key"], span))
         self.assertTrue(models["SFP-1GE-LX"] and models["SFP-1GE-LH"], models)
-        spans = {o["attrs"]["cid"]: (o["attrs"]["distance"], objects[objects["optics-module/" + p]["refs"]["module_type"]]["attrs"]["model"])
+        # Owned spans land on the OSP panel: trace the termination's cable
+        # through the panel to the PE cage that lights it.
+        peers = {}
+        for c in objects.values():
+            if c["kind"] == "cable":
+                peers[c["refs"]["a"]], peers[c["refs"]["b"]] = c["refs"]["b"], c["refs"]["a"]
+        spans = {o["attrs"]["cid"]: (o["attrs"]["distance"], objects[objects["optics-module/" + fibre.far_end(objects, peers[f"{o['key']}/A"], peers)]["refs"]["module_type"]]["attrs"]["model"])
                  for o in objects.values() if o["kind"] == "circuit" and o["key"].startswith("circuit/backbone/")
-                 and o["refs"]["type"] == "circuit-type/dark-fiber"
-                 for c in objects.values() if c["kind"] == "cable" and f"{o['key']}/A" in c["refs"].values()
-                 for p in c["refs"].values() if p != f"{o['key']}/A"}
+                 and o["refs"]["type"] == "circuit-type/dark-fiber"}
         self.assertTrue(spans)
         for cid, (km, model) in spans.items():
-            self.assertEqual(model, "JNP-QSFP-100G-LR4" if km <= 10 else "QSFP-100G-ER4L", cid)
+            self.assertEqual(model, "JNP-QSFP-100G-LR4" if km * 1000 + margin <= 10000 else "QSFP-100G-ER4L", cid)
 
     def test_unsupported_media_and_ambiguous_catalog_fail_actionably(self):
         for mode in ("media", "ambiguous"):

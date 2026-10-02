@@ -21,7 +21,11 @@ HOST = {"vcpus": 64, "memory_mb": 262144, "disk_mb": 8000000}
 # Each selectable vendor line shares its family's authored role allowance.
 WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
          "leaf": 160, "leaf-juniper": 160, "core": 220, "edge": 40,
-         "server": 250, "console-server": 40, "console-server-48": 40, "liquid-chassis": 400}
+         "server": 250, "console-server": 40, "console-server-48": 40, "liquid-chassis": 400,
+         # Provider PoP plant and premises kit, restated (catalog/README.md
+         # planning allowances; the PE's 320 W is checked by validate_provider).
+         "aggregation": 300, "pop-mgmt": 120, "oob-server": 40,
+         "nid": 52, "nid-10g": 90, "ce-small": 40}
 NETWORK_OFFSETS = {"management": 0, "applications": 6, "database": 7,
                    "backup": 8, "wan": 9, "storage": 10}
 

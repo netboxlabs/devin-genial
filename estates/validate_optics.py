@@ -279,7 +279,7 @@ def analyze(plan, catalog=None):
             report("optics-hardware", port, "Optical interface owner must resolve to its actual catalog manufacturer and model.")
         if (kind(port) != "interface" or spec is None or physical not in _CAGES or actual_type != physical or
                 (attrs(port).get("enabled") is not True and not awaiting(port)) or attrs(port).get("mgmt_only", False) or
-                attrs(owner).get("status") != "active" or
+                (attrs(owner).get("status") not in ("active", "decommissioning") and not awaiting(port)) or
                 children[(owner, "interface", name)] != [port]):
             report("optics-port", port, "An occupied optical cage must be its unique enabled catalog interface on an active owner; fixed copper, management, radio and virtual ports cannot host optics.")
             continue
@@ -332,7 +332,7 @@ def analyze(plan, catalog=None):
             if length > maximum:
                 return None, route, length, "exceeds the complete local-channel length policy"
             staged = {attrs(c).get("status") for c in route} - {"connected"}
-            if staged and kind(peer) != "circuit_termination":
+            if staged and kind(peer) not in {"circuit_termination", "front_port", "rear_port"}:
                 return None, route, length, "requires connected cables unless it faces a circuit not in service"
             if kind(peer) == "interface":
                 if refs(refs(peer).get("device")).get("site") != site:
@@ -357,7 +357,7 @@ def analyze(plan, catalog=None):
                     kind(owner) != "device" or refs(rear).get("device") != owner or
                     not models.get(hardware.get(owner), {}).get("passive_ports") or
                     attrs(owner).get("status") != "active" or refs(owner).get("site") != site or
-                    attrs(front).get("type") != "lc" or attrs(rear).get("type") != "lc" or
+                    attrs(front).get("type") != "lc" or attrs(rear).get("type") not in {"lc", "splice"} or
                     type(attrs(front).get("rear_port_position")) is not int or attrs(front)["rear_port_position"] != 1 or
                     type(attrs(rear).get("positions")) is not int or attrs(rear)["positions"] != 1):
                 return None, route, length, "requires same-site LC ports with a single owned front/rear position"

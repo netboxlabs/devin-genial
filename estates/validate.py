@@ -79,7 +79,7 @@ def _medium(kind, port_type):
         return "stack"
     if port_type in {"8p8c", "rj-45", "110-punch"} or "base-t" in port_type:
         return "copper"
-    if port_type in {"lc", "sc", "st", "mpo", "mpo-12", "mpo-24"} or any(s in port_type for s in ("sfpp", "sfp28", "sfp", "qsfp", "base-x")):
+    if port_type in {"lc", "sc", "st", "mpo", "mpo-12", "mpo-24", "splice"} or any(s in port_type for s in ("sfpp", "sfp28", "sfp", "qsfp", "base-x")):
         return "fiber"
     return None
 
@@ -379,7 +379,10 @@ def _validate(plan):
                 if kind(key) != typ:
                     continue
                 data = attrs(key)
-                if typ == "interface" and data.get("type") in {"virtual", "lag", "bridge"}:
+                if (typ == "interface" and data.get("type") in {"virtual", "lag", "bridge"}
+                        and data.get("name") not in expected):
+                    # Logical interfaces are free unless the model declares one
+                    # (a NID's virtual Management), which must then exist.
                     continue
                 name = data.get("name")
                 actual[name] = key
@@ -651,7 +654,11 @@ def _validate(plan):
                 report("ip-tenant", address, "Assigned address and its containing segment must have the same tenant.")
             if generated and kind(owner) == "vm_interface" and refs(address).get("tenant") != refs(refs(owner).get("virtual_machine")).get("tenant"):
                 report("ip-tenant", address, "A generated VM's address must belong to its actual VM tenant.")
-            if site(containing) and site(owner) and site(containing) != site(owner):
+            # A provider NID is managed in-band from its PoP's NID-management
+            # segment: the one address that legitimately lives off-site.
+            remote_nid = (str(containing).endswith("/nid-management") and
+                          refs(refs(owner).get("device")).get("role") == "role/nid")
+            if site(containing) and site(owner) and site(containing) != site(owner) and not remote_nid:
                 report("ip-site", address, "Containing prefix and assigned interface belong to different sites.")
             vlan = refs(containing).get("vlan")
             owner_vlans = set(refs(owner).get("tagged_vlans", []))
@@ -708,7 +715,8 @@ def _validate(plan):
         for vlan in vlans:
             if kind(vlan) != "vlan":
                 report("vlan-reference", interface, "VLAN references must target VLAN objects.")
-            elif site(vlan) and site(interface) and site(vlan) != site(interface):
+            elif (site(vlan) and site(interface) and site(vlan) != site(interface) and not
+                  (str(vlan).endswith("/nid-management") and refs(rel.get("device")).get("role") == "role/nid")):
                 report("vlan-scope", interface, f"VLAN {vlan} belongs to a different site.")
 
     def carried_vlans(interface):
@@ -1321,9 +1329,13 @@ def _validate(plan):
                 if recipe.get("profile") == "provider-backbone":
                     # The independent provider check requires exact loopback/SVI
                     # ownership and real uplinks for this in-band composition.
-                    virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access"})
+                    virtual_management_roles.update({"role/provider-edge", "role/customer-edge", "role/access", "role/nid"})
                 if attrs(primary).get("type") == "virtual" and refs(device).get("role") in virtual_management_roles:
                     continue
+                if attrs(primary).get("type") == "virtual" and kind(refs(primary).get("parent")) == "interface":
+                    # A Junos logical unit (AGG em0.0) is addressed; the cable
+                    # and the mgmt_only flag sit on its physical parent port.
+                    primary = refs(primary)["parent"]
                 peer = terminal_peers.get(primary)
                 manager = refs(peer).get("device")
                 if (not attrs(primary).get("mgmt_only") or manager not in management or

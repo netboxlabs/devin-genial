@@ -25,7 +25,11 @@ RACK_TYPES = {24: ("APC", "AR3104", "4-post-cabinet",
               # Pinned devicetype-library rack-types/Panduit/R2P26.yaml: the
               # small-room kit's two-post relay rack (blocks.SMALL_RACK).
               13: ("Panduit", "R2P26", "2-post-frame",
-                   "2-Post Rack, 13RU, #12-24 Threaded E-Rails, Aluminum, Black")}
+                   "2-Post Rack, 13RU, #12-24 Threaded E-Rails, Aluminum, Black"),
+              }
+# Heights whose type is the catalog's own rack type (catalog rack_types): the
+# provider PoP cage cabinet, APC NetShelter SX 42U AR3100 (catalog/README.md).
+CATALOG_RACK_HEIGHTS = {42: "pop-cabinet"}
 
 # The group every estate tenant joins, per profile: (key, name, description).
 # Customer tenants keep the groups their profile builders already give them.
@@ -138,9 +142,14 @@ def _site_facts(w):
         elif obj["kind"] == "circuit_termination":
             sides[obj["refs"]["circuit"]][obj["attrs"]["term_side"]] = obj
     own = "provider/operator" if w.recipe["profile"] == "provider-backbone" else None
+    # An aggregation switch's provider edge: the device at the far end of its LAG members.
+    lag_peer = {}
+    for obj in objects.values():
+        if obj["kind"] == "interface" and obj["refs"].get("lag") and obj["key"] in cabled:
+            lag_peer.setdefault(obj["refs"]["device"], objects[cabled[obj["key"]]]["refs"].get("device"))
     for key, ends in sides.items():
         circuit = circuits[key]
-        if circuit["attrs"].get("status") != "active" or circuit["refs"].get("type") == "circuit-type/out-of-band":
+        if circuit["attrs"].get("status") != "active" or circuit["refs"].get("type") in ("circuit-type/out-of-band", "circuit-type/cellular-oob"):
             continue
         for side, term in ends.items():
             target = str(term["refs"].get("termination", ""))
@@ -150,9 +159,16 @@ def _site_facts(w):
             if circuit["refs"]["provider"] != own:
                 carriers[site].add(circuit["refs"]["provider"])
             far = ends.get("Z" if side == "A" else "A")
-            port = objects.get(cabled.get(far["key"]) if far else None, {})
+            if not str(circuit["refs"].get("type")).endswith("access") or far is None or far["key"] not in cabled:
+                continue
+            # The far end lands through a patch panel onto an aggregation UNI;
+            # the attachment's provider edge is that switch's LAG peer.
+            from .fibre import far_end
+            port = objects.get(far_end(objects, cabled[far["key"]], cabled), {})
             device = objects.get(port.get("refs", {}).get("device"), {})
-            if circuit["refs"].get("type") == "circuit-type/access" and device.get("refs", {}).get("role") == "role/provider-edge":
+            if device.get("refs", {}).get("role") == "role/aggregation":
+                device = objects.get(lag_peer.get(device["key"]), {})
+            if device.get("refs", {}).get("role") == "role/provider-edge":
                 edges[site].add(device["key"])
     return hubs, {site for site in set(carriers) | set(edges) if len(carriers[site]) >= 2 or len(edges[site]) >= 2}
 
@@ -382,14 +398,36 @@ def _racks(w):
     owner = "owner/operations" if "owner/operations" in w.objects else None
     for rack in sorted((o for o in w.objects.values() if o["kind"] == "rack"), key=lambda o: o["key"]):
         height = rack["attrs"]["u_height"]
-        if height not in RACK_TYPES:
+        if alias := rack["meta"].get("rack_type"):
+            # A builder-chosen catalog rack type (catalog rack_types), such as
+            # the provider premises' MPOE wall cabinet.
+            spec = w.catalog["rack_types"][alias]
+            key = f"rack-type/{alias}"
+            if key not in w.objects:
+                maker = spec["manufacturer"]
+                if f"manufacturer/{maker}" not in w.objects:
+                    w.add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
+                w.add("rack_type", key, {k: spec[k] for k in ("model", "slug", "u_height", "width", "form_factor", "description") if k in spec}
+                      | {"slug": f"{w.recipe['namespace']}-{spec['slug']}"},
+                      {"manufacturer": f"manufacturer/{maker}", **({"owner": owner} if owner else {})}, {"operations": True})
+            rack["refs"]["rack_type"] = key
+            rack["refs"].pop("group", None)
+            for field in ("width", "form_factor"):
+                rack["attrs"].pop(field, None)
+            continue
+        if height in CATALOG_RACK_HEIGHTS:
+            spec = w.catalog["rack_types"][CATALOG_RACK_HEIGHTS[height]]
+            authored = (spec["manufacturer"], spec["model"], spec["form_factor"], spec["description"])
+        elif height in RACK_TYPES:
+            authored = RACK_TYPES[height]
+        else:
             raise DesignError(f"No catalog rack type for a {height}U cabinet; add one before changing rack height")
         key = f"rack-type/{height}u"
         if key not in w.objects:
             # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
             # cabinet grid (blocks.CABINET_WIDTH_M) is authored around. The pinned
             # library has no 24U SX type, so catalog/README.md cites APC's page.
-            maker, model, form, description = RACK_TYPES[height]
+            maker, model, form, description = authored
             if f"manufacturer/{maker}" not in w.objects:
                 w.add("manufacturer", f"manufacturer/{maker}", {"name": maker, "slug": maker.lower()})
             w.add("rack_type", key, {"model": model, "slug": f"{w.recipe['namespace']}-{maker.lower()}-{model.lower()}",
@@ -531,7 +569,9 @@ def _cables(w):
                         next((side_of.get(end["refs"].get("power_port"), "a")
                               for end in ends if end["kind"] == "power_outlet"), "a"))
             attrs["color"] = naming.CABLE_COLORS["power-" + side]
-        elif attrs.get("type") in naming.CABLE_COLORS:
+        elif attrs.get("type") in naming.CABLE_COLORS and "color" not in attrs:
+            # A builder's colour-by-function (estates/fibre.py PoP cable
+            # policy: OSP blue, management grey) outranks colour-by-medium.
             attrs["color"] = naming.CABLE_COLORS[attrs["type"]]
 
 
@@ -652,6 +692,9 @@ def _tags(w):
         if role == "role/customer-edge" or (role == "role/wan-edge" and
                                              objects.get(device["refs"].get("tenant"), {}).get("refs", {}).get("group") == "tenant-group/customers"):
             applied[key].add("managed-ce")
+    for key, obj in objects.items():
+        if obj["kind"] in ("device", "circuit") and obj["meta"].get("managed_service"):
+            applied[key].add("managed-service")
     vrf_role = {}
     for key, role in roles.items():
         if role in zone_tags:
@@ -671,8 +714,10 @@ def _tags(w):
             port = objects.get(refs.get("assigned_object"), {})
             if port.get("kind") == "interface" and vrf_role.get(refs.get("vrf")) in zone_tags:
                 applied[port["refs"]["device"]].add(zone_tags[vrf_role[refs["vrf"]]])
-        elif obj["kind"] == "bgp_session" and refs.get("peer_group") == "bgp-peer-group/ibgp-core":
-            # Clients peer to the reflectors, so a remote iBGP loopback is a reflector's.
+        elif (obj["kind"] == "bgp_session" and refs.get("peer_group") == "bgp-peer-group/ibgp-core"
+              and not obj["meta"].get("mirror")):
+            # Clients peer to the reflectors, so a remote iBGP loopback is a
+            # reflector's; the reflector-side mirror records name clients.
             remote = objects.get(refs.get("remote_address"), {})
             port = objects.get(remote.get("refs", {}).get("assigned_object"), {})
             if port.get("kind") == "interface":
@@ -728,6 +773,9 @@ def unused_ports(objects):
     return {key for key, obj in objects.items()
             if obj["kind"] == "interface" and obj["attrs"].get("type") not in (None, "virtual", "lag", "bridge")
             and key not in named
+            # A labelled demarcation (a provider NID handing off to customer
+            # equipment that is not inventoried) is in service by declaration.
+            and not (obj["attrs"].get("mark_connected") and obj["attrs"].get("label"))
             and not any(obj["refs"].get(field) for field in ("untagged_vlan", "tagged_vlans", "wireless_lans"))}
 
 
