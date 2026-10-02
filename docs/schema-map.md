@@ -55,9 +55,10 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `export_template` | `extras.exporttemplate` | `/api/extras/export-templates/` | owner | — | REST, loader-only, main, ns-name |
 | `fhrp_group` | `ipam.fhrpgroup` | `/api/ipam/fhrp-groups/` | — | protocol + group_id | TB |
 | `fhrp_group_assignment` | `ipam.fhrpgroupassignment` | `/api/ipam/fhrp-group-assignments/` | group, interface | the pair (in interface, group) | TB |
+| `front_port` | `dcim.frontport` | `/api/dcim/front-ports/` | device, module, rear_port | name + type (in device) | TB |
 | `ike_policy` | `vpn.ikepolicy` | `/api/vpn/ike-policies/` | proposals | name + version | TB |
 | `ike_proposal` | `vpn.ikeproposal` | `/api/vpn/ike-proposals/` | — | name + authentication_method + encryption_algorithm + group | TB |
-| `interface` | `dcim.interface` | `/api/dcim/interfaces/` | bridge, device, module, parent, primary_mac_address, tagged_vlans, untagged_vlan, vlan_translation_policy, vrf, wireless_lans | name + type (in device) | TB |
+| `interface` | `dcim.interface` | `/api/dcim/interfaces/` | bridge, device, lag, module, parent, primary_mac_address, qinq_svlan, tagged_vlans, untagged_vlan, vlan_translation_policy, vrf, wireless_lans | name + type (in device) | TB |
 | `inventory_item` | `dcim.inventoryitem` | `/api/dcim/inventory-items/` | component, device, manufacturer, parent, role | name + asset_tag (in device, parent) | TB |
 | `inventory_item_role` | `dcim.inventoryitemrole` | `/api/dcim/inventory-item-roles/` | — | name | TB |
 | `ip_address` | `ipam.ipaddress` | `/api/ipam/ip-addresses/` | assigned_object, owner, tenant, vrf | address (in vrf) | TB |
@@ -91,6 +92,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `rack_group` | `dcim.rackgroup` | `/api/dcim/rack-groups/` | owner | name | TB |
 | `rack_role` | `dcim.rackrole` | `/api/dcim/rack-roles/` | — | name (in parent) | TB |
 | `rack_type` | `dcim.racktype` | `/api/dcim/rack-types/` | manufacturer, owner | model (in manufacturer) | TB |
+| `rear_port` | `dcim.rearport` | `/api/dcim/rear-ports/` | device, module | name + type (in device) | TB |
 | `region` | `dcim.region` | `/api/dcim/regions/` | parent | name (in parent) | TB |
 | `rir` | `ipam.rir` | `/api/ipam/rirs/` | — | name (in parent) | TB |
 | `role` | `ipam.role` | `/api/ipam/roles/` | — | name (in parent) | TB |
@@ -112,7 +114,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `virtual_disk` | `virtualization.virtualdisk` | `/api/virtualization/virtual-disks/` | owner, virtual_machine | name (in virtual_machine) | TB |
 | `virtual_machine` | `virtualization.virtualmachine` | `/api/virtualization/virtual-machines/` | cluster, device, platform, primary_ip4, primary_ip6, role, tags, tenant, virtual_machine_type | name (in cluster, device, tenant) | TB |
 | `virtual_machine_type` | `virtualization.virtualmachinetype` | `/api/virtualization/virtual-machine-types/` | default_platform, owner | name | TB |
-| `vlan` | `ipam.vlan` | `/api/ipam/vlans/` | group, owner, role, site, tags, tenant | SDK default | TB |
+| `vlan` | `ipam.vlan` | `/api/ipam/vlans/` | group, owner, qinq_svlan, role, site, tags, tenant | SDK default | TB |
 | `vlan_group` | `ipam.vlangroup` | `/api/ipam/vlan-groups/` | scope_site, tenant | name (in scope_site, scope_location) | TB |
 | `vlan_translation_policy` | `ipam.vlantranslationpolicy` | `/api/ipam/vlan-translation-policies/` | — | name | TB |
 | `vlan_translation_rule` | `ipam.vlantranslationrule` | `/api/ipam/vlan-translation-rules/` | policy | local_vid (in policy) | TB |
