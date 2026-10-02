@@ -284,9 +284,25 @@ serials remain deterministic and growth-stable. The independent check
 `hardware-serial` requires every device serial to match its model's template.
 Formats are under the native 50-character limit. Device serials are not
 enforced unique (NetBox does not either); the per-format spaces are large
-enough that sample estates carry no duplicates. Installed optics keep their
-`OPT-`/`AOC-` hashed serials: the AOC assembly serial is bound to its cable
-identity (see the installed optics policy). Asset tags are separate.
+enough that sample estates carry no duplicates. Installed optics use the same
+template grammar from `optics.serial_formats`, one authored label shape per
+maker (Cisco `FNS…`, Juniper `1A…`, Arista `XKT…`, Fortinet `FNT…`, Generic
+`G…`) — fiction shaped like a transceiver label, not a vendor-verified format —
+expanded from a hash of the namespace and the interface key (an AOC uses its
+cable key, so both captive ends share one assembly serial; see the installed
+optics policy). Asset tags are separate.
+
+### MAC OUIs and routed-VLAN names
+
+`mac_ouis.manufacturers` maps each maker that addresses interfaces in this
+catalog to its public IEEE MA-L assignment, read from the registry text
+(source `ieee-oui`, <https://standards-oui.ieee.org/oui/oui.txt>, fetched
+2026-10-02): Cisco `00:00:0C`, Juniper `00:05:85`, Arista `00:1C:73`, Fortinet
+`00:09:0F`, Supermicro `AC:1F:6B`, Opengear `00:13:C6`, APC `00:C0:B7`, HPE
+(Aruba) `00:0B:86`. `mac_ouis.virtual_machine` is QEMU/KVM's conventional
+locally administered `52:54:00`, not an IEEE assignment. Generated tails are
+fictional. A platform's `svi_format` (Junos: `irb.{vid}`) names its routed
+VLAN interface; platforms without one use `Vlan{vid}`.
 
 ## Platforms
 
@@ -463,9 +479,10 @@ panel or extension belongs inside its path. Independent optic serial numbers
 must not be invented for its ends. Empty unused cages are allowed; only an
 actually installed module/end receives a component power reservation.
 
-`power_basis` distinguishes verified maxima from planning choices. It is catalog
-provenance only: emitted NetBox module-type attributes carry the reservation and
-vendor datasheet URLs, never this note or an in-repo policy anchor.
+`power_basis` distinguishes verified maxima from planning choices. It, the
+source list and the planning power reservation are catalog provenance only:
+emitted NetBox optic module types carry just the datasheet facts (protocol,
+medium, connector, rate and reach).
 `vendor_max_power_mw` is present only for verified electrical maxima: Cisco
 LR ([Table 8](https://www.cisco.com/c/en/us/products/collateral/interfaces-modules/transceiver-modules/data_sheet_c78-455693.html)),
 Juniper [LR](https://apps.juniper.net/hct/model/EX-SFP-10GE-LR),

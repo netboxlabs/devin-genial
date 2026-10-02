@@ -353,16 +353,18 @@ def _planned_cabinets(w):
             continue
         stem, old = template["key"].rsplit("-", 1)[0], f"{ordinal:02}"
         number = f"{ordinal + 1:02}"
+        key = f"{stem}-{number}"
+        row, column = divmod(ordinal, CABINETS_PER_ROW)
+        # Same grammar blocks.Site.rack gives that lane: room tag, row, zone
+        # letter and bay. No asset tag: an unpurchased cabinet has none, and
+        # taking a ledger number here would shift with unrelated rack order.
+        room_tag = template["attrs"]["facility_id"].rsplit("-", 2)[0]
         attrs = dict(template["attrs"], status="planned",
                      name=template["attrs"]["name"].removesuffix(old) + number,
-                     facility_id=template["attrs"]["facility_id"].removesuffix(old) + number,
+                     facility_id=f"{room_tag}-{row + 1:02}-C{column + 1:02}",
                      description="Next compute cabinet position; not yet installed or powered")
-        if template["attrs"]["asset_tag"].endswith(f"-{old}"):
-            attrs["asset_tag"] = template["attrs"]["asset_tag"].removesuffix(old) + number
-        else:
-            del attrs["asset_tag"]  # a digest-shortened tag cannot be extended honestly
-        row, column = divmod(ordinal, CABINETS_PER_ROW)
-        w.add("rack", f"{stem}-{number}", attrs, dict(template["refs"]),
+        attrs.pop("asset_tag", None)
+        w.add("rack", key, attrs, dict(template["refs"]),
               {"position_m": [round(ROOM_ORIGIN_M + ZONE_PITCH_M + CABINET_WIDTH_M * column, 3),
                               round(ROOM_ORIGIN_M + CABINET_ROW_PITCH_M * row, 3), 0], "planned": True})
 

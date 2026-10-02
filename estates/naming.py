@@ -174,7 +174,7 @@ def role_label(role):
 
 # One distinct colour per device role (NetBox renders it as the role badge and
 # the rack-elevation fill), so no two roles read alike in a list or a rack.
-# ``tests/test_naming_policy.py`` pins uniqueness; an estate emits only the
+# ``tests/test_estate_hygiene.py`` pins uniqueness; an estate emits only the
 # roles something references (estates/operations.py ``finalize``).
 ROLE_COLORS = {
     "wan-edge": "e65100", "distribution": "6a1b9a", "access": "1565c0",

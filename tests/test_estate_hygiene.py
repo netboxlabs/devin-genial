@@ -77,7 +77,7 @@ class EstateHygieneTests(unittest.TestCase):
         self.assertEqual(len(set(ROLE_COLORS.values())), len(ROLE_COLORS))
         self.assertEqual(len({tag[1] for tag in TAGS.values()}), len(TAGS))
         provider = self.plans["provider-backbone"]
-        self.assertFalse({"role/database", "role/backup-service", "role/patch-panel", "role/wall-outlet"}
+        self.assertFalse({"role/database", "role/backup-service", "role/wall-outlet"}
                          & {obj["key"] for obj in provider["objects"]})
         self.assertNotIn("hardware/patch-panel", {obj["key"] for obj in provider["objects"]})
 

@@ -136,9 +136,8 @@ decides what gets built beside the artifact and what the cheat sheet narrates.
   and may not be claimed.
 - **`automation`** adds narration only, no files — since 0.11.0 the records are
   already in every estate. It points at the inventory a playbook reads, the
-  service records a template renders, the custom field and custom link where
-  the profile authors them (today the bank's operations tier; the sheet lists
-  only what the estate actually carries), the two config contexts whose
+  service records a template renders, the site service-tier custom field and
+  site-equipment custom link every estate carries, the two config contexts whose
   ntp/syslog/dns values are the estate's own service VM addresses, the two
   rendering export templates, and
   the deliberately inert webhook + disabled event rule (the ServiceNow/ITSM

@@ -611,10 +611,10 @@ Recipes size demand. They do not select:
   webhook and one disabled event rule — with its config-context values derived
   from that estate's own services (see
   [modeling](modeling.md#automation-records)). Custom-field, choice-set and
-  custom-link definitions are profile-authored, not universal: today only the
-  bank emits them (its operations tier and site-equipment link). No key selects,
-  adds to or
-  removes it.
+  custom-link definitions are shared too: every profile emits the site
+  service-tier field (read from each site's hub role and carrier count) and the
+  site-equipment link; tags are graph-derived, never chosen. No key selects,
+  adds to or removes them.
 - **Per-object descriptions, comments or journal text.**
 - **The inherited-lineage brand.** Acquired/inherited bank branches carry the
   authored predecessor identity "Birch" throughout (device names, DNS, VRFs,
