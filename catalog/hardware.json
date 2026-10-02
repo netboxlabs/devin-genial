@@ -1,5 +1,5 @@
 {
-  "version": "0.14",
+  "version": "0.15",
   "sources": {
     "access-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9200L-24P-4X.yaml",
@@ -634,6 +634,153 @@
       "purpose": "EX3400 data sheet ordering table: 'EX3400-24T EX3400 24-port 10/100/1000BASE-T with 4 SFP+ and 2 QSFP+ uplink ports (optics not included)'. The EX3400 HCT product list (juniper-ex3400-optics) is platform-wide, so its EX-SFP-10GE-LR/SR rows cover the 24T's four SFP+ uplink cages exactly as the 24P's.",
       "response_sha256": "1edcb3bb7cd9bd20dce578c5ac1d87eed2815741ab3ee5720a4dd89a3a40857f",
       "evidence_path": "build/catalog-evidence/footprint/exds.html"
+    },
+    "aggregation-legacy-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/ACX5048-AC.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "287cd313cef390211cf2099ca07e972224f86b35463ea02f062243a665d0c03f",
+      "license": "CC0-1.0"
+    },
+    "aggregation-legacy-psu": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JPSU-650W-AC-AFO.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "5d811005eec2786980d8ac1ffaccecbf0c0e2e7e196ae184e3e2484839f22af5",
+      "license": "CC0-1.0"
+    },
+    "provider-edge-legacy-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/MX80.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "cb297f96f8b2bd8794cf10e09673c3a9f6ad864fcba62212fb5053ef32604adb",
+      "license": "CC0-1.0"
+    },
+    "provider-edge-successor-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/MX304.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "b6ad58a276c86a9e24eaebc1fde1d0b48d3497041269a2c8ce806548a7b4f764",
+      "license": "CC0-1.0"
+    },
+    "provider-edge-successor-lmic": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/module-types/Juniper/JNP304-LMCIC16.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "828de371116216b14b1dd4d202d039a998cdf7d29d8df2f6ce8b0635b36bc3f2",
+      "license": "CC0-1.0"
+    },
+    "ddos-mitigation-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Arbor/TMS-HD-1000.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "6db7c55576498a50c21963e0db4614fdf2221c4c5466588874a6a3e4ead83f09",
+      "license": "CC0-1.0"
+    },
+    "time-server-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Meinberg/lantime-m300.yml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "bc78849116d701a742a0c6b24d320b0094df1530632518d04ada540a4efea6b7",
+      "license": "CC0-1.0"
+    },
+    "nid-legacy-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Accedian/MetroNID-TE.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "d6c79051e0d3af17d6e9de2c5db2c8f4db0cc9b72c039e4593086fc557949f1e",
+      "license": "CC0-1.0"
+    },
+    "acx5048-hardware-guide": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/acx5000/acx5000.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "ACX5000 Universal Metro Router Hardware Guide (2022-01-23): ACX5048 has 48 SFP+ and 6 QSFP+ ports; 'Each SFP+ port can operate as a native 10-Gigabit Ethernet port or as a 1-Gigabit Ethernet port when 1-gigabit optics are inserted'; each QSFP+ port (48 through 53) runs 40GbE or 4x10GbE channelized; Table 14 'ACX5048 650 W JPSU-650W-AC-AFO'; AC typical power 230 W, maximum 365 W. The 365 W maximum is the planning allowance. The guide does not say whether a 1G optic renames xe- to ge-.",
+      "response_sha256": "fd94687a7bef7401d7a5ff18d84e2cb419adbd7a28ab30171b5a551b8061660c",
+      "evidence_path": "build/catalog-evidence/lived-in/acx5000.pdf"
+    },
+    "acx5000-optics-host": {
+      "url": "https://apps.juniper.net/hct/product/ACX5000/100001",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Juniper HCT ACX5000 family transceiver list (the hardware guide's own pointer, 'pathfinder.juniper.net/hct/product/#prd=ACX5000'): EX-SFP-10GE-SR, EX-SFP-10GE-LR, EX-SFP-10GE-ER, SFP-1GE-LX and SFP-1GE-LH, none end-of-life. The family page carries no per-model release list, so no Junos minimum is claimed. The SFPP-10GE-* family the ACX5448 uses is not listed for the ACX5000. HCT pages re-render per request; the hash proves the archived response only.",
+      "response_sha256": "bfbad83ddd40874846ed46cc0948f283bb12090001490e5a23cd4c056d4b46c4",
+      "evidence_path": "build/catalog-evidence/lived-in/hct_ACX5000.html"
+    },
+    "juniper-ex-sfp-10ge-er": {
+      "url": "https://apps.juniper.net/hct/model/EX-SFP-10GE-ER/hwspecs",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact model HCT: SFP+ 10GBASE-ER, 40 km, duplex LC PC/UPC, maximum power consumption 1.5 W.",
+      "response_sha256": "d7a6ab64714b53e977f9c05db658d77925be1248c2ec67f29dd612e3804645f7",
+      "evidence_path": "build/catalog-evidence/lived-in/hct_EX-SFP-10GE-ER.html"
+    },
+    "juniper-eol-m-series": {
+      "url": "https://support.juniper.net/support/eol/product/m_series/",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Juniper EOL table (verified in build/lived-in-design/VERIFICATION.md section 1). MX80 chassis row (CHAS-MX80-*, MX80-AC, MX80-T-AC): EOL announced 2020-06-30, last order 2021-06-30, end of support 2026-06-30. TSB107750 'End of Life Announcement: MX204 Product' (MX204-HW-BASE, JNP204-CHAS): EOL announced 2026-06-15, last order 2027-06-15, end of support 2032-06-30. No MX304 row."
+    },
+    "juniper-eol-acx-series": {
+      "url": "https://support.juniper.net/support/eol/product/acx_series/",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Juniper EOL table (verified in build/lived-in-design/VERIFICATION.md section 1). ACX5048-AC/-DC row: EOL announced 2022-03-15, last order 2022-12-31, end of support 2027-12-31. No ACX5448 row."
+    },
+    "mx304-orderable": {
+      "url": "https://www.techtarget.com/searchnetworking/news/252512454/Juniper-announces-routers-line-card-using-new-Trio-6-ASIC",
+      "checked": "2026-10-02",
+      "representation": "secondary-news-report",
+      "purpose": "TechTarget 2022-01-25: 'the MX304 Compact Multiservice Edge Router will be orderable in the first half of the year'. Juniper's Junos 22.2R1 release notes: 'Starting in Junos OS Release 22.2R1-S2, we introduce the MX304 router'. The 2022-07-01 availability date is authored from these, not a vendor GA date."
+    },
+    "mx304-lmic": {
+      "url": "https://www.juniper.net/documentation/us/en/hardware/mx304/topics/topic-map/mx304-interface-modules.html",
+      "checked": "2026-10-02",
+      "representation": "indexed-primary-page",
+      "purpose": "MX304 Line-card MICs: the LMIC16 has 16 ports; every port runs 100GbE with QSFP28 optics, four (0, 6, 8, 14) also run 400GbE with QSFP56-DD; interface names are et-0/<LMIC position>/<port>. The Juniper HCT MX304-LMIC16 hardware specification gives 16 QSFP-DD ports, which the pinned line-card type records as 400gbase-x-qsfpdd."
+    },
+    "mx304-optics-host": {
+      "url": "https://apps.juniper.net/hct/product/MX304/100001",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Exact MX304 HCT transceiver list, component MX304-LMIC16: JNP-QSFP-100G-LR4 (740-061409), JNP-QSFP-100G-SR4 (740-061405), QSFP-100G-ER4L (740-071175) and JNP-100G-AOC-3M (740-065631), each from Junos OS 22.2R1 and none end-of-life. HCT pages re-render per request; the hash proves the archived response only.",
+      "response_sha256": "54eaaf339076a9a491067b38846dab9978d0456816d73613dda61eeae075f801",
+      "evidence_path": "build/catalog-evidence/lived-in/hct_MX304.html"
+    },
+    "mx204-port-speed-limit": {
+      "url": "https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-mx-routers.html",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Table 3 'Valid Port Speed Combinations at Port Level (MX204)': with PIC1 at eight 10G ports, PIC0 may run only 100/100/100/0, 100/100/10-40/10-40 or 100/10-40/10-40/10-40; 100/100/100/100 and 100/100/100/10-40 require PIC1 at 0. The provider's MX204 therefore cannot add a fourth 100G link while all eight SFP+ ports are in use.",
+      "evidence_path": "build/catalog-evidence/lived-in/mx_speed.html"
+    },
+    "netscout-tms-datasheet": {
+      "url": "https://www.netscout.com/sites/default/files/2022-06/SECPDS_004_EN-2201%20-%20Arbor%20Threat%20Mitigation%20System.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-primary-pdf",
+      "purpose": "NETSCOUT Arbor Threat Mitigation System data sheet SECPDS_004_EN-2201, HD1000 column: up to eight Packet Processing Modules, 20 or 50 Gbps of mitigation each, up to 400 Gbps; 'AC: Two 1500-watt redundant power supplies; 100-240V AC, 15-10 A, 50-60 Hz (x2)'; '(1) MM, (5) fans, (2) QSFP+, (4) QSFP28; (x1) PPM: @ 327 Watts'; 2U, 20.5 kg with 1 PPM. No PSU part number is published and none is pinned in the library, so the installed supply is a labelled-fiction module type. The 327 W one-PPM figure is the planning allowance.",
+      "response_sha256": "f3418f77f8b3071e887613112dbe13c31e8375c9ab700c312593d68b90615953",
+      "evidence_path": "build/catalog-evidence/lived-in/netscout_tms.pdf"
+    },
+    "meinberg-m300-archive": {
+      "url": "https://www.meinbergglobal.com/english/archive/lantime-m300.htm",
+      "checked": "2026-10-02",
+      "representation": "parsed-primary-html",
+      "purpose": "Meinberg archive page: 'End-of-Sales Announcement. This product is no longer available. We will of course continue to provide support for units that have already been purchased and are still in use.' 'This product has been discontinued and has been replaced with: LANTIME M320'. No end-of-sale date is given. The library's 20 W PWR1 maximum is the planning allowance.",
+      "response_sha256": "415a1e80633b42a83cd49d7b04b0090b89a67f9f21fbac9cba74b043ce48dac2",
+      "evidence_path": "build/catalog-evidence/lived-in/meinberg_m300.html"
+    },
+    "accedian-metronid-launch": {
+      "url": "https://www.lightreading.com/cable-technology/accedian-unveils-metronid",
+      "checked": "2026-10-02",
+      "representation": "secondary-press-release",
+      "purpose": "Light Reading reprint of the Accedian press release, Montreal, 2008-04-15: Accedian 'introduced today the MetroNID series of intelligent demarcation units, designed to monitor Ethernet and IP-based services within metro access'.",
+      "response_sha256": "46d6df5de19993d5a6c849351069d859d3accf75c300fb1347cf84179ba29137",
+      "evidence_path": "build/catalog-evidence/lived-in/lr_metronid.html"
+    },
+    "accedian-te-datasheet": {
+      "url": "https://www.tempestns.com/wp-content/uploads/2020/06/Accedian-TE-TE-S-data.pdf",
+      "checked": "2026-10-02",
+      "representation": "archived-reseller-pdf",
+      "purpose": "Accedian TE summary data sheet (1Q 2015, reseller-hosted): TE model 716-0PP has 2 copper RJ-45 and 2 optical SFP interfaces plus a management interface; power options include AC adapters and a DC terminal block. No per-unit wattage or qualified-optics list is published, so the library's 13 W maximum is the planning allowance and the NID's SFPs are labelled Generic (evidence rule L12).",
+      "response_sha256": "113c944b18527f0df9cc41928bb6b743d06d627317192601cfabbe028522c8fc",
+      "evidence_path": "build/catalog-evidence/lived-in/accedian_te.pdf"
+    },
+    "authored-tms-psu": {
+      "url": "README.md#lived-in-carrier-models",
+      "purpose": "Labelled fiction: the pinned TMS HD 1000 type declares PSU bays and the library pins no Arbor/NETSCOUT supply. The module type 'TMS AC PSU (authored)' stands for the data sheet's 1500 W AC supply; its C14 inlet is authored (1500 W at the PoP's 208 V feed draws at most about 7.2 A, inside a C14's 10 A rating)."
     }
   },
   "hardware_lines": {
@@ -3455,7 +3602,8 @@
         "provider-edge-psu",
         "mx204-port-modes",
         "mx204-ac-power",
-        "juniper-inband-management"
+        "juniper-inband-management",
+        "juniper-eol-m-series"
       ],
       "description": "Pinned MX204 chassis and interface inventory; two explicitly installed JPSU-650W-AC-AO modules. Generator selects three 100G ports plus eight 10G ports, disables the fourth 100G port, and uses lo0 for inband management. Fan population and certified transceiver choices are not modeled.",
       "airflow": "front-to-rear",
@@ -3465,6 +3613,17 @@
         "name": "Juniper Junos",
         "slug": "juniper-junos",
         "svi_format": "irb.{vid}"
+      },
+      "lifecycle": {
+        "eol_announced": "2026-06-15",
+        "last_order": "2027-06-15",
+        "end_of_support": "2032-06-30",
+        "notice": "TSB107750",
+        "available": "2018-01-01",
+        "available_basis": "authored",
+        "source_ids": [
+          "juniper-eol-m-series"
+        ]
       }
     },
     "console-server-48": {
@@ -4261,6 +4420,10 @@
         "name": "Juniper Junos",
         "slug": "juniper-junos",
         "svi_format": "irb.{vid}"
+      },
+      "lifecycle": {
+        "available": "2019-07-01",
+        "available_basis": "authored"
       }
     },
     "nid": {
@@ -5646,6 +5809,751 @@
       ],
       "description": "Pinned Generic 2U blanking panel; no ports; excluded from rack utilization.",
       "serial_format": "{yy}@######@"
+    },
+    "aggregation-legacy": {
+      "manufacturer": "Juniper",
+      "model": "ACX5048-AC",
+      "slug": "juniper-acx5048-ac",
+      "part_number": "ACX5048-AC",
+      "weight": 9.8,
+      "weight_unit": "kg",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "xe-0/0/0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/4",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/5",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/6",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/7",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/8",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/9",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/10",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/11",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/12",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/13",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/14",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/15",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/16",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/17",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/18",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/19",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/20",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/21",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/22",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/23",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/24",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/25",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/26",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/27",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/28",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/29",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/30",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/31",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/32",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/33",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/34",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/35",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/36",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/37",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/38",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/39",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/40",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/41",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/42",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/43",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/44",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/45",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/46",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/47",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "et-0/0/48",
+          "type": "40gbase-x-qsfpp"
+        },
+        {
+          "name": "et-0/0/49",
+          "type": "40gbase-x-qsfpp"
+        },
+        {
+          "name": "et-0/0/50",
+          "type": "40gbase-x-qsfpp"
+        },
+        {
+          "name": "et-0/0/51",
+          "type": "40gbase-x-qsfpp"
+        },
+        {
+          "name": "et-0/0/52",
+          "type": "40gbase-x-qsfpp"
+        },
+        {
+          "name": "et-0/0/53",
+          "type": "40gbase-x-qsfpp"
+        },
+        {
+          "name": "em0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "em1",
+          "type": "1000base-x-sfp",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSU 0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PSU 1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "configured_modules": [
+        {
+          "bay": "Power Supply 0",
+          "position": "PSU 0",
+          "model": "JPSU-650W-AC-AFO",
+          "power_port": "PSU 0"
+        },
+        {
+          "bay": "Power Supply 1",
+          "position": "PSU 1",
+          "model": "JPSU-650W-AC-AFO",
+          "power_port": "PSU 1"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "uni_ports": [
+        "xe-0/0/0",
+        "xe-0/0/1",
+        "xe-0/0/2",
+        "xe-0/0/3",
+        "xe-0/0/4",
+        "xe-0/0/5",
+        "xe-0/0/6",
+        "xe-0/0/7",
+        "xe-0/0/8",
+        "xe-0/0/9",
+        "xe-0/0/10",
+        "xe-0/0/11",
+        "xe-0/0/12",
+        "xe-0/0/13",
+        "xe-0/0/14",
+        "xe-0/0/15",
+        "xe-0/0/16",
+        "xe-0/0/17",
+        "xe-0/0/18",
+        "xe-0/0/19",
+        "xe-0/0/20",
+        "xe-0/0/21",
+        "xe-0/0/22",
+        "xe-0/0/23",
+        "xe-0/0/24",
+        "xe-0/0/25",
+        "xe-0/0/26",
+        "xe-0/0/27",
+        "xe-0/0/28",
+        "xe-0/0/29",
+        "xe-0/0/30",
+        "xe-0/0/31",
+        "xe-0/0/32",
+        "xe-0/0/33",
+        "xe-0/0/34",
+        "xe-0/0/35",
+        "xe-0/0/36",
+        "xe-0/0/37",
+        "xe-0/0/38",
+        "xe-0/0/39"
+      ],
+      "lag_ports": [
+        "xe-0/0/40",
+        "xe-0/0/41",
+        "xe-0/0/42",
+        "xe-0/0/43"
+      ],
+      "source_ids": [
+        "aggregation-legacy-chassis",
+        "aggregation-legacy-psu",
+        "acx5048-hardware-guide",
+        "acx5000-optics-host",
+        "juniper-eol-acx-series"
+      ],
+      "description": "Pinned ACX5048-AC chassis: 48 SFP+ ports at 10G or 1G, six QSFP+ ports at 40G left unused (no 100G cage), em0 management, em1 SFP management left uncabled, two installed JPSU-650W-AC-AFO supplies. 1G customer UNIs keep the xe- name with an explicit 1G speed (declared normalization; Junos may present ge-). Fan population and DC power are not modeled.",
+      "airflow": "front-to-rear",
+      "serial_format": "WR{yyww}######",
+      "module_serial_format": "1GD@{yyww}###",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
+      },
+      "lifecycle": {
+        "last_order": "2022-12-31",
+        "end_of_support": "2027-12-31",
+        "available": "2015-01-01",
+        "available_basis": "authored",
+        "source_ids": [
+          "juniper-eol-acx-series"
+        ]
+      }
+    },
+    "provider-edge-legacy": {
+      "manufacturer": "Juniper",
+      "model": "MX80",
+      "slug": "juniper-mx80",
+      "weight": 13.6,
+      "weight_unit": "kg",
+      "u_height": 2,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "fxp0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "xe-0/0/0",
+          "type": "10gbase-x-xfp"
+        },
+        {
+          "name": "xe-0/0/1",
+          "type": "10gbase-x-xfp"
+        },
+        {
+          "name": "xe-0/0/2",
+          "type": "10gbase-x-xfp"
+        },
+        {
+          "name": "xe-0/0/3",
+          "type": "10gbase-x-xfp"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PEM0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PEM1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "provider-edge-legacy-chassis",
+        "juniper-eol-m-series"
+      ],
+      "description": "Pinned MX80 chassis: fxp0 management, four fixed 10G XFP ports and two fixed C14 inlets. MIC slots and the fan tray are not modeled. The provider keeps it only as a decommissioning relic: uncabled and unpowered, with no optics installed.",
+      "airflow": "front-to-rear",
+      "serial_format": "AB{yyww}#####",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
+      },
+      "lifecycle": {
+        "last_order": "2021-06-30",
+        "end_of_support": "2026-06-30",
+        "source_ids": [
+          "juniper-eol-m-series"
+        ]
+      }
+    },
+    "provider-edge-successor": {
+      "manufacturer": "Juniper",
+      "model": "MX304",
+      "slug": "juniper-mx304",
+      "part_number": "JNP304",
+      "weight": 30.5,
+      "weight_unit": "kg",
+      "u_height": 2,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "et-0/0/0",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/1",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/2",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/3",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/4",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/5",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/6",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/7",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/8",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/9",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/10",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/11",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/12",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/13",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/14",
+          "type": "400gbase-x-qsfpdd"
+        },
+        {
+          "name": "et-0/0/15",
+          "type": "400gbase-x-qsfpdd"
+        }
+      ],
+      "power_ports": [],
+      "console_ports": [],
+      "line_card": {
+        "bay": "LCMIC0",
+        "position": "0",
+        "model": "JNP304-LMCIC16",
+        "part_number": "750-122718",
+        "name_template": "et-0/{module}/<port>"
+      },
+      "pair_port": "et-0/0/0",
+      "tms_port": "et-0/0/1",
+      "source_ids": [
+        "provider-edge-successor-chassis",
+        "provider-edge-successor-lmic",
+        "mx304-lmic",
+        "mx304-optics-host",
+        "mx304-orderable",
+        "mx204-port-speed-limit"
+      ],
+      "description": "Pinned MX304 chassis with one JNP304-LMCIC16 line card in LCMIC0: sixteen QSFP-DD ports (et-0/0/0-15) configured at 100G with QSFP28 optics. The line card's ports are listed on the chassis; the card itself, its power supplies and the Routing Engine are not installed as modules, so the chassis has no power, console or management port.",
+      "airflow": "front-to-rear",
+      "serial_format": "BV{yyww}#####",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
+      },
+      "lifecycle": {
+        "available": "2022-07-01",
+        "available_basis": "authored",
+        "source_ids": [
+          "mx304-orderable"
+        ]
+      }
+    },
+    "ddos-mitigation": {
+      "manufacturer": "Arbor",
+      "model": "TMS HD 1000",
+      "slug": "arbor-tms-hd-1000",
+      "weight": 20.5,
+      "weight_unit": "kg",
+      "u_height": 2,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "1",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "2",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "3",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "4",
+          "type": "100gbase-x-qsfp28"
+        },
+        {
+          "name": "5",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "6",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "7",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "8",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "9",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "10",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "11",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "12",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "Management",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSU1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PSU2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "configured_modules": [
+        {
+          "bay": "PSU 1",
+          "position": "PSU1",
+          "model": "TMS AC PSU (authored)",
+          "power_port": "PSU1"
+        },
+        {
+          "bay": "PSU 2",
+          "position": "PSU2",
+          "model": "TMS AC PSU (authored)",
+          "power_port": "PSU2"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "offramp_ports": [
+        "1",
+        "2"
+      ],
+      "source_ids": [
+        "ddos-mitigation-chassis",
+        "netscout-tms-datasheet",
+        "authored-tms-psu"
+      ],
+      "description": "Pinned Arbor TMS HD 1000 chassis: four 100G QSFP28 and eight 10G SFP+ ports, Management and Console. The two installed supplies are a labelled-fiction module type (no supply is pinned). Chassis capacity exceeds current DIA demand; licensed mitigation capacity is not modeled.",
+      "airflow": "front-to-rear",
+      "serial_format": "AR{yyww}#####",
+      "module_serial_format": "PS{yyww}#####",
+      "platform": {
+        "name": "Arbor TMS",
+        "slug": "arbor-tms"
+      }
+    },
+    "time-server": {
+      "manufacturer": "Meinberg",
+      "model": "Lantime M300",
+      "slug": "meinberg-lantime-m300",
+      "weight": 3.5,
+      "weight_unit": "kg",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "lan0",
+          "type": "100base-tx"
+        },
+        {
+          "name": "lan1",
+          "type": "1000base-tx"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PWR1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "serial",
+          "type": "de-9"
+        }
+      ],
+      "management_port": "lan1",
+      "source_ids": [
+        "time-server-chassis",
+        "meinberg-m300-archive"
+      ],
+      "description": "Pinned Meinberg LANTIME M300 NTP server: lan0 (100BASE-TX) and lan1 (1000BASE-TX), a DE-9 serial console and one C14 inlet (single supply). Discontinued; successor LANTIME M320, per vendor page. The GPS antenna and its roof riser are not modeled; no PTP or SyncE is claimed.",
+      "airflow": "passive",
+      "serial_format": "0{yy}1######",
+      "platform": {
+        "name": "LANTIME OS",
+        "slug": "meinberg-lantime-os"
+      },
+      "lifecycle": {
+        "discontinued": true,
+        "successor": "LANTIME M320",
+        "source_ids": [
+          "meinberg-m300-archive"
+        ]
+      }
+    },
+    "nid-legacy": {
+      "manufacturer": "Accedian",
+      "model": "MetroNID TE",
+      "slug": "accedian-metronid-te",
+      "part_number": "716-0PP",
+      "weight": 800,
+      "weight_unit": "g",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "Monitor-1",
+          "type": "1000base-t"
+        },
+        {
+          "name": "Monitor-2",
+          "type": "1000base-t"
+        },
+        {
+          "name": "A_Client",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "B_Network",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "C_Management",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "AC Power Adapter",
+          "type": "dc-terminal"
+        },
+        {
+          "name": "Dual DC Power",
+          "type": "dc-terminal"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "nni_port": "B_Network",
+      "uni_port": "A_Client",
+      "management_interface": "Management",
+      "source_ids": [
+        "nid-legacy-chassis",
+        "accedian-te-datasheet",
+        "accedian-metronid-launch"
+      ],
+      "description": "Pinned Accedian MetroNID TE demarcation unit: B_Network is the 1G SFP network-facing port and A_Client the 1G SFP customer handoff; Monitor-1/2 stay spare and C_Management stays uncabled. In-band management is the virtual interface named by management_interface, which the builder creates. Both power inputs are DC terminals fed by an external adapter that is not modeled.",
+      "airflow": "passive",
+      "serial_format": "C{yy}@-####",
+      "lifecycle": {
+        "launched": "2008-04-15",
+        "source_ids": [
+          "accedian-metronid-launch"
+        ]
+      }
     }
   },
   "optics": {
@@ -5723,7 +6631,8 @@
           "mx204-port-modes",
           "juniper-ex3400-optics",
           "qfx5120-optics-host",
-          "juniper-ex3400-datasheet"
+          "juniper-ex3400-datasheet",
+          "acx5000-optics-host"
         ],
         "compatible_interfaces": {
           "inherited-access": [
@@ -5803,6 +6712,52 @@
             "xe-0/2/1",
             "xe-0/2/2",
             "xe-0/2/3"
+          ],
+          "aggregation-legacy": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
           ]
         },
         "vendor_max_power_mw": 1000
@@ -5825,7 +6780,8 @@
           "juniper-ex3300-optics",
           "juniper-ex3400-optics",
           "qfx5120-optics-host",
-          "juniper-ex3400-datasheet"
+          "juniper-ex3400-datasheet",
+          "acx5000-optics-host"
         ],
         "compatible_interfaces": {
           "inherited-access": [
@@ -5905,6 +6861,52 @@
             "xe-0/2/1",
             "xe-0/2/2",
             "xe-0/2/3"
+          ],
+          "aggregation-legacy": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
           ]
         },
         "vendor_max_power_mw": 1000
@@ -6151,7 +7153,8 @@
           "juniper-sfp-1ge-lx",
           "mx204-port-modes",
           "acx5448-optics-host",
-          "acx5448-port-speed"
+          "acx5448-port-speed",
+          "acx5000-optics-host"
         ],
         "compatible_interfaces": {
           "provider-edge": [
@@ -6165,6 +7168,52 @@
             "xe-0/1/7"
           ],
           "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
+          ],
+          "aggregation-legacy": [
             "xe-0/0/0",
             "xe-0/0/1",
             "xe-0/0/2",
@@ -6230,7 +7279,8 @@
           "juniper-sfp-1ge-lh",
           "mx204-port-modes",
           "acx5448-optics-host",
-          "acx5448-port-speed"
+          "acx5448-port-speed",
+          "acx5000-optics-host"
         ],
         "compatible_interfaces": {
           "provider-edge": [
@@ -6244,6 +7294,52 @@
             "xe-0/1/7"
           ],
           "aggregation": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
+          ],
+          "aggregation-legacy": [
             "xe-0/0/0",
             "xe-0/0/1",
             "xe-0/0/2",
@@ -6306,13 +7402,32 @@
         "source_ids": [
           "juniper-mx204-long-reach-optics-host",
           "juniper-qsfp-100g-er4l",
-          "mx204-port-modes"
+          "mx204-port-modes",
+          "mx304-optics-host"
         ],
         "compatible_interfaces": {
           "provider-edge": [
             "et-0/0/0",
             "et-0/0/1",
             "et-0/0/2"
+          ],
+          "provider-edge-successor": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2",
+            "et-0/0/3",
+            "et-0/0/4",
+            "et-0/0/5",
+            "et-0/0/6",
+            "et-0/0/7",
+            "et-0/0/8",
+            "et-0/0/9",
+            "et-0/0/10",
+            "et-0/0/11",
+            "et-0/0/12",
+            "et-0/0/13",
+            "et-0/0/14",
+            "et-0/0/15"
           ]
         },
         "vendor_max_power_mw": 5500
@@ -6332,7 +7447,8 @@
           "juniper-mx204-optics-host",
           "juniper-jnp-qsfp-100g-lr4",
           "mx204-port-modes",
-          "qfx5120-optics-host"
+          "qfx5120-optics-host",
+          "mx304-optics-host"
         ],
         "compatible_interfaces": {
           "provider-edge": [
@@ -6349,6 +7465,24 @@
             "et-0/0/53",
             "et-0/0/54",
             "et-0/0/55"
+          ],
+          "provider-edge-successor": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2",
+            "et-0/0/3",
+            "et-0/0/4",
+            "et-0/0/5",
+            "et-0/0/6",
+            "et-0/0/7",
+            "et-0/0/8",
+            "et-0/0/9",
+            "et-0/0/10",
+            "et-0/0/11",
+            "et-0/0/12",
+            "et-0/0/13",
+            "et-0/0/14",
+            "et-0/0/15"
           ]
         },
         "vendor_max_power_mw": 3500
@@ -6368,7 +7502,8 @@
           "juniper-jnp-qsfp-100g-sr4",
           "juniper-mx204-optics-host",
           "mx204-port-modes",
-          "qfx5120-optics-host"
+          "qfx5120-optics-host",
+          "mx304-optics-host"
         ],
         "compatible_interfaces": {
           "provider-edge": [
@@ -6385,6 +7520,24 @@
             "et-0/0/53",
             "et-0/0/54",
             "et-0/0/55"
+          ],
+          "provider-edge-successor": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2",
+            "et-0/0/3",
+            "et-0/0/4",
+            "et-0/0/5",
+            "et-0/0/6",
+            "et-0/0/7",
+            "et-0/0/8",
+            "et-0/0/9",
+            "et-0/0/10",
+            "et-0/0/11",
+            "et-0/0/12",
+            "et-0/0/13",
+            "et-0/0/14",
+            "et-0/0/15"
           ]
         },
         "vendor_max_power_mw": 3500
@@ -6730,12 +7883,17 @@
         "power_basis": "authored generic component envelope",
         "source_ids": [
           "reference-optics-v1",
-          "ciena-3903-datasheet"
+          "ciena-3903-datasheet",
+          "accedian-te-datasheet"
         ],
         "compatible_interfaces": {
           "nid": [
             "1",
             "2"
+          ],
+          "nid-legacy": [
+            "A_Client",
+            "B_Network"
           ]
         }
       },
@@ -6752,14 +7910,129 @@
         "power_basis": "authored generic component envelope",
         "source_ids": [
           "reference-optics-v1",
-          "ciena-3903-datasheet"
+          "ciena-3903-datasheet",
+          "accedian-te-datasheet"
         ],
         "compatible_interfaces": {
           "nid": [
             "1",
             "2"
+          ],
+          "nid-legacy": [
+            "A_Client",
+            "B_Network"
           ]
         }
+      },
+      "juniper-10g-er": {
+        "manufacturer": "Juniper",
+        "model": "EX-SFP-10GE-ER",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-ER",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 40000,
+        "power_reservation_mw": 1500,
+        "power_basis": "vendor maximum",
+        "source_ids": [
+          "acx5000-optics-host",
+          "juniper-ex-sfp-10ge-er"
+        ],
+        "compatible_interfaces": {
+          "aggregation-legacy": [
+            "xe-0/0/0",
+            "xe-0/0/1",
+            "xe-0/0/2",
+            "xe-0/0/3",
+            "xe-0/0/4",
+            "xe-0/0/5",
+            "xe-0/0/6",
+            "xe-0/0/7",
+            "xe-0/0/8",
+            "xe-0/0/9",
+            "xe-0/0/10",
+            "xe-0/0/11",
+            "xe-0/0/12",
+            "xe-0/0/13",
+            "xe-0/0/14",
+            "xe-0/0/15",
+            "xe-0/0/16",
+            "xe-0/0/17",
+            "xe-0/0/18",
+            "xe-0/0/19",
+            "xe-0/0/20",
+            "xe-0/0/21",
+            "xe-0/0/22",
+            "xe-0/0/23",
+            "xe-0/0/24",
+            "xe-0/0/25",
+            "xe-0/0/26",
+            "xe-0/0/27",
+            "xe-0/0/28",
+            "xe-0/0/29",
+            "xe-0/0/30",
+            "xe-0/0/31",
+            "xe-0/0/32",
+            "xe-0/0/33",
+            "xe-0/0/34",
+            "xe-0/0/35",
+            "xe-0/0/36",
+            "xe-0/0/37",
+            "xe-0/0/38",
+            "xe-0/0/39",
+            "xe-0/0/40",
+            "xe-0/0/41",
+            "xe-0/0/42",
+            "xe-0/0/43"
+          ]
+        },
+        "vendor_max_power_mw": 1500
+      },
+      "generic-100g-aoc-3m": {
+        "manufacturer": "Generic",
+        "model": "QSFP28-100G-AOC-3M",
+        "form_factor": "qsfp28",
+        "protocol": "100G-AOC",
+        "medium": "aoc",
+        "connector": "captive",
+        "rate_kbps": 100000000,
+        "reach_m": 3,
+        "power_reservation_mw": 3500,
+        "power_basis": "authored generic component envelope, matching the reviewed vendor AOC per-end reservation",
+        "source_ids": [
+          "reference-optics-v1",
+          "netscout-tms-datasheet",
+          "mx304-optics-host"
+        ],
+        "compatible_interfaces": {
+          "ddos-mitigation": [
+            "1",
+            "2",
+            "3",
+            "4"
+          ],
+          "provider-edge-successor": [
+            "et-0/0/0",
+            "et-0/0/1",
+            "et-0/0/2",
+            "et-0/0/3",
+            "et-0/0/4",
+            "et-0/0/5",
+            "et-0/0/6",
+            "et-0/0/7",
+            "et-0/0/8",
+            "et-0/0/9",
+            "et-0/0/10",
+            "et-0/0/11",
+            "et-0/0/12",
+            "et-0/0/13",
+            "et-0/0/14",
+            "et-0/0/15"
+          ]
+        },
+        "assembly": true,
+        "assembly_length_m": 3
       }
     },
     "serial_formats": {
