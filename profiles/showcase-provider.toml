@@ -134,7 +134,7 @@ hub_pop = "detroit-corktown"
 lan_endpoints = 0
 site_peak_mbps = 50
 sites = [
-  { pop = "detroit-corktown", count = 3 },
+  { pop = "detroit-corktown", count = 5 },
   { pop = "detroit-dearborn", count = 2 },
   { pop = "detroit-new-center", count = 1 },
 ]
@@ -271,10 +271,10 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
-  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-cermak", count = 5 },
   { pop = "chicago-loop", count = 2 },
-  { pop = "cleveland-flats", count = 2 },
-  { pop = "milwaukee-menomonee", count = 3 },
+  { pop = "cleveland-flats", count = 4 },
+  { pop = "milwaukee-menomonee", count = 5 },
 ]
 
 [[customers]]
@@ -286,7 +286,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 500
 sites = [
-  { pop = "chicago-cermak", count = 2 },
+  { pop = "chicago-cermak", count = 4 },
   { pop = "milwaukee-menomonee", count = 2 },
 ]
 
@@ -325,7 +325,7 @@ lan_endpoints = 0
 site_peak_mbps = 100
 hub_commit_mbps = 1000
 sites = [
-  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-cermak", count = 5 },
   { pop = "detroit-new-center", count = 3 },
 ]
 
@@ -339,7 +339,7 @@ site_peak_mbps = 50
 hub_commit_mbps = 500
 sites = [
   { pop = "chicago-loop", count = 3 },
-  { pop = "cleveland-flats", count = 2 },
+  { pop = "cleveland-flats", count = 4 },
 ]
 
 [[customers]]
@@ -352,8 +352,8 @@ site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
   { pop = "chicago-pilsen", count = 3 },
-  { pop = "detroit-corktown", count = 2, site_peak_mbps = 100 },
-  { pop = "milwaukee-menomonee", count = 3 },
+  { pop = "detroit-corktown", count = 4, site_peak_mbps = 100 },
+  { pop = "milwaukee-menomonee", count = 5 },
 ]
 
 [[customers]]
@@ -379,7 +379,7 @@ site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
   { pop = "chicago-pilsen", count = 3 },
-  { pop = "cleveland-flats", count = 3 },
+  { pop = "cleveland-flats", count = 5 },
   { pop = "milwaukee-west-allis", count = 2, site_peak_mbps = 100 },
 ]
 
@@ -405,7 +405,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 500
 sites = [
-  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-cermak", count = 5 },
   { pop = "detroit-corktown", count = 2 },
   { pop = "milwaukee-menomonee", count = 2 },
 ]
@@ -446,7 +446,7 @@ site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
   { pop = "cleveland-lakewood", count = 3 },
-  { pop = "detroit-corktown", count = 2 },
+  { pop = "detroit-corktown", count = 4 },
   { pop = "milwaukee-menomonee", count = 2, site_peak_mbps = 100 },
 ]
 
@@ -473,7 +473,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
-  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-cermak", count = 5 },
   { pop = "chicago-pilsen", count = 3 },
   { pop = "detroit-new-center", count = 2, site_peak_mbps = 100 },
 ]
@@ -539,7 +539,7 @@ lan_endpoints = 0
 site_peak_mbps = 50
 hub_commit_mbps = 500
 sites = [
-  { pop = "chicago-cermak", count = 3 },
+  { pop = "chicago-cermak", count = 5 },
   { pop = "cleveland-flats", count = 3 },
 ]
 
@@ -566,7 +566,7 @@ site_peak_mbps = 50
 hub_commit_mbps = 1000
 sites = [
   { pop = "chicago-loop", count = 2, site_peak_mbps = 100 },
-  { pop = "milwaukee-menomonee", count = 3 },
+  { pop = "milwaukee-menomonee", count = 5 },
   { pop = "milwaukee-west-allis", count = 3 },
 ]
 
@@ -1093,3 +1093,86 @@ name = "Northfield Hospital"
 service = "epl"
 rate_mbps = 500
 sites = [{ pop = "milwaukee-menomonee" }, { pop = "detroit-corktown" }]
+
+# Former customers (v0.18): the tenant and one decommissioned circuit stay on
+# record, with its install and termination dates; no premises, devices or
+# address slots. Authored names; nothing says why they left.
+[[former_customers]]
+key = "copperfield-press"
+name = "Copperfield Press"
+service = "dia"
+pop = "chicago-cermak"
+start = 2012
+end = 2019
+
+[[former_customers]]
+key = "lakeside-imaging"
+name = "Lakeside Imaging Partners"
+service = "private-l3"
+pop = "chicago-loop"
+start = 2013
+end = 2021
+
+[[former_customers]]
+key = "harmon-freight"
+name = "Harmon Freight Lines"
+service = "epl"
+pop = "chicago-pilsen"
+start = 2014
+end = 2020
+
+[[former_customers]]
+key = "motor-city-media"
+name = "Motor City Media Group"
+service = "dia"
+pop = "detroit-corktown"
+start = 2015
+end = 2022
+
+[[former_customers]]
+key = "dearborn-tool"
+name = "Dearborn Tool and Die"
+service = "private-l3"
+pop = "detroit-dearborn"
+start = 2016
+end = 2023
+
+[[former_customers]]
+key = "renaissance-cpa"
+name = "Renaissance CPA Partners"
+service = "dia"
+pop = "detroit-new-center"
+start = 2016
+end = 2024
+
+[[former_customers]]
+key = "flats-brewing"
+name = "Flats Brewing Company"
+service = "dia"
+pop = "cleveland-flats"
+start = 2018
+end = 2023
+
+[[former_customers]]
+key = "erie-marine"
+name = "Erie Marine Supply"
+service = "epl"
+pop = "cleveland-lakewood"
+start = 2018
+end = 2025
+
+[[former_customers]]
+key = "brew-city-labs"
+name = "Brew City Labs"
+service = "dia"
+pop = "milwaukee-menomonee"
+start = 2020
+end = 2024
+
+[[former_customers]]
+key = "valley-orthopedics"
+name = "Valley Orthopedics"
+service = "private-l3"
+pop = "milwaukee-west-allis"
+start = 2021
+end = 2025

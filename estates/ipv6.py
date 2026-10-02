@@ -48,6 +48,17 @@ def upstream_block(pool, side):
     return IPv6Network((int(root.network_address) + ((1 + "ab".index(side)) << 80), 64))
 
 
+def exchange_lan(pool, ordinal):
+    """An internet exchange's IPv6-only peering /64 (provider IX ports).
+
+    The exchange's own space, never the operator's: like an upstream block it
+    sits in the documentation root the operator's pool does not use, past the
+    upstreams' /64s. ``ordinal`` is the exchange's permanent metro index.
+    """
+    root = IPv6Network("3fff:fff::/32") if pool.subnet_of(_DOCUMENTATION[0]) else _DOCUMENTATION[0]
+    return IPv6Network((int(root.network_address) + ((0x100 + ordinal) << 80), 64))
+
+
 def resolve_pool(value):
     """Accept an aligned /32–/40 documentation allocation; return canonical text."""
     message = "ipv6_pool must be an aligned IPv6 documentation network /32 through /40 within 2001:db8::/32 or 3fff::/20"

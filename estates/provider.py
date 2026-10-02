@@ -16,8 +16,8 @@ import ipaddress
 import math
 import re
 
-from . import bgp, datacenter, discovery_lab, equipment, fibre, ipv6, networking, operations, places, poe, optics
-from .blocks import Site, foundation, trunk
+from . import bgp, datacenter, discovery_lab, equipment, fibre, ipv6, networking, operations, places, poe, optics, timeline
+from .blocks import Site, device_type, foundation, trunk
 from .model import DesignError, World, canonical, resolve_bank_recipe, resolve_demo
 from .naming import bandwidth, port_speed, segment_purpose, titleize
 
@@ -37,6 +37,8 @@ SERVICE_DEFAULTS = {"private-l3": dict(site_peak_mbps=50,hub_commit_mbps=1000,la
                     "epl": dict(rate_mbps=100)}
 CIRCUIT_TYPE_NAMES = {"private-l3": "Private L3", "dia": "DIA", "epl": "EPL"}
 SERVICE_LABELS = {"private-l3": "Private L3 VPN", "dia": "Dedicated internet access", "epl": "Ethernet private line"}
+# The operator's order-ID stem per service: ILF-PL3-00042, ILF-DIA-00107.
+ORDER_PREFIX = {"private-l3": "PL3", "dia": "DIA", "epl": "EPL"}
 # Rates past the 1G handoff: an attachment whose rate times (1 + reserve)
 # exceeds 1G takes the 10G NID tier, which the 10G handoff bounds.
 LARGE_TIERS_MBPS = (2000,5000)
@@ -127,9 +129,8 @@ MANAGEMENT_HUB_RT, MANAGEMENT_SPOKE_RT = 9000, 9001
 TRANSPORT_TIERS_MBPS = (100000,)
 # Authored span route length: great-circle distance times a fibre route factor.
 ROUTE_FACTOR = 1.3
-# One timeline: PoPs launch in backbone order, spans come up before a PoP
-# serves customers, and customers onboard in their permanent slot order.
-LAUNCH_EPOCH_DAYS, LAUNCH_STEP_DAYS, LAUNCH_CAP_DAYS = 2555, 45, 1825
+# One timeline (estates/timeline.py): PoPs launch in metro bursts, spans come
+# up before a PoP serves customers, customers onboard in permanent slot order.
 # A premises lies in its serving PoP's service area: no farther than this from
 # it, and no nearer any other same-metro PoP that existed when it was ordered.
 PREMISES_KM = 25
@@ -274,7 +275,8 @@ def _resolve_private_l3(c, r, usable):
 
 
 def resolve(raw):
-    fields = {"profile","demo","topology","pops","customers","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base","discovery_lab"}
+    fields = {"profile","demo","topology","pops","customers","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base","discovery_lab",
+              "former_customers"}
     if unknown := raw.keys()-(COMMON|fields):
         raise DesignError(f"Unknown provider fields: {', '.join(sorted(unknown))}; describe PoPs and customer service demand")
     base = dict(namespace="lakes-fiber",name="Great Lakes Fiber",address_pool="10.0.0.0/8")
@@ -407,20 +409,56 @@ def resolve(raw):
     if (r["asn_base"]-4200000000)%1024:
         raise DesignError("asn_base must start a 1024-number block aligned from 4200000000; target global collision preflight is still required")
     r["discovery_lab"] = discovery_lab.resolve(raw.get("discovery_lab"))
+    r["former_customers"] = _resolve_former(raw.get("former_customers",[]),r,keys,names)
     return r
 
 
-def workloads(recipe):
+# A former customer (DESIGN v0.18 P0-6): the tenant and one decommissioned
+# circuit stay on record; it holds no premises, device, UNI, ASN, VRF or
+# address slot. Authored names; no claim about why it left.
+FORMER_FIELDS = {"key","name","service","pop","start","end"}
+FORMER_MAX = 32
+
+
+def _resolve_former(rows,r,keys,names):
+    if not isinstance(rows,list) or len(rows) > FORMER_MAX:
+        raise DesignError(f"former_customers must be a list of at most {FORMER_MAX} entries")
+    pops = {p["key"] for p in r["pops"]}
+    final = date.fromisoformat(r["as_of"]).year
+    result = []
+    for row in rows:
+        if not isinstance(row,dict) or row.keys() != FORMER_FIELDS:
+            raise DesignError(f"Each former customer needs exactly {', '.join(sorted(FORMER_FIELDS))}")
+        key = _key(row["key"],"Former customer key")
+        if key in keys:
+            raise DesignError(f"Former customer {key}: keys are shared with customers and must be unique")
+        keys.add(key)
+        if not isinstance(row["name"],str) or not 1 <= len(row["name"]) <= 60 or row["name"] != row["name"].strip() or row["name"] in names:
+            raise DesignError(f"Former customer {key}: name must be a unique 1–60 character display name")
+        names.add(row["name"])
+        if row["service"] not in SERVICES:
+            raise DesignError(f"Former customer {key}: service must be one of {', '.join(SERVICES)}")
+        if row["pop"] not in pops:
+            raise DesignError(f"Former customer {key}: pop must be a known PoP key")
+        _integer(row["start"],f"Former customer {key} start",1990,final)
+        _integer(row["end"],f"Former customer {key} end",row["start"],final)
+        result.append(dict(row))
+    return result
+
+
+def workloads(recipe,ddos=False):
+    """NOC service groups; ``ddos`` adds the detection controller pair (one group) iff any TMS exists."""
     count = len(premises(recipe)); result = []
     for slot,(key,number,size,cpus,memory,disk) in enumerate((
         ("identity",count,128,4,8192,100000),("dns",len(recipe["pops"]),16,2,4096,40000),
-        ("monitoring",len(recipe["pops"]),16,4,16384,200000),("provisioning",count,128,4,8192,100000))):
+        ("monitoring",len(recipe["pops"]),16,4,16384,200000),("provisioning",count,128,4,8192,100000),
+        *(((CONTROLLER,1,1,8,32768,200000),) if ddos else ()))):
         listeners = [dict(key="",name=key,protocol="tcp",ports=[53 if key == "dns" else 443])]
         if key == "dns": listeners.append(dict(key="udp",name="dns-udp",protocol="udp",ports=[53]))
         if key == "identity": listeners.append(dict(key="radius",name="radius",protocol="udp",ports=[1812,1813]))
         result.append(dict(key=key,slot=slot,instances=2*max(1,(number+size-1)//size),replicas=2,failure_domain="rack",
             network="applications",vcpus=cpus,memory_mb=memory,disk_mb=disk,listeners=listeners,
-            criticality="tier-2" if key == "monitoring" else "tier-1",
+            criticality="tier-2" if key in ("monitoring",CONTROLLER) else "tier-1",
             replica_description="independent host and rack lanes"))
     return result
 
@@ -440,6 +478,9 @@ def generate(recipe,previous=None):
         current_pops = {p["key"]:p for p in recipe["pops"]}
         if any(current_pops.get(p["key"]) != p for p in old["pops"]):
             raise DesignError("Removing, renaming or moving an existing PoP requires a new baseline")
+        formers = {f["key"]:f for f in recipe["former_customers"]}
+        if any(formers.get(f["key"]) != f for f in old.get("former_customers",[])):
+            raise DesignError("Changing or removing a former customer requires a new baseline; growth may only append one")
         current = {c["key"]:c for c in recipe["customers"]}
         for before in old["customers"]:
             after = current.get(before["key"])
@@ -530,7 +571,7 @@ def _registry(w):
     _account(w,"provider-account/operator/fiber","provider/operator","Backbone fiber",f"{code}-INT-0002","Owned metro fiber between PoPs")
     # Native classification: one circuit type per service (fibre.circuit_type
     # reuses the registry's cellular-oob and noc-access rows).
-    services = {c["service"] for c in r["customers"]}
+    services = {c["service"] for c in (*r["customers"],*r["former_customers"])}
     for name,display in (("backbone","Backbone"),("dark-fiber","Dark Fiber"),("transit","Transit"),
                          ("cellular-oob","Cellular OOB"),("noc-access","NOC Access"),
                          *((f"{s}-access",f"{CIRCUIT_TYPE_NAMES[s]} Access") for s in SERVICES if s in services)):
@@ -555,12 +596,14 @@ def _registry(w):
     w.obj(MANAGEMENT_VRF)["refs"].update(import_targets=[hub,spoke],export_targets=[hub])
     w.add("vrf",OOB_VRF,dict(name="Out-of-Band Cellular",enforce_unique=True,
           description="Console-server LTE handoffs on the cellular carrier, outside the carrier routing domain"),{"tenant":"tenant"})
+    _first_impression(w)
     for c in r["customers"]:
         key = c["key"]; slot = w.reserve("provider-customers",key,256)
         customer = customer_name(c); label = SERVICE_LABELS[c["service"]]
         if c["service"] == "dia" and c["managed"]:
             label = "Managed internet access"
-        tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=customer,slug=f"{ns}-cust-{key}",description=f"{label} customer"))
+        tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=customer,slug=f"{ns}-cust-{key}",
+                       description=f"{label} customer of {r['name']}"),{"group":CUSTOMER_GROUP})
         account = _account(w,f"provider-account/customer/{key}","provider/operator",customer,f"{code}-C{slot+1:05d}",
                            f"{label} billing for {customer}")
         if c["service"] == "epl":
@@ -581,6 +624,61 @@ def _registry(w):
         w.add("virtual_circuit",f"virtual-circuit/customer/{key}",dict(cid=f"{code}-VPN-{slot+1:04d}",status="active",
               description=virtual_circuit_description(c),comments=VIRTUAL_CIRCUIT_NOTE),
               dict(provider_network="provider-network/operator",type="virtual-circuit-type/private-l3",tenant=tenant,provider_account=account))
+    _former_customers(w)
+
+
+# The carrier sorts first (DESIGN v0.18 P0-7, F2/F3): display names only,
+# slugs and keys unchanged; the carrier's name is the recipe's own.
+CUSTOMER_GROUP = "tenant-group/customers"
+
+
+def _first_impression(w):
+    """Site groups and the customer tenant group read as the carrier's own."""
+    ns,name = w.recipe["namespace"],w.recipe["name"]
+    for kind,label in (("pop",f"Carrier PoPs — {name}"),("dc",f"Carrier NOC — {name}"),("customer","Customer premises")):
+        if f"site-group/{ns}/{kind}" in w.objects:
+            w.obj(f"site-group/{ns}/{kind}")["attrs"]["name"] = label
+    # operations._shared skips tenants that already carry a group, so this
+    # group (owned by the shared operations owner) holds every customer.
+    w.add("tenant_group",CUSTOMER_GROUP,dict(name=f"Customers of {name}",slug=f"{ns}-customers",
+          description=f"Current and former private L3, internet and Ethernet customers of {name}"),{"owner":"owner/operations"})
+
+
+def _former_customers(w):
+    """Former customers (P0-6): tenant, account and one decommissioned circuit each.
+
+    No terminations, devices or sites, and no UNI, ASN, VRF or address slot:
+    a former customer reserves only its own ``provider-former-customers``
+    ordinal, which numbers its account and order ID. Dates are authored from
+    the recipe's start and end years; nothing claims why it left.
+    """
+    r,ns = w.recipe,w.recipe["namespace"]
+    code = operator_code(r["name"])
+    for f in r["former_customers"]:
+        key = f["key"]; slot = w.reserve("provider-former-customers",key,FORMER_MAX)
+        label = SERVICE_LABELS[f["service"]]
+        tenant = w.add("tenant",f"tenant/cust-{key}",dict(name=f["name"],slug=f"{ns}-cust-{key}",
+                       description=f"Former {label if label.startswith('Ethernet') else label[0].lower()+label[1:]} customer of {r['name']}"),
+                       {"group":CUSTOMER_GROUP})
+        account = _account(w,f"provider-account/customer/{key}","provider/operator",f["name"],f"{code}-F{slot+1:05d}",
+                           f"Closed {label} billing for {f['name']}")
+        # Never before its PoP served customers; at least a year of service.
+        start = max(date(f["start"],1,1)+timedelta(days=w.choose(key,"former-start",range(30,330))),
+                    timeline.of(w).launch[f["pop"]]+timedelta(days=60))
+        end = max(date(f["end"],1,1)+timedelta(days=w.choose(key,"former-end",range(30,330))),start+timedelta(days=365))
+        if end > date.fromisoformat(r["as_of"])-timedelta(days=30):
+            raise DesignError(f"Former customer {key}: a year of service from {start} at {f['pop']} ends after as_of; "
+                              "choose an earlier start or a PoP launched earlier")
+        rate = SERVICE_DEFAULTS[f["service"]].get("commit_mbps") or SERVICE_DEFAULTS[f["service"]].get("rate_mbps") or SERVICE_DEFAULTS[f["service"]]["site_peak_mbps"]
+        # Order IDs share the service's prefix; 9xxxx sits above every premises
+        # serial (an allocation slot of an at most /8 pool, below 65536).
+        circuit = w.add("circuit",f"circuit/former/{key}",dict(cid=f"{code}-{ORDER_PREFIX[f['service']]}-{90000+slot:05d}",
+                        status="decommissioned",install_date=start.isoformat(),termination_date=end.isoformat(),commit_rate=rate*1000,
+                        description=f"{bandwidth(rate)} {CIRCUIT_PHRASES[f['service']]} from {titleize(f['pop'])}; service ceased"),
+                        dict(provider="provider/operator",type=f"circuit-type/{f['service']}-access",tenant=tenant,provider_account=account))
+        from .operations_context import entry
+        entry(w,circuit,"service-ceased",end.isoformat(),"Service ceased",
+              "Service ceased; NID not recovered — premises access ended.")
 
 
 # Each premises' CE-to-PE peering is emitted by estates/bgp.py as a session in
@@ -783,9 +881,11 @@ def _pop(w,item):
     site.code = item["key"]
     w.obj(site.key)["refs"]["asns"] = ["asn/operator"]
     _site_network(site,"management",26,0,10)
-    # The cage plant (estates/fibre.py): R01/R02 elevations, panels, the
-    # aggregation pair and its LAGs, management LAN, consoles and power.
+    # The plant (estates/fibre.py) from the frozen timeline (estates/timeline.py):
+    # cage or single cabinet, stratigraphy with gaps, panels, the aggregation
+    # pair and its LAGs, management LAN, consoles and power.
     routers,aggs = fibre.build(site)
+    tl = timeline.of(w)
     for device in routers:
         for n in range(4):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
@@ -796,15 +896,17 @@ def _pop(w,item):
         for n in (4,5,7):
             w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["enabled"] = False
         # The growth path is stated where an engineer meets the ceiling.
-        w.obj(device)["attrs"]["description"] += "; MX204 SFP+ ports exhausted at 8, next platform MX304"
+        w.obj(device)["attrs"]["description"] += ("; SFP+ positions exhausted, MX304 successor planned" if tl.mx304[item["key"]]
+                                                  else "; MX204 SFP+ ports exhausted at 8, next platform MX304")
         loop = w.add("interface",f"{device}/if/lo0",dict(name="lo0",type="virtual",enabled=True,
                      description="Backbone router identity loopback"),dict(device=device))
         net = loopback_network(w.reserve("provider-loopbacks",device,LOOPBACK_CAPACITY))
         w.add("prefix",f"prefix/loopback/{device}",dict(prefix=str(net),status="active",description=f"{w.obj(device)['attrs']['name']} router loopback"),dict(tenant="tenant"))
         _ip(w,loop,net,0,CORE_VRF,"tenant",True)
-    # The PE pair link: a direct labelled inter-cabinet cord.
+    # The PE pair link: a direct labelled cord (inter-cabinet in a cage).
     a,b = [site.interface(d,"et-0/0/0") for d in routers]
-    fibre.cable(site,a,b,"data","smf",description="PE pair link, direct inter-cabinet cord with service slack")
+    fibre.cable(site,a,b,"data","smf",description="PE pair link, direct inter-cabinet cord with service slack"
+                if tl.tier[item["key"]] == "core" else "PE pair link, in-cabinet cord")
     _routed_pair(w,f"pair/{site.id}",a,b)
     site.contract["required_connections"].append(dict(a=a,b=b))
     switch = f"device/{site.id}/mgmt-01"
@@ -815,17 +917,24 @@ def _pop(w,item):
         fibre.cable(site,a,b,"mgmt","smf",description="Management switch routed uplink")
         _routed_pair(w,f"management/{site.id}/{'ab'[i]}",a,b,MANAGEMENT_VRF)
         site.contract["required_connections"].append(dict(a=a,b=b))
-    site.contract.update(required_device_roles={"role/provider-edge":2,"role/aggregation":2,"role/management":1,
-                                                "role/console-server":1,"role/patch-panel":4,"role/cable-management":6},
+    # Roles of the equipment in service; history (relics, planned, staged,
+    # inventory) is racked but carries its own status.
+    roles = Counter(w.obj(d)["refs"]["role"] for d in site.devices
+                    if w.obj(d)["attrs"]["status"] == "active" and w.obj(d)["refs"]["role"] != "role/pdu")
+    site.contract.update(required_device_roles=dict(sorted(roles.items())),
                          demand=dict(provider_routers=2,aggregation_switches=2,
                                      direct_attachment_capacity=2*fibre.UNIS_PER_AGG),
                          management_mode="out-of-band and in-band")
+    agg_model = w.catalog["models"][w.obj(aggs[0])["meta"]["hardware"]]["model"]
+    placement = ("Two MX204 chassis occupy separate cabinets." if tl.tier[item["key"]] == "core"
+                 else "Both MX204 chassis share the PoP's single cabinet, so a cabinet loss isolates the PoP.")
     site.contract["assumptions"].extend([
-        "Two MX204 chassis occupy separate cabinets. Exactly three 100G ports per chassis are enabled in the reviewed port-level mode; one is local peer and two are finite transport attachments.",
-        "Each PE reaches its same-cabinet ACX5448-M over a straight 4x10G LAG; an attachment is single-homed on its home side, so a PE, LAG or aggregation loss isolates that side's single-homed premises. No MC-LAG or protection switching is modeled.",
+        f"{placement} Exactly three 100G ports per chassis are enabled in the reviewed port-level mode; one is local peer and two are finite transport attachments.",
+        f"Each PE reaches its same-side {agg_model} over a straight 4x10G LAG; an attachment is single-homed on its home side, so a PE, LAG or aggregation loss isolates that side's single-homed premises. No MC-LAG or protection switching is modeled.",
         "PE lo0 is the router identity in the global table. fxp0, em0, the console server and the switched PDUs are cabled to the PoP management switch and addressed in the Carrier Management /26; "
         "the switch reaches the PEs over two routed /31 uplinks in the same VRF, and the console server has an independent cellular out-of-band service.",
-        "Installed PSU inventory comes from pinned sources; 320 W PE and 300 W aggregation planning allowances are synthetic, separate from PSU output ratings."])
+        "Installed PSU inventory comes from pinned sources; 320 W PE and 300 W aggregation planning allowances are synthetic, separate from PSU output ratings.",
+        "Install dates, removed predecessors and the planned successor follow the frozen provider timeline; vendor end-of-life dates are quoted per vendor notice, other milestones are authored."])
     return site,routers
 
 
@@ -949,27 +1058,19 @@ def _plan_spans(w,points):
 
 
 def _launch(w,spans):
-    """PoP launch dates: breadth-first along the backbone from the first PoP.
+    """PoP launch dates from the frozen provider timeline (estates/timeline.py).
 
-    The launch ledger is permanent, so growth appends launches and never
-    re-dates an existing PoP.
+    Metros enter in bursts from the founding (``as_of`` - 15 years); a metro's
+    later PoPs follow every 6-20 months and no PoP launches in the quiet last
+    years. ``provider-pop-launch`` keeps the launch order as a permanent
+    ledger; the dates themselves are frozen in ``provider-timeline``, so growth
+    appends a current-era launch and never re-dates an existing PoP. ``spans``
+    is unused since v0.18 (launches no longer follow the backbone breadth-first;
+    a span is installed before the later of its two PoPs launches).
     """
-    order = w.reservations["provider-pop-order"]
-    if not w.reservations.get("provider-pop-launch"):
-        adjacency = defaultdict(set)
-        for _,(a,_),(b,_) in spans: adjacency[a].add(b); adjacency[b].add(a)
-        start = min(order,key=order.get); queue = deque([start]); w.reserve("provider-pop-launch",start,64)
-        while queue:
-            for peer in sorted(adjacency[queue.popleft()],key=order.get):
-                if peer not in w.reservations["provider-pop-launch"]:
-                    w.reserve("provider-pop-launch",peer,64); queue.append(peer)
-    for pop in sorted(order,key=order.get): w.reserve("provider-pop-launch",pop,64)
-    try:
-        epoch = date.fromisoformat(w.recipe["as_of"])-timedelta(days=LAUNCH_EPOCH_DAYS)
-        return {pop:epoch+timedelta(days=min(LAUNCH_STEP_DAYS*slot,LAUNCH_CAP_DAYS)+w.choose(pop,"pop-launch",range(15)))
-                for pop,slot in w.reservations["provider-pop-launch"].items()}
-    except OverflowError as exc:
-        raise DesignError("as_of is too early for the authored provider build-out history") from exc
+    tl = timeline.of(w)
+    for pop in tl.order: w.reserve("provider-pop-launch",pop,64)
+    return dict(tl.launch)
 
 
 def _transport_text(ends):
@@ -1011,20 +1112,12 @@ def _topology(w,pop_sites,points,spans,launch):
 
 
 def _onboarding(w,ready):
-    """Customer onboarding dates in permanent slot order; the hub circuit comes first."""
-    as_of = date.fromisoformat(w.recipe["as_of"])
-    slots = w.reservations["provider-customers"]
-    dates,previous = {},None
-    for c in sorted(w.recipe["customers"],key=lambda c:slots[c["key"]]):
-        day = ready[anchor_pop(c)]+timedelta(days=30)
-        # ponytail: the first two dozen customers arrive months apart, later ones
-        # days apart, and every date clamps a week before as_of, so a very long
-        # list onboards its tail on one day; scale the gap by count if that matters.
-        if previous is not None:
-            gap = range(60,241) if slots[c["key"]] < 24 else range(3,15)
-            day = max(day,previous+timedelta(days=w.choose(c["key"],"onboarding-gap",gap)))
-        dates[c["key"]] = previous = min(day,as_of-timedelta(days=7))
-    return dates
+    """Customer signing days in permanent slot order: the timeline's frozen S-curve.
+
+    Spread from founding + 1 year to ``as_of`` - 7 days, never before the
+    anchor PoP is ready + 30 days, with no clamp pile-up (estates/timeline.py).
+    """
+    return timeline.onboarding(w,w.recipe["customers"],w.reservations["provider-customers"],ready,anchor_pop)
 
 
 def serving_pops(w,sid,pop):
@@ -1116,6 +1209,278 @@ def _oob(w,site,pop,launched):
           comments="Assigned by the cellular carrier from shared address space; its gateway address is not inventoried."),
           dict(vrf=OOB_VRF,tenant="tenant"))
     _ip(w,port,net,2,OOB_VRF,"tenant")
+
+
+# Internet exchanges (DESIGN v0.18 §2): one fictional IX per metro, checked
+# against PeeringDB (VERIFICATION §7). metro -> (name, short label, support
+# domain, port-ID stem). Cream City is always written in full: "CCIX" is
+# also an interconnect standard.
+IXES = {"chicago": ("Calumet Internet Exchange", "CAL-IX", "calumet-ix.example", "CALIX"),
+        "detroit": ("Rouge River IX", "RRIX", "rouge-river-ix.example", "RRIX"),
+        "cleveland": ("Erie Shore IX", "ESIX", "erie-shore-ix.example", "ESIX"),
+        "milwaukee": ("Cream City Internet Exchange", "Cream City Internet Exchange", "creamcity-ix.example", "CREAMCITY")}
+IX_METROS = tuple(IXES)
+IX_PORT, IX_PORT_MBPS = "xe-0/1/5", 10000
+# Route servers share their exchange's single AS, from the RFC 5398 32-bit
+# documentation range.
+IX_ASNS = (65536, 65551)
+IX_ROUTE_SERVERS = bgp.IX_ROUTE_SERVERS
+IX_IPV4_NOTE = "IPv4 peering not modelled: documentation IPv4 space is consumed by the DIA allocation ceiling."
+IX_NO_POOL_NOTE = "Route-server sessions omitted: the peering LAN is IPv6-only and this estate carries no ipv6_pool."
+# The Milwaukee exchange moved buildings (shape-only mirror of MKE-IX's 2025
+# move): the old port at the metro's second PoP is being withdrawn.
+IX_RELOCATED = "milwaukee"
+
+
+def ix_asn(namespace, metro):
+    low, high = IX_ASNS
+    return low + (_hash(namespace, "ix-asn") + IX_METROS.index(metro)) % (high - low + 1)
+
+
+def _ix(w, pop_sites, ready):
+    """Exchange ports (K8): the IX is a Provider with its one AS, its peering
+    LAN a ProviderNetwork, our port an ``IX Port`` circuit from PE-A xe-0/1/5
+    through the colo demarc (a cross-connect) to that network. No IX tenant.
+
+    The host is each metro's founding PoP (timeline ``ix``). The relocated
+    exchange keeps its old port at the metro's second PoP: ``deprovisioning``
+    with a termination date, cables ``decommissioning``, the PE port shut.
+    """
+    tl, ns, as_of = timeline.of(w), w.recipe["namespace"], date.fromisoformat(w.recipe["as_of"])
+    kind = fibre.circuit_type(w, "ix-port", "IX Port").removeprefix("circuit-type/")
+    for metro in IX_METROS:
+        hosts = [p for p in tl.order if tl.metro[p] == metro]
+        if not hosts:
+            continue
+        name, short, domain, stem = IXES[metro]
+        asn = w.add("asn", f"asn/ix/{metro}", dict(asn=ix_asn(ns, metro), description=holder_label(name)), {"rir": "rir/arin"})
+        provider = w.add("provider", f"provider/ix-{metro}", dict(name=name, slug=f"{ns}-ix-{metro}",
+                         comments=f"Neutral internet exchange in the {titleize(metro)} metro; its route servers share the exchange's AS."),
+                         {"asns": [asn]}, {"support_domain": domain})
+        lan = w.add("provider_network", f"provider-network/ix/{metro}", dict(name=f"{short} peering LAN",
+                    description=f"IPv6-only exchange peering LAN. {IX_IPV4_NOTE}"), {"provider": provider})
+        account = _account(w, f"provider-account/ix/{metro}", provider, f"{short} membership",
+                           str(10**7 + _hash(ns, metro, "ix-account") % (9*10**7)), "Exchange port and route-server membership")
+        comments = IX_IPV4_NOTE + ("" if "ipv6_pool" in w.recipe else " " + IX_NO_POOL_NOTE)
+        relocation = as_of - timedelta(days=w.choose(metro, "ix-relocation", range(30, 61))) if metro == IX_RELOCATED else None
+        ports = [(hosts[0], relocation, None)]
+        if relocation and len(hosts) > 1:
+            ports.append((hosts[1], None, relocation))
+        for n, (pop, installed, moved) in enumerate(ports):
+            site = pop_sites[pop][0]
+            port = site.interface(f"device/{site.id}/pe-a", IX_PORT)
+            if installed is None:
+                installed = min(ready[pop] + timedelta(days=w.choose(f"{metro}/{pop}", "ix-install", range(60, 401))),
+                                (moved or as_of) - timedelta(days=60))
+            key = f"circuit/ix/{metro}" + ("/former" if moved else "")
+            _circuit(w, key, provider, account, kind, site, port, lan, None, None, handoff_mbps=IX_PORT_MBPS,
+                     cid=f"{stem}-P{1000 + (_hash(ns, key, 'ix-port') % 9000):04d}", installed=installed,
+                     description=(f"Former 10G port on the {name} peering LAN at {site.display}; the exchange relocated"
+                                  if moved else f"10G port on the {name} peering LAN at {site.display}"))
+            circuit = w.obj(key)
+            circuit["attrs"]["comments"] = comments
+            circuit["meta"]["ix"] = metro
+            w.obj(f"{key}/Z")["attrs"]["description"] = "Exchange peering LAN"
+            if moved:
+                circuit["attrs"].update(status="deprovisioning",
+                                        termination_date=(as_of + timedelta(days=w.choose(key, "ix-disconnect", range(14, 46)))).isoformat())
+                w.obj(port)["attrs"].update(enabled=False, description=f"Former {name} port; relocated to {pop_sites[hosts[0]][0].display}")
+                for cable in [o for o in w.objects.values() if o["kind"] == "cable" and
+                              {o["refs"]["a"], o["refs"]["b"]} & {port, f"{key}/A"}]:
+                    cable["attrs"]["status"] = "decommissioning"
+                    # The demarc panel's front port that patches the PE stays
+                    # cabled too; follow it to the cross-connect behind it.
+                    for end in (cable["refs"]["a"], cable["refs"]["b"]):
+                        if w.obj(end)["kind"] == "front_port":
+                            rear = w.obj(end)["refs"]["rear_port"]
+                            for other in w.objects.values():
+                                if other["kind"] == "cable" and rear in (other["refs"]["a"], other["refs"]["b"]):
+                                    other["attrs"]["status"] = "decommissioning"
+            else:
+                w.obj(port)["attrs"]["description"] = f"{name} peering port"
+
+
+# PoP services (DESIGN v0.18 §2, K7, K9, K16) and the second NID generation
+# (P1-14): WP-A catalog aliases.
+DDOS_ALIAS, TIME_ALIAS, LEGACY_NID_ALIAS, SUCCESSOR_ALIAS = "ddos-mitigation", "time-server", "nid-legacy", "provider-edge-successor"
+SERVICE_ROLES = {"ddos-mitigation": "DDoS Mitigation", "time-server": "Time Server"}
+# Host ordinals on the PoP management /26, clear of the plant's 1-11.
+TIME_SERVER_HOST, DDOS_HOST = 20, 21
+# A premises installed before this day on an unmanaged single-NID service
+# (unmanaged DIA or EPL, 1G handoff) still runs the first NID generation.
+LEGACY_NID_BEFORE = date(2016, 1, 1)
+DDOS_DESCRIPTION = ("DDoS mitigation appliance, staged for the MX304 refresh; chassis capacity exceeds current DIA demand; "
+                    "licensed mitigation capacity not modelled")
+TIME_DESCRIPTION = ("PoP time server on the management LAN; GPS antenna via the colo roof riser, not modelled. "
+                    "Discontinued; successor LANTIME M320, per vendor page")
+CONTROLLER = "ddos-detection"
+CONTROLLER_DESCRIPTION = ("Flow-based DDoS detection and mitigation controller "
+                          "(Sightline-class; labelled fiction, no vendor product claimed)")
+
+
+def _service_role(w, role):
+    key = f"role/{role}"
+    if key not in w.objects:
+        from .naming import ROLE_COLORS
+        w.add("device_role", key, dict(name=SERVICE_ROLES[role], slug=f"{w.recipe['namespace']}-{role}", color=ROLE_COLORS[role]))
+    return role
+
+
+def _cabled(w):
+    return {o["refs"][s] for o in w.objects.values() if o["kind"] == "cable" for s in ("a", "b")}
+
+
+def _service_device(site, label, alias, role, day):
+    """The plant's racked service device (estates/fibre.py racks it by this key).
+
+    ponytail: stub mount until the WP-B plant lands — racks it at the first
+    free units below R01's lowest device, unpowered. Delete at integration.
+    """
+    w = site.w
+    device_type(w, alias); _service_role(w, role)
+    key = f"device/{site.id}/{label}"
+    if key not in w.objects:
+        rack = next(r for r in site.rack_members if w.obj(r)["attrs"]["name"] == "R01")
+        low = min(w.obj(d)["attrs"]["position"] for d in site.rack_members[rack] if w.obj(d)["attrs"].get("position"))
+        site.device(alias, label, role, rack=rack, position=low - w.catalog["models"][alias]["u_height"])
+        w.obj(key)["meta"]["installed"] = day.isoformat()
+    w.obj(key)["refs"]["role"] = f"role/{role}"
+    return key
+
+
+def _management_port(site, device, port, host, status="active"):
+    """Cable a service device's management port to the PoP switch's next free copper port."""
+    w = site.w
+    switch = f"device/{site.id}/mgmt-01"
+    used = _cabled(w)
+    peer = next(site.interface(switch, name) for name in w.hardware(fibre.POP_MANAGEMENT)["access_ports"]
+                if f"{switch}/if/{name}" not in used)
+    cable = fibre.cable(site, port, peer, "mgmt", "cat6", description="PoP management LAN")
+    vlan, _ = site.network("management")
+    for end in (port, peer):
+        w.obj(end)["attrs"]["mode"] = "access"
+        w.obj(end)["refs"]["untagged_vlan"] = vlan
+    address = site.address(port, "management", host=host, primary=status == "active", device=device)
+    if status != "active":
+        w.obj(cable)["attrs"]["status"] = "planned"
+        w.obj(address)["attrs"]["status"] = "reserved"
+    else:
+        site.contract["required_connections"].append(dict(a=port, b=peer))
+    return cable
+
+
+def _timing(w, pop_sites):
+    """K9: one Meinberg M300 per NOC-handoff PoP, on the management LAN (timeline ``timing``)."""
+    for pop, day in timeline.of(w).timing.items():
+        if day is None:
+            continue
+        site = pop_sites[pop][0]
+        device = _service_device(site, "ntp-01", TIME_ALIAS, "time-server", day)
+        spec = w.hardware(TIME_ALIAS)
+        w.obj(device)["attrs"]["description"] = TIME_DESCRIPTION
+        _management_port(site, device, site.interface(device, spec["management_port"]), TIME_SERVER_HOST)
+        for port in spec["interfaces"]:
+            if port["name"] != spec["management_port"]:
+                w.obj(site.interface(device, port["name"]))["attrs"].update(enabled=False, description="Spare port")
+
+
+def _aoc_length(w, alias):
+    parts = w.catalog["optics"]["parts"].values()
+    return next((p["assembly_length_m"] for p in parts if p["medium"] == "aoc" and alias in p["compatible_interfaces"]), fibre.PATCH_M)
+
+
+def _ddos(w, pop_sites):
+    """K7: the Arbor TMS, racked ``staged`` beside the planned MX304 pair it offramps to.
+
+    The MX204 cannot take a fourth 100G link with all eight SFP+ in use
+    (catalog/README.md, MX204 port-speed limit), so the TMS is cabled to the
+    MX304 successors' ``tms_port`` with ``planned`` cables and activates at
+    that cut-over (timeline ``ddos``: only where an MX304 is planned at a
+    transit PoP with DIA). Management and console are pre-cabled ``planned``.
+    """
+    tl = timeline.of(w)
+    for pop, day in tl.ddos.items():
+        if day is None:
+            continue
+        site = pop_sites[pop][0]
+        device = _service_device(site, "ddos-01", DDOS_ALIAS, "ddos-mitigation", day)
+        spec, successor = w.hardware(DDOS_ALIAS), w.hardware(SUCCESSOR_ALIAS)
+        w.obj(device)["attrs"].update(status="staged", description=DDOS_DESCRIPTION)
+        for name, side in zip(spec["offramp_ports"], "ab"):
+            pe = f"device/{site.id}/pe-{side}2"
+            if pe not in w.objects:
+                raise DesignError(f"{device}: the DDoS offramp needs the planned MX304 {pe}")
+            a, b = site.interface(device, name), site.interface(pe, successor["tms_port"])
+            for end in (a, b):
+                w.obj(end)["attrs"]["speed"] = 100000000
+            cable = fibre.cable(site, a, b, "data", "aoc", length=_aoc_length(w, DDOS_ALIAS),
+                                description=f"DDoS offramp to {w.obj(pe)['attrs']['name']}; activates at the MX304 cut-over")
+            w.obj(cable)["attrs"]["status"] = "planned"
+        mgmt = next(p["name"] for p in spec["interfaces"] if p.get("mgmt_only"))
+        _management_port(site, device, site.interface(device, mgmt), DDOS_HOST, status="planned")
+        console = f"device/{site.id}/console-01"
+        used = _cabled(w)
+        server = next(f"{console}/console_server_port/{p['name']}" for p in w.hardware(fibre.POP_OOB)["console_server_ports"]
+                      if f"{console}/console_server_port/{p['name']}" not in used)
+        port = f"{device}/console_port/{next(p['name'] for p in spec['console_ports'])}"
+        for end in (port, server):
+            w.obj(end)["attrs"]["speed"] = 115200
+        cable = fibre.cable(site, port, server, "console", "cat6", description="RJ45 asynchronous serial console; separate from Ethernet management")
+        w.obj(cable)["attrs"]["status"] = "planned"
+        from .operations_context import entry
+        entry(w, device, "racked", day.isoformat(), "Racked, awaiting activation",
+              f"Racked under change {timeline.change(w, device, '-racked')}; activation at the MX304 cut-over: the MX204 port "
+              "budget is exhausted (PIC0 is limited to 3x100G while all eight 10G SFP+ ports are in use).")
+
+
+def _ddos_controllers(w):
+    """The detection controller VM pair (K7): ordinary NOC workload grammar, authored description."""
+    for vm in (o for o in w.objects.values() if o["kind"] == "virtual_machine" and o["key"].startswith(f"vm/dc-01/{CONTROLLER}/")):
+        lane = vm["attrs"]["description"].rsplit("(", 1)[-1].rstrip(")")
+        vm["attrs"]["description"] = f"{CONTROLLER_DESCRIPTION}, {lane}"
+
+
+def ix_lan(w, metro):
+    """The exchange's IPv6 peering /64 (ipv6.exchange_lan) for a recipe with ipv6_pool."""
+    return ipv6.exchange_lan(ipaddress.IPv6Network(w.recipe["ipv6_pool"]), IX_METROS.index(metro))
+
+
+def _ix_addresses(w):
+    """The IPv6-only peering LAN, our member address and the route servers.
+
+    Runs after ipv6.enrich (whose IPv4-twin policy the LAN has no part in)
+    and before _junos_units moves the member address onto xe-0/1/5.0. The LAN
+    and the route-server addresses are the exchange's: no tenant. Only an
+    in-service port is addressed; the withdrawn one keeps no address.
+    """
+    if "ipv6_pool" not in w.recipe:
+        return
+    for key in sorted(k for k, o in w.objects.items() if o["kind"] == "circuit" and o["meta"].get("ix")):
+        circuit = w.obj(key)
+        if circuit["attrs"]["status"] != "active":
+            continue
+        metro = circuit["meta"]["ix"]
+        name = IXES[metro][0]
+        lan = ix_lan(w, metro)
+        w.add("prefix", f"ix/{metro}/lan", dict(prefix=str(lan), status="active",
+              description=f"{name} peering LAN (IPv6)", comments=IX_IPV4_NOTE), {})
+        site = termination_site(w.objects, f"{key}/A")
+        port = f"device/{site.removeprefix('site/')}/pe-a/if/{IX_PORT}"
+        member = 0x100 + _hash(w.recipe["namespace"], metro, "ix-member") % 0xfe00
+        w.add("ip_address", f"ix/{metro}/member", dict(address=f"{lan[member]}/64", status="active"),
+              dict(assigned_object=port, tenant="tenant"))
+
+
+def _ix_route_servers(w):
+    """The route servers' addresses on each addressed peering LAN: the
+    exchange's, unassigned (no interface of theirs is inventoried), no tenant.
+    After networking.macs, which reads every address's assigned interface."""
+    for key in sorted(k for k, o in w.objects.items() if o["kind"] == "prefix" and k.startswith("ix/") and k.endswith("/lan")):
+        metro = key.split("/")[1]
+        lan = ipaddress.IPv6Network(w.obj(key)["attrs"]["prefix"])
+        for n in range(1, IX_ROUTE_SERVERS + 1):
+            w.add("ip_address", f"ix/{metro}/rs-{n}", dict(address=f"{lan[n]}/64", status="active",
+                  description=f"{IXES[metro][1]} route server {n}"), {})
 
 
 def ce_loopback(block):
@@ -1390,11 +1755,22 @@ def _private_l3(w,site,c,pop,pop_sites,hub,rate,installed,distance,code,kind,ser
         site.contract["assumptions"].append("The MPOE wall cabinet is carrier-installed on customer power; the building circuit is not inventoried.")
 
 
+def legacy_nid(w,customer,installed):
+    """P1-14: the first NID generation (Accedian MetroNID TE, launched 2008) at a
+    premises in service before 2016 on an unmanaged single-NID 1G service —
+    unmanaged DIA or EPL, customer-owned gear behind. Never behind a carrier CE
+    (its UNI is SFP-only); the 10G tier keeps the RAD. Else None."""
+    if installed < LEGACY_NID_BEFORE and (customer["service"] == "epl" or customer["service"] == "dia" and not customer["managed"]):
+        device_type(w,LEGACY_NID_ALIAS)
+        return LEGACY_NID_ALIAS
+    return None
+
+
 def _dia(w,site,c,pop,pop_sites,rate,installed,distance,code,kind,serial,result):
     key,sid=c["key"],site.id; tenant=f"tenant/cust-{key}"
     managed = c["managed"]
     pop_site = pop_sites[pop][0]
-    alias = NID_10G_ALIAS if handoff_mbps(rate,w.recipe["reserve_fraction"]) > 1000 else NID_ALIAS
+    alias = NID_10G_ALIAS if handoff_mbps(rate,w.recipe["reserve_fraction"]) > 1000 else legacy_nid(w,c,installed) or NID_ALIAS
     # The NID's home side is decided by the attachment ledger inside _attach;
     # read it first so the NID is managed from the same side.
     side = home_side(w,pop,sid)
@@ -1438,7 +1814,7 @@ def _dia(w,site,c,pop,pop_sites,rate,installed,distance,code,kind,serial,result)
         # Unmanaged: the PE routes the /29 on its subinterface (.1) and the
         # customer's own firewall takes the rest; the NID UNI is the demarcation.
         _ip(w,att["subif"],block,1,None,tenant)
-        w.obj(uni)["attrs"].update(mark_connected=True,label="Customer-owned firewall",
+        w.obj(uni)["attrs"].update(mark_connected=True,label="Customer-owned firewall" + (", 1000BASE-LX handoff" if alias == LEGACY_NID_ALIAS else ""),
                                    description="Demarcation to the customer-owned firewall; not inventoried")
         roles = {"role/nid":1}
     site.contract.update(required_device_roles=roles,demand=dict(commit_mbps=rate,managed=managed))
@@ -1451,14 +1827,14 @@ def _dia(w,site,c,pop,pop_sites,rate,installed,distance,code,kind,serial,result)
 def _epl(w,site,c,pop,pop_sites,rate,installed,distance,code,kind,serial,result):
     key,sid=c["key"],site.id
     pop_site = pop_sites[pop][0]
-    alias = NID_10G_ALIAS if handoff_mbps(rate,w.recipe["reserve_fraction"]) > 1000 else NID_ALIAS
+    alias = NID_10G_ALIAS if handoff_mbps(rate,w.recipe["reserve_fraction"]) > 1000 else legacy_nid(w,c,installed) or NID_ALIAS
     side = home_side(w,pop,sid)
     # Port-based Q-in-Q cannot also carry the tagged management VLAN, so the
     # EPL NID's management address is recorded as carried in the S-VLAN.
     nid = _nid(w,site,"nid-01",alias,pop,side,False,in_band="In-band management carried inside the service S-VLAN")
     spec = w.hardware(alias)
     uni = site.interface(nid,spec["uni_port"])
-    w.obj(uni)["attrs"].update(mark_connected=True,label="Customer Ethernet equipment",
+    w.obj(uni)["attrs"].update(mark_connected=True,label="Customer Ethernet equipment" + (", 1000BASE-LX handoff" if alias == LEGACY_NID_ALIAS else ""),
                                description="Demarcation to customer Ethernet equipment; not inventoried")
     att = _attach(w,pop_sites,pop,sid,nid,site,c,rate=rate,handoff=handoff_mbps(rate,w.recipe["reserve_fraction"]),kind=kind,cid=f"{code}-EPL-{serial:05d}",installed=installed,distance=distance)
     term = w.add("l2vpn_termination",f"l2vpn/epl/{key}/{sid}",{},dict(l2vpn=f"l2vpn/epl/{key}",assigned_object=att["subif"]))
@@ -1673,6 +2049,7 @@ def _generate(recipe,previous=None):
         net=_link_prefix(w,circuit,CORE_VRF,"tenant"); _ip(w,port,net,1,CORE_VRF,"tenant")
     for p in ordered:
         _oob(w,pop_sites[p["key"]][0],p["key"],launch[p["key"]])
+    _ix(w,pop_sites,ready); _timing(w,pop_sites); _ddos(w,pop_sites)
     dc=Site(w,"dc-01","dc","Provider NOC services, inventory and monitoring")
     w.obj(dc.key)["refs"]["asns"]=["asn/operator"]
     def noc(site,edge,side,ordinal):
@@ -1699,22 +2076,26 @@ def _generate(recipe,previous=None):
                      cid=CARRIERS[carrier][2].replace("WAV","EPL").format(carrier_number(ns,carrier,NOC_ORDINAL+"ab".index(side))),installed=installed,
                      description=f"1G Ethernet private line, NOC to {pop.display}",distance_km=distance)
         _routed_pair(w,circuit,port,peer,MANAGEMENT_VRF)
-    datacenter.build(dc,workloads=workloads(recipe),wan_peak_mbps=recipe["noc_peak_mbps"],wan_attachment=noc,include_equipment=False,
+    datacenter.build(dc,workloads=workloads(recipe,ddos=any(timeline.of(w).ddos.values())),wan_peak_mbps=recipe["noc_peak_mbps"],wan_attachment=noc,include_equipment=False,
         assumptions=[CAPACITY_SCOPE,"NOC service groups are authored: identity/provisioning per128 customer premises, DNS/monitoring per16 PoPs, minimum one group each; every group has two rack-separated replicas. These are synthetic inventory budgets, not measured throughput."])
+    _ddos_controllers(w)
     w.obj(dc.key)["meta"]["in_service"]=min(w.obj(f"circuit/noc/{s}")["attrs"]["install_date"] for s in "ab")
     onboarded=_onboarding(w,ready)
     as_of=date.fromisoformat(recipe["as_of"])
     def installed(sid,c,pop,n):
         if pop==anchor_pop(c) and n==1: return onboarded[c["key"]]
-        day=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=w.choose(sid,"premises-install",range(7,366)))
-        return min(day,as_of-timedelta(days=1))
+        # A customer adds premises over the years after signing (at most six),
+        # never before the serving PoP is ready: spread, not piled after a launch.
+        start=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=7)
+        reach=max(1,min((as_of-timedelta(days=1)-start).days,2190))
+        return min(start+timedelta(days=w.choose(sid,"premises-install",range(reach))),as_of-timedelta(days=1))
     w.provider_service_records=defaultdict(list)
     placed=_premises_places(w,entries,points)
     attachments=[_customer(w,sid,c,pop,n,pop_sites,placed,installed(sid,c,pop,n)) for sid,c,pop,n in entries]
     dc.contract["provider"]=dict(pop_count=len(pop_sites),customer_count=len(recipe["customers"]),customer_premises=len(entries),
         transport_spans=len(spans),capacity=_capacity(graph,attachments,recipe["reserve_fraction"]),
         management_mode="out-of-band and in-band",transit_remote_ownership="unknown",wireless="omitted; wired private-L3 service scope")
-    equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); networking.macs(w)
+    equipment.enrich(w); optics.enrich(w); poe.enrich(w); ipv6.enrich(w); _ix_addresses(w); networking.macs(w); _ix_route_servers(w)
     _apply_lifecycle(w,entries)
     _junos_units(w)
     operations.supporting_records(w)

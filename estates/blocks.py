@@ -29,7 +29,15 @@ PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  # console family's planning figure.
                  "aggregation": 300, "pop-mgmt": 120, "oob-server": 40,
                  # Provider premises kit (catalog/README.md planning allowances).
-                 "nid": 52, "nid-10g": 90, "ce-small": 40}
+                 "nid": 52, "nid-10g": 90, "ce-small": 40,
+                 # Lived-in carrier (v0.18): evidence-backed maxima, not authored
+                 # role figures. ACX5048 AC maximum 365 W (230 W typical) per the
+                 # Juniper ACX5000 hardware guide; Meinberg M300 PWR1 max 20 W and
+                 # the MetroNID TE 13 W from the pinned library types. The MX80
+                 # relic and the planned/staged MX304 are never powered.
+                 # Arbor TMS HD1000: 327 W with one Packet Processing Module per
+                 # the NETSCOUT data sheet SECPDS_004_EN-2201 (catalog/README.md).
+                 "aggregation-legacy": 365, "time-server": 20, "nid-legacy": 13, "ddos-mitigation": 327}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the
@@ -743,6 +751,10 @@ class Site:
             # An authored elevation is fixed: its powered members take outlets
             # in mounting order from the bottom, wherever in a 42U cabinet
             # they sit; lane racks keep the unit-indexed rule.
+            # Only installed, in-service equipment draws power: a relic being
+            # decommissioned, a planned or staged chassis and a cold spare
+            # stay uncabled (DESIGN.md v0.18 §1.2).
+            members = [d for d in members if self.w.obj(d)["attrs"].get("status", "active") == "active"]
             powered = sorted((d for d in members
                               if self.w.catalog["models"][self.w.obj(d)["meta"]["hardware"]]["power_ports"]),
                              key=lambda d: self.w.obj(d)["attrs"]["position"]) if authored else []
