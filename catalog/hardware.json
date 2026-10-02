@@ -249,7 +249,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3\u2013100 m complete known local fibre paths; no carrier-span or optical-loss claim. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency. In-room jumpers between two cages that both carry a reviewed short-reach part run on OM4 multimode with SR/SR4 optics; a generic third-party SFP-10G-SR (duplex LC, 400 m on OM4, authored 1000 mW envelope) serves server eth1/eth2. Long-reach single-mode stays for building backbones, carrier handoffs and owned spans, and for any cage (the FortiGate 100F) without a reviewed multimode part."
+      "purpose": "Authored policy: 3–100 m complete known local fibre paths; no carrier-span or optical-loss claim. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host × 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency. In-room jumpers between two cages that both carry a reviewed short-reach part run on OM4 multimode with SR/SR4 optics; a generic third-party SFP-10G-SR (duplex LC, 400 m on OM4, authored 1000 mW envelope) serves server eth1/eth2. Long-reach single-mode stays for building backbones, carrier handoffs and owned spans, and for any cage (the FortiGate 100F) without a reviewed multimode part."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -434,6 +434,12 @@
       "representation": "primary-response-hash-and-field-extraction",
       "purpose": "TMG notes for C9200L-24P-4X / SFP-10G-SR (POST networkModelId 1767, softwareReleaseId 1522, transceiverModelId 73): fixed onboard uplinks only; OM3 300 m, OM4/OM5 400 m. The archived C9200L search response (cisco-optics-host-json) lists the SFP-10G-SR row: 10GBASE-SR, duplex MMF LC/UPC, IOS XE 16.9.2.",
       "response_sha256": "41f175608b9ec770036db4cdc36ac86d1c3a4fd103c9d72ca78478d2bd69d1fe"
+    },
+    "wpc-stub": {
+      "url": "build/spike-catalog/yaml (WP-C stub; WP-A supplies the pinned entries)",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "license": "CC0-1.0"
     }
   },
   "hardware_lines": {
@@ -2356,7 +2362,25 @@
       "platform": {
         "name": "Fortinet FortiOS",
         "slug": "fortinet-fortios"
-      }
+      },
+      "wan_ports": [
+        "wan1",
+        "wan2"
+      ],
+      "lan_ports": [
+        "port1",
+        "port2",
+        "port3",
+        "port4",
+        "port5",
+        "port6",
+        "port7",
+        "port8",
+        "port9",
+        "port10",
+        "port11",
+        "port12"
+      ]
     },
     "server": {
       "manufacturer": "Supermicro",
@@ -3750,6 +3774,478 @@
         "name": "NOKIA_SRL v26.7.2",
         "slug": "nokia-srl"
       }
+    },
+    "nid": {
+      "manufacturer": "Ciena",
+      "model": "3903 AC",
+      "slug": "ciena-3903-ac",
+      "part_number": "170-3903-900",
+      "u_height": 1,
+      "is_full_depth": false,
+      "weight": 1.4,
+      "weight_unit": "kg",
+      "airflow": "front-to-rear",
+      "interfaces": [
+        {
+          "name": "1",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "2",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "3",
+          "type": "1000base-t"
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PSA",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PSB",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "nni_port": "1",
+      "spare_port": "2",
+      "uni_port": "3",
+      "console_ports": [
+        {
+          "name": "CONSOLE",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "description": "WP-C STUB: placeholder until WP-A pins this model.",
+      "serial_format": "M{yyww}#####"
+    },
+    "nid-10g": {
+      "manufacturer": "RAD",
+      "model": "ETX-2i-10G",
+      "slug": "rad-etx-2i-10g",
+      "part_number": "ETX-2I-10G",
+      "u_height": 1,
+      "is_full_depth": false,
+      "airflow": "passive",
+      "interfaces": [
+        {
+          "name": "ETH-1/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "ETH-1/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "ETH-1/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "ETH-1/4",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "ETH-1/5",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "ETH-1/6",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "ETH-1/7",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "ETH-1/8",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "ETH-1/9",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ETH-1/10",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ETH-1/11",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ETH-1/12",
+          "type": "1000base-t"
+        },
+        {
+          "name": "MNG-ETH",
+          "type": "100base-tx",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "power",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "nni_port": "ETH-1/1",
+      "uni_port": "ETH-1/9",
+      "console_ports": [
+        {
+          "name": "control",
+          "type": "usb-mini-b"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "description": "WP-C STUB: placeholder until WP-A pins this model.",
+      "serial_format": "RAD{yyww}#####"
+    },
+    "ce-small": {
+      "manufacturer": "Juniper",
+      "model": "SRX300",
+      "slug": "juniper-srx300",
+      "part_number": "SRX300-SYS-JB",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "ge-0/0/0",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/1",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/2",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/3",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/4",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/5",
+          "type": "1000base-t"
+        },
+        {
+          "name": "ge-0/0/6",
+          "type": "1000base-x-sfp"
+        },
+        {
+          "name": "ge-0/0/7",
+          "type": "1000base-x-sfp"
+        }
+      ],
+      "wan_ports": [
+        "ge-0/0/0"
+      ],
+      "lan_ports": [
+        "ge-0/0/1",
+        "ge-0/0/2",
+        "ge-0/0/3",
+        "ge-0/0/4",
+        "ge-0/0/5"
+      ],
+      "power_ports": [
+        {
+          "name": "PSU0",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "description": "WP-C STUB: placeholder until WP-A pins this model.",
+      "serial_format": "CV{yyww}#####",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
+      }
+    },
+    "aggregation": {
+      "manufacturer": "Juniper",
+      "model": "ACX5448-M",
+      "slug": "juniper-acx5448-m",
+      "part_number": "ACX5448-M",
+      "u_height": 1,
+      "is_full_depth": true,
+      "interfaces": [
+        {
+          "name": "xe-0/0/0",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/1",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/3",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/4",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/5",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/6",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/7",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/8",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/9",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/10",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/11",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/12",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/13",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/14",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/15",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/16",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/17",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/18",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/19",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/20",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/21",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/22",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/23",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/24",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/25",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/26",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/27",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/28",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/29",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/30",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/31",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/32",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/33",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/34",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/35",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/36",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/37",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/38",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/39",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/40",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/41",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/42",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "xe-0/0/43",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "em0",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "uni_ports": [
+        "xe-0/0/0",
+        "xe-0/0/1",
+        "xe-0/0/2",
+        "xe-0/0/3",
+        "xe-0/0/4",
+        "xe-0/0/5",
+        "xe-0/0/6",
+        "xe-0/0/7",
+        "xe-0/0/8",
+        "xe-0/0/9",
+        "xe-0/0/10",
+        "xe-0/0/11",
+        "xe-0/0/12",
+        "xe-0/0/13",
+        "xe-0/0/14",
+        "xe-0/0/15",
+        "xe-0/0/16",
+        "xe-0/0/17",
+        "xe-0/0/18",
+        "xe-0/0/19",
+        "xe-0/0/20",
+        "xe-0/0/21",
+        "xe-0/0/22",
+        "xe-0/0/23",
+        "xe-0/0/24",
+        "xe-0/0/25",
+        "xe-0/0/26",
+        "xe-0/0/27",
+        "xe-0/0/28",
+        "xe-0/0/29",
+        "xe-0/0/30",
+        "xe-0/0/31",
+        "xe-0/0/32",
+        "xe-0/0/33",
+        "xe-0/0/34",
+        "xe-0/0/35",
+        "xe-0/0/36",
+        "xe-0/0/37",
+        "xe-0/0/38",
+        "xe-0/0/39"
+      ],
+      "lag_ports": [
+        "xe-0/0/40",
+        "xe-0/0/41",
+        "xe-0/0/42",
+        "xe-0/0/43"
+      ],
+      "power_ports": [
+        {
+          "name": "power0",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "power1",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "console0",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "wpc-stub"
+      ],
+      "description": "WP-C STUB: placeholder until WP-A pins this model.",
+      "serial_format": "AX{yyww}######",
+      "airflow": "front-to-rear",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos",
+        "svi_format": "irb.{vid}"
+      }
     }
   },
   "optics": {
@@ -4492,5 +4988,16 @@
       "HPE": "00:0B:86"
     },
     "virtual_machine": "52:54:00"
+  },
+  "rack_types": {
+    "mpoe-cabinet": {
+      "manufacturer": "KOSCAB",
+      "model": "KOS-SHTS-9U55x45x50DS",
+      "slug": "koscab-kos-shts-9u",
+      "u_height": 9,
+      "width": 19,
+      "form_factor": "wall-cabinet",
+      "description": "WP-C STUB 9U wall cabinet"
+    }
   }
 }
