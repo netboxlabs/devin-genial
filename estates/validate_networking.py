@@ -9,6 +9,8 @@ import math
 from pathlib import Path
 import re
 
+from .naming import IPAM_ROLES, prefix_role, segment_role
+
 
 def validate(plan, catalog=None):
     recipe = plan.get("recipe", {})
@@ -116,6 +118,21 @@ def validate(plan, catalog=None):
                 targets = value if isinstance(value, list) else [value]
                 if not targets or any(kind(target) not in allowed for target in targets):
                     report("network-reference", key, f"{field} must resolve to {', '.join(sorted(allowed))}.")
+    # Every prefix and VLAN carries the IPAM role its addressed purpose implies
+    # (naming.IPAM_ROLES); a prefix bound to a VLAN must agree with that VLAN.
+    # Every generated profile owes it; hand-authored legacy fragments (no
+    # recipe profile) predate the obligation.
+    for key in (by_kind["prefix"] + by_kind["vlan"]) if recipe.get("profile") else ():
+        rel = refs(key)
+        try:
+            expected = (prefix_role(key, attrs(key).get("prefix", ""), rel.get("vrf"), rel.get("vlan"))
+                        if kind(key) == "prefix" else segment_role(key.rsplit("/", 1)[-1]))
+        except ValueError:
+            expected = None
+        role = rel.get("role")
+        if (expected is None or kind(role) != "role" or role != f"ip-role/{expected}" or
+                attrs(role).get("name") != IPAM_ROLES[expected][0]):
+            report("ipam-role", key, f"Prefixes and VLANs require the {expected or 'reviewed'} IPAM role their purpose implies.")
     cables, passive = {}, {}
     for key in by_kind["cable"]:
         a, b = refs(key).get("a"), refs(key).get("b")

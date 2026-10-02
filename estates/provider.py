@@ -414,7 +414,7 @@ def _pop(w,item):
         for n in range(8):
             w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["speed"] = 1000000 if n<6 else 10000000
         loop = w.add("interface",f"{device}/if/lo0",dict(name="lo0",type="virtual",enabled=True,
-                     description="Inband management loopback; dedicated fxp0 remains unaddressed and uncabled"),dict(device=device,vrf="vrf/provider"))
+                     description="In-band management loopback"),dict(device=device,vrf="vrf/provider"))
         slot = w.reserve("provider-loopbacks",device,32768)
         net = ipaddress.ip_network((int(w.pool.broadcast_address)-32767+slot,32))
         w.add("prefix",f"prefix/loopback/{device}",dict(prefix=str(net),status="active",description=f"{w.obj(device)['attrs']['name']} inband management loopback"),dict(vrf="vrf/provider",tenant="tenant"))

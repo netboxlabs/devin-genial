@@ -95,9 +95,9 @@ class EnterpriseTurboBulkTests(unittest.TestCase):
         cls.plan = generate(recipe_from_file(ROOT / "profiles/enterprise-dc.toml"))
         cls.objects = _index(cls.plan)
 
-    def test_all_57_kinds_and_references_have_declarative_compilers(self):
+    def test_all_58_kinds_and_references_have_declarative_compilers(self):
         kinds = {obj["kind"] for obj in self.objects.values()}
-        self.assertEqual(len(kinds), 57)
+        self.assertEqual(len(kinds), 58)
         self.assertFalse(kinds - SPECS.keys())
         unsupported = {(obj["kind"], ref) for obj in self.objects.values()
                        for ref in set(obj["refs"]) - SUPPORTED_REFS[obj["kind"]]}

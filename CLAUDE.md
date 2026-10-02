@@ -733,7 +733,15 @@ for the separately recorded pinned-target live qualification.
   provider customer VRFs carry an RD equal to their `<asn>:<n>` route target;
   contacts carry 555-0100..0199 lines in their metro's real area code; the
   estate tag is `Managed`. The private-L3 virtual-circuit note points at the
-  documented CE-to-PE BGP sessions and must never deny them.
+  documented CE-to-PE BGP sessions and must never deny them. Every VLAN is
+  named for its segment alone (names are unique per VLAN group, and every VLAN
+  sits in its site's group). Every prefix and VLAN carries an `ipam.Role` from
+  `naming.IPAM_ROLES`, derived by `naming.prefix_role`/`SEGMENT_ROLES` and
+  re-checked (`ipam-role`); a new segment must be mapped there or generation
+  fails. Journals state rates via `naming.rate_kbps`, never raw kbps. The four
+  automation kinds have no REST-writable `comments`, so their inert limitation
+  lives in `estates/automation.py` and docs, not in their descriptions — the
+  `.invalid` webhook and disabled rule remain enforced.
 - Site naming: authored display names, facility codes and metro-jittered
   synthetic coordinates are the default (`naming = "authored"`, since 0.10.0);
   `naming = "legacy"` restores namespace-ordinal names and `[site_names]`

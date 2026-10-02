@@ -70,10 +70,10 @@ class ProviderIntegrationTests(unittest.TestCase):
                 note = objects["journal/circuit/span/handoff-plan"]["attrs"]["comments"]
                 if remote_kind == "site":
                     self.assertIn("A termination: Chicago PoP\nZ termination: " + name, note)
-                    self.assertIn("A handoff: 100000000 kbps\nZ handoff: 100000000 kbps", note)
+                    self.assertIn("A handoff: 100 Gbps\nZ handoff: 100 Gbps", note)
                 else:
                     self.assertIn("A termination: Chicago PoP\nZ network boundary: " + name, note)
-                    self.assertIn("A handoff: 100000000 kbps", note)
+                    self.assertIn("A handoff: 100 Gbps", note)
                     self.assertIn("Remote interface and owner: unknown.", note)
                     self.assertNotIn("Z handoff:", note)
                 assignment = objects["contact-assignment/virtual-circuit/acme"]

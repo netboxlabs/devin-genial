@@ -23,6 +23,7 @@ from .validate_datacenter import validate as validate_datacenter
 from .validate_school import validate as validate_school
 from .equipment import validate as validate_equipment
 from .model import DesignError, resolve_hardware, selected_alias
+from .naming import COHORT_LABELS
 
 
 # Independent expectations for the authored bank services. These are demo intent,
@@ -955,8 +956,8 @@ def validate(plan):
             if not isinstance(procurement, dict) or procurement.get("cohort") != cohort:
                 report("wan-provenance", circuit, "Procurement cohort must agree with actual site purpose and persisted branch lineage.")
             if not isinstance(attrs(circuit).get("comments"), str) or (
-                    not attrs(circuit)["comments"].startswith("Procurement record: ") or cohort not in attrs(circuit)["comments"]):
-                report("wan-provenance", circuit, "Portable comments must identify the procurement record and its cohort.")
+                    not attrs(circuit)["comments"].startswith(f"{COHORT_LABELS[cohort]} order: ")):
+                report("wan-provenance", circuit, "Portable comments must name the circuit's actual procurement cohort.")
             if any(not isinstance(attrs(circuit).get(field), str) or not attrs(circuit)[field].strip() for field in ("cid", "description")):
                 report("wan-provenance", circuit, "WAN service needs a nonempty circuit ID and portable description.")
         for location in expected_sites:

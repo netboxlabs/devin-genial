@@ -563,7 +563,7 @@ assume that previously open deviations will be applied or replayed automatically
 
 One complete mixed TurboBulk/REST estate has passed strict Cloud readback. Its
 29-kind qualification compiler is callable through `just load`. The compiler now
-covers 105 kinds — every kind any current profile emits, the complete bank included, plus the provider's three netbox_bgp plugin models — with all 57 kinds and references in the current enterprise
+covers 105 kinds — every kind any current profile emits, the complete bank included, plus the provider's three netbox_bgp plugin models — with all 58 kinds and references in the current enterprise
 data center artifact, with content-type-safe generic relationships, deferred
 many-to-many fields,
 and resumable REST creation when a required model is absent from TurboBulk. A fresh write
@@ -576,7 +576,7 @@ end-to-end timing and the rich graph have since been measured on the pinned loca
 stack; both remain unqualified on Cloud. The configured
 Cloud tenant runs NetBox 4.6.8. Its API cannot represent `module_bay_type` or the
 related compatibility fields, which NetBox [introduced in 4.7](https://github.com/netbox-community/netbox/discussions/22950).
-Read-only preflight therefore rejects the exact 57-kind artifact before writes.
+Read-only preflight therefore rejects the exact 58-kind artifact before writes.
 The 4.7 rich path is live-qualified only on the pinned local 4.7.1 stack
 (see [the rich-contract qualification](qualification.md#rich-contract-live-qualification-and-merge-findings));
 Cloud and Enterprise remain unqualified.

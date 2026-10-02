@@ -6,6 +6,7 @@ import math
 import re
 
 from .model import digest, hardware_catalog
+from .naming import rate_kbps, titleize
 
 
 # A CSV export template must be one header line plus exactly one queryset loop,
@@ -326,7 +327,7 @@ def _context(plan, objects, kinds):
         contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name, f"carrier-{provider.removeprefix('provider/')}.support")
         expect_assignment(key, contact, "carrier", "/carrier")
         expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
-                    (data.get("cid"), provider_name, data.get("commit_rate")))
+                    (data.get("cid"), provider_name, _rate(data.get("commit_rate"))))
         local = terms[key]
         if len(local) != 1 or objects.get(local[0]["refs"].get("termination"), {}).get("kind") != "site":
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
@@ -340,12 +341,12 @@ def _context(plan, objects, kinds):
             if external:
                 external_handoffs.add(key)
             facts = (data.get("cid"), attrs(term["refs"].get("termination")).get("name"),
-                     attrs(far["refs"].get("termination")).get("name"), term["attrs"].get("port_speed"))
+                     attrs(far["refs"].get("termination")).get("name"), _rate(term["attrs"].get("port_speed")))
             expect_note(key, "handoff-plan", data.get("install_date"),
-                        facts + (() if external else (far["attrs"].get("port_speed"),)) + (data.get("install_date"),))
+                        facts + (() if external else (_rate(far["attrs"].get("port_speed")),)) + (data.get("install_date"),))
         else:
             expect_note(key, "handoff-plan", data.get("install_date"),
-                        (data.get("cid"), attrs(term["refs"].get("termination")).get("name"), term["attrs"].get("port_speed"), data.get("install_date")))
+                        (data.get("cid"), attrs(term["refs"].get("termination")).get("name"), _rate(term["attrs"].get("port_speed")), data.get("install_date")))
     listeners = defaultdict(list)
     for service in kinds["service"]:
         listeners[service["refs"].get("virtual_machine")].append(service)
@@ -362,8 +363,8 @@ def _context(plan, objects, kinds):
         # The tenant's authored display name is clipped in prose so the
         # description stays inside the native 200-character bound.
         tenant_label = str(attrs(tenant).get("name", ""))[:40].rstrip()
-        contact_name = f"{tenant_label} {workload} service desk"
-        contact = expect_contact(f"contact/service/{tenant}/{workload}", contact_name, "service", f"{workload} within {tenant_label}", f"{mailbox}{workload}.service")
+        contact_name = f"{tenant_label} {titleize(workload)} service desk"
+        contact = expect_contact(f"contact/service/{tenant}/{workload}", contact_name, "service", f"{titleize(workload)} within {tenant_label}", f"{mailbox}{workload}.service")
         expect_assignment(key, contact, "service")
         scope = (refs.get("cluster"), workload)
         if scope not in anchors or int(parts[3]) < int(anchors[scope]["key"].rsplit("/", 1)[1]):
@@ -510,12 +511,12 @@ def _context(plan, objects, kinds):
         "optic-replacement-plan": ("Optical replacement preparation", r"Device: ([^\n]+)\nInterface: ([^\n]+)\nInstalled part: ([^\n]+)\nInstalled serial: ([^\n]+)\nBay: ([^\n]+)\nFacilities contact: ([^\n]+)\nUse the installed part and current device technical contact to review a like-for-like replacement\. For a captive AOC end, replace the complete assembly\. Preserve the interface and its dependent records; no module deletion, hot-swap or replacement is recorded as executed\."),
         "site-record": ("Site record", r"Site: ([^\n]+)\nAddress: ([^\n]+)\nTime zone: ([^\n]+)\nUse this record when arranging a site visit\."),
         "access-plan": ("Access coordination", r"Site: ([^\n]+)\nFacilities contact: ([^\n]+)\nCoordinate equipment-room access and planned power work with this local desk\."),
-        "capacity-request": ("WAN capacity request", r"Circuit: ([^\n]+)\nProvider: ([^\n]+)\nCommitted capacity: ([0-9]+) kbps\nUse the circuit identifier and committed rate when discussing the access order\."),
-        "handoff-plan": ("WAN handoff plan", r"Circuit: ([^\n]+)\nCustomer site: ([^\n]+)\nPhysical handoff: ([0-9]+) kbps\nRecorded service date: ([^\n]+)\nThis handoff plan describes the inventory connection; it does not record an acceptance test\."),
+        "capacity-request": ("WAN capacity request", r"Circuit: ([^\n]+)\nProvider: ([^\n]+)\nCommitted capacity: ([^\n]+)\nUse the circuit identifier and committed rate when discussing the access order\."),
+        "handoff-plan": ("WAN handoff plan", r"Circuit: ([^\n]+)\nCustomer site: ([^\n]+)\nPhysical handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nThis handoff plan describes the inventory connection; it does not record an acceptance test\."),
         "resource-plan": ("Service resource plan", r"VM: ([^\n]+)\nHost: ([^\n]+)\nCapacity: ([0-9.]+) vCPU; ([0-9]+) MB memory; ([0-9]+) MB disk\nThis is the initial placement and resource budget for this service instance\."),
         "listener-plan": ("Service listener plan", r"VM: ([^\n]+)\nListeners: ([^\n]+)\nSupport contact: ([^\n]+)\nUse the modeled listeners to scope configuration review; no application health check is recorded\.")}
     if recipe.get("profile") == "provider-backbone":
-        forms["handoff-plan"] = ("Circuit handoff plan", r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ termination: ([^\n]+)\nA handoff: ([0-9]+) kbps\nZ handoff: ([0-9]+) kbps\nRecorded service date: ([^\n]+)\nUse both termination records to coordinate the local handoffs\.")
+        forms["handoff-plan"] = ("Circuit handoff plan", r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ termination: ([^\n]+)\nA handoff: ([^\n]+)\nZ handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nUse both termination records to coordinate the local handoffs\.")
     for obj in kinds["journal_entry"]:
         key = obj["key"]
         if key not in notes:
@@ -525,7 +526,7 @@ def _context(plan, objects, kinds):
         title, body = forms[event]
         if event == "handoff-plan" and target in external_handoffs:
             body = (r"Circuit: ([^\n]+)\nA termination: ([^\n]+)\nZ network boundary: ([^\n]+)\n"
-                    r"A handoff: ([0-9]+) kbps\nRecorded service date: ([^\n]+)\nRemote interface and owner: unknown\.\n"
+                    r"A handoff: ([^\n]+)\nRecorded service date: ([^\n]+)\nRemote interface and owner: unknown\.\n"
                     r"Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary\.")
         comments = obj["attrs"].get("comments", "")
         match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}) — " + title + "\n" + body, comments) if isinstance(comments, str) else None
@@ -544,6 +545,11 @@ def _context(plan, objects, kinds):
             fail("operations-journal", key, "Required bounded lifecycle event is missing.")
     _automation(objects, kinds, ns, fail)
     return findings
+
+
+def _rate(kbps):
+    """Journals state rates in operator units; a malformed value stays raw and fails the match."""
+    return rate_kbps(kbps) if type(kbps) is int and kbps > 0 else kbps
 
 
 def validate(plan):

@@ -95,6 +95,67 @@ class ShowcaseText(unittest.TestCase):
         finally:
             self.objects["contact/site/pop-chicago-west"]["attrs"]["phone"] = chicago
 
+    def mutated(self, plan, key, **refs):
+        def changed(o):
+            merged = {**o["refs"], **refs}
+            return dict(o, refs={k: v for k, v in merged.items() if v is not None})
+        return {**plan, "objects": [changed(o) if o["key"] == key else o for o in plan["objects"]]}
+
+    def test_every_prefix_and_vlan_carries_the_ipam_role_its_purpose_implies(self):
+        for plan in (self.provider, self.bank):
+            objects = {o["key"]: o for o in plan["objects"]}
+            for obj in self.of(plan, "prefix") + self.of(plan, "vlan"):
+                self.assertEqual(objects[obj["refs"]["role"]]["kind"], "role", obj["key"])
+            roles = {o["key"]: o["attrs"]["name"] for o in self.of(plan, "role")}
+            self.assertEqual(len(set(roles.values())), len(roles))
+        role = lambda key: self.objects[self.objects[key]["refs"]["role"]]["attrs"]["name"]
+        self.assertEqual(role("prefix/loopback/device/pop-chicago-west/pe-a"), "Loopbacks")
+        self.assertEqual(role("prefix/link/pair/pop-chicago-west"), "Transit")
+        self.assertEqual(role("prefix/pop-chicago-west/reservation"), "Backbone")
+        self.assertEqual(role("root/customer/harbor-logistics"), "Customer")
+        self.assertEqual(role("prefix/ce-harbor-logistics-chicago-west-001/clients"), "Users")
+        self.assertEqual(role("vlan/pop-chicago-west/management"), "Management")
+        # Wrong role, missing role, and a prefix that disagrees with its VLAN.
+        for key, refs in (("prefix/link/pair/pop-chicago-west", {"role": "ip-role/management"}),
+                          ("vlan/ce-harbor-logistics-chicago-west-001/clients", {"role": None}),
+                          ("prefix/ce-harbor-logistics-chicago-west-001/clients", {"role": "ip-role/customer"})):
+            findings = validate(self.mutated(self.provider, key, **refs))
+            self.assertIn(("ipam-role", key), {(f["code"], f["object"]) for f in findings})
+
+    def test_vlans_carry_short_names_unique_within_their_site_group(self):
+        for plan in (self.provider, self.bank):
+            seen = set()
+            for vlan in self.of(plan, "vlan"):
+                self.assertNotIn(" ", vlan["attrs"]["name"], vlan["key"])
+                identity = (vlan["refs"]["group"], vlan["attrs"]["name"])
+                self.assertNotIn(identity, seen)
+                seen.add(identity)
+
+    def test_journals_circuits_sites_and_automation_read_operationally(self):
+        for plan in (self.provider, self.bank):
+            for entry in self.of(plan, "journal_entry"):
+                self.assertNotIn("kbps", entry["attrs"]["comments"])
+            for site in self.of(plan, "site"):
+                self.assertNotIn("inventory for", site["attrs"].get("comments", ""))
+            for obj in (self.of(plan, "config_context") + self.of(plan, "webhook")
+                        + self.of(plan, "event_rule") + self.of(plan, "platform")
+                        + self.of(plan, "virtual_machine_type")):
+                self.assertNotRegex(obj["attrs"]["description"], r"; no |not applied|unspecified|Inert|Wiring only")
+        notes = [e["attrs"]["comments"] for e in self.of(self.provider, "journal_entry")]
+        self.assertTrue(any("Committed capacity: 100 Gbps\n" in n for n in notes))
+        self.assertEqual({c["attrs"]["comments"].split(" order: ")[0] for c in self.of(self.bank, "circuit")},
+                         {"Standard branch", "Data center aggregation", "Retained Birch contract"})
+        hook = self.of(self.bank, "webhook")[0]
+        self.assertTrue(hook["attrs"]["payload_url"].split("/")[2].endswith(".invalid"))
+        self.assertIs(self.of(self.bank, "event_rule")[0]["attrs"]["enabled"], False)
+        # Rewording a stated rate is a journal-facts failure, not a free edit.
+        entry = next(e for e in self.of(self.provider, "journal_entry") if "Committed capacity: 100 Gbps" in e["attrs"]["comments"])
+        broken = {**self.provider, "objects": [
+            dict(o, attrs={**o["attrs"], "comments": o["attrs"]["comments"].replace("100 Gbps", "100000000 kbps")})
+            if o["key"] == entry["key"] else o for o in self.provider["objects"]]}
+        self.assertIn(("operations-journal-facts", entry["key"]),
+                      {(f["code"], f["object"]) for f in validate(broken)})
+
 
 if __name__ == "__main__":
     unittest.main()

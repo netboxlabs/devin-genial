@@ -9,6 +9,7 @@ from datetime import date, timedelta
 
 from .automation import enrich as automation_records
 from .model import DesignError, digest
+from .naming import rate_kbps, titleize
 from .wireless_context import enrich as wireless_context
 
 # Real metro area codes with the 555-0100..0199 block the North American
@@ -133,22 +134,22 @@ def enrich(world):
         term = terms[key]
         site_name = world.obj(term["refs"]["termination"])["attrs"]["name"]
         journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "WAN capacity request",
-            f"Circuit: {attrs['cid']}\nProvider: {name}\nCommitted capacity: {attrs['commit_rate']} kbps\nUse the circuit identifier and committed rate when discussing the access order.")
+            f"Circuit: {attrs['cid']}\nProvider: {name}\nCommitted capacity: {rate_kbps(attrs['commit_rate'])}\nUse the circuit identifier and committed rate when discussing the access order.")
         if world.recipe["profile"] == "provider-backbone":
             far = far_terms[key]
             far_target = world.obj(far["refs"]["termination"])
             far_name = far_target["attrs"]["name"]
             if far_target["kind"] == "provider_network":
                 body = (f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ network boundary: {far_name}\n"
-                        f"A handoff: {term['attrs']['port_speed']} kbps\nRecorded service date: {attrs['install_date']}\n"
+                        f"A handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\n"
                         "Remote interface and owner: unknown.\n"
                         "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
             else:
-                body = f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ termination: {far_name}\nA handoff: {term['attrs']['port_speed']} kbps\nZ handoff: {far['attrs']['port_speed']} kbps\nRecorded service date: {attrs['install_date']}\nUse both termination records to coordinate the local handoffs."
+                body = f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ termination: {far_name}\nA handoff: {rate_kbps(term['attrs']['port_speed'])}\nZ handoff: {rate_kbps(far['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nUse both termination records to coordinate the local handoffs."
             journal(key, "handoff-plan", attrs["install_date"], "Circuit handoff plan", body)
         else:
             journal(key, "handoff-plan", attrs["install_date"], "WAN handoff plan",
-                f"Circuit: {attrs['cid']}\nCustomer site: {site_name}\nPhysical handoff: {term['attrs']['port_speed']} kbps\nRecorded service date: {attrs['install_date']}\nThis handoff plan describes the inventory connection; it does not record an acceptance test.")
+                f"Circuit: {attrs['cid']}\nCustomer site: {site_name}\nPhysical handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nThis handoff plan describes the inventory connection; it does not record an acceptance test.")
 
     service_desks, anchors = {}, {}
     listeners = defaultdict(list)
@@ -166,8 +167,9 @@ def enrich(world):
             # the recipe may take up to its full length; clip it in prose so the
             # description stays inside the native 200-character limit.
             tenant_label = world.obj(refs["tenant"])["attrs"]["name"][:40].rstrip()
-            service_desks[scope] = contact(f"contact/service/{refs['tenant']}/{workload}", f"{tenant_label} {workload} service desk", "service", f"{mailbox}{workload}.service",
-                f"Resource sizing and listener configuration for {workload} within {tenant_label}; coordinate host incidents with the cluster technical desk.")
+            service = titleize(workload)
+            service_desks[scope] = contact(f"contact/service/{refs['tenant']}/{workload}", f"{tenant_label} {service} service desk", "service", f"{mailbox}{workload}.service",
+                f"Resource sizing and listener configuration for {service} within {tenant_label}; coordinate host incidents with the cluster technical desk.")
         assign(key, service_desks[scope], "service")
         anchors.setdefault((refs["cluster"], workload), vm)
     # ponytail: two records per workload/site, not per replica; append-only VM

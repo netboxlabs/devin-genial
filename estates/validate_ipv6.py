@@ -177,9 +177,11 @@ def validate(plan):
         if net6 is not None:
             require_prefix(f"ipv6/{key}", net6, dict(rel), attrs(key).get("status"))
 
+    # IPAM roles are checked against every prefix by validate_networking.
     for key, (net, rel, status) in expected_prefixes.items():
         if (kind(key) != "prefix" or attrs(key).get("prefix") != str(net) or
-                attrs(key).get("status") != status or refs(key) != rel):
+                attrs(key).get("status") != status or
+                {f: v for f, v in refs(key).items() if f != "role"} != {f: v for f, v in rel.items() if f != "role"}):
             report("ipv6-prefix", key, "Missing or incorrect reserved IPv6 prefix, status, VLAN, site, VRF or tenant.")
 
     for key, value in addresses.items():

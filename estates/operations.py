@@ -7,6 +7,7 @@ authored inventory does not create accounts, issue work orders, or run changes.
 from collections import defaultdict
 
 from .model import DesignError
+from .networking import ipam_roles
 from .operations_context import enrich as operational_context
 
 
@@ -24,7 +25,7 @@ def _wan_accounts(w, owner):
             suffix = "/inherited" if lineage == "inherited" else ""
             label = " Birch" if lineage == "inherited" else ""
             accounts[(key, lineage)] = w.add("provider_account", f"provider-account/{key}{suffix}",
-                {"name": f"{code.upper()} private WAN{label}",
+                {"name": f"Private WAN {code.upper()}{label}",
                  "account": f"{ns}-{lineage}-{code}",
                  "description": "Retained Birch WAN procurement account" if suffix else "WAN circuit billing account"},
                 {"provider": key, "owner": owner})
@@ -50,7 +51,7 @@ def enrich(w):
     contract = next(c for c in w.contracts if c["site"] == anchor)
     owner_group = add("owner_group", "owner-group/operations", {"name": f"{ns} Infrastructure teams"})
     owner = add("owner", "owner/operations", {"name": f"{ns} Network operations",
-                "description": "Accountable team; no authentication users are created"}, {"group": owner_group})
+                "description": "Accountable infrastructure team"}, {"group": owner_group})
     w.obj(anchor)["refs"]["owner"] = owner
     tenants = add("tenant_group", "tenant-group/banking", {"name": "Banking entities", "slug": f"{ns}-banking"}, {"owner": owner})
     for tenant in by_kind["tenant"]:
@@ -58,7 +59,7 @@ def enrich(w):
 
     _wan_accounts(w, owner)
     group = add("circuit_group", "circuit-group/dc-01/wan-01", {"name": "DC01 WAN pair 01", "slug": f"{ns}-dc01-wan-01",
-                "description": "Restoration inventory for the first provider pair; priorities do not configure failover"}, {"tenant": "tenant", "owner": owner})
+                "description": "Primary and secondary carrier pair for the first data center"}, {"tenant": "tenant", "owner": owner})
     for side, priority in (("a", "primary"), ("b", "secondary")):
         add("circuit_group_assignment", f"circuit-group-assignment/dc-01/{side}/1", {"priority": priority},
             {"group": group, "member": f"circuit/dc-01/{side}/1"})
@@ -67,12 +68,12 @@ def enrich(w):
     for cluster in by_kind["cluster"]:
         cluster["refs"]["group"] = clusters
     vm_type = add("virtual_machine_type", "vm-type/services", {"name": "Service VM", "slug": f"{ns}-service-vm",
-                  "description": "Common service platform; each VM retains its own explicit resource sizing"},
+                  "description": "Standard Linux service VM; sized per workload"},
                   {"default_platform": "platform/services", "owner": owner})
     for vm in by_kind["virtual_machine"]:
         vm["refs"]["virtual_machine_type"] = vm_type
         add("virtual_disk", f"virtual-disk/{vm['key']}/disk0", {"name": "disk0", "size": vm["attrs"]["disk"],
-            "description": "Provisioned service volume; matches the VM disk budget in MB, not additional storage"},
+            "description": "Primary VM volume"},
             {"virtual_machine": vm["key"], "owner": owner})
 
     racks = add("rack_group", "rack-group/estate", {"name": "Estate cabinets", "slug": f"{ns}-estate-cabinets"}, {"owner": owner})
@@ -80,7 +81,8 @@ def enrich(w):
     for height in sorted({rack["attrs"]["u_height"] for rack in by_kind["rack"]}):
         rack_types[height] = add("rack_type", f"rack-type/{height}u", {"model": f"Reference {height}U cabinet",
             "slug": f"{ns}-reference-{height}u", "u_height": height, "width": 19, "form_factor": "4-post-cabinet",
-            "description": "Reference cabinet dimensions; no vendor product or environmental rating is asserted"},
+            "description": "Standard four-post equipment cabinet",
+            "comments": "Reference dimensions; no vendor product or environmental rating is asserted."},
             {"manufacturer": "manufacturer/Devin Reference Designs", "owner": owner})
     for rack in by_kind["rack"]:
         rack["refs"].update(rack_type=rack_types[rack["attrs"]["u_height"]], group=racks)
@@ -129,6 +131,7 @@ def enrich(w):
     add("custom_link", "custom-link/site-equipment", {"name": f"{ns} Site equipment", "object_types": ["dcim.site"],
         "enabled": True, "link_text": "{% if object.name.startswith('" + ns + "-') %}Site equipment{% endif %}",
         "link_url": "/dcim/devices/?site_id={{ object.pk }}", "button_class": "default", "new_window": False}, {"owner": owner})
+    ipam_roles(w)
     operational_context(w)
     contract["operations"] = {"site": anchor, "custom_field": field, "rack_reservation": reservation,
                               "reservation_dependency": "bound existing username" if reservation else "reservation_user is unset; RackReservation requires an existing user"}
@@ -163,4 +166,5 @@ def supporting_records(world):
             obj["refs"]["group"] = f"vlan-group/{obj['refs']['site']}"
     if world.recipe["profile"] != "provider-backbone":
         _wan_accounts(world, owner)
+    ipam_roles(world)
     operational_context(world)

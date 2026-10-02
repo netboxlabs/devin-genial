@@ -81,7 +81,7 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
         w.add("device_role", f"role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}",
               "color": color, "vm_role": True})
     w.add("platform", "platform/services", {"name": "Service Linux", "slug": f"{ns}-service-linux",
-          "description": "Linux service baseline; distribution and version are unspecified"})
+          "description": "Linux server build for service VMs"})
     for group in ("network", "compute"):
         w.add("rack_role", f"rack-role/{group}", {"name": titleize(group), "slug": f"{ns}-{group}",
               "color": "1565c0" if group == "network" else "2e7d32"})
@@ -186,8 +186,7 @@ class Site:
                              required_connections=[], compute=[], assumptions=[])
         w.contracts.append(self.contract)
         w.add("site", self.key, {"name": self.name, "slug": self.name, "status": "active",
-              "description": description,
-              "comments": f"Network, compute and facilities inventory for {w.recipe['name']}."}, {"tenant": self.tenant, "tags": ["tag/estate"]})
+              "description": description}, {"tenant": self.tenant, "tags": ["tag/estate"]})
         self.equipment_location = places.locate(self)
 
     @property
@@ -387,10 +386,12 @@ class Site:
         vrf = self.vrf(role)
         if vrf not in self.w.objects:
             self.w.add("vrf", vrf, {"name": f"{self.display} {titleize(role)}", "enforce_unique": True,
-                       "description": "Retained Birch site routing context; isolation and renumbering are explicit design choices"}, {"tenant": self.tenant})
+                       "description": "Retained Birch site routing context"}, {"tenant": self.tenant})
         self.w.add("prefix", f"prefix/{self.id}/{role}/reservation", {"prefix": str(container), "status": "container",
               "description": f"{self.display} site block"}, {"vrf": vrf, "tenant": self.tenant, "scope_site": self.key})
-        vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": f"{self.display} {titleize(role)}", "vid": 10 * (index+1),
+        # NetBox holds VLAN names unique per VLAN group (unique_group_name), and
+        # every VLAN joins its site's group, so the short segment name suffices.
+        vlan = self.w.add("vlan", f"vlan/{self.id}/{role}", {"name": titleize(role), "vid": 10 * (index+1),
               "status": "active", "description": naming.segment_purpose(role)}, {"site": self.key, "tenant": self.tenant})
         # `wan` carries no gateway SVI and the conduit holds four, not two:
         # the reservation sentence belongs only to ordinary client segments.
@@ -470,7 +471,7 @@ class Site:
                             {"cid": f"{self.name}-{side.upper()}-{number:03}", "status": "active",
                              "commit_rate": rate * 1000, "install_date": installed,
                              "description": f"{naming.bandwidth(rate)} private WAN on a 1G handoff; carrier {side.upper()}",
-                             "comments": f"Procurement record: {cohort}. {reason}."},
+                             "comments": f"{naming.COHORT_LABELS[cohort]} order: {reason[0].lower()}{reason[1:]}."},
                             {"provider": f"provider/{side}", "type": "circuit-type/wan", "tenant": self.tenant},
                             {"procurement": {"cohort": cohort, "minimum_commit_mbps": 1000 if dc else floor,
                                              "planned_peak_mbps": peak, "handoff_mbps": 1000,

@@ -12,7 +12,7 @@ import math
 
 from .model import DesignError
 from . import naming
-from .naming import titleize
+from .naming import IPAM_ROLES, prefix_role, segment_role, titleize
 
 
 def _site_display(w, sid):
@@ -69,6 +69,31 @@ def enrich(w):
     macs(w)
 
 
+def ipam_roles(w):
+    """Give every prefix, VLAN and IP range its IPAM role (naming.IPAM_ROLES).
+
+    Runs once the address plan is complete, in every profile, and emits only
+    the roles the estate actually uses.
+    """
+    ns = w.recipe["namespace"]
+    chosen = {}
+    for obj in w.objects.values():
+        refs = obj["refs"]
+        if obj["kind"] == "prefix":
+            chosen[obj["key"]] = prefix_role(obj["key"], obj["attrs"]["prefix"], refs.get("vrf"), refs.get("vlan"))
+        elif obj["kind"] == "vlan":
+            chosen[obj["key"]] = segment_role(obj["key"].rsplit("/", 1)[-1])
+        elif obj["kind"] == "ip_range" and obj["attrs"].get("status") == "reserved":
+            chosen[obj["key"]] = "reserved"
+    used = set(chosen.values())
+    for weight, (role, (name, description)) in enumerate(IPAM_ROLES.items(), 1):
+        if role in used:
+            w.add("role", f"ip-role/{role}", {"name": name, "slug": f"{ns}-{role}", "weight": 100*weight,
+                  "description": description})
+    for key, role in chosen.items():
+        w.obj(key)["refs"]["role"] = f"ip-role/{role}"
+
+
 def registry(w, sites):
     ns = w.recipe["namespace"]
     rir = w.add("rir", "rir/private", {"name": "Private registry", "slug": f"{ns}-private",
@@ -89,8 +114,6 @@ def registry(w, sites):
         w.add("asn", f"asn/{label}", {"asn": base+i, "description": f"{holder} routing domain", "comments": PROVENANCE}, {"rir": rir})
     for side in ("a", "b"):
         w.obj(f"provider/{side}")["refs"]["asns"] = [f"asn/carrier-{side}"]
-    for role, description in (("routed", "Routed bank segment"), ("reserve", "Reserved address headroom")):
-        w.add("role", f"ip-role/{role}", {"name": titleize(role), "slug": f"{ns}-{role}", "description": description})
     pools = {w.recipe["address_pool"]}
     if any(o["meta"].get("lineage") == "birch" for o in sites):
         pools.add("172.16.0.0/12")
@@ -112,13 +135,11 @@ def registry(w, sites):
             w.add("ip_range", f"ip-range/{sid}/reserve", {"start_address": f"{net[220]}/{net.prefixlen}",
                   "end_address": f"{net[239]}/{net.prefixlen}", "status": "reserved", "mark_populated": False,
                   "description": "Twenty user addresses held for local onboarding"},
-                  {"vrf": prefix["refs"]["vrf"], "tenant": tenant, "role": "ip-role/reserve"})
+                  {"vrf": prefix["refs"]["vrf"], "tenant": tenant})
     for obj in list(w.objects.values()):
         if obj["kind"] == "vlan":
             sid = obj["refs"]["site"].split("/", 1)[1]
-            obj["refs"].update(group=f"vlan-group/{sid}", role="ip-role/routed")
-        elif obj["kind"] == "prefix" and obj["attrs"].get("status") == "active":
-            obj["refs"]["role"] = "ip-role/routed"
+            obj["refs"]["group"] = f"vlan-group/{sid}"
     for vrf in sorted((o for o in w.objects.values() if o["kind"] == "vrf"), key=lambda o: o["key"]):
         target = f"route-target/{vrf['key']}"
         number = w.reserve("route-targets", vrf["key"], 65534)+1
@@ -202,10 +223,10 @@ def recovery_overlay(w):
     w.obj("vrf/recovery")["refs"].update(import_targets=[target], export_targets=[target])
     net = ipaddress.ip_network((int(w.site_network("dc-01").network_address)+15*256, 31))
     w.add("prefix", "prefix/recovery", {"prefix": str(net), "status": "active", "description": "Planned DC overlay transit; addresses reserved for both ends"},
-          {"vrf": "vrf/recovery", "tenant": "tenant", "role": "ip-role/routed"})
+          {"vrf": "vrf/recovery", "tenant": "tenant"})
     w.add("l2vpn", "l2vpn/recovery", {"name": "Recovery Segment", "slug": f"{ns}-recovery-segment",
           "type": "vxlan", "identifier": 1+_number(ns, "recovery-vni", 16777214), "status": "planned",
-          "description": "Recovery segment awaiting workloads and configuration", "comments": PROVENANCE},
+          "description": "Planned data center recovery segment", "comments": PROVENANCE},
           {"tenant": "tenant", "import_targets": [target], "export_targets": [target]})
     for i in range(2):
         sid = f"dc-{i+1:02}"
@@ -218,12 +239,13 @@ def recovery_overlay(w):
         w.add("tunnel_termination", f"tunnel/recovery/{sid}", {"role": "peer"},
               {"tunnel": "tunnel/recovery", "termination": port, "outside_ip": f"ip/{outside}"})
         label = _site_display(w, sid) or titleize(sid)
-        vlan = w.add("vlan", f"vlan/{sid}/recovery", {"name": f"{label} Recovery", "vid": 3900+i, "status": "reserved"},
-                     {"site": f"site/{sid}", "group": f"vlan-group/{sid}", "tenant": "tenant", "role": "ip-role/routed"})
+        vlan = w.add("vlan", f"vlan/{sid}/recovery", {"name": "Recovery", "vid": 3900+i, "status": "reserved",
+                     "description": "Planned recovery segment"},
+                     {"site": f"site/{sid}", "group": f"vlan-group/{sid}", "tenant": "tenant"})
         policy = w.add("vlan_translation_policy", f"vlan-translation/{sid}", {"name": f"{label} Recovery", "description": "Planned local-to-peer recovery VLAN translation"})
         w.add("vlan_translation_rule", f"vlan-translation/{sid}/rule", {"local_vid": 3900+i, "remote_vid": 3901-i}, {"policy": policy})
         service = w.add("interface", f"{device}/if/RecoveryLAN", {"name": "RecoveryLAN", "type": "virtual", "enabled": True,
-                        "mode": "access", "description": "Planned recovery attachment; no production workload attached"},
+                        "mode": "access", "description": "Planned recovery attachment"},
                         {"device": device, "parent": port, "untagged_vlan": vlan, "vlan_translation_policy": policy})
         w.add("l2vpn_termination", f"l2vpn/recovery/{sid}", {}, {"l2vpn": "l2vpn/recovery", "assigned_object": service})
 
@@ -337,13 +359,13 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
         site_base = ipaddress.ip_network(w.obj(f"prefix/{sid}/wireless/reservation")["attrs"]["prefix"])
         net = ipaddress.ip_network((int(site_base.network_address)+11*256, 31))
         w.add("prefix", f"prefix/{sid}/radio-transit", {"prefix": str(net), "status": "active", "description": "Routed indoor diagnostic radio hop"},
-              {"vrf": prefix["refs"]["vrf"], "scope_site": site["key"], "tenant": tenant, "role": "ip-role/routed"})
+              {"vrf": prefix["refs"]["vrf"], "scope_site": site["key"], "tenant": tenant})
         ports = []
         for i, device in enumerate(devices[:2]):
             port = f"{device}/if/wlan1"
             w.obj(port)["attrs"].update(rf_role="ap" if i == 0 else "station",
                                         rf_channel=DIAGNOSTIC_CHANNELS[band(device, "wlan1")],
-                                        description="Dedicated routed diagnostic hop; no LAN bridging")
+                                        description="Routed diagnostic radio hop")
             w.obj(port)["refs"]["vrf"] = prefix["refs"]["vrf"]
             w.add("ip_address", f"ip/{port}", {"address": f"{net[i]}/31", "status": "active", "dns_name": f"{w.obj(device)['attrs']['name']}-radio.{ns}.example"},
                   {"assigned_object": port, "vrf": prefix["refs"]["vrf"], "tenant": tenant})
@@ -351,7 +373,8 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
         points = [w.obj(device)["meta"]["placement"]["position_m"] for device in devices[:2]]
         w.add("wireless_link", f"wireless-link/{sid}/diagnostic", {"ssid": f"{ns}-{sid}-diag"[:32], "status": "connected",
               "auth_type": "wpa-enterprise", "auth_cipher": "aes", "distance": max(1, math.ceil(math.dist(*points))), "distance_unit": "m",
-              "description": "Indoor diagnostic routed hop; no survey or RF budget claimed", "comments": PROVENANCE},
+              "description": "Indoor diagnostic radio hop",
+              "comments": "No site survey or RF link budget is claimed. " + PROVENANCE},
               {"interface_a": ports[0], "interface_b": ports[1], "tenant": tenant})
 
 
