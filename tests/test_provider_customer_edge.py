@@ -175,5 +175,75 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
         self.assertIn("provider-dual-homed", self.codes())
 
 
+LIFECYCLE_RECIPE = {"profile": "provider-backbone", "customers": [
+    dict(key="harbor-logistics", hub_pop="chicago-west", lan_endpoints=0, sites=[
+        dict(pop="chicago-west"), dict(pop="detroit-south", status="planned"),
+        dict(pop="cleveland-east", status="decommissioning")]),
+    dict(key="maple-schools", hub_pop="detroit-south", status="planned", lan_endpoints=0,
+         sites=[dict(pop="detroit-south"), dict(pop="cleveland-east")])]}
+
+
+class LifecycleEquipmentTests(unittest.TestCase):
+    """Nothing not yet in service looks installed; a withdrawing circuit names its disconnect."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.baseline = generate(LIFECYCLE_RECIPE)
+
+    def setUp(self):
+        self.plan = deepcopy(self.baseline)
+        self.o = {obj["key"]: obj for obj in self.plan["objects"]}
+
+    def pe_port(self, sid):
+        circuit = f"circuit/customer/{sid}/Z"
+        return next(c["refs"]["a" if c["refs"]["b"] == circuit else "b"] for c in self.plan["objects"]
+                    if c["kind"] == "cable" and circuit in (c["refs"]["a"], c["refs"]["b"]))
+
+    def test_pending_handoffs_are_shut_and_their_optics_not_installed(self):
+        self.assertEqual(validate(self.plan), [])
+        for sid, optic in (("ce-maple-schools-detroit-south-001", "planned"),
+                           ("ce-harbor-logistics-detroit-south-001", "staged"),
+                           ("ce-harbor-logistics-chicago-west-001", "active")):
+            with self.subTest(sid=sid):
+                port = self.o[self.pe_port(sid)]
+                self.assertEqual(port["attrs"]["enabled"], optic == "active")
+                module = self.o[port["refs"]["module"]]
+                self.assertEqual(module["attrs"]["status"], optic)
+                self.assertEqual("serial" in module["attrs"], optic != "planned")
+        # A planned CE has not shipped; a staged one carries its serial.
+        self.assertNotIn("serial", self.o["device/ce-maple-schools-detroit-south-001/edge-01"]["attrs"])
+        self.assertIn("serial", self.o["device/ce-harbor-logistics-detroit-south-001/edge-01"]["attrs"])
+
+    def test_withdrawing_circuit_carries_its_disconnect(self):
+        circuit = self.o["circuit/customer/ce-harbor-logistics-cleveland-east-001"]
+        self.assertEqual(circuit["attrs"]["status"], "deprovisioning")
+        self.assertGreater(circuit["attrs"]["termination_date"], self.plan["recipe"]["as_of"])
+        journal = self.o["journal/circuit/customer/ce-harbor-logistics-cleveland-east-001/disconnect-order"]
+        self.assertIn(circuit["attrs"]["termination_date"], journal["attrs"]["comments"])
+        self.assertEqual(journal["attrs"]["kind"], "warning")
+
+    def test_lifecycle_equipment_counterexamples_are_refused(self):
+        planned, staged = "ce-maple-schools-detroit-south-001", "ce-harbor-logistics-detroit-south-001"
+
+        def enabled():
+            self.o[self.pe_port(planned)]["attrs"]["enabled"] = True
+
+        def installed_optic():
+            self.o[self.o[self.pe_port(planned)]["refs"]["module"]]["attrs"].update(status="active")
+
+        def shipped_ce():
+            self.o[f"device/{planned}/edge-01"]["attrs"]["serial"] = self.o[f"device/{staged}/edge-01"]["attrs"]["serial"]
+
+        def no_disconnect():
+            self.o["circuit/customer/ce-harbor-logistics-cleveland-east-001"]["attrs"].pop("termination_date")
+
+        for mutate, code in ((enabled, "provider-port-mode"), (installed_optic, "provider-lifecycle-equipment"),
+                             (shipped_ce, "provider-lifecycle-equipment"), (no_disconnect, "provider-lifecycle-equipment")):
+            with self.subTest(mutate.__name__):
+                self.setUp()
+                mutate()
+                self.assertIn(code, {finding["code"] for finding in validate(self.plan)})
+
+
 if __name__ == "__main__":
     unittest.main()

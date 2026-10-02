@@ -346,7 +346,11 @@ def _context(plan, objects, kinds):
             maker = attrs(module_type.get("refs", {}).get("manufacturer")).get("name")
             fmt = (host_spec(owner).get("module_serial_format") if module["key"].startswith(f"{owner}/module/")
                    else optic_formats.get(maker, optic_formats.get("Generic")))
-            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on.get(owner))
+            # An optic staged for a handoff not yet in service arrived recently.
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/"))
+                           or (scheduled(module["key"], "staged", recipe.get("as_of"), 7, 31)
+                               if module["attrs"].get("status") == "staged" else None)
+                           or installed_on.get(owner))
         if all(anchors):
             check_serial(members[0]["key"], fmt, serial, min(anchors), SERIAL_SHIFT_WEEKS)
 

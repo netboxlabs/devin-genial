@@ -62,6 +62,9 @@ CARRIER_NAMES = ("transport-a", "transport-b", "transit-a", "transit-b", "oob")
 CORE, MANAGEMENT, OOB = None, "vrf/provider", "vrf/oob"
 HUB_RT, SPOKE_RT = 9000, 9001
 FXP0_HOSTS = (4, 5)
+# The serving PE optic of a premises not yet in service: planned (not yet
+# received, no serial) or staged (on hand, serialized), in a shut cage.
+PENDING_OPTIC = {"planned": "planned", "provisioning": "staged"}
 # Customers' own LAN plans, restated: several customers deliberately number
 # from the same space, each inside its own VRF; a plan overlapping the
 # carrier's address_pool is skipped.
@@ -337,6 +340,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     # The lifecycle stage of the premises being checked; "active" elsewhere.
     now = ["active"]
+    # PE service handoffs of premises not yet in service stay shut (filled below).
+    shut = set()
 
     def life(field):
         return LIFE[now[0]][field]
@@ -352,7 +357,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         return bool(cables) and all(attrs(c).get("status") == life("cable") for c in cables) and all(
             attrs(d).get("status") in {"active", life("device")} for d in devices) and (
             now[0] != "active" or all(attrs(d).get("status") == "active" for d in devices)) and all(
-            attrs(p).get("enabled") is True for p in (port, peers[port]) if kind(p) == "interface")
+            attrs(p).get("enabled") is (p not in shut) for p in (port, peers[port]) if kind(p) == "interface")
 
     def vlans(port):
         values = refs(port).get("tagged_vlans", [])
@@ -691,6 +696,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                 report("provider-console-path", device, "Every PE, CPE and management/access switch requires its own active local serial console path.")
     now[0] = "active"
 
+    for sid, (customer, pop, ordinal) in premises.items():
+        if _stage(customer, pop) in PENDING_OPTIC:
+            for target in (sid, f"{sid}/b"):
+                if (slot := service_ports[pop].get(target)) is not None:
+                    shut.add(f"device/pop-{pop}/pe-{'ab'[slot % 2]}/if/xe-0/1/{slot // 2}")
     for pop in ordered:
         sid, site = f"pop-{pop}", f"site/pop-{pop}"
         # The two cabinets are bayed together on the first row of the network
@@ -730,7 +740,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             for n in range(8):
                 port = f"{router}/if/xe-0/1/{n}"
                 speed = 1000000 if n < 6 else 10000000
-                if attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not in_use(port) or attrs(port).get("speed") != speed:
+                if (attrs(port).get("type") != "10gbase-x-sfpp" or attrs(port).get("enabled") is not (in_use(port) and port not in shut) or
+                        attrs(port).get("speed") != speed):
                     report("provider-port-mode", port, "The PE preserves 10G physical port types with explicit 1G service and 10G infrastructure operating speeds; unused ports are shut.")
             # Junos addresses the loopback on logical unit 0: lo0.0, a child of lo0.
             fxp0, lo, unit = f"{router}/if/fxp0", f"{router}/if/lo0", f"{router}/if/lo0.0"
@@ -909,6 +920,21 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             route = round(_km(*ends) * ROUTE_FACTOR, 1) if all(ends) else None
             if (attrs(key).get("distance"), attrs(key).get("distance_unit")) != ((route, "km") if route else (None, None)):
                 report("provider-access-geography", key, "An access circuit records the route length from its premises to its serving PoP.")
+            # Nothing not yet in service looks installed, and a withdrawing
+            # circuit names the day it is disconnected.
+            module = refs(pe_port).get("module")
+            want = PENDING_OPTIC.get(stages[sid], "active")
+            if kind(module) == "module" and (attrs(module).get("status") != want or ("serial" in attrs(module)) == (want == "planned")):
+                report("provider-lifecycle-equipment", module, "The serving PE optic of a premises not yet in service is planned "
+                       "without a serial (onboarding customer) or staged (provisioning); otherwise it is installed.")
+            try:
+                ends_on = date.fromisoformat(attrs(key)["termination_date"]) if "termination_date" in attrs(key) else None
+            except (TypeError, ValueError):
+                ends_on = date.min
+            if (ends_on is not None) != (stages[sid] == "decommissioning") or (ends_on is not None and ends_on <= date.fromisoformat(recipe["as_of"])):
+                report("provider-lifecycle-equipment", key, "Only a deprovisioning access circuit carries its scheduled disconnect date, after as_of.")
+        if (stages[sid] == "planned") == ("serial" in attrs(cpe)):
+            report("provider-lifecycle-equipment", cpe, "A planned CE has not shipped and carries no serial; every other CE does.")
         lan = f"{cpe}/if/port1"
         if customer["lan_endpoints"]:
             clients, clients_vlan = local_network(sid, "clients", vrf, tenant)

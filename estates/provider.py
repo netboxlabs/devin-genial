@@ -1126,6 +1126,27 @@ def _apply_lifecycle(w,entries):
             obj["attrs"]["status"] = LIFECYCLE[stages[site][0]][field[obj["kind"]]]
     for site,(stage,_) in stages.items():
         objects[site]["attrs"]["status"] = LIFECYCLE[stage]["site"]
+    # Nothing not yet in service looks installed: the serving PE handoff is
+    # shut and its optic planned (no serial) or staged on the shelf; a planned
+    # CE and its supplies have no serial until the unit is shipped. A
+    # withdrawing access circuit carries its scheduled disconnect date.
+    as_of = date.fromisoformat(w.recipe["as_of"])
+    for key,site in owner.items():
+        stage,obj = stages[site][0],objects[key]
+        if stage in OPTIC_STAGE and obj["kind"] == "interface" and objects[obj["refs"]["device"]]["refs"].get("role") == "role/provider-edge":
+            obj["attrs"]["enabled"] = False
+            if module := obj["refs"].get("module"):
+                objects[module]["attrs"]["status"] = OPTIC_STAGE[stage]
+                if stage == "planned": objects[module]["attrs"].pop("serial",None)
+        elif stage == "planned" and obj["kind"] in ("device","module"):
+            obj["attrs"].pop("serial",None)
+            if obj["kind"] == "module": obj["attrs"]["status"] = "planned"
+        elif stage == "decommissioning" and obj["kind"] == "circuit":
+            obj["attrs"]["termination_date"] = (as_of+timedelta(days=w.choose(key,"disconnect",range(21,61)))).isoformat()
+
+
+# The serving PE optic of a premises not yet in service.
+OPTIC_STAGE = {"planned":"planned","provisioning":"staged"}
 
 
 def _capacity(graph,attachments,reserve):

@@ -94,7 +94,10 @@ def timeline(world, kinds, dated):
             maker = world.obj(world.obj(module["refs"]["module_type"])["refs"]["manufacturer"])["attrs"]["name"]
             fmt = (models.get(device["meta"].get("hardware"), {}).get("module_serial_format")
                    if module["key"].startswith(f"{device['key']}/module/") else formats.get(maker, formats["Generic"]))
-            anchors.append(port_day.get(module["key"].removeprefix("optics-module/")) or installed_on[device["key"]])
+            # An optic staged for a handoff not yet in service arrived recently.
+            anchors.append(port_day.get(module["key"].removeprefix("optics-module/"))
+                           or (dated(module["key"], "staged", as_of, 7, 31) if module["attrs"].get("status") == "staged" else None)
+                           or installed_on[device["key"]])
         if fmt and serial:
             when = made(min(m["key"] for m in members), min(anchors))
             redated = redate_serial(fmt, serial, when)
