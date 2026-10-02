@@ -73,7 +73,9 @@ def retained_hosts(world):
 _CAGES = {"1000base-x-sfp": ("sfp", 1000000),
           "10gbase-x-sfpp": ("sfpp", 10000000),
           "25gbase-x-sfp28": ("sfp28", 25000000),
-          "100gbase-x-qsfp28": ("qsfp28", 100000000)}
+          "100gbase-x-qsfp28": ("qsfp28", 100000000),
+          # QSFP-DD takes a QSFP28 module at 100G (MX304 LMIC16, catalog 0.15).
+          "400gbase-x-qsfpdd": ("qsfpdd", 400000000)}
 
 
 def enrich(world):
