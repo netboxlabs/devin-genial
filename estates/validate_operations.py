@@ -820,26 +820,22 @@ def _shared(plan, objects, kinds, report):
             report("operations-unused-port", port["key"], "Unused ports are disabled on every role; this port is uncabled, "
                    "unaddressed and carries nothing, yet still enabled.")
 
-    # Every data cable states its medium in its jacket colour; power cords by feed.
-    feed_of = {}
-    for cable in kinds["cable"]:
-        for end, far in (("a", "b"), ("b", "a")):
-            feed = objects.get(cable["refs"].get(end), {})
-            if feed.get("kind") == "power_feed":
-                feed_of[cable["refs"].get(far)] = feed["attrs"].get("type")
+    # Every data cable states its medium in its jacket colour. A feed's own
+    # whip is black on the primary feed and red on the redundant one; an
+    # equipment cord is either (a cord moved between PDUs keeps its jacket —
+    # that is how the power-diversity defect looks on the floor).
     for cable in kinds["cable"]:
         ends = [objects.get(cable["refs"].get(side), {}) for side in ("a", "b")]
         cable_type, colour = cable["attrs"].get("type"), cable["attrs"].get("color")
+        feeds = [end for end in ends if end.get("kind") == "power_feed"]
         if {end.get("kind") for end in ends} == {"console_port", "console_server_port"}:
-            expected = _CONSOLE_COLOUR if cable_type == "cat6" else "missing type"
+            expected = {_CONSOLE_COLOUR} if cable_type == "cat6" else set()
         elif cable_type == "power":
-            side = next((feed_of[end["key"]] for end in ends if end.get("key") in feed_of),
-                        next((feed_of.get(end["refs"].get("power_port"), "primary") for end in ends
-                              if end.get("kind") == "power_outlet"), "primary"))
-            expected = _POWER_COLOURS.get(side)
+            expected = ({_POWER_COLOURS.get(feeds[0]["attrs"].get("type"))} if feeds
+                        else set(_POWER_COLOURS.values()))
         else:
-            expected = _CABLE_COLOURS.get(cable_type)
-        if expected is not None and colour != expected:
+            expected = {_CABLE_COLOURS[cable_type]} if cable_type in _CABLE_COLOURS else None
+        if expected is not None and colour not in expected:
             report("operations-cable-colour", cable["key"], "A cable's jacket colour must follow its medium "
                    "(and a power cord its feed side); a console run is typed twisted pair.")
 

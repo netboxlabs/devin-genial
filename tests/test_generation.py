@@ -58,6 +58,8 @@ class GenerationTests(unittest.TestCase):
                         obj["attrs"].pop("install_date")
                     if obj["kind"] == "journal_entry":
                         obj["attrs"]["comments"] = re.sub(r"\d{4}-\d{2}-\d{2}", "<authored-date>", obj["attrs"]["comments"])
+                        # created is the same seeded event date, at 15:00 UTC.
+                        self.assertRegex(obj["attrs"].pop("created"), r"^\d{4}-\d{2}-\d{2}T15:00:00Z$")
                         if obj["key"].endswith("/equipment-record"):
                             obj["attrs"]["comments"], count = re.subn(r" serial [0-9A-Z]{8,20} racked in ", " serial <device-serial> racked in ", obj["attrs"]["comments"])
                             self.assertEqual(count, 1)

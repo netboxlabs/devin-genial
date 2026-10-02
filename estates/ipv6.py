@@ -168,7 +168,7 @@ created on a spare interface or an unmodeled far end of a circuit.
                 device.get("refs", {}).get("role") != "role/customer-edge"):
             raise DesignError(f"IPv6 enrichment: {obj['key']} /128 requires the CE's own management loopback")
         if policy == "loopback" and (owner["kind"] != "interface" or
-                owner["attrs"].get("name") != "lo0" or owner["attrs"].get("type") != "virtual" or
+                owner["attrs"].get("name") not in {"lo0", "lo0.0"} or owner["attrs"].get("type") != "virtual" or
                 device.get("key") != prefix.removeprefix("prefix/loopback/") or
                 device.get("refs", {}).get("role") != "role/provider-edge" or
                 device.get("refs", {}).get("primary_ip4") != obj["key"]):
