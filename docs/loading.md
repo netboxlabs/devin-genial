@@ -408,7 +408,13 @@ Every policy is derived from the finished graph:
   the plan allocates one) — scoped to roles whose every addressed physical port
   is a routed link, because the engine reads any addressed physical port,
   management LANs included, as point-to-point; and every device renders every
-  leaf key of the estate's unscoped config context.
+  leaf key of the estate's unscoped config context. Three of these read the
+  estate without its design, so each runs on the roles the design does not
+  put in that position: `no_duplicate_ips` compares addresses across VRFs
+  (provider CEs deliberately share customer RFC1918 plans in separate VRFs),
+  `ip_prefix_utilization` counts a site-scoped host-route prefix (a CE's /32
+  management loopback) as 100% full, and `no_unconnected_active_interfaces`
+  ignores `mark_connected` (a CE's customer-LAN handoff).
 - **One standards policy per site group** (customer premises, PoPs, data
   centres, schools, …): the device roles present at every site of that kind,
   the VLAN-ID range the plan allocates there, the smallest per-site count of a
@@ -417,9 +423,13 @@ Every policy is derived from the finished graph:
   site kind has console servers — console reachability for the roles the
   estate cables to one anywhere.
 - **One resilience policy per site group** (graph engine): every powered
-  device reaches a feed, no feed is a single point of power, two circuits from
-  two providers per site, circuits diverse by provider and device, rack and
-  cross-rack cable failure impact. Scoped by policy roles to the roles that
+  device reaches a feed, no feed is a single point of power, circuits per site,
+  rack and cross-rack cable failure impact. Circuit terms follow the design: a
+  site kind whose sites all have two or more circuits needs two circuits from as
+  many providers (capped at two) as its best-provisioned site has, plus
+  diversity by provider and device; a kind with single-homed sites is scored on
+  one circuit, and its multi-circuit sites (dual-homed hubs) get a separate
+  `<kind> dual-homed resilience` policy scoped to exactly those sites. Scoped by policy roles to the roles that
   *draw* power: a PDU's single inlet is the distribution layer by design (the
   A/B pair is the redundancy), and the graph engine ignores rule-level roles.
 - **One naming policy per platform**: per interface type, the name shapes that
@@ -445,12 +455,16 @@ under the **first** rule carrying that check in the policy, with each rule's
 own parameters still applied — so a policy holds one rule per check
 (`build` refuses a repeat), which is why naming is one policy per platform.
 
-For the provider showcase plan the sidecar derives 11 policies and 57 rules
-predicting 310 failing subjects; seeded on `crsk8600` (2026-10-02) every one of
-the 57 rules matched its prediction exactly: single-homed customer premises
-(59 sites) and their single feed (59 feeds), two PoPs and the NOC whose
-circuits all come from one provider, the DC management switch's uncabled
-console, and 185 devices with enabled-but-uncabled spare ports.
+The engine evaluates only `active` devices and counts only `active` circuits
+(a site with none gets no result at all); the prediction does the same.
+
+For the final provider showcase plan (`build/showcase-final`) the sidecar
+derives 12 policies and 52 rules predicting 16 failing subjects; seeded on
+`crsk8600` (2026-10-02) all 52 rules matched exactly. The findings: 12
+dual-homed customer hubs whose two circuits land on one CE (the CE is the
+remaining single point; that policy scores 50%), the DC management switch's
+uncabled console, and three unracked lab routers whose addressed `mgmt0` has
+no cable. Every other policy scores 99–100%.
 
 ## Verify without loading
 
