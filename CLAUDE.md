@@ -283,6 +283,18 @@ spares pools in multi-cabinet rooms. Lifecycle rows protect sites and
 locations and geometry shapes protect racks: remove them first with
 `just unseed-lifecycle RECEIPT TARGET` / `just unseed-geometry RECEIPT TARGET`
 (receipt-scoped, `*_WRITES=1`), then `teardown-main`. See docs/loading.md.
+Compliance policies (`just validation PLAN OUT`, `validation-check PLAN OUT`,
+`VALIDATION_WRITES=1 just seed-validation OUT TARGET [RECEIPT]`, `just
+unseed-validation RECEIPT TARGET`) are the Validation-plugin sidecar: an estate
+baseline, a standards and a graph resilience policy per site group and a naming
+policy per platform, every parameter read from the plan, each rule carrying
+its predicted failing subjects and their graph causes. Seed creates policies
+and rules, runs each once and records predicted-vs-actual differences as
+drift, never as failure. Never POST results, findings or compliance (engine
+output). Exclude a check whose premise the estate does not share, with the
+observed reason in `EXCLUDED`, rather than tuning it to pass; keep one rule
+per check per policy (1.14.1 files a check's results under its first rule)
+and graph rules unscoped (the graph engine ignores rule roles — scope by policy).
 Reviewable TurboBulk loads require zero initial Branching ChangeDiffs and verify
 the exact total and per-model create-ChangeDiff counts at the final readback boundary.
 Pre-existing rows may be allowlisted only for declared kinds (`ALLOWLISTED_KINDS`:
@@ -438,6 +450,11 @@ for the separately recorded pinned-target live qualification.
   plan and bound to its SHA, plus the resumable REST seeder with exact
   readback; `just lifecycle`, `lifecycle-check`, `seed-lifecycle`. Pinned by
   `tests/test_lifecycle.py`.
+- `estates/validation.py`: the NetBox Validation sidecar — plan-derived
+  policies and rules with a per-rule prediction of findings and causes, bound to
+  the plan's SHA, plus the REST seeder that runs them and compares the engine's
+  failing checks with the prediction; `just validation`, `validation-check`,
+  `seed-validation`, `unseed-validation`. Pinned by `tests/test_validation.py`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
@@ -500,6 +517,19 @@ for the separately recorded pinned-target live qualification.
   eligible site in permanent allocation order, then the first eligible switch,
   ports in numeric-aware name order and endpoints by append-only room-ledger
   slot — so growth, in place or site-appending, keeps the same subjects.
+  The provider profile always takes its own PoP subject set instead (a carrier
+  discovers its PoP equipment, never customer LANs; CE-only `lan_endpoints = 0`
+  premises have no endpoint at all): the first eligible PoP in the permanent
+  `provider-pop-order` ledger, its PE pair, management switch and console
+  server in numeric-aware name order, and only permanent PoP-build properties —
+  the PE-to-PE link and its optic, the management port cabled to the second
+  PE's management port, the PE's primary loopback, the PE's power supplies —
+  never a port growth later consumes. Seven items: a staged second loopback
+  /32 (create), a replaced optic serial, that port's edited description, a shut
+  management port, a replaced console server (serial update, new MAC create,
+  primary-MAC update), an unobserved PSU and a lower-cased PE serial. Spare
+  serials expand from the part's own catalog format, dated before `as_of`. Both
+  paths share the item checks; campus envelopes stay byte-identical.
   `observed/` is a projection of the plan: only drifted records are emitted, and
   every other record exists to resolve nested identities. A drifted record must
   keep its documented Diode matching identity, a created record must not reuse
