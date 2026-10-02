@@ -1,7 +1,9 @@
 """Scoped service desks and bounded, immutable design records for every profile.
 
 Journal comments are matching identity. Never include growing inventory totals,
-current utilization, or an assertion that a change or recovery test was executed.
+current utilization, or an assertion that a scenario change or recovery test was
+executed. A historical event cites only what its record cannot show: the change
+ticket it ran under and who confirmed it.
 """
 
 from collections import defaultdict
@@ -9,7 +11,7 @@ from datetime import date, timedelta
 
 from .automation import enrich as automation_records
 from .model import DesignError, digest, redate_serial
-from .naming import main_scoped_name, rate_kbps, titleize
+from .naming import main_scoped_name, titleize
 from .wireless_context import enrich as wireless_context
 
 # Real metro area codes with the 555-0100..0199 block the North American
@@ -238,6 +240,10 @@ def enrich(world):
 
     service_day, installed_on = timeline(world, kinds, dated)
 
+    def change(target):
+        """The operator's change ticket for one subject's event; stable per subject."""
+        return f"CHG{world.choose(target, 'journal-change', range(1000000, 10000000)):07d}"
+
     def journal(target, event, when, title, body, kind="info"):
         # ``created`` is the event's own date (mid-morning US time), not the
         # load: TurboBulk inserts a supplied value as-is, and a journal whose
@@ -267,8 +273,6 @@ def enrich(world):
             "give two working days' notice and flag any planned power work.")
 
     provider_desks = {}
-    terms = {obj["refs"]["circuit"]: obj for obj in kinds["circuit_termination"] if obj["attrs"]["term_side"] == "A"}
-    far_terms = {obj["refs"]["circuit"]: obj for obj in kinds["circuit_termination"] if obj["attrs"]["term_side"] == "Z"}
     for circuit in kinds["circuit"]:
         key, attrs, refs = circuit["key"], circuit["attrs"], circuit["refs"]
         provider = refs["provider"]
@@ -284,27 +288,13 @@ def enrich(world):
         assign(key, provider_desks[provider], "carrier", "/carrier", "secondary")
         if "install_date" not in attrs:
             continue  # ordered work not yet in service has no dated history
-        term = terms[key]
-        site_name = world.obj(_site_of(world, term))["attrs"]["name"]
-        if "commit_rate" in attrs:  # owned fiber has no purchased commitment to request
-            journal(key, "capacity-request", dated(key, "capacity-request", attrs["install_date"], 30, 31), "Order placed",
-                f"Ordered {rate_kbps(attrs['commit_rate'])} from {name}; quote {attrs['cid']} on every call to the carrier.")
-        if world.recipe["profile"] == "provider-backbone":
-            far = far_terms[key]
-            far_target = world.obj(_site_of(world, far))
-            far_name = far_target["attrs"]["name"]
-            if far_target["kind"] == "provider_network":
-                body = (f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ network boundary: {far_name}\n"
-                        f"A handoff: {rate_kbps(term['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\n"
-                        "Remote side: upstream carrier network.\n"
-                        "Use the A termination to coordinate the local handoff; the Z record identifies an external network boundary.")
-            else:
-                body = f"Circuit: {attrs['cid']}\nA termination: {site_name}\nZ termination: {far_name}\nA handoff: {rate_kbps(term['attrs']['port_speed'])}\nZ handoff: {rate_kbps(far['attrs']['port_speed'])}\nRecorded service date: {attrs['install_date']}\nUse both termination records to coordinate the local handoffs."
-            journal(key, "handoff-plan", attrs["install_date"], "Circuit handoff plan", body)
-        else:
-            journal(key, "handoff-plan", attrs["install_date"], "In service",
-                f"{name} handed the circuit over at {site_name} on a {rate_kbps(term['attrs']['port_speed'])} port.",
-                "success")
+        # One event per circuit, and only what the record cannot show: the
+        # change it went live under and who confirmed the handover. Its cid,
+        # terminations, rates and dates are fields the circuit already holds.
+        accepted = f"Accepted into service under change {change(key)}."
+        if provider != "provider/operator":
+            accepted += f" {name} support desk confirmed the handover and closed its ticket."
+        journal(key, "handover", attrs["install_date"], "Handed over", accepted, "success")
 
     service_desks, anchors = {}, {}
     for vm in sorted(kinds["virtual_machine"], key=lambda obj: obj["key"]):
@@ -334,20 +324,10 @@ def enrich(world):
 
     # Permanent U allocation makes this local selection stable when a new
     # workload sorts before existing workloads. New racks receive new stories.
-    equipment_anchors, supplies, interfaces = {}, defaultdict(list), defaultdict(dict)
-    optical_cages = {}
-    for model in world.catalog["models"].values():
-        optical_cages[(model["manufacturer"], model["model"])] = next(
-            (p["name"] for p in model["interfaces"]
-             if p["type"] in {"1000base-x-sfp", "10gbase-x-sfpp", "25gbase-x-sfp28",
-                              "100gbase-x-qsfp28"}), None)
-    optical_ports = {c["refs"][side] for c in kinds["cable"] if c["attrs"].get("type") in {"smf", "aoc"}
-                     for side in ("a", "b")}
-    for port in kinds["interface"]:
-        interfaces[port["refs"]["device"]][port["attrs"]["name"]] = port
-    for port in kinds["power_port"]:
-        if port["refs"].get("module"):
-            supplies[port["refs"]["device"]].append(port)
+    # One installation event per cabinet, on its lowest-mounted equipment: the
+    # change it was racked under and the desk that booked the visit. Model,
+    # serial, cabinet, U and modules are fields the device already shows.
+    equipment_anchors = {}
     for device in kinds["device"]:
         refs, attrs = device["refs"], device["attrs"]
         rack, position = refs.get("rack"), attrs.get("position")
@@ -358,38 +338,9 @@ def enrich(world):
         if old is None or (position, device["key"]) < (old["attrs"]["position"], old["key"]):
             equipment_anchors[rack] = device
     for rack_key, device in sorted(equipment_anchors.items()):
-        key, refs, attrs = device["key"], device["refs"], device["attrs"]
-        rack, room, site = (world.obj(refs[field])["attrs"]["name"] for field in ("rack", "location", "site"))
-        model = world.obj(refs["device_type"])["attrs"]["model"]
-        access = world.obj(world.obj(refs["primary_ip4"])["refs"]["assigned_object"])["attrs"]["name"]
-        installed = installed_on[key]
-        journal(key, "equipment-record", installed, "Installed",
-            f"{model} serial {attrs['serial']} racked in {room}, cabinet {rack} at U{attrs['position']}; "
-            f"managed through {access}.", "success")
-        if supplies[key]:
-            port = min(supplies[key], key=lambda obj: obj["key"])
-            module = world.obj(port["refs"]["module"])
-            bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
-            model = world.obj(module["refs"]["module_type"])["attrs"]["model"]
-            journal(key, "psu-replacement-plan", max(dated(key, "psu-replacement-plan", as_of, 1, 19), installed), "Keep a spare PSU",
-                f"Confirm a like-for-like {model} is on hand for {bay} (installed serial "
-                f"{module['attrs']['serial']}) before the next maintenance window.", "warning")
-        dtype = world.obj(refs["device_type"])
-        manufacturer = world.obj(dtype["refs"]["manufacturer"])["attrs"]["name"]
-        # Select a fixed catalog cage before considering occupancy. Later ports
-        # becoming occupied cannot replace an earlier immutable journal subject.
-        cage = optical_cages.get((manufacturer, dtype["attrs"]["model"]))
-        port = interfaces[key].get(cage)
-        if port and port["key"] in optical_ports:
-            module = world.obj(port["refs"]["module"])
-            module_type = world.obj(module["refs"]["module_type"])
-            maker = world.obj(module_type["refs"]["manufacturer"])["attrs"]["name"]
-            bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
-            assembly = any(part["manufacturer"] == maker and part["model"] == module_type["attrs"]["model"] and part.get("assembly")
-                           for part in world.catalog["optics"]["parts"].values())
-            replace = "the whole cable assembly" if assembly else "the transceiver"
-            journal(key, "optic-replacement-plan", max(dated(key, "optic-replacement-plan", as_of, 40, 20), installed), "Optic replacement note",
-                f"{port['attrs']['name']} ({bay}) holds {maker} {module_type['attrs']['model']} serial {module['attrs']['serial']}; "
-                f"if it fails, swap in a like-for-like part and replace {replace}.")
+        key = device["key"]
+        desk = world.obj(f"contact/{device['refs']['site']}")["attrs"]["name"]
+        journal(key, "equipment-record", installed_on[key], "Installed",
+            f"Racked and cabled under change {change(key)}; the visit was booked through {desk}.", "success")
     wireless_context(world)
     automation_records(world)
