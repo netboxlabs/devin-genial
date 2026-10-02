@@ -14,6 +14,8 @@ from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
+# Authored address localities (suburbs map to their metro); geography data, not builder policy.
+from .places import LOCALITIES
 
 
 NETWORK_OFFSETS = {"management": 0, "clinical": 1, "medical": 2, "wireless": 3,
@@ -371,7 +373,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
     for site, category in site_kinds.items():
         address = attrs(site).get("physical_address")
         matched = re.fullmatch(r"[^\n]+\n([^,\n]+), ([^\n]+)\nUnited States", address) if isinstance(address, str) else None
-        city, state_name = matched.groups() if matched else (None, None)
+        locality, state_name = matched.groups() if matched else (None, None)
+        city = LOCALITIES.get(locality)
         state, expected_state, zone = METROS.get(city, (None, None, None))
         region = f"region/{ns}/us/{state.lower()}" if state else None
         group = f"site-group/{ns}/{category}"

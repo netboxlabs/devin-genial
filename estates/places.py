@@ -23,18 +23,157 @@ METROS = (
 )
 # Authored display-name pools ("naming = 'authored'"). Streets are real metro
 # geography; every composed site name stays a fictional design assumption.
+# Every entry must name an ANCHORS row of its metro (tests pin that), so a site
+# named after a street or campus is plotted on it.
 STREETS = {
     "Chicago": ("Wabash", "Halsted", "Clark", "Ashland", "Damen", "Kedzie", "Montrose", "Archer"),
-    "Detroit": ("Woodward", "Gratiot", "Cass", "Livernois", "Vernor", "Bagley", "Jefferson", "Mack"),
-    "Cleveland": ("Euclid", "Superior", "Lorain", "Prospect", "Carnegie", "Payne", "Clifton", "Denison"),
+    "Detroit": ("Woodward", "Gratiot", "Cass", "Livernois", "Vernor", "Bagley", "Grand River", "Mack"),
+    "Cleveland": ("Euclid", "Broadway", "Lorain", "Prospect", "Carnegie", "Woodland", "Fleet", "Denison"),
     "Milwaukee": ("Brady", "Kilbourn", "Wells", "Vliet", "Locust", "Greenfield", "Mitchell", "Burleigh"),
 }
+# Data-centre, distribution and office campus names: real industrial or
+# carrier-hotel areas where one exists (Elk Grove Village and Franklin Park are
+# Chicago's suburban data-centre belt; 350 E Cermak is its carrier hotel).
 CAMPUSES = {
-    "Chicago": ("Elk Grove", "Cermak", "Fulton Market", "Ravenswood"),
-    "Detroit": ("Corktown", "Rivertown", "Highland Park", "New Center"),
-    "Cleveland": ("Flats East", "Midtown", "Lakewood Edge", "University Circle"),
+    "Chicago": ("Elk Grove", "Cermak", "Franklin Park", "Northlake"),
+    "Detroit": ("Corktown", "Southfield", "Highland Park", "New Center"),
+    "Cleveland": ("Flats East", "Midtown", "Independence", "University Circle"),
     "Milwaukee": ("Third Ward", "Menomonee Valley", "Walkers Point", "Bay View"),
 }
+# Authored map anchors: (names, locality, lat, lon[, end_lat, end_lon]).
+# Points are real neighbourhood/suburb centroids, nudged inland where the real
+# centroid sits within ~1 km of the lake or river; a six-tuple is a street run
+# and a site is placed along it. Every point, segment end and its full jitter box
+# was reverse-geocoded against OpenStreetMap Nominatim (2026-10-01) to a road in
+# the stated locality, state and country — see docs/modeling.md#site-geography.
+# A site whose display name mentions a name (last mention wins, then the longest)
+# sits on that anchor; any other site takes a hashed in-city point anchor. The
+# address locality follows the anchor. Order is rebaseline-frozen: appending an
+# in-city point changes every hashed pick.
+ANCHORS = {
+    "Chicago": (
+        (("Loop", "Downtown", "Central"), "Chicago", 41.8800, -87.6320),
+        (("Fulton Market",), "Chicago", 41.8866, -87.6517),
+        (("Pilsen",), "Chicago", 41.8566, -87.6600),
+        (("Cermak",), "Chicago", 41.8530, -87.6250),
+        (("Ravenswood",), "Chicago", 41.9686, -87.6742),
+        (("Bridgeport",), "Chicago", 41.8381, -87.6513),
+        (("Logan Square",), "Chicago", 41.9234, -87.7083),
+        (("Wicker Park",), "Chicago", 41.9088, -87.6796),
+        (("Garfield Park", "West Side", "West"), "Chicago", 41.8810, -87.7200),
+        (("Bronzeville",), "Chicago", 41.8169, -87.6180),
+        (("Hyde Park",), "Chicago", 41.7990, -87.6000),
+        (("Lincoln Square", "North Side", "North"), "Chicago", 41.9759, -87.6890),
+        (("Chatham", "South Side", "South"), "Chicago", 41.7409, -87.6127),
+        (("Lakeview",), "Chicago", 41.9400, -87.6560),
+        (("Portage Park",), "Chicago", 41.9580, -87.7650),
+        (("Little Village",), "Chicago", 41.8445, -87.7130),
+        (("Austin",), "Chicago", 41.8940, -87.7650),
+        (("Elk Grove", "Elk Grove Village"), "Elk Grove Village", 41.9950, -87.9650),
+        (("Franklin Park",), "Franklin Park", 41.9353, -87.8656),
+        (("Northlake",), "Northlake", 41.9170, -87.8956),
+        (("Oak Park",), "Oak Park", 41.8850, -87.7845),
+        (("Schaumburg",), "Schaumburg", 42.0334, -88.0834),
+        (("Skokie",), "Skokie", 42.0324, -87.7416),
+        (("Wabash",), "Chicago", 41.7898, -87.6240, 41.8850, -87.6263),
+        (("Halsted",), "Chicago", 41.7600, -87.6443, 41.9400, -87.6493),
+        (("Clark",), "Chicago", 41.9200, -87.6373, 41.9672, -87.6672),
+        (("Ashland",), "Chicago", 41.7799, -87.6642, 41.9876, -87.6698),
+        (("Damen",), "Chicago", 41.7902, -87.6742, 41.9906, -87.6798),
+        (("Kedzie",), "Chicago", 41.7800, -87.7032, 41.9698, -87.7085),
+        (("Montrose",), "Chicago", 41.9606, -87.7600, 41.9617, -87.6603),
+        (("Archer",), "Chicago", 41.8522, -87.6363, 41.8006, -87.7306),
+    ),
+    "Detroit": (
+        (("Downtown", "Central"), "Detroit", 42.3365, -83.0507),
+        (("Corktown",), "Detroit", 42.3315, -83.0700),
+        (("Eastern Market",), "Detroit", 42.3480, -83.0410),
+        (("New Center",), "Detroit", 42.3696, -83.0753),
+        (("Midtown",), "Detroit", 42.3510, -83.0640),
+        (("Southwest Detroit", "Southwest", "South"), "Detroit", 42.3180, -83.1100),
+        (("Palmer Park", "North"), "Detroit", 42.4285, -83.1200),
+        (("Rosedale Park", "West"), "Detroit", 42.3995, -83.2172),
+        (("East English Village", "East"), "Detroit", 42.3990, -82.9450),
+        (("Boston Edison",), "Detroit", 42.3830, -83.0920),
+        (("Woodbridge",), "Detroit", 42.3530, -83.0790),
+        (("Mexicantown",), "Detroit", 42.3215, -83.0900),
+        (("Highland Park",), "Highland Park", 42.4056, -83.0969),
+        (("Dearborn",), "Dearborn", 42.3223, -83.1763),
+        (("Southfield",), "Southfield", 42.4734, -83.2219),
+        (("Troy",), "Troy", 42.6064, -83.1498),
+        (("Warren",), "Warren", 42.5145, -83.0147),
+        (("Livonia",), "Livonia", 42.3684, -83.3527),
+        (("Royal Oak",), "Royal Oak", 42.4895, -83.1446),
+        (("Novi",), "Novi", 42.4806, -83.4800),
+        (("Woodward",), "Detroit", 42.3401, -83.0530, 42.3903, -83.0868),
+        (("Gratiot",), "Detroit", 42.3395, -83.0419, 42.4360, -82.9771),
+        (("Cass",), "Detroit", 42.3348, -83.0546, 42.3698, -83.0749),
+        (("Livernois",), "Detroit", 42.3506, -83.1347, 42.4399, -83.1418),
+        (("Vernor",), "Detroit", 42.3105, -83.1295, 42.3297, -83.0781),
+        (("Bagley",), "Detroit", 42.3203, -83.0935, 42.3243, -83.0818),
+        (("Grand River",), "Detroit", 42.3378, -83.0625, 42.3922, -83.1973),
+        (("Mack",), "Detroit", 42.3522, -83.0454, 42.3863, -82.9543),
+    ),
+    "Cleveland": (
+        (("Downtown", "Central"), "Cleveland", 41.4960, -81.6860),
+        (("Flats East", "Flats"), "Cleveland", 41.4885, -81.6905),
+        (("Midtown",), "Cleveland", 41.5035, -81.6500),
+        (("University Circle",), "Cleveland", 41.5085, -81.6050),
+        (("Ohio City",), "Cleveland", 41.4815, -81.7060),
+        (("Tremont",), "Cleveland", 41.4750, -81.6890),
+        (("Slavic Village", "South"), "Cleveland", 41.4500, -81.6450),
+        (("West Park", "West"), "Cleveland", 41.4420, -81.7950),
+        (("Buckeye Shaker", "East"), "Cleveland", 41.4830, -81.5950),
+        (("Old Brooklyn",), "Cleveland", 41.4350, -81.7000),
+        (("Fairfax",), "Cleveland", 41.4950, -81.6250),
+        (("Lakewood",), "Lakewood", 41.4790, -81.8000),
+        (("Westlake",), "Westlake", 41.4553, -81.9179),
+        (("Independence",), "Independence", 41.3787, -81.6385),
+        (("Parma",), "Parma", 41.4048, -81.7229),
+        (("Beachwood",), "Beachwood", 41.4645, -81.5087),
+        (("Brooklyn",), "Brooklyn", 41.4398, -81.7354),
+        (("Shaker Heights",), "Shaker Heights", 41.4739, -81.5370),
+        (("Euclid",), "Cleveland", 41.5004, -81.6849, 41.5055, -81.6098),
+        (("Broadway",), "Cleveland", 41.4909, -81.6778, 41.4511, -81.6304),
+        (("Lorain",), "Cleveland", 41.4812, -81.7112, 41.4535, -81.7987),
+        (("Prospect",), "Cleveland", 41.4987, -81.6878, 41.5025, -81.6551),
+        (("Carnegie",), "Cleveland", 41.4986, -81.6759, 41.5011, -81.6152),
+        (("Woodland",), "Cleveland", 41.4914, -81.6681, 41.4885, -81.6021),
+        (("Fleet",), "Cleveland", 41.4558, -81.6546, 41.4579, -81.6359),
+        (("Denison",), "Cleveland", 41.4667, -81.7542, 41.4507, -81.7016),
+    ),
+    "Milwaukee": (
+        (("Downtown", "Central"), "Milwaukee", 43.0400, -87.9170),
+        (("Third Ward",), "Milwaukee", 43.0320, -87.9110),
+        (("Menomonee Valley", "Menomonee"), "Milwaukee", 43.0300, -87.9450),
+        (("Walkers Point",), "Milwaukee", 43.0230, -87.9180),
+        (("Bay View",), "Milwaukee", 42.9920, -87.9000),
+        (("East Side", "East"), "Milwaukee", 43.0650, -87.8920),
+        (("Sherman Park", "North"), "Milwaukee", 43.0750, -87.9650),
+        (("Washington Heights", "West"), "Milwaukee", 43.0510, -87.9800),
+        (("Lincoln Village", "South"), "Milwaukee", 43.0000, -87.9250),
+        (("Riverwest",), "Milwaukee", 43.0700, -87.8990),
+        (("Harambee",), "Milwaukee", 43.0680, -87.9150),
+        (("Clarke Square",), "Milwaukee", 43.0220, -87.9420),
+        (("West Allis",), "West Allis", 43.0167, -88.0070),
+        (("Wauwatosa",), "Wauwatosa", 43.0495, -88.0076),
+        (("Oak Creek",), "Oak Creek", 42.8840, -87.9120),
+        (("Brookfield",), "Brookfield", 43.0606, -88.1065),
+        (("Glendale",), "Glendale", 43.1353, -87.9356),
+        (("Brady",), "Milwaukee", 43.0530, -87.9043, 43.0529, -87.8939),
+        (("Kilbourn",), "Milwaukee", 43.0417, -87.9598, 43.0425, -87.9080),
+        (("Wells",), "Milwaukee", 43.0398, -87.9800, 43.0410, -87.9101),
+        (("Vliet",), "Milwaukee", 43.0500, -87.9800, 43.0486, -87.9300),
+        (("Locust",), "Milwaukee", 43.0716, -87.9700, 43.0711, -87.8950),
+        (("Greenfield",), "Milwaukee", 43.0168, -87.9899, 43.0171, -87.9252),
+        (("Mitchell",), "Milwaukee", 43.0124, -87.9400, 43.0123, -87.9153),
+        (("Burleigh",), "Milwaukee", 43.0753, -88.0002, 43.0748, -87.9101),
+    ),
+}
+# Jitter half-widths in degrees (~390 m north-south, ~370 m east-west at these
+# latitudes): separates sites sharing an anchor without leaving its area.
+JITTER_LAT, JITTER_LON = 0.0035, 0.0045
+LOCALITIES = {anchor[1]: metro for metro, anchors in ANCHORS.items() for anchor in anchors}
 GROUPS = {"branch": "Retail branches", "hq": "Headquarters", "dc": "Data centers", "school": "Schools",
           "hospital": "Hospitals", "clinic": "Outpatient clinics", "pop": "Provider PoPs", "customer": "Customer premises",
           "store": "Retail stores", "distribution": "Distribution centers",
@@ -145,7 +284,7 @@ def _authored_identity(site, city):
         title = sid.split("-", 1)[1].replace("-", " ").title()
         return f"{title} {'Hall' if kind == 'academic' else 'House'}"
     if kind == "library":
-        return f"{pick(CAMPUSES[city])} Library"
+        return f"{_campus_anchor(w, city)[0][0]} Library"
     if kind == "office":
         # The customer key and its office ordinal are unique by construction and
         # frozen by growth, so two managed offices can never resolve to one name.
@@ -198,8 +337,37 @@ def _authored_identity(site, city):
     return f"{sid.replace('-', ' ').title()} Site"
 
 
-def _display_site(site, node, city, latitude, longitude):
-    """Apply the naming policy: authored identity, overrides, facility, geo."""
+def _words(text):
+    return " " + " ".join("".join(c if c.isalnum() else " " for c in text.lower()).split()) + " "
+
+
+def _campus_anchor(w, city):
+    """One university campus is one in-city neighbourhood; every building shares it."""
+    return w.choose("campus", "anchor", [a for a in ANCHORS[city] if len(a) == 4 and a[1] == city])
+
+
+def _anchor(site, city, name):
+    """The authored map anchor a site's display name implies, else a hashed in-city one."""
+    w, anchors = site.w, ANCHORS[city]
+    if w.recipe["profile"] == "university-campus":
+        return _campus_anchor(w, city)
+    text = _words(name)
+    hits = [(text.rfind(_words(alias)), len(alias), anchor)
+            for anchor in anchors for alias in anchor[0] if _words(alias) in text]
+    if hits:
+        return max(hits, key=lambda hit: hit[:2])[2]
+    if site.contract["kind"] == "hq":
+        return anchors[0]
+    general = [a for a in anchors if len(a) == 4 and a[1] == city]
+    return general[int.from_bytes(hashlib.sha256(f"anchor/{site.id}".encode()).digest()[:4], "big") % len(general)]
+
+
+def _display_site(site, node, city):
+    """Apply the naming policy: authored identity, overrides, facility, geo.
+
+    Returns the address locality: the anchor's municipality when authored,
+    otherwise the metro city (legacy naming emits no coordinates).
+    """
     w = site.w
     authored = w.recipe.get("naming", "authored") == "authored"
     name = _authored_identity(site, city) if authored else node["attrs"]["name"]
@@ -215,12 +383,20 @@ def _display_site(site, node, city, latitude, longitude):
     node["attrs"]["name"] = name
     if facility:
         node["attrs"]["facility"] = facility
-    if authored:
-        # Metro-centered synthetic offsets: enough spread for the map view,
-        # never a claim about a real street address.
-        jitter = hashlib.sha256(f"geo/{site.id}".encode()).digest()
-        node["attrs"]["latitude"] = round(latitude + (jitter[0] / 255 - 0.5) * 0.24, 6)
-        node["attrs"]["longitude"] = round(longitude + (jitter[1] / 255 - 0.5) * 0.24, 6)
+    if not authored:
+        return city
+    # Anchor-relative synthetic positions: on land in the named neighbourhood,
+    # suburb or street run, never a claim about a real premises. The site id
+    # alone drives the offset, so growth and seeds cannot move a site.
+    anchor = _anchor(site, city, name)
+    jitter = hashlib.sha256(f"geo/{site.id}".encode()).digest()
+    along = jitter[2] / 255
+    start, end = anchor[2:4], anchor[-2:]
+    node["attrs"]["latitude"] = round(start[0] + along * (end[0] - start[0])
+                                      + (jitter[0] / 255 - 0.5) * 2 * JITTER_LAT, 6)
+    node["attrs"]["longitude"] = round(start[1] + along * (end[1] - start[1])
+                                       + (jitter[1] / 255 - 0.5) * 2 * JITTER_LON, 6)
+    return anchor[1]
 
 
 def foundation(w, *, site_kinds=None):
@@ -307,7 +483,7 @@ def locate(site):
         metro_index = int(site.id[-2:]) - 1
     else:
         metro_index = int.from_bytes(hashlib.sha256(site.id.encode()).digest()[:4], "big") % len(METROS)
-    city, state_code, state, zone, latitude, longitude = METROS[metro_index]
+    city, state_code, state, zone, _, _ = METROS[metro_index]
     node = site.w.obj(site.key)
     suffix = "".join(character for character in site.id if character.isdigit())
     number = 100 + 4 * int(suffix or "0")
@@ -323,12 +499,12 @@ def locate(site):
                "noc-": "Operations Parkway", "off-": "Enterprise Parkway",
                "pl-": "Industrial Parkway", "sub-": "Switchyard Road"}
     street = next((name for prefix, name in streets.items() if site.id.startswith(prefix)), "Commerce Way")
+    locality = _display_site(site, node, city)
     node["attrs"].update(time_zone=zone,
-                         physical_address=f"{number} {street}\n{city}, {state}\nUnited States")
+                         physical_address=f"{number} {street}\n{locality}, {state}\nUnited States")
     node["refs"].update(region=f"region/{site.w.recipe['namespace']}/us/{state_code.lower()}",
                         group=f"site-group/{site.w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = {"country": "US", "state": state_code, "city": city, "synthetic": True}
-    _display_site(site, node, city, latitude, longitude)
     building = _location(site, "building", "Main building", "building", 0, (0, 0, 0))
     ground = _floor(site, 1)
     equipment = _location(site, "", "Data hall" if kind == "dc" else "MDF",
@@ -347,14 +523,14 @@ def provider_locate(site):
     """Provider sites use explicit metro attachments; geometry stays local."""
     kind, w = site.contract["kind"], site.w
     metro = w.provider_metros[site.id]
-    city, code, state, zone, latitude, longitude = next(row for row in METROS if row[0].lower() == metro)
+    city, code, state, zone, _, _ = next(row for row in METROS if row[0].lower() == metro)
     street = {"pop": "Exchange Avenue", "customer": "Business Way", "dc": "Technology Way"}[kind]
     node = w.obj(site.key)
-    node["attrs"].update(time_zone=zone, physical_address=f"{100+4*w.allocations[site.id]} {street}\n{city}, {state}\nUnited States")
+    locality = _display_site(site, node, city)
+    node["attrs"].update(time_zone=zone, physical_address=f"{100+4*w.allocations[site.id]} {street}\n{locality}, {state}\nUnited States")
     node["refs"].update(region=f"region/{w.recipe['namespace']}/us/{code.lower()}",
                         group=f"site-group/{w.recipe['namespace']}/{kind}")
     node["meta"]["geography"] = dict(country="US", state=code, city=city, synthetic=True)
-    _display_site(site, node, city, latitude, longitude)
     building = _location(site,"building","Main building","building",0,(0,0,0))
     floor = _floor(site,1)
     equipment = _location(site,"","Data hall" if kind == "dc" else "MDF","equipment_room",1,(24,18,0),floor)

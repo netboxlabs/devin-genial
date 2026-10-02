@@ -15,6 +15,8 @@ from .validate_datacenter import validate_power, validate_resolved
 from .validate_poe import analyze as analyze_poe
 from .validate_optics import analyze as analyze_optics
 from .model import selected_alias
+# Authored address localities (suburbs map to their metro); geography data, not builder policy.
+from .places import LOCALITIES
 
 
 NETWORK_OFFSETS = {"management": 0, "staff": 1, "students": 2,
@@ -128,7 +130,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("school-geography", site, "City, state, region and time zone must describe one coherent authored district location.")
         locations.add((city, state, zone, region))
         address = attrs(site).get("physical_address")
-        if not isinstance(address, str) or not address.strip() or f"{city}, {state_name}" not in address:
+        line = address.splitlines()[1:2] if isinstance(address, str) else []
+        locality, _, named_state = line[0].partition(", ") if line else ("", "", "")
+        if not isinstance(address, str) or LOCALITIES.get(locality) != city or named_state != state_name:
             report("school-geography", site, "Fictional physical address must agree with the district city and state.")
         if site in sites and isinstance(address, str):
             if address in addresses:
