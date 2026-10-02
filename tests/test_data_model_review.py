@@ -10,6 +10,7 @@ cables, operational VM and IPAM-role text, sourced device-type facts, journal
 
 from collections import Counter, defaultdict
 from copy import deepcopy
+import re
 import unittest
 
 from estates import naming
@@ -120,13 +121,16 @@ class DataModelReviewTests(unittest.TestCase):
         self.assertIn("interface-svi-mode", codes(validate(self.mutate(self.bank, switchport))))
 
     def test_junos_loopback_addresses_sit_on_unit_zero(self):
-        for pe in (d for d in self.of(self.provider, "device") if d["refs"]["role"] == "role/provider-edge"):
+        # PEs in service; a retired MX80 or an MX304 on order has no loopback.
+        for pe in (d for d in self.of(self.provider, "device") if d["refs"]["role"] == "role/provider-edge"
+                   and d["attrs"].get("status") == "active"):
             primary = self.provider_obj(pe["refs"]["primary_ip4"])
             unit = self.provider_obj(primary["refs"]["assigned_object"])
             self.assertEqual((unit["attrs"]["name"], unit["refs"]["parent"]), ("lo0.0", f"{pe['key']}/if/lo0"))
 
         def bare(objects, plan):
-            pe = next(o for o in objects.values() if o["kind"] == "device" and o["refs"]["role"] == "role/provider-edge")
+            pe = next(o for o in objects.values() if o["kind"] == "device" and o["refs"]["role"] == "role/provider-edge"
+                      and "primary_ip4" in o["refs"])
             objects[pe["refs"]["primary_ip4"]]["refs"]["assigned_object"] = f"{pe['key']}/if/lo0"
 
         self.assertIn("provider-loopback", codes(validate(self.mutate(self.provider, bare))))
@@ -236,7 +240,10 @@ class DataModelReviewTests(unittest.TestCase):
 
     def test_journal_created_is_the_event_date_and_diode_leaves_it_to_the_loader(self):
         for note in self.of(self.provider, "journal_entry"):
-            self.assertEqual(note["attrs"]["created"], note["attrs"]["comments"][:10] + "T15:00:00Z")
+            # The event date follows the bold title; the time sits in its band
+            # (business hours, or night for third-party maintenance).
+            day = re.match(r"\*\*[^*\n]+\*\* · (\d{4}-\d{2}-\d{2})\n\n", note["attrs"]["comments"]).group(1)
+            self.assertRegex(note["attrs"]["created"], rf"^{day}T(1[4-9]|2[01]|0[4-8]):[0-5]\d:00Z$")
         self.assertFalse([o for o in deliverable_plan(self.provider)["objects"]
                           if o["kind"] == "journal_entry" and "created" in o["attrs"]])
 

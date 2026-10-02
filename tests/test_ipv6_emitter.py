@@ -93,10 +93,12 @@ class IPv6EmitterTests(unittest.TestCase):
         self.assertTrue(loops)
         for obj in loops:
             self.assertEqual(ip_network(obj["attrs"]["prefix"]).prefixlen, 128)
+        addressed = {obj["refs"].get("assigned_object") for obj in before.values() if obj["kind"] == "ip_address"}
         for obj in before.values():
             # fxp0 sits on the dual-stack management LAN; the broadband
             # out-of-band handoff on the console server's NET2 stays IPv4-only.
-            if obj["kind"] == "interface" and obj["attrs"]["name"] == "fxp0":
+            # A retired MX80's fxp0 is uncabled and unaddressed in either family.
+            if obj["kind"] == "interface" and obj["attrs"]["name"] == "fxp0" and obj["key"] in addressed:
                 self.assertIn(f"ipv6/ip/{obj['key']}", world.objects)
             if obj["kind"] == "interface" and obj["attrs"]["name"] == "NET2":
                 self.assertNotIn(f"ipv6/ip/{obj['key']}", world.objects)
