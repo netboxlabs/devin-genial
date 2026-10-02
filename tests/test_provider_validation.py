@@ -162,7 +162,7 @@ class ProviderValidationTests(unittest.TestCase):
             (f"{device}/if/eth0", "untagged_vlan", f"vlan/{self.customer}/management", "provider-customer-endpoint"),
             (device, "location", f"location/{self.customer}", "provider-device-inventory"),
             (f"device/{self.customer}/edge-01/if/Clients", "parent", f"device/{self.customer}/edge-01/if/port2", "provider-customer-gateway"),
-            (f"device/{self.customer}/console-01/if/mgmt0", "vrf", "vrf/provider", "provider-console-management")):
+            (f"device/{self.customer}/console-01/if/NET1", "vrf", "vrf/provider", "provider-console-management")):
             with self.subTest(key=key, field=field):
                 self.setUp()
                 self.objects[key]["refs"][field] = value

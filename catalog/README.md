@@ -1,9 +1,14 @@
 # Hardware catalog
 
 `hardware.json` is a small, versioned inventory consumed by the estate builder.
-Catalog **0.11** adds the [selectable vendor lines](#selectable-vendor-lines)
-the `[hardware]` recipe key chooses between; catalog 0.10 added the selected
-optics and power policy described below.
+Catalog **0.12** replaces every authored "reference" model with a pinned real
+one or a plainly named `Generic` part, adds vendor-shaped
+[serial formats](#serial-numbers) and [platforms](#platforms), and makes the
+Cisco Catalyst 9120 the default `ap` line ([real and generic
+equipment](#real-and-generic-equipment)). Catalog 0.11 added the
+[selectable vendor lines](#selectable-vendor-lines) the `[hardware]` recipe key
+chooses between; catalog 0.10 added the selected optics and power policy
+described below.
 Phase 5 generation, independent checks and all-five SDK exports are implemented
 and tested. GOAL.md records review and pinned-target qualification separately;
 catalog entries alone do not prove installed inventory.
@@ -16,7 +21,8 @@ The named vendor models preserve the interface names, types, management
 flags, rack height, and depth classification from the community device-type
 library at commit `72cc49fbb445f1e2f310d3b8dfef55e12d0b7138`, except where a
 model's own section below declares a deliberate deviation (the EX3400 VCP
-type, the QFX management port, the Aruba interface normalization). Each source entry
+type, the QFX management port, the AP interface normalization, the 9120's
+regulatory variant). Each source entry
 records its immutable URL, SHA-256, and CC0-1.0 license. The upstream license is
 included in [LICENSE-upstream](LICENSE-upstream). Console ports also preserve the pinned source names/types. Images, fans,
 and unused source fields remain outside this catalog's scope.
@@ -77,15 +83,15 @@ selection are not certified by this inventory.
 `hardware_lines` declares the three role families whose model the recipe may
 choose, the default vendor for each, and the catalog alias every vendor line
 resolves to. Nothing else in the catalog is selectable; `core`, `edge`,
-`server`, `provider-edge`, `pdu`, `patch-panel` and the reference endpoints are
-fixed. `inherited-access` stays bound to the bank's acquisition story and is
+`server`, `provider-edge`, `pdu`, `patch-panel`, the console servers and the
+generic endpoints are fixed. `inherited-access` stays bound to the bank's acquisition story and is
 never substituted.
 
 | Family | Default line | Alternate line |
 | --- | --- | --- |
 | `access` | `cisco` → alias `access`, Cisco Catalyst 9200L-24P-4X | `juniper` → alias `access-juniper`, Juniper EX3400-24P |
 | `leaf` | `arista` → alias `leaf`, Arista DCS-7050SX3-48C8-F | `juniper` → alias `leaf-juniper`, Juniper QFX5120-48Y-AFO2 |
-| `ap` | `reference` → alias `ap`, Reference PoE access point | `aruba` → alias `ap-aruba`, HPE Aruba AP-505 |
+| `ap` | `cisco` → alias `ap`, Cisco Catalyst 9120AXI-B | `aruba` → alias `ap-aruba`, HPE Aruba AP-505 |
 
 Every builder names a family; `estates/model.py` `World.hardware_alias` is the
 single point where a family becomes a model, and `selected_alias` gives the
@@ -155,7 +161,7 @@ Interface names follow this generator's portable endpoint convention — `eth0`,
 same way on either line. The vendor labels the wired port **E0** and identifies
 radios by band; no vendor interface-naming claim is made here, and the verified
 facts are the port count, media type, PoE class and radio count/bands. Unlike
-the reference AP's two authored 5 GHz radios, `radio_bands` records the real
+the default 9120 line's dual 5-GHz mode, `radio_bands` records the real
 `5g`/`2.4g` split, so `wlan1` takes a 2.4 GHz channel. The `max_input_mw: 25500`
 and `pse_reservation_mw: 30000` values are the IEEE class-4 PD maximum and PSE
 reservation from `reference-poe-v1`, not a measured or vendor consumption figure
@@ -179,46 +185,114 @@ ports at 30 W, so the deliverable budget — the supply figure capped by that po
 limit — is 720 W on either line, and the binding N-1 planning figure is 370 W on
 both. The test asserts the capped figure, not the raw one.
 
-## Fictional reference equipment
+## Real and generic equipment
 
-The remaining aliases are original example designs under manufacturer
-`Devin Reference Designs`. Their dimensions, port counts, supplies and airflow
-are explicit assumptions; they do not describe any vendor product.
+Catalog 0.12 retired the authored "reference" designs: every model is either a
+pinned real product or a plainly named `Generic` part, the way production
+NetBox instances record unbranded equipment. Library-pinned entries copy the
+interface, console, power and passive-port names and types from the device-type
+library commit above, each source carrying its URL, SHA-256 and CC0-1.0 license.
 
-`airflow` is carried only where a source states it. Six real models declare
-`front-to-rear` in the pinned device-type library commit — the Arista
-DCS-7050SX3-48C8-F and DCS-7060CX-32S-F, the Juniper EX3400-24P, EX3300-24P,
-QFX5120-48Y-AFO2 and MX204 — and those values are copied unchanged. The pinned
-sources for the Cisco Catalyst 9200L-24P-4X and Fortinet FortiGate 100F declare
-no airflow, so neither carries one rather than inventing a direction. Among the
-reference designs, chassis models state `front-to-rear` and the passive patch
-panel states `passive` as authored assumptions; zero-height models (PDU, access
-point, endpoint, wall outlet, ATM, blade) carry none, because a chassis airflow
-direction would not describe them.
-NetBox model labels use `Reference ...`; ordinary equipment and service text
-uses operational wording. This catalog owns the original-design provenance.
-The final v0.8 label revision changes the catalog fingerprint: build a new
-baseline instead of growing or replaying an intermediate v0.8 artifact.
+| Alias | Model | Pinned source and inventory |
+| --- | --- | --- |
+| `server` | Supermicro SuperServer 1029U-E1CRTP2 | [`Supermicro/SYS-1029U-E1CRTP2.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Supermicro/SYS-1029U-E1CRTP2.yaml) (`a7c2c39a…dc873`): `BMC` management; onboard `eth1`, `eth2` 10G SFP+ (the `data_ports` the DC builder cables) and `eth3`, `eth4` 1GbE left spare; DE-9 `Serial`. Two installed PWS-751P-1R supplies in bays `PSU1`/`PSU2` materialize C14 inlets `PSU1`/`PSU2` |
+| `pdu` | APC AP9572 | [`APC/AP9572.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9572.yaml) (`251027449…72c8472`): Basic Rack PDU, Zero U, 16A 208/230V; C20 `Power Port 1`; C13 `Outlet 1`–`Outlet 15`; no network management |
+| `patch-panel` | Panduit DP24688TGY (Cat 6 Punchdown Patch Panel, 24 Ports, 1 RU) | [`Panduit/DP24688TGY.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/DP24688TGY.yaml) (`b5299f24…ccd5`): front `01`–`24` 8P8C, rear `01`–`24` 110 punchdown, mapped one-to-one |
+| `wall-outlet` | Generic "Wall box, 1 UTP plug" | [`Generic/wall-box-1-utp-plug.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/wall-box-1-utp-plug.yaml) (`8138ca1f…bcaa1`): front and rear `Port 1`, 8P8C |
+| `console-server` | Opengear CM8116 | [`Opengear/CM8116.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/CM8116.yaml) (`ae6718cc…de174`): RJ45 `Port 1`–`Port 16`; `NET1`/`NET2` management; own `Console` plus `USB A`/`USB B`; C14 `PS1`/`PS2` |
+| `console-server-48` | Opengear CM8148 | [`Opengear/CM8148.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/CM8148.yaml) (`4a1403b1…ab636`): as the CM8116 with RJ45 `Port 1`–`Port 48` |
+| `ap` | Cisco Catalyst 9120AXI-B | [`Cisco/C9120AXI-E.yaml`](https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9120AXI-E.yaml) (`89959cff…afb1`) plus the [9120AX data sheet](https://www.cisco.com/c/en/us/products/collateral/wireless/catalyst-9120ax-series-access-points/datasheet-c78-742115.html): 2.5GBASE-T Type 2 PD uplink and two 802.11ax radios. Default line of the `ap` family |
+| `endpoint` | Generic "Wired network endpoint, 1GbE" | Authored: non-racked appliance, 1G `eth0`, C14 `Input` |
+| `atm` | Generic "Automated teller machine, 1GbE" | Authored: non-racked ATM, 1G `eth0`, C14 `Input` |
+| `liquid-chassis` | Generic "2U liquid-cooled blade enclosure" | Authored: one blade bay, coolant intake/distribution, `mgmt0`, C14 `PSU1`/`PSU2` |
+| `liquid-blade` | Generic "Liquid-cooled analytics blade" | Authored: 0U enclosure-powered child, `mgmt0`, cold-plate intake, diagnostic device context |
 
-| Alias | Declared reference design |
-| --- | --- |
-| `server` | 1U; `eth0`, `eth1` at 10G; `mgmt0` at 1G; C14 `PSU1`, `PSU2` |
-| `patch-panel` | Passive 1U panel; 24 paired 8P8C front/rear positions, including unused positions; no Ethernet interfaces or mains inlet |
-| `wall-outlet` | Non-racked single-position 8P8C outlet; rear horizontal termination and front endpoint patch connection |
-| `pdu` | Vertical 0U; C20 `Input`; 12 C13 outlets named `Outlet1`–`Outlet12`; no Ethernet management |
-| `endpoint`, `atm` | Non-rack-mounted example appliances; 1G `eth0`; C14 `Input` |
-| `ap` | Non-rack-mounted reference Type 2 PoE access point; 1G `eth0`; two 5 GHz 802.11ax radios, `wlan0` and `wlan1`; no separate mains inlet. Default line of the `ap` family |
-| `console-server` | 1U; 48 RJ45 asynchronous serial ports, separate 1G management, two C14 supplies |
-| `liquid-chassis` | 2U parent enclosure; one blade bay, coolant intake/distribution, 1G management, two C14 supplies |
-| `liquid-blade` | 0U child device; enclosure-powered, dedicated 1G management, cold-plate intake; fictional diagnostic device context |
+Declared deviations and selections:
+
+- **Server supplies.** The library declares the 1029U's PSU bays but has no
+  PWS-751P-1R module type. Supermicro's
+  [SYS-1029U-E1CRTP2 page](https://www.supermicro.com/en/products/system/1U/1029/SYS-1029U-E1CRTP2.php)
+  lists two PWS-751P-1R 750 W redundant Platinum supplies, the two 10G SFP+
+  and two 1GbE onboard ports and the dedicated IPMI port; the module model comes
+  from that page (an indexed extract, no page hash), and its C14 inlet is the
+  type the library's other 1U Supermicro PWS modules declare. PCI-E and drive
+  bays are not modeled.
+- **Console-server size.** Each equipment room gets the 16-port CM8116 when its
+  RJ45 console demand fits one, otherwise the 48-port CM8148. The first build
+  records the choice in the `console-server-size/<site>/<room>` reservation
+  ledger; growth past sixteen adds another unit of the recorded size and never
+  swaps a model. `NET1` is the cabled management port and `NET2` stays spare;
+  the shared management builder cables only the first `mgmt_only` port of any
+  model. A console server's own `Console` port stays uncabled.
+- **AP regulatory variant and names.** The library pins only the -E (ETSI)
+  9120AXI; these US estates install the -B (FCC) part, which Cisco
+  differentiates by regulatory domain only. The data sheet documents Flexible
+  Radio Assignment's dual 5-GHz mode, which `radio_bands` records as two `5g`
+  radios, and 25.5 W maximum draw on 802.3at PoE+, which matches the
+  `reference-poe-v1` PD envelope. The source names `GigabitEthernet0` and
+  `Dot11Radio0/1` are normalized to `eth0`, `wlan0`, `wlan1` like the Aruba line;
+  the console and USB ports are not modeled, so no AP joins a console server.
+  The 2.5GBASE-T uplink attaches to a 1G PoE+ access port, so the configured link
+  rate is 1G on either `ap` line.
+- **Patch-panel rear.** The DP24688TGY's 110 punchdown rear terminates the same
+  four-pair horizontal cable as an 8P8C rear; the PoE copper-path check accepts
+  either.
+- **Generic parts** carry manufacturer `Generic` and plain model names. Their
+  dimensions, ports and supplies are explicit design assumptions
+  (`generic-design-v1`), not a vendor product.
+
+`airflow` is carried only where a source states it: `front-to-rear` on the
+Arista, Juniper and Supermicro chassis and `passive` on the AP9572 and CM8148,
+copied unchanged. The pinned Cisco C9200L, C9120, Fortinet 100F, CM8116,
+Panduit and wall-box sources declare none, so none is invented. The generic
+liquid-cooled enclosure states `front-to-rear` as an authored assumption.
 
 PDU `power_outlets` are explicit catalog rows, so capacity can be checked rather
-than inferred. A 0U value means the device consumes no rack-unit position; it
-does not establish a device's physical placement or mounting method. The AP's
-PoE source and two 5 GHz radios are explicit reference-design assumptions.
+than inferred; the power builder reads the PDU's inlet and outlet names from the
+catalog. A 0U value means the device consumes no rack-unit position; it
+does not establish a device's physical placement or mounting method.
 `wlan0` serves WLANs; `wlan1` can serve a second WLAN or the bank's separate
 routed diagnostic link. The declared Type 2 power envelope is described below;
-RF performance remains unqualified. Generated-estate PoE allocation and independent
+RF performance remains unqualified.
+
+Cabinets reference rack type APC **AR3104** (NetShelter SX 24U, 600 mm wide x
+1070 mm deep, with sides), the enclosure the 24U cabinet grid is authored
+around. The pinned library has no 24U SX rack type; the model and dimensions
+come from APC's
+[AR3104 product page](https://www.se.com/us/en/product/AR3104/netshelter-sx-server-rack-enclosure-24u-600mm-wide-x-1070mm-deep-with-sides-black/)
+(checked 2026-10-01).
+
+## Serial numbers
+
+Every catalog model declares a `serial_format` (and a `module_serial_format`
+where it installs PSU modules). The formats are **fictional imitations of each
+vendor's printed convention, not real units**: Cisco `FOC`/`FJC` plus year-week
+plus four characters, Arista `JPE`/`SSJ`, twelve-character Juniper, Fortinet
+`FG100FTK…`, Supermicro `S…X…`, APC `5A…E…`, Opengear numeric, Aruba `CN…`,
+and an alphanumeric OEM style for Generic and Panduit parts. Template grammar:
+`#` digit, `@` letter (I and O excluded), `*` either, `{yy}` a 2018–2024 year,
+`{yyww}` that year plus a week. `estates/model.py` `vendor_serial` expands a
+template from the namespace plus the same stable per-device key the old `SYN-`
+serial used (so estates with the same seed do not repeat each other's serials), so
+serials remain deterministic and growth-stable. The independent check
+`hardware-serial` requires every device serial to match its model's template.
+Formats are under the native 50-character limit. Device serials are not
+enforced unique (NetBox does not either); the per-format spaces are large
+enough that sample estates carry no duplicates. Installed optics keep their
+`OPT-`/`AOC-` hashed serials: the AOC assembly serial is bound to its cable
+identity (see the installed optics policy). Asset tags are separate.
+
+## Platforms
+
+Network models declare a `platform`: Cisco IOS XE (C9200L), Cisco AP-COS
+(Catalyst 9120), Arista EOS, Juniper Junos, Fortinet FortiOS and ArubaOS
+(AP-505). Each becomes one NetBox platform per estate, linked to its
+manufacturer, with a namespaced slug exactly like the existing Service Linux
+platform; devices reference it. Servers, PDUs, console servers, passive gear and
+generic endpoints declare none. The check `hardware-platform` requires a
+device's platform to match its model's declaration. A platform names an
+operating-system family only; no software version, image or running
+configuration is claimed. Generated-estate PoE allocation and independent
 path/supply checks have offline and SDK evidence; pinned-target delivery
 qualification remains pending in GOAL.md.
 
@@ -252,17 +326,18 @@ validator. Its offline and SDK checks passed; pinned-target initial/repeat
 qualification remains pending. Declaring a port as PSE or PD alone does not
 prove that its generated copper path supplies power.
 
-The existing `ap` remains **Reference PoE access point** under Devin Reference
-Designs. `poe_pd` names its `eth0` input, requires
+The default `ap` line is the **Cisco Catalyst 9120AXI-B**. `poe_pd` names its `eth0` input, requires
 `type2-ieee802.3at`, declares `max_input_mw: 25500`, and reserves
 `pse_reservation_mw: 30000`. `policy_source: reference-poe-v1` identifies these
-as authored limits. The reservation is at the supplying switch; it is neither
+as authored limits; the 25.5 W figure also matches Cisco's published 9120
+maximum on 802.3at. The reservation is at the supplying switch; it is neither
 constant AP consumption nor a second load to add at the rack. Juniper's
 [PoE tables 2–3](https://www.juniper.net/documentation/us/en/software/junos/poe/topics/concept/poe-overview.html)
 distinguish a 30 W Type 2 PSE allocation from up to 25.5 W at the PD.
 
-`radio_bands` declares each radio's band: the reference AP maps both `wlan0`
-and `wlan1` to `5g`, while the Aruba line records its real `5g`/`2.4g` split.
+`radio_bands` declares each radio's band: the 9120 line maps both `wlan0`
+and `wlan1` to `5g` (its documented dual 5-GHz mode), while the Aruba line
+records its real `5g`/`2.4g` split.
 The shared builder picks that band's authored non-overlapping channel plan —
 36/44/157 at 20 MHz for 5 GHz, 1/6/11 at 22 MHz for 2.4 GHz — and the
 independent checker restates it. With only three non-overlapping 2.4 GHz
@@ -308,7 +383,7 @@ PSE output reservation, PD input and PSU output ratings must remain distinct.
 Power demand must consume its own budget without reducing available wired-only
 ports, relocating existing endpoints or claiming RF coverage survives a fault.
 
-Native `poe_mode`/`poe_type` attributes occur only on AP `eth0` (`pd`) and
+Native `poe_mode`/`poe_type` attributes occur only on AP `eth0` (`pd`, BASE-T copper) and
 the three switch models' actual access ports (`pse`), all using the declared
 Type 2 value. Management/uplink/stacking interfaces and AP radios have no PoE
 attributes. These spellings exist in the pinned
@@ -334,7 +409,7 @@ Arista both sell a part named `SFP-10G-LR`.
 | `fortinet-10g-lr` | Fortinet `FN-TRAN-SFP+LR` | `edge` `x1/x2`, 10G | 1,000 authored |
 | `juniper-1g-lx` | Juniper `SFP-1GE-LX` | `provider-edge` `xe-0/1/0–7` configured **1G** | 1,000 |
 | `juniper-100g-lr4` | Juniper `JNP-QSFP-100G-LR4` | `provider-edge` enabled `et-0/0/0–2`; `leaf-juniper` `et-0/0/48–55`, 100G | 3,500 |
-| `reference-10g-lr` | Devin Reference Designs `Reference 10G-LR transceiver` | `server` `eth0/eth1`, 10G | 2,000 authored |
+| `generic-10g-lr` | Generic `SFP-10G-LR` (third-party compatible) | `server` `eth1/eth2`, 10G | 2,000 authored |
 | `arista-100g-aoc-3m` | Arista `AOC-Q-Q-100G-3M` | `leaf` QSFP28 cages; existing peer uses `Ethernet49/1`, 100G | 3,500 authored per captive end |
 | `juniper-100g-aoc-3m` | Juniper `JNP-100G-AOC-3M` | `leaf-juniper` QSFP28 cages `et-0/0/48–55`, 100G | 3,500 authored per captive end |
 
@@ -365,8 +440,8 @@ host fit. Source entries preserve that distinction rather than presenting a
 full archival or multivendor certification claim.
 
 All selected independent modules use duplex LC SMF with matching LX, LR or
-LR4 protocol and effective rate. The vendor parts have 10 km specified reach;
-the reference module explicitly assumes only 100 m. The shared authored
+LR4 protocol and effective rate. Every part, including the generic server
+optic, has 10 km nominal reach. The shared authored
 `local_min_m: 3` / `local_max_m: 100` envelope applies to the **sum of the
 complete known local cable path**, bounded by both endpoint reaches. It is a
 conservative modeling limit, not a vendor minimum, computed loss budget or

@@ -27,6 +27,46 @@ def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
 
 
+# Serial grammar for the catalog's `serial_format` templates. The formats are
+# fictional imitations of each vendor's printed convention, never real units:
+# `#` digit, `@` letter (no I/O, as vendors avoid them), `*` either, `{yy}` a
+# 2018-2024 year, `{yyww}` that year plus an ISO week; anything else is literal.
+SERIAL_DIGITS = "0123456789"
+SERIAL_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+SERIAL_CLASSES = {"#": SERIAL_DIGITS, "@": SERIAL_LETTERS, "*": SERIAL_DIGITS + SERIAL_LETTERS}
+SERIAL_SPACE = range(2 ** 62)  # len() must fit a C ssize_t
+
+
+def vendor_serial(fmt, n):
+    """Expand a serial template from one stable integer (mixed radix, no RNG)."""
+    out, i = [], 0
+    while i < len(fmt):
+        if fmt.startswith("{yyww}", i) or fmt.startswith("{yy}", i):
+            n, year = divmod(n, 7)
+            out.append(f"{18 + year:02}")
+            if fmt.startswith("{yyww}", i):
+                n, week = divmod(n, 52)
+                out.append(f"{week + 1:02}")
+            i = fmt.index("}", i) + 1
+            continue
+        alphabet = SERIAL_CLASSES.get(fmt[i])
+        if alphabet:
+            n, r = divmod(n, len(alphabet))
+            out.append(alphabet[r])
+        else:
+            out.append(fmt[i])
+        i += 1
+    return "".join(out)
+
+
+def serial_pattern(fmt):
+    """Full-match regex an independent check applies to a template's output."""
+    pattern = re.escape(fmt).replace(r"\{yyww\}", r"\d{4}").replace(r"\{yy\}", r"\d{2}")
+    for char, alphabet in SERIAL_CLASSES.items():
+        pattern = pattern.replace(re.escape(char), f"[{alphabet}]")
+    return pattern
+
+
 def hardware_catalog():
     return json.loads((ROOT / "catalog/hardware.json").read_text())
 

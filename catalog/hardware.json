@@ -1,5 +1,5 @@
 {
-  "version": "0.11",
+  "version": "0.12",
   "sources": {
     "access-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9200L-24P-4X.yaml",
@@ -40,10 +40,6 @@
       "url": "https://www.arista.com/en/qsg-7050-series-1ru-gen3/7050-series-1ru-gen3-overview",
       "checked": "2026-09-08",
       "purpose": "Table 4 lists PWR-511-AC support for DCS-7050SX3-48C8; reference configuration populates both PSU positions."
-    },
-    "reference-design-v1": {
-      "url": "README.md",
-      "purpose": "Original fictional example hardware authored for this project; dimensions, ports and PSU population are explicit design assumptions, not vendor specifications."
     },
     "core-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Arista/DCS-7060CX-32S-F.yaml",
@@ -116,7 +112,7 @@
     },
     "reference-poe-v1": {
       "url": "README.md#poe-planning-policy",
-      "purpose": "Authored reference operating and allocation policy: the portable AP envelope (wlan0/wlan1 radios; the reference AP declares both 5 GHz, the Aruba line a real 5 GHz + 2.4 GHz split); Type 2 PD maximum input 25500 mW and PSE reservation 30000 mW; one-supply-loss planning for every installed dual-supply access switch (Cisco C9200L, Juniper EX3400), none for the fixed-supply inherited EX3300; upstream AC planning allowance multiplier 1.25. These are design assumptions, not measured consumption, vendor efficiency or interoperability certification."
+      "purpose": "Authored reference operating and allocation policy: the portable AP envelope (wlan0/wlan1 radios; the default Cisco 9120 line declares its documented dual 5-GHz mode, the Aruba line a real 5 GHz + 2.4 GHz split); Type 2 PD maximum input 25500 mW and PSE reservation 30000 mW; one-supply-loss planning for every installed dual-supply access switch (Cisco C9200L, Juniper EX3400), none for the fixed-supply inherited EX3300; upstream AC planning allowance multiplier 1.25. These are design assumptions, not measured consumption, vendor efficiency or interoperability certification."
     },
     "cisco-optics-host-json": {
       "url": "https://tmgmatrix.cisco.com/public/api/networkdevice/search",
@@ -227,7 +223,7 @@
       "url": "README.md#installed-optics-policy",
       "checked": "2026-09-10",
       "representation": "authored-policy",
-      "purpose": "Authored policy: 3\u2013100 m complete known local SMF paths; no carrier-span or optical-loss claim. Reference server eth0/eth1 use a Reference 10G-LR transceiver, duplex LC SMF, 100 m reach and 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host \u00d7 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
+      "purpose": "Authored policy: 3–100 m complete known local SMF paths; no carrier-span or optical-loss claim. Server eth1/eth2 use a generic third-party SFP-10G-LR, duplex LC SMF, 10 km nominal reach and an authored 2000 mW envelope. Arista 10G uses a 2000 mW planning reserve, Fortinet rounds published 850 mW to 1000 mW, and each AOC captive end reserves 3500 mW. Add ceil(sum installed module/end mW per host × 1.25 / 1000) once alongside unchanged chassis and PoE allowances. The multiplier is an authored margin, not measured efficiency."
     },
     "access-juniper-chassis": {
       "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Juniper/EX3400-24P.yaml",
@@ -311,6 +307,64 @@
       "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
       "sha256": "3f9da5018c929340ecd15018ba0577cc7aec0129f3ad4a76cec2022a3df0be81",
       "license": "CC0-1.0"
+    },
+    "server-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Supermicro/SYS-1029U-E1CRTP2.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "a7c2c39a006cee577cf852d6ad345c87328ad1d7c5691495804d354adcddc873",
+      "license": "CC0-1.0"
+    },
+    "server-psu": {
+      "url": "https://www.supermicro.com/en/products/system/1U/1029/SYS-1029U-E1CRTP2.php",
+      "checked": "2026-10-01",
+      "representation": "indexed-primary-extract",
+      "purpose": "Supermicro's SYS-1029U-E1CRTP2 page lists two PWS-751P-1R 1U 750W redundant Platinum supplies, two onboard 10G SFP+ and two 1GbE ports (Intel X710-AM2 / i350-AM2) and one dedicated IPMI LAN port. The pinned device-type library has no PWS-751P-1R module type, so the module model comes from this page; the inlet type is the C14 the library's other 1U Supermicro PWS modules declare. No original-page hash is asserted."
+    },
+    "pdu-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/APC/AP9572.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "251027449014176bb117332b93ff5a8de759da034ca433ac7da3a96e167c8472",
+      "license": "CC0-1.0"
+    },
+    "patch-panel-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Panduit/DP24688TGY.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "b5299f24151509df821eafec93a8e48f50b8dc1393da521e4c3f7ab7bcbaccd5",
+      "license": "CC0-1.0"
+    },
+    "wall-outlet-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Generic/wall-box-1-utp-plug.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "8138ca1fe029210945c96d3af80f67cdd85bb6d2a276e9e54761e106106bcaa1",
+      "license": "CC0-1.0"
+    },
+    "console-server-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/CM8116.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "ae6718cc17d5295053caeb301a87438a2776f6671c7fc3045ac4c1cd367de174",
+      "license": "CC0-1.0"
+    },
+    "console-server-48-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Opengear/CM8148.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "4a1403b1030fc2ea48df0c40b8c72e969716a89463767f9c81fa000b80eab636",
+      "license": "CC0-1.0"
+    },
+    "ap-chassis": {
+      "url": "https://raw.githubusercontent.com/netbox-community/devicetype-library/72cc49fbb445f1e2f310d3b8dfef55e12d0b7138/device-types/Cisco/C9120AXI-E.yaml",
+      "commit": "72cc49fbb445f1e2f310d3b8dfef55e12d0b7138",
+      "sha256": "89959cffe19d02beee4fe6b6c98d778e71f59e9b8fb8637e542e92463826afb1",
+      "license": "CC0-1.0"
+    },
+    "ap-cisco-datasheet": {
+      "url": "https://www.cisco.com/c/en/us/products/collateral/wireless/catalyst-9120ax-series-access-points/datasheet-c78-742115.html",
+      "checked": "2026-10-01",
+      "representation": "indexed-primary-extract",
+      "purpose": "Catalyst 9120AX data sheet: Flexible Radio Assignment and a documented dual 5-GHz mode in which both radios operate on 5 GHz; one 100/1000/2500 Multigigabit RJ-45 uplink; 802.3at PoE+ with 25.5 W maximum consumption on PoE+. The -B (FCC) and -E (ETSI) part numbers differ by regulatory domain only."
+    },
+    "generic-design-v1": {
+      "url": "README.md#generic-equipment",
+      "purpose": "Generic, unbranded equipment authored for this project: wired endpoints, ATMs, the liquid-cooled laboratory pair and third-party optics. Dimensions, ports and supplies are explicit design assumptions, not a vendor product."
     }
   },
   "hardware_lines": {
@@ -322,9 +376,9 @@
       }
     },
     "ap": {
-      "default": "reference",
+      "default": "cisco",
       "lines": {
-        "reference": "ap",
+        "cisco": "ap",
         "aruba": "ap-aruba"
       }
     },
@@ -608,6 +662,12 @@
         "planning_supply_losses": 1,
         "upstream_ac_allowance_multiplier": "1.25",
         "policy_source": "reference-poe-v1"
+      },
+      "serial_format": "FOC{yyww}****",
+      "module_serial_format": "DTN{yyww}****",
+      "platform": {
+        "name": "Cisco IOS XE",
+        "slug": "cisco-ios-xe"
       }
     },
     "access-juniper": {
@@ -883,7 +943,13 @@
         "upstream_ac_allowance_multiplier": "1.25",
         "policy_source": "reference-poe-v1"
       },
-      "airflow": "front-to-rear"
+      "airflow": "front-to-rear",
+      "serial_format": "NW{yyww}######",
+      "module_serial_format": "1ED@{yyww}###",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos"
+      }
     },
     "inherited-access": {
       "manufacturer": "Juniper",
@@ -1123,7 +1189,12 @@
         "upstream_ac_allowance_multiplier": "1.25",
         "policy_source": "reference-poe-v1"
       },
-      "airflow": "front-to-rear"
+      "airflow": "front-to-rear",
+      "serial_format": "GG{yyww}######",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos"
+      }
     },
     "leaf": {
       "manufacturer": "Arista",
@@ -1458,7 +1529,13 @@
           "type": "rj-45"
         }
       ],
-      "airflow": "front-to-rear"
+      "airflow": "front-to-rear",
+      "serial_format": "JPE{yyww}####",
+      "module_serial_format": "EEW{yyww}####",
+      "platform": {
+        "name": "Arista EOS",
+        "slug": "arista-eos"
+      }
     },
     "leaf-juniper": {
       "manufacturer": "Juniper",
@@ -1843,7 +1920,13 @@
           "type": "rj-45"
         }
       ],
-      "airflow": "front-to-rear"
+      "airflow": "front-to-rear",
+      "serial_format": "WT{yyww}######",
+      "module_serial_format": "1GD@{yyww}###",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos"
+      }
     },
     "core": {
       "manufacturer": "Arista",
@@ -2030,7 +2113,13 @@
           "type": "rj-45"
         }
       ],
-      "airflow": "front-to-rear"
+      "airflow": "front-to-rear",
+      "serial_format": "SSJ{yyww}####",
+      "module_serial_format": "EEW{yyww}####",
+      "platform": {
+        "name": "Arista EOS",
+        "slug": "arista-eos"
+      }
     },
     "edge": {
       "manufacturer": "Fortinet",
@@ -2172,28 +2261,45 @@
           "name": "Console",
           "type": "rj-45"
         }
-      ]
+      ],
+      "serial_format": "FG100FTK{yyww}####",
+      "platform": {
+        "name": "Fortinet FortiOS",
+        "slug": "fortinet-fortios"
+      }
     },
     "server": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference 1U dual-10G server",
-      "slug": "devin-reference-server-1u",
+      "manufacturer": "Supermicro",
+      "model": "SuperServer 1029U-E1CRTP2",
+      "slug": "supermicro-sys-1029u-e1crtp2",
       "u_height": 1,
       "is_full_depth": true,
       "interfaces": [
         {
-          "name": "eth0",
-          "type": "10gbase-x-sfpp"
+          "name": "BMC",
+          "type": "1000base-t",
+          "mgmt_only": true
         },
         {
           "name": "eth1",
           "type": "10gbase-x-sfpp"
         },
         {
-          "name": "mgmt0",
-          "type": "1000base-t",
-          "mgmt_only": true
+          "name": "eth2",
+          "type": "10gbase-x-sfpp"
+        },
+        {
+          "name": "eth3",
+          "type": "1000base-t"
+        },
+        {
+          "name": "eth4",
+          "type": "1000base-t"
         }
+      ],
+      "data_ports": [
+        "eth1",
+        "eth2"
       ],
       "power_ports": [
         {
@@ -2205,99 +2311,332 @@
           "type": "iec-60320-c14"
         }
       ],
-      "source_ids": [
-        "reference-design-v1"
+      "configured_modules": [
+        {
+          "bay": "PSU1",
+          "position": "PSU1",
+          "model": "PWS-751P-1R",
+          "power_port": "PSU1"
+        },
+        {
+          "bay": "PSU2",
+          "position": "PSU2",
+          "model": "PWS-751P-1R",
+          "power_port": "PSU2"
+        }
       ],
-      "description": "Reference design: 1U, two 10G data interfaces, one 1G management interface, and two C14 AC supplies.",
-      "airflow": "front-to-rear"
+      "console_ports": [
+        {
+          "name": "Serial",
+          "type": "de-9"
+        }
+      ],
+      "source_ids": [
+        "server-chassis",
+        "server-psu"
+      ],
+      "description": "Verified SYS-1029U-E1CRTP2 chassis and interface inventory: dedicated BMC, onboard eth1/eth2 10G SFP+ data ports and eth3/eth4 1GbE, DE-9 serial. Two installed PWS-751P-1R supplies in bays PSU1/PSU2 materialize the C14 inlets. PCI-E and drive bays are not modeled.",
+      "airflow": "front-to-rear",
+      "serial_format": "S######X{yyww}###",
+      "module_serial_format": "P751P@{yyww}####"
     },
     "patch-panel": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference 1U passive patch panel",
-      "slug": "devin-reference-patch-panel-1u",
+      "manufacturer": "Panduit",
+      "model": "Cat 6 Punchdown Patch Panel, 24 Ports, 1 RU, Black",
+      "slug": "panduit-dp24688tgy",
       "u_height": 1,
       "is_full_depth": false,
       "interfaces": [],
       "power_ports": [],
-      "source_ids": [
-        "reference-design-v1"
-      ],
-      "description": "Reference design: passive 1U panel. Builder emits explicitly paired front/rear termination ports; there are no Ethernet interfaces or power inlets.",
       "passive_ports": 24,
-      "airflow": "passive"
+      "front_ports": [
+        {
+          "name": "01",
+          "type": "8p8c"
+        },
+        {
+          "name": "02",
+          "type": "8p8c"
+        },
+        {
+          "name": "03",
+          "type": "8p8c"
+        },
+        {
+          "name": "04",
+          "type": "8p8c"
+        },
+        {
+          "name": "05",
+          "type": "8p8c"
+        },
+        {
+          "name": "06",
+          "type": "8p8c"
+        },
+        {
+          "name": "07",
+          "type": "8p8c"
+        },
+        {
+          "name": "08",
+          "type": "8p8c"
+        },
+        {
+          "name": "09",
+          "type": "8p8c"
+        },
+        {
+          "name": "10",
+          "type": "8p8c"
+        },
+        {
+          "name": "11",
+          "type": "8p8c"
+        },
+        {
+          "name": "12",
+          "type": "8p8c"
+        },
+        {
+          "name": "13",
+          "type": "8p8c"
+        },
+        {
+          "name": "14",
+          "type": "8p8c"
+        },
+        {
+          "name": "15",
+          "type": "8p8c"
+        },
+        {
+          "name": "16",
+          "type": "8p8c"
+        },
+        {
+          "name": "17",
+          "type": "8p8c"
+        },
+        {
+          "name": "18",
+          "type": "8p8c"
+        },
+        {
+          "name": "19",
+          "type": "8p8c"
+        },
+        {
+          "name": "20",
+          "type": "8p8c"
+        },
+        {
+          "name": "21",
+          "type": "8p8c"
+        },
+        {
+          "name": "22",
+          "type": "8p8c"
+        },
+        {
+          "name": "23",
+          "type": "8p8c"
+        },
+        {
+          "name": "24",
+          "type": "8p8c"
+        }
+      ],
+      "rear_ports": [
+        {
+          "name": "01",
+          "type": "110-punch"
+        },
+        {
+          "name": "02",
+          "type": "110-punch"
+        },
+        {
+          "name": "03",
+          "type": "110-punch"
+        },
+        {
+          "name": "04",
+          "type": "110-punch"
+        },
+        {
+          "name": "05",
+          "type": "110-punch"
+        },
+        {
+          "name": "06",
+          "type": "110-punch"
+        },
+        {
+          "name": "07",
+          "type": "110-punch"
+        },
+        {
+          "name": "08",
+          "type": "110-punch"
+        },
+        {
+          "name": "09",
+          "type": "110-punch"
+        },
+        {
+          "name": "10",
+          "type": "110-punch"
+        },
+        {
+          "name": "11",
+          "type": "110-punch"
+        },
+        {
+          "name": "12",
+          "type": "110-punch"
+        },
+        {
+          "name": "13",
+          "type": "110-punch"
+        },
+        {
+          "name": "14",
+          "type": "110-punch"
+        },
+        {
+          "name": "15",
+          "type": "110-punch"
+        },
+        {
+          "name": "16",
+          "type": "110-punch"
+        },
+        {
+          "name": "17",
+          "type": "110-punch"
+        },
+        {
+          "name": "18",
+          "type": "110-punch"
+        },
+        {
+          "name": "19",
+          "type": "110-punch"
+        },
+        {
+          "name": "20",
+          "type": "110-punch"
+        },
+        {
+          "name": "21",
+          "type": "110-punch"
+        },
+        {
+          "name": "22",
+          "type": "110-punch"
+        },
+        {
+          "name": "23",
+          "type": "110-punch"
+        },
+        {
+          "name": "24",
+          "type": "110-punch"
+        }
+      ],
+      "source_ids": [
+        "patch-panel-chassis"
+      ],
+      "description": "Verified Panduit DP24688TGY: 24 front 8P8C jacks mapped one-to-one to 110 punchdown rear terminations; passive.",
+      "serial_format": "{yy}@######@"
     },
     "pdu": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference 0U 12-outlet PDU",
-      "slug": "devin-reference-pdu-0u-12",
+      "manufacturer": "APC",
+      "model": "AP9572",
+      "slug": "apc-ap9572",
       "u_height": 0,
       "is_full_depth": false,
       "interfaces": [],
       "power_ports": [
         {
-          "name": "Input",
+          "name": "Power Port 1",
           "type": "iec-60320-c20"
         }
       ],
-      "source_ids": [
-        "reference-design-v1"
-      ],
-      "description": "Reference design: vertical 0U PDU, one C20 inlet, 12 C13 outlets, no management Ethernet interface.",
       "power_outlets": [
         {
-          "name": "Outlet1",
+          "name": "Outlet 1",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet2",
+          "name": "Outlet 2",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet3",
+          "name": "Outlet 3",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet4",
+          "name": "Outlet 4",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet5",
+          "name": "Outlet 5",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet6",
+          "name": "Outlet 6",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet7",
+          "name": "Outlet 7",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet8",
+          "name": "Outlet 8",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet9",
+          "name": "Outlet 9",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet10",
+          "name": "Outlet 10",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet11",
+          "name": "Outlet 11",
           "type": "iec-60320-c13"
         },
         {
-          "name": "Outlet12",
+          "name": "Outlet 12",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet 13",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet 14",
+          "type": "iec-60320-c13"
+        },
+        {
+          "name": "Outlet 15",
           "type": "iec-60320-c13"
         }
-      ]
+      ],
+      "source_ids": [
+        "pdu-chassis"
+      ],
+      "description": "Verified APC AP9572 Basic Rack PDU: Zero U, 16A 208/230V, one C20 inlet and fifteen C13 outlets; no network management.",
+      "airflow": "passive",
+      "serial_format": "5A{yyww}E#####"
     },
     "endpoint": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference endpoint",
-      "slug": "devin-reference-endpoint",
+      "manufacturer": "Generic",
+      "model": "Wired network endpoint, 1GbE",
+      "slug": "generic-wired-endpoint-1gbe",
       "u_height": 0,
       "is_full_depth": false,
       "interfaces": [
@@ -2313,14 +2652,15 @@
         }
       ],
       "source_ids": [
-        "reference-design-v1"
+        "generic-design-v1"
       ],
-      "description": "Reference design: non-rack-mounted endpoint, one 1G Ethernet interface, one C14 AC inlet. This models an example appliance, not a vendor product."
+      "description": "Generic non-rack-mounted endpoint: one 1G Ethernet interface, one C14 AC inlet. Authored example appliance, not a vendor product.",
+      "serial_format": "{yy}@######@"
     },
     "atm": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference ATM",
-      "slug": "devin-reference-atm",
+      "manufacturer": "Generic",
+      "model": "Automated teller machine, 1GbE",
+      "slug": "generic-atm-1gbe",
       "u_height": 0,
       "is_full_depth": false,
       "interfaces": [
@@ -2336,20 +2676,21 @@
         }
       ],
       "source_ids": [
-        "reference-design-v1"
+        "generic-design-v1"
       ],
-      "description": "Reference design: non-rack-mounted ATM, one 1G Ethernet interface, one C14 AC inlet. This models an example appliance, not a vendor product."
+      "description": "Generic non-rack-mounted ATM: one 1G Ethernet interface, one C14 AC inlet. Authored example appliance, not a vendor product.",
+      "serial_format": "{yy}@######@"
     },
     "ap": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference PoE access point",
-      "slug": "devin-reference-ap",
+      "manufacturer": "Cisco",
+      "model": "Catalyst 9120AXI-B",
+      "slug": "cisco-c9120axi-b",
       "u_height": 0,
       "is_full_depth": false,
       "interfaces": [
         {
           "name": "eth0",
-          "type": "1000base-t",
+          "type": "2.5gbase-t",
           "poe_mode": "pd",
           "poe_type": "type2-ieee802.3at"
         },
@@ -2364,10 +2705,11 @@
       ],
       "power_ports": [],
       "source_ids": [
-        "reference-design-v1",
+        "ap-chassis",
+        "ap-cisco-datasheet",
         "reference-poe-v1"
       ],
-      "description": "Reference design: PoE 1G access point with two 5 GHz 802.11ax radios. wlan0 serves WLANs; wlan1 serves a second WLAN or the bank routed diagnostic link. Authored Type 2 envelope: 25.5 W maximum PD input, 30 W PSE reservation; no measured RF, consumption or vendor certification claim.",
+      "description": "Cisco Catalyst 9120AXI-B: one 2.5GBASE-T Type 2 powered uplink and two 802.11ax radios run in the documented dual 5-GHz mode. Pinned source is the -E (ETSI) part; US estates install the -B (FCC) variant, which differs by regulatory domain only. Interface names follow the portable endpoint convention (eth0, wlan0, wlan1); the vendor names are GigabitEthernet0, Dot11Radio0/1. The console and USB ports are not modeled.",
       "power_source": "poe",
       "poe_pd": {
         "interface": "eth0",
@@ -2379,6 +2721,11 @@
       "radio_bands": {
         "wlan0": "5g",
         "wlan1": "5g"
+      },
+      "serial_format": "FJC{yyww}****",
+      "platform": {
+        "name": "Cisco AP-COS",
+        "slug": "cisco-ap-cos"
       }
     },
     "ap-aruba": {
@@ -2420,301 +2767,162 @@
       "radio_bands": {
         "wlan0": "5g",
         "wlan1": "2.4g"
+      },
+      "serial_format": "CN@@{yy}@***",
+      "platform": {
+        "name": "ArubaOS",
+        "slug": "arubaos"
       }
     },
     "wall-outlet": {
-      "manufacturer": "Devin Reference Designs",
-      "model": "Reference single-port wall outlet",
-      "slug": "devin-reference-wall-outlet-1",
+      "manufacturer": "Generic",
+      "model": "Wall box, 1 UTP plug",
+      "slug": "generic-wall-box-1-utp-plug",
       "u_height": 0,
       "is_full_depth": false,
       "interfaces": [],
       "power_ports": [],
       "passive_ports": 1,
-      "source_ids": [
-        "reference-design-v1"
+      "front_ports": [
+        {
+          "name": "Port 1",
+          "type": "8p8c"
+        }
       ],
-      "description": "Reference one-position 8P8C wall outlet with rear horizontal termination and front endpoint patch connection."
+      "rear_ports": [
+        {
+          "name": "Port 1",
+          "type": "8p8c"
+        }
+      ],
+      "source_ids": [
+        "wall-outlet-chassis"
+      ],
+      "description": "Verified generic one-position 8P8C wall box: rear horizontal termination and front endpoint patch connection.",
+      "serial_format": "{yy}@######@"
     },
     "console-server": {
-      "manufacturer": "Devin Reference Designs",
-      "is_full_depth": true,
-      "source_ids": [
-        "reference-design-v1"
-      ],
-      "model": "Reference 48-port console server",
-      "slug": "devin-reference-console-server",
+      "manufacturer": "Opengear",
+      "model": "CM8116",
+      "slug": "opengear-cm8116",
       "u_height": 1,
+      "is_full_depth": false,
       "interfaces": [
         {
-          "name": "mgmt0",
+          "name": "NET1",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "NET2",
           "type": "1000base-t",
           "mgmt_only": true
         }
       ],
       "power_ports": [
         {
-          "name": "PSU1",
+          "name": "PS1",
           "type": "iec-60320-c14"
         },
         {
-          "name": "PSU2",
+          "name": "PS2",
           "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        },
+        {
+          "name": "USB A",
+          "type": "usb-a"
+        },
+        {
+          "name": "USB B",
+          "type": "usb-a"
         }
       ],
       "console_server_ports": [
         {
-          "name": "Console01",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 1",
+          "type": "rj-45"
         },
         {
-          "name": "Console02",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 2",
+          "type": "rj-45"
         },
         {
-          "name": "Console03",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 3",
+          "type": "rj-45"
         },
         {
-          "name": "Console04",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 4",
+          "type": "rj-45"
         },
         {
-          "name": "Console05",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 5",
+          "type": "rj-45"
         },
         {
-          "name": "Console06",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 6",
+          "type": "rj-45"
         },
         {
-          "name": "Console07",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 7",
+          "type": "rj-45"
         },
         {
-          "name": "Console08",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 8",
+          "type": "rj-45"
         },
         {
-          "name": "Console09",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 9",
+          "type": "rj-45"
         },
         {
-          "name": "Console10",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 10",
+          "type": "rj-45"
         },
         {
-          "name": "Console11",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 11",
+          "type": "rj-45"
         },
         {
-          "name": "Console12",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 12",
+          "type": "rj-45"
         },
         {
-          "name": "Console13",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 13",
+          "type": "rj-45"
         },
         {
-          "name": "Console14",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 14",
+          "type": "rj-45"
         },
         {
-          "name": "Console15",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 15",
+          "type": "rj-45"
         },
         {
-          "name": "Console16",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console17",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console18",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console19",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console20",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console21",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console22",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console23",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console24",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console25",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console26",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console27",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console28",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console29",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console30",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console31",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console32",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console33",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console34",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console35",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console36",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console37",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console38",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console39",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console40",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console41",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console42",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console43",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console44",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console45",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console46",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console47",
-          "type": "rj-45",
-          "speed": 115200
-        },
-        {
-          "name": "Console48",
-          "type": "rj-45",
-          "speed": 115200
+          "name": "Port 16",
+          "type": "rj-45"
         }
       ],
-      "description": "Reference 1U dual-supply serial access server with 48 RJ45 asynchronous ports; management Ethernet is separate.",
-      "airflow": "front-to-rear"
+      "source_ids": [
+        "console-server-chassis"
+      ],
+      "description": "Verified Opengear CM8116: 16 RJ45 serial ports, dual built-in C14 supplies, NET1/NET2 management Ethernet. NET1 is the cabled management port; NET2 stays spare.",
+      "serial_format": "8116{yyww}####"
     },
     "liquid-chassis": {
-      "manufacturer": "Devin Reference Designs",
+      "manufacturer": "Generic",
       "is_full_depth": true,
       "source_ids": [
-        "reference-design-v1"
+        "generic-design-v1"
       ],
-      "model": "Reference liquid-cooled blade enclosure",
-      "slug": "devin-reference-liquid-chassis",
+      "model": "2U liquid-cooled blade enclosure",
+      "slug": "generic-liquid-blade-enclosure-2u",
       "u_height": 2,
       "subdevice_role": "parent",
       "cooling_method": "hybrid",
@@ -2735,17 +2943,18 @@
           "type": "iec-60320-c14"
         }
       ],
-      "description": "Reference 2U one-blade enclosure: internal power and coolant distribution, independent management controller; 400W planning allowance includes the child blade.",
-      "airflow": "front-to-rear"
+      "description": "Generic 2U one-blade enclosure: internal power and coolant distribution, independent management controller; 400W planning allowance includes the child blade.",
+      "airflow": "front-to-rear",
+      "serial_format": "{yy}@######@"
     },
     "liquid-blade": {
-      "manufacturer": "Devin Reference Designs",
+      "manufacturer": "Generic",
       "is_full_depth": true,
       "source_ids": [
-        "reference-design-v1"
+        "generic-design-v1"
       ],
-      "model": "Reference liquid-cooled analytics blade",
-      "slug": "devin-reference-liquid-blade",
+      "model": "Liquid-cooled analytics blade",
+      "slug": "generic-liquid-analytics-blade",
       "u_height": 0,
       "subdevice_role": "child",
       "cooling_method": "liquid",
@@ -2757,7 +2966,8 @@
         }
       ],
       "power_ports": [],
-      "description": "Reference child blade powered through its enclosure. Dedicated management, coolant intake and one diagnostic device context; no physical production application links are claimed."
+      "description": "Generic child blade powered through its enclosure. Dedicated management, coolant intake and one diagnostic device context; no physical production application links are claimed.",
+      "serial_format": "{yy}@######@"
     },
     "provider-edge": {
       "manufacturer": "Juniper",
@@ -2858,7 +3068,256 @@
         "juniper-inband-management"
       ],
       "description": "Pinned MX204 chassis and interface inventory; two explicitly installed JPSU-650W-AC-AO modules. Generator selects three 100G ports plus eight 10G ports, disables the fourth 100G port, and uses lo0 for inband management. Fan population and certified transceiver choices are not modeled.",
-      "airflow": "front-to-rear"
+      "airflow": "front-to-rear",
+      "serial_format": "DK{yyww}######",
+      "module_serial_format": "1GD@{yyww}###",
+      "platform": {
+        "name": "Juniper Junos",
+        "slug": "juniper-junos"
+      }
+    },
+    "console-server-48": {
+      "manufacturer": "Opengear",
+      "model": "CM8148",
+      "slug": "opengear-cm8148",
+      "u_height": 1,
+      "is_full_depth": false,
+      "interfaces": [
+        {
+          "name": "NET1",
+          "type": "1000base-t",
+          "mgmt_only": true
+        },
+        {
+          "name": "NET2",
+          "type": "1000base-t",
+          "mgmt_only": true
+        }
+      ],
+      "power_ports": [
+        {
+          "name": "PS1",
+          "type": "iec-60320-c14"
+        },
+        {
+          "name": "PS2",
+          "type": "iec-60320-c14"
+        }
+      ],
+      "console_ports": [
+        {
+          "name": "Console",
+          "type": "rj-45"
+        },
+        {
+          "name": "USB A",
+          "type": "usb-a"
+        },
+        {
+          "name": "USB B",
+          "type": "usb-a"
+        }
+      ],
+      "console_server_ports": [
+        {
+          "name": "Port 1",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 2",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 3",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 4",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 5",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 6",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 7",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 8",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 9",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 10",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 11",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 12",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 13",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 14",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 15",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 16",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 17",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 18",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 19",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 20",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 21",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 22",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 23",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 24",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 25",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 26",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 27",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 28",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 29",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 30",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 31",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 32",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 33",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 34",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 35",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 36",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 37",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 38",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 39",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 40",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 41",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 42",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 43",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 44",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 45",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 46",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 47",
+          "type": "rj-45"
+        },
+        {
+          "name": "Port 48",
+          "type": "rj-45"
+        }
+      ],
+      "source_ids": [
+        "console-server-48-chassis"
+      ],
+      "description": "Verified Opengear CM8148: 48 RJ45 serial ports, dual built-in C14 supplies, NET1/NET2 management Ethernet. NET1 is the cabled management port; NET2 stays spare.",
+      "serial_format": "8148{yyww}####",
+      "airflow": "passive"
     }
   },
   "optics": {
@@ -3210,27 +3669,6 @@
         },
         "vendor_max_power_mw": 3500
       },
-      "reference-10g-lr": {
-        "manufacturer": "Devin Reference Designs",
-        "model": "Reference 10G-LR transceiver",
-        "form_factor": "sfpp",
-        "protocol": "10GBASE-LR",
-        "medium": "smf",
-        "connector": "lc",
-        "rate_kbps": 10000000,
-        "reach_m": 100,
-        "power_reservation_mw": 2000,
-        "power_basis": "authored reference component envelope",
-        "source_ids": [
-          "reference-optics-v1"
-        ],
-        "compatible_interfaces": {
-          "server": [
-            "eth0",
-            "eth1"
-          ]
-        }
-      },
       "arista-100g-aoc-3m": {
         "manufacturer": "Arista",
         "model": "AOC-Q-Q-100G-3M",
@@ -3294,6 +3732,27 @@
         },
         "assembly": true,
         "assembly_length_m": 3
+      },
+      "generic-10g-lr": {
+        "manufacturer": "Generic",
+        "model": "SFP-10G-LR",
+        "form_factor": "sfpp",
+        "protocol": "10GBASE-LR",
+        "medium": "smf",
+        "connector": "lc",
+        "rate_kbps": 10000000,
+        "reach_m": 10000,
+        "power_reservation_mw": 2000,
+        "power_basis": "authored generic component envelope",
+        "source_ids": [
+          "reference-optics-v1"
+        ],
+        "compatible_interfaces": {
+          "server": [
+            "eth1",
+            "eth2"
+          ]
+        }
       }
     }
   }

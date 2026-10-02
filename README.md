@@ -250,7 +250,10 @@ a power-diversity defect, provider span maintenance, and an
 `just drift PLAN OUT` writes a believably drifted "observed" Diode payload plus
 the exact expected deviation set, so Assurance has something other than flawless
 data to review. Each derives its subjects and relationships from the estate and
-explains which changes have been qualified for live replay.
+explains which changes have been qualified for live replay. For *real* discovery,
+the [discovery lab](lab/discovery/README.md) renders a provider plan's first PoP
+as a small containerlab of Nokia SR Linux routers that a real orb-agent can
+discover (`just discovery-lab-up PLAN`, `just discovery-lab-check`).
 For a worked customer story, try [Harbor Supply](profiles/harbor-supply.md).
 
 **Scale has separate generation and loading proofs.** Recorded offline generation

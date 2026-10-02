@@ -87,7 +87,7 @@ been loaded.
    the relationships are the evidence.
 4. **Reveal the inspection finding.** Use the generated scenario report, or a
    separately loaded changed snapshot. Both cords are still connected, but
-   PSU2 now uses Outlet10 on `dc01-pdu-cp01-a`. Both paths converge on that PDU,
+   PSU2 now uses Outlet 10 on `dc01-pdu-cp01-a`. Both paths converge on that PDU,
    its feed, and panel A. Ask the application owner to identify the exposed
    consumers before opening the answer key.
 5. **Translate the finding.** The selected host carries twelve inventory API

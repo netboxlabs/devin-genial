@@ -314,7 +314,7 @@ def _infrastructure(site, devices, closets, roles, catalog, objects, children, p
                     upstreams.append(parent)
             if len(upstreams) != 1:
                 report("hospital-management-uplink", device, "Each management switch needs its active management-only uplink to the MDF distribution pair.")
-        else:
+        elif device not in roles["role/console-server"]:  # its own console port is spare
             for specification in model.get("console_ports", []):
                 if specification.get("type") != "rj-45":
                     continue

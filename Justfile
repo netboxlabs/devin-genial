@@ -2,6 +2,10 @@
 local_docker := "docker --context colima-netbox-generator"
 local_netbox := local_docker + " compose --project-directory build/local-target/netbox -f build/local-target/netbox/docker-compose.yml -f build/local-target/netbox/compose.local.json"
 local_diode := local_docker + " compose --project-directory build/local-target/diode -f build/local-target/diode/docker-compose.yaml -f build/local-target/diode/compose.local.json"
+# Real-discovery lab (lab/discovery/README.md): its own Colima profile. Without a
+# system colima, run e.g. DISCOVERY_COLIMA='nix shell nixpkgs#colima -c colima'.
+discovery_colima := env_var_or_default("DISCOVERY_COLIMA", "colima")
+discovery_vm := discovery_colima + " ssh -p genial-discovery -- bash " + quote(justfile_directory() / "lab/discovery/vm.sh")
 
 help:
     @just --list --unsorted
@@ -181,6 +185,7 @@ drift-ingest output='build/discovery-drift':
 check:
     python3 -m unittest discover -s tests -v
     python3 -m unittest lab.test_setup -v
+    python3 -m unittest lab.discovery.test_render -v
     git diff --check
 
 # Prepare private local target configuration once; existing targets are preserved
@@ -208,6 +213,36 @@ lab-status:
 # Run native SDK replay with local reconciliation barriers; use the diode profile
 lab-load directory receipt compatibility='official':
     python3 -m lab.replay {{quote(directory)}} --receipt {{quote(receipt)}} --phase-timeout 600 {{if compatibility == 'front-ports' { '--front-port-compat' } else { '' }}}
+
+# Idempotent: rerun after any VM or container restart (it re-pins MACs and re-seeds Vault).
+# state=clean renders the documented state without drift (Day-1 seeding route).
+# Render the SR Linux discovery lab from a provider plan and run it in its own Colima VM
+discovery-lab-up plan out='build/discovery-lab' nodes='3' state='drift':
+    python3 lab/discovery/render.py {{quote(plan)}} {{quote(out)}} --nodes {{nodes}} {{if state == 'clean' { '--clean' } else { '' } }}
+    {{discovery_colima}} start -p genial-discovery --cpu 4 --memory {{if nodes == '4' { '10' } else { '8' } }} --disk 40 --vm-type vz --runtime docker --activate=false
+    {{discovery_vm}} up {{quote(absolute_path(out))}}
+
+# Dry-run real orb-agent discovery (no Diode writes); fail unless it differs only by drift.json
+discovery-lab-check out='build/discovery-lab':
+    {{discovery_vm}} dry-run {{quote(absolute_path(out))}}
+    python3 lab/discovery/render.py --check {{quote(out)}} {{quote(out + '/dry-run')}}
+
+# Start the fleet-managed orb-agent; ENV holds the New Orb agent form's FLEET_* values
+discovery-agent-up env='build/discovery-lab/fleet.env':
+    {{discovery_vm}} agent {{quote(absolute_path(env))}}
+
+discovery-agent-logs lines='50':
+    {{discovery_vm}} agent-logs {{lines}}
+
+discovery-agent-down:
+    {{discovery_vm}} agent-stop
+
+discovery-lab-status:
+    {{discovery_vm}} status
+
+# Destroy the lab, agent and dev Vault; `colima stop -p genial-discovery` also frees the VM
+discovery-lab-down:
+    {{discovery_vm}} down
 
 # Compare the live graph after a Diode replay; an optional prior successful receipt checks stable IDs.
 # The pinned SDK cannot carry the plan's automation records, so this lane compares

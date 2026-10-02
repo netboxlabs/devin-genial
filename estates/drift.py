@@ -18,7 +18,7 @@ import re
 
 from . import __version__
 from .diode import SDK_VERSION, _References, _deferred_fields, _index
-from .model import DesignError, canonical, digest
+from .model import SERIAL_DIGITS, SERIAL_LETTERS, DesignError, canonical, digest
 from .power_scenario import _healthy as _healthy_plan
 from .report import _cell, _table
 
@@ -43,7 +43,7 @@ CHANGE_TYPES = ("create", "update")
 # time fails the check by name and gets a version review rather than a silent pass.
 NETBOX_46_KINDS = frozenset({
     "device", "device_role", "device_type", "interface", "ip_address", "location",
-    "manufacturer", "rack", "site", "tag", "tenant", "tenant_group", "vlan",
+    "manufacturer", "platform", "rack", "site", "tag", "tenant", "tenant_group", "vlan",
     "vlan_group", "vrf",
 })
 NETBOX_47_ONLY_KINDS = frozenset({
@@ -266,11 +266,21 @@ def _unused_vid(objects, children, scope_field, scope):
 
 
 def _observed_serial(key, documented):
-    """A replacement chassis serial in the estate's own serial grammar."""
-    match = re.fullmatch(r"([A-Za-z]+)-(\d+)", documented)
-    prefix, width = (match.group(1), len(match.group(2))) if match else ("SYN", 10)
-    digits = str(int(_token(key, "replacement-chassis"), 16))[:width].rjust(width, "0")
-    observed = f"{prefix}-{digits}"
+    """A replacement chassis serial in the documented serial's own vendor grammar.
+
+    The three-character vendor/factory prefix stays; every later digit and
+    letter is redrawn within its own class, so a Cisco FOC serial stays an
+    11-character FOC serial and an Arista JPE serial stays a JPE serial.
+    """
+    n = int(_token(key, "replacement-chassis"), 16)
+    observed = list(documented[:3])
+    for char in documented[3:]:
+        alphabet = SERIAL_DIGITS if char.isdigit() else SERIAL_LETTERS if char.isalpha() else None
+        if alphabet:
+            n, r = divmod(n, len(alphabet))
+            char = alphabet[r]
+        observed.append(char)
+    observed = "".join(observed)
     _require(observed != documented, "the replacement chassis serial must differ from the documented serial")
     return observed
 

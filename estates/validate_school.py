@@ -449,7 +449,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                         upstreams.append(parent)
                 if len(upstreams) != 1:
                     report("school-management-uplink", device, "Each management switch requires its active management-only backbone to the MDF distribution pair.")
-            if device not in roles["role/management"]:
+            if device not in roles["role/management"] and device not in roles["role/console-server"]:
                 for specification in model.get("console_ports", []):
                     if specification.get("type") != "rj-45":
                         continue

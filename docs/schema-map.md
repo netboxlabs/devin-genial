@@ -47,7 +47,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `custom_field` | `extras.customfield` | `/api/extras/custom-fields/` | choice_set, owner | name + type | REST, main, ns-name |
 | `custom_field_choice_set` | `extras.customfieldchoiceset` | `/api/extras/custom-field-choice-sets/` | owner | name | REST, main, ns-name |
 | `custom_link` | `extras.customlink` | `/api/extras/custom-links/` | owner | name | REST, main, ns-name |
-| `device` | `dcim.device` | `/api/dcim/devices/` | cluster, device_type, location, primary_ip4, primary_ip6, rack, role, site, tags, tenant, virtual_chassis | name + asset_tag (in site, tenant) | TB |
+| `device` | `dcim.device` | `/api/dcim/devices/` | cluster, device_type, location, platform, primary_ip4, primary_ip6, rack, role, site, tags, tenant, virtual_chassis | name + asset_tag (in site, tenant) | TB |
 | `device_bay` | `dcim.devicebay` | `/api/dcim/device-bays/` | device, installed_device | name (in device) | TB |
 | `device_role` | `dcim.devicerole` | `/api/dcim/device-roles/` | — | name (in parent) | TB |
 | `device_type` | `dcim.devicetype` | `/api/dcim/device-types/` | manufacturer | model (in manufacturer) | TB |
@@ -78,7 +78,7 @@ its display name (`naming.NAMESPACED_KINDS`), **id-name** name is an identity
 | `module_type_profile` | `dcim.moduletypeprofile` | `/api/dcim/module-type-profiles/` | — | name | TB |
 | `owner` | `users.owner` | `/api/users/owners/` | group | name | TB, main, ns-name |
 | `owner_group` | `users.ownergroup` | `/api/users/owner-groups/` | — | name | TB, main, ns-name |
-| `platform` | `dcim.platform` | `/api/dcim/platforms/` | — | name (in manufacturer) | TB |
+| `platform` | `dcim.platform` | `/api/dcim/platforms/` | manufacturer | name (in manufacturer) | TB |
 | `power_feed` | `dcim.powerfeed` | `/api/dcim/power-feeds/` | power_panel, rack | name (in power_panel) | TB |
 | `power_outlet` | `dcim.poweroutlet` | `/api/dcim/power-outlets/` | device, power_port | name (in device) | TB |
 | `power_panel` | `dcim.powerpanel` | `/api/dcim/power-panels/` | location, site | name (in site) | TB |

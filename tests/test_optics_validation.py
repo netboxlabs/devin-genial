@@ -236,11 +236,13 @@ class OpticsValidationTests(unittest.TestCase):
         rear["refs"]["device"] = "device/unknown"
         self.assertIn("optics-path", self.codes(plan))
 
-    def test_smaller_reference_endpoint_reach_is_enforced(self):
+    def test_smaller_endpoint_reach_is_enforced(self):
         plan, objects = self.fixture()
-        cable, _, _ = self.link(objects, part="module-type/Devin Reference Designs/Reference 10G-LR transceiver")
+        cable, _, _ = self.link(objects, part="module-type/Generic/SFP-10G-LR")
         catalog = deepcopy(self.catalog)
         catalog["optics"]["local_max_m"] = 1000
+        # The part's own reach, not the local envelope, must bound the path.
+        catalog["optics"]["parts"]["generic-10g-lr"]["reach_m"] = 100
         cable["attrs"]["length"] = 101
         self.assertIn("optics-reach", self.codes(plan, catalog))
 

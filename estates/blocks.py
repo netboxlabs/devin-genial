@@ -7,7 +7,7 @@ import re
 from datetime import date, timedelta
 from decimal import Decimal
 
-from .model import DesignError
+from .model import SERIAL_SPACE, DesignError, vendor_serial
 from .naming import titleize
 from . import naming, places
 
@@ -23,7 +23,7 @@ NETWORKS = ("management", "users", "atm", "wireless", "security", "voice",
 PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  "leaf": 160, "leaf-juniper": 160,
                  "core": 220, "edge": 40, "server": 250,
-                 "console-server": 40, "liquid-chassis": 400, "provider-edge": 320}
+                 "console-server": 40, "console-server-48": 40, "liquid-chassis": 400, "provider-edge": 320}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the
@@ -88,6 +88,10 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
     # Callers name role families; the recipe's selected vendor line decides which
     # catalog model that family actually emits.
     selected = None if hardware_aliases is None else {w.hardware_alias(a) for a in hardware_aliases}
+    if selected is not None and "console-server" in selected:
+        # The equipment builder sizes each room's console server from its own
+        # serial demand, so both Opengear sizes belong to any estate that has one.
+        selected.add("console-server-48")
     manufacturers = set()
     for alias, spec in w.catalog["models"].items():
         if selected is not None and alias not in selected:
@@ -97,10 +101,24 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
             w.add("manufacturer", f"manufacturer/{manufacturer}", {"name": manufacturer,
                   "slug": manufacturer.lower().replace(" ", "-")})
             manufacturers.add(manufacturer)
+        if "platform" in spec and f"platform/{spec['platform']['slug']}" not in w.objects:
+            # Same identity grammar as the Service Linux platform: an authored
+            # vendor OS name, a namespaced slug, linked to its manufacturer.
+            w.add("platform", f"platform/{spec['platform']['slug']}",
+                  {"name": spec["platform"]["name"], "slug": f"{ns}-{spec['platform']['slug']}"},
+                  {"manufacturer": f"manufacturer/{manufacturer}"})
         w.add("device_type", f"hardware/{alias}",
               {k: spec[k] for k in ("model", "slug", "u_height", "is_full_depth", "subdevice_role",
                                    "cooling_method", "airflow") if k in spec},
               {"manufacturer": f"manufacturer/{manufacturer}"})
+    # Optic makers need a manufacturer row even when no chassis shares it
+    # (generic third-party server optics in an otherwise vendor-only estate).
+    for part in w.catalog["optics"]["parts"].values():
+        if (part["manufacturer"] not in manufacturers and
+                any(f"hardware/{alias}" in w.objects for alias in part["compatible_interfaces"])):
+            w.add("manufacturer", f"manufacturer/{part['manufacturer']}", {"name": part["manufacturer"],
+                  "slug": part["manufacturer"].lower().replace(" ", "-")})
+            manufacturers.add(part["manufacturer"])
     for name in networks:
         w.add("vrf", f"vrf/{name}", {"name": titleize(name), "enforce_unique": True}, {"tenant": "tenant"})
         # A one-site pool is already represented by the scoped site reservation.
@@ -221,11 +239,13 @@ class Site:
         key = f"device/{self.id}/{label}"
         inherited = self.lineage == "birch" and not (role == "access" and self.design == "refreshed")
         attrs = dict(name=self.display_name(label, inherited), status="active",
-                     serial=f"SYN-{self.w.choose(key, 'serial', range(10**10)):010d}",
+                     serial=vendor_serial(spec["serial_format"], self.w.choose(f"{self.w.recipe['namespace']}/{key}", "serial", SERIAL_SPACE)),
                      # Reference the emitted display name (authored or legacy);
                      # device identities themselves stay keyed on stable ids.
                      description=f"{naming.role_label(role)} at {self.w.obj(self.key)['attrs']['name']}")
         refs = dict(site=self.key, device_type=f"hardware/{alias}", role=f"role/{role}", tenant=self.tenant, tags=["tag/estate"])
+        if "platform" in spec:
+            refs["platform"] = f"platform/{spec['platform']['slug']}"
         metadata = dict(hardware=alias, purpose=role, **(meta or {}))
         if racked and spec["u_height"]:
             if rack_domain is not None and not self.rack_domains:
@@ -260,11 +280,11 @@ class Site:
         for kind in ("console_port", "console_server_port"):
             for port in spec.get(f"{kind}s", []):
                 self.w.add(kind, f"{key}/{kind}/{port['name']}", dict(port), {"device": key})
-        for position in range(1, spec.get("passive_ports", 0)+1):
-            rear = self.w.add("rear_port", f"{key}/rear/{position}",
-                             {"name": f"R{position:02}", "type": "8p8c", "positions": 1}, {"device": key})
-            self.w.add("front_port", f"{key}/front/{position}",
-                       {"name": f"F{position:02}", "type": "8p8c", "rear_port_position": 1},
+        # Passive positions pair the catalog's front and rear ports by index;
+        # names and media (8P8C jack, 110 punchdown) come from the pinned source.
+        for position, (front, back) in enumerate(zip(spec.get("front_ports", []), spec.get("rear_ports", [])), 1):
+            rear = self.w.add("rear_port", f"{key}/rear/{position}", dict(back, positions=1), {"device": key})
+            self.w.add("front_port", f"{key}/front/{position}", dict(front, rear_port_position=1),
                        {"device": key, "rear_port": rear})
         return key
 
@@ -518,9 +538,12 @@ class Site:
         # the reviewed physical uplink pool before raising this ceiling.
         # Gateways already managed through an addressed SVI keep their dedicated
         # management port unused instead of joining the same subnet twice.
-        managed = [(key, p["name"]) for key in self.devices
+        # One cabled management port per device: the first mgmt_only port in
+        # catalog order (an Opengear's NET2 stays a spare, as in a real install).
+        managed = [(key, ports[0]) for key in self.devices
                    if not self.w.obj(key)["refs"].get("primary_ip4")
-                   for p in self.w.catalog["models"][self.w.obj(key)["meta"]["hardware"]]["interfaces"] if p.get("mgmt_only")]
+                   for ports in [[p["name"] for p in self.w.catalog["models"][self.w.obj(key)["meta"]["hardware"]]["interfaces"]
+                                  if p.get("mgmt_only")]] if ports]
         spec = self.w.hardware("access")
         access_ports, uplink_ports = spec["access_ports"], spec["uplink_ports"]
         switches = {}
@@ -589,10 +612,11 @@ class Site:
                                   "type": "primary" if side == "a" else "redundant", "supply": "ac", "phase": "single-phase",
                                   "voltage": 230, "amperage": 16, "max_utilization": 80},
                                  {"power_panel": f"panel/{self.id}/{room}{side}", "rack": rack})
-                inlet = f"{pdu}/power/Input"
+                pdu_spec = self.w.hardware("pdu")
+                inlet = f"{pdu}/power/{pdu_spec['power_ports'][0]['name']}"
                 self.cable(feed, inlet, "power")
                 outlets[side] = []
-                for port in self.w.catalog["models"]["pdu"]["power_outlets"]:
+                for port in pdu_spec["power_outlets"]:
                     outlet = self.w.add("power_outlet", f"{pdu}/outlet/{port['name']}", dict(port), {"device": pdu, "power_port": inlet})
                     outlets[side].append(outlet)
             for device in members:
