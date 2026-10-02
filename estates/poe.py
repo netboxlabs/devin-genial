@@ -94,11 +94,6 @@ def enrich(world):
         if part is None:
             continue  # PSU inventory is checked separately; it is not an optical load.
         owner = module["refs"].get("device")
-        # A chassis not yet in service (planned, staged or held in inventory)
-        # is unpowered by design (blocks.power cables active members only):
-        # its pre-installed optics reserve power once it is cut over.
-        if objects.get(owner, {}).get("attrs", {}).get("status") in ("planned", "staged", "inventory"):
-            continue
         if (module_type.get("kind") != "module_type" or manufacturer.get("kind") != "manufacturer" or
                 objects.get(owner, {}).get("kind") != "device" or type(part["power_reservation_mw"]) is not int or
                 part["power_reservation_mw"] <= 0):

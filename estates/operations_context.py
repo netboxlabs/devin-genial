@@ -573,6 +573,8 @@ def enrich(world):
             equipment_anchors[rack] = device
     for rack_key, device in sorted(equipment_anchors.items()):
         key = device["key"]
+        if f"journal/{key}/installed" in world.objects:
+            continue  # the plant's own history already records this install (estates/fibre.py)
         desk = world.obj(f"contact/{device['refs']['site']}")["attrs"]["name"]
         journal(key, "equipment-record", installed_on[key], "Installed",
             f"Racked and cabled under change {change(key)}; the visit was booked through {desk}.", "success")
