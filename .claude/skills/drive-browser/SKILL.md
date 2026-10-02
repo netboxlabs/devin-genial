@@ -26,6 +26,7 @@ node $D crsk8600 shot build/review/site.png full # full page, capped 6000px
 node $D app.netboxlabs text                      # innerText (SPA: wait for real counts)
 node $D app.netboxlabs click 'Visual Explorer'   # CSS selector or exact visible text
 node $D crsk8600 eval 'document.querySelectorAll("tr").length'
+node $D app.netboxlabs wheel 490,435 -240 30     # zoom a map in at CSS point (positive dy zooms out)
 ```
 
 The first argument picks the tab by URL or title substring. If
@@ -37,6 +38,10 @@ Repo-specific rules:
 
 - It is the operator's real session: read-only unless the task authorizes the
   write, and only on the tenant the task names.
+- Coordinates are CSS pixels: the screenshot is device pixels (Read reports the
+  scale, e.g. 1.8×), so divide by it. `wheel` uses synthetic WheelEvents because
+  CDP `Input.dispatchMouseEvent` wheel hangs on these apps; `shot` brings the
+  tab to the front first (background tabs never render a frame).
 - One driver per tab — parallel agents get separate tabs or take turns.
 - Save evidence under `build/` and pair every visual claim with the REST count
   for the same scope (`visual-review` skill).
