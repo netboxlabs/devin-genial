@@ -27,7 +27,7 @@ PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  # design's declared 300 W; the PoP management switch shares
                  # the access family's and the cellular console server the
                  # console family's planning figure.
-                 "aggregation": 300, "pop-management": 120, "console-server-lte": 40}
+                 "aggregation": 300, "pop-mgmt": 120, "oob-server": 40}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the
@@ -690,8 +690,10 @@ class Site:
         # separate A and B panels, feeds and PDUs.
         sides = ("a",) if self.small_kit else ("a", "b")
         country = self.w.obj(self.key)["meta"].get("geography", {}).get("country")
-        voltage, amperage = FEED_ELECTRICS.get((country, self.small_kit), DEFAULT_FEED)
-        pdu_alias = "pdu-120" if self.small_kit and country == "US" else "pdu"
+        # A builder may name its own PDU and matching feed (a PoP's switched
+        # 208 V 30 A AP8941 on an L6-30 circuit, estates/fibre.py).
+        voltage, amperage = getattr(self, "feed_electrics", None) or FEED_ELECTRICS.get((country, self.small_kit), DEFAULT_FEED)
+        pdu_alias = getattr(self, "pdu_alias", None) or ("pdu-120" if self.small_kit and country == "US" else "pdu")
         pdu_spec = self.w.hardware(pdu_alias)
         for location in self.contract["placement"]["equipment_locations"].values():
             room = self.room_prefix(location)
