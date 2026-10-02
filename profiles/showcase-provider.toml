@@ -8,8 +8,8 @@
 # the carrier's demarcation (NID, plus a CE in an MPOE wall cabinet where the
 # carrier manages one) handing off to customer-owned gear (lan_endpoints = 0:
 # a carrier does not inventory its customers' desktops). Suburban PoPs with
-# few street-grid anchors serve fewer premises. Dual-stack (DIA and NID
-# management stay IPv4); Juniper access beside the MX204 PEs, Arista
+# few street-grid anchors serve fewer premises. Dual-stack (DIA stays
+# IPv4-only); Juniper access beside the MX204 PEs, Arista
 # leaf/spine kept. Customer names are authored; fictional design inputs.
 # Runbook: .claude/skills/showcase-tenant/SKILL.md.
 profile = "provider-backbone"
