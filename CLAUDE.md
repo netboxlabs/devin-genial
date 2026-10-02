@@ -500,6 +500,19 @@ for the separately recorded pinned-target live qualification.
   eligible site in permanent allocation order, then the first eligible switch,
   ports in numeric-aware name order and endpoints by append-only room-ledger
   slot — so growth, in place or site-appending, keeps the same subjects.
+  The provider profile always takes its own PoP subject set instead (a carrier
+  discovers its PoP equipment, never customer LANs; CE-only `lan_endpoints = 0`
+  premises have no endpoint at all): the first eligible PoP in the permanent
+  `provider-pop-order` ledger, its PE pair, management switch and console
+  server in numeric-aware name order, and only permanent PoP-build properties —
+  the PE-to-PE link and its optic, the management port cabled to the second
+  PE's management port, the PE's primary loopback, the PE's power supplies —
+  never a port growth later consumes. Seven items: a staged second loopback
+  /32 (create), a replaced optic serial, that port's edited description, a shut
+  management port, a replaced console server (serial update, new MAC create,
+  primary-MAC update), an unobserved PSU and a lower-cased PE serial. Spare
+  serials expand from the part's own catalog format, dated before `as_of`. Both
+  paths share the item checks; campus envelopes stay byte-identical.
   `observed/` is a projection of the plan: only drifted records are emitted, and
   every other record exists to resolve nested identities. A drifted record must
   keep its documented Diode matching identity, a created record must not reuse

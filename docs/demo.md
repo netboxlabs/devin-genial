@@ -128,8 +128,9 @@ decides what gets built beside the artifact and what the cheat sheet narrates.
   into `drift/` and re-checks it. `DEMO.md` links `drift/drift.md` and never
   restates it — that walkthrough is byte-bound to its manifest, and
   `just drift-check` re-renders and compares it. Needs a profile with campus
-  access; `enterprise-data-center` models fabric only and is refused at the
-  flag. Know before you pick it: the drift artifact and its talk track are
+  access or `provider-backbone`, which drifts its own first PoP's equipment
+  (CE-only customers included); `enterprise-data-center` models fabric only and
+  is refused at the flag. Know before you pick it: the drift artifact and its talk track are
   the *documented* half of the Assurance story — **showing deviations on screen
   needs a Diode/Assurance-equipped target**; the TurboBulk branch you load
   carries the documented baseline only, and `drift.md` says exactly what may
