@@ -274,7 +274,8 @@ def _resolve_private_l3(c, r, usable):
 
 
 def resolve(raw):
-    fields = {"profile","demo","topology","pops","customers","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base","discovery_lab"}
+    fields = {"profile","demo","topology","pops","customers","noc_pop_a","noc_pop_b","noc_peak_mbps","asn_base","discovery_lab",
+              "former_customers"}
     if unknown := raw.keys()-(COMMON|fields):
         raise DesignError(f"Unknown provider fields: {', '.join(sorted(unknown))}; describe PoPs and customer service demand")
     base = dict(namespace="lakes-fiber",name="Great Lakes Fiber",address_pool="10.0.0.0/8")
@@ -407,7 +408,41 @@ def resolve(raw):
     if (r["asn_base"]-4200000000)%1024:
         raise DesignError("asn_base must start a 1024-number block aligned from 4200000000; target global collision preflight is still required")
     r["discovery_lab"] = discovery_lab.resolve(raw.get("discovery_lab"))
+    r["former_customers"] = _resolve_former(raw.get("former_customers",[]),r,keys,names)
     return r
+
+
+# A former customer (DESIGN v0.18 P0-6): the tenant and one decommissioned
+# circuit stay on record; it holds no premises, device, UNI, ASN, VRF or
+# address slot. Authored names; no claim about why it left.
+FORMER_FIELDS = {"key","name","service","pop","start","end"}
+FORMER_MAX = 32
+
+
+def _resolve_former(rows,r,keys,names):
+    if not isinstance(rows,list) or len(rows) > FORMER_MAX:
+        raise DesignError(f"former_customers must be a list of at most {FORMER_MAX} entries")
+    pops = {p["key"] for p in r["pops"]}
+    final = date.fromisoformat(r["as_of"]).year
+    result = []
+    for row in rows:
+        if not isinstance(row,dict) or row.keys() != FORMER_FIELDS:
+            raise DesignError(f"Each former customer needs exactly {', '.join(sorted(FORMER_FIELDS))}")
+        key = _key(row["key"],"Former customer key")
+        if key in keys:
+            raise DesignError(f"Former customer {key}: keys are shared with customers and must be unique")
+        keys.add(key)
+        if not isinstance(row["name"],str) or not 1 <= len(row["name"]) <= 60 or row["name"] != row["name"].strip() or row["name"] in names:
+            raise DesignError(f"Former customer {key}: name must be a unique 1–60 character display name")
+        names.add(row["name"])
+        if row["service"] not in SERVICES:
+            raise DesignError(f"Former customer {key}: service must be one of {', '.join(SERVICES)}")
+        if row["pop"] not in pops:
+            raise DesignError(f"Former customer {key}: pop must be a known PoP key")
+        _integer(row["start"],f"Former customer {key} start",1990,final)
+        _integer(row["end"],f"Former customer {key} end",row["start"],final)
+        result.append(dict(row))
+    return result
 
 
 def workloads(recipe):
@@ -440,6 +475,9 @@ def generate(recipe,previous=None):
         current_pops = {p["key"]:p for p in recipe["pops"]}
         if any(current_pops.get(p["key"]) != p for p in old["pops"]):
             raise DesignError("Removing, renaming or moving an existing PoP requires a new baseline")
+        formers = {f["key"]:f for f in recipe["former_customers"]}
+        if any(formers.get(f["key"]) != f for f in old.get("former_customers",[])):
+            raise DesignError("Changing or removing a former customer requires a new baseline; growth may only append one")
         current = {c["key"]:c for c in recipe["customers"]}
         for before in old["customers"]:
             after = current.get(before["key"])

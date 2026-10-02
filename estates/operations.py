@@ -73,7 +73,10 @@ JUMBO_MTU_DEFAULT = 9000
 # Native interface type -> line rate in kbps, for cabled ports whose rate is
 # set by the hardware rather than negotiated down (copper keeps autoneg).
 TYPE_SPEED = {"1000base-x-sfp": 1000000, "10gbase-x-sfpp": 10000000, "25gbase-x-sfp28": 25000000,
-              "40gbase-x-qsfpp": 40000000, "100gbase-x-qsfp28": 100000000}
+              "40gbase-x-qsfpp": 40000000, "100gbase-x-qsfp28": 100000000,
+              # MX304 LMIC cages are QSFP-DD (ports carry an explicit 100G
+              # speed); the MX80 relic's 10G ports are XFP.
+              "400gbase-x-qsfpdd": 400000000, "10gbase-x-xfp": 10000000}
 # Taxonomy kinds that exist only to be referenced; unreferenced rows are dropped.
 # Hardware types follow the installed estate, not the whole catalog: a device
 # type no device uses (a spare console-server size, the generic endpoint in a

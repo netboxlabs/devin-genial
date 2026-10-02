@@ -194,6 +194,9 @@ ROLE_COLORS = {
     # PoP plant (estates/fibre.py): passive hygiene reads neutral grey beside
     # the grey patch panels; the aggregation pair takes its own blue.
     "aggregation": "0277bd", "cable-management": "bdbdbd",
+    # PoP services (estates/provider.py _ddos, _timing): their own colours,
+    # never a status encoding (DESIGN v0.18 §1.2).
+    "ddos-mitigation": "ff1744", "time-server": "ffd600",
     # VM roles
     "application": "43a047", "database": "3949ab", "backup-service": "8d6e63",
 }
@@ -272,7 +275,7 @@ CABLE_COLORS = {"smf": "ffeb3b", "mmf": "00bcd4", "aoc": "00bcd4", "cat6": "2196
 # supply actually fits a given chassis still follows that device type's own
 # catalog entry (equipment.validate), never this label.
 BAY_CLASSES = {"ac-psu": "AC PSU bay"}
-OPTIC_CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP28"}
+OPTIC_CAGE_LABELS = {"sfp": "SFP", "sfpp": "SFP+", "sfp28": "SFP28", "qsfp28": "QSFP28", "qsfpdd": "QSFP-DD"}
 
 
 # What each addressed segment carries, in the words an engineer puts on a VLAN.
