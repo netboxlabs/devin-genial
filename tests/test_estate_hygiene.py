@@ -150,6 +150,32 @@ class EstateHygieneTests(unittest.TestCase):
         loopbacks = [obj for obj in self.of(self.plans["provider-backbone"], "ip_address") if obj["attrs"].get("role") == "loopback"]
         self.assertTrue(loopbacks)
 
+    def test_install_notes_follow_each_sites_own_timeline(self):
+        plan = self.plans["provider-backbone"]
+        objects = {obj["key"]: obj for obj in plan["objects"]}
+        first = {}
+        for term in self.of(plan, "circuit_termination"):
+            if term["refs"]["termination"].startswith("site/"):
+                day = objects[term["refs"]["circuit"]]["attrs"]["install_date"]
+                first[term["refs"]["termination"]] = min(day, first.get(term["refs"]["termination"], day))
+        checked = 0
+        for note in self.of(plan, "journal_entry"):
+            subject = objects[note["refs"]["assigned_object"]]
+            site = subject["key"] if subject["kind"] == "site" else subject["refs"].get("site")
+            when = note["attrs"]["comments"][:10]
+            if note["key"].endswith("/equipment-record") and site in first:
+                self.assertLessEqual(when, first[site])  # racked before the site's first circuit
+                checked += 1
+            elif note["key"].endswith(("/access-plan", "/psu-replacement-plan")) and site in first:
+                self.assertGreaterEqual(when, first[site])
+        self.assertTrue(checked)
+
+        def shifted(plan, objects):
+            note = next(obj for obj in objects.values() if obj["key"].endswith("/equipment-record"))
+            note["attrs"]["comments"] = plan["recipe"]["as_of"] + note["attrs"]["comments"][10:]
+
+        self.assertIn("operations-journal-date", codes(operations(self.mutate("provider-backbone", shifted))))
+
     def junos_device(self, key):
         return next(obj for obj in self.junos["objects"] if obj["key"] == key)["refs"]["device_type"]
 

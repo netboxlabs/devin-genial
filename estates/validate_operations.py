@@ -260,6 +260,18 @@ def _context(plan, objects, kinds):
         except (KeyError, TypeError, ValueError):
             return None
 
+    # Each site's service day: its first circuit's install date, read from the
+    # graph (never from metadata). Installs lead it; no note predates it.
+    service_day = {}
+    for term in kinds["circuit_termination"]:
+        site = str(term["refs"].get("termination", ""))
+        day = attrs(term["refs"].get("circuit")).get("install_date")
+        if site.startswith("site/") and isinstance(day, str):
+            service_day[site] = min(day, service_day.get(site, day))
+
+    def later(when, floor):
+        return max(when, floor) if isinstance(when, str) and isinstance(floor, str) else when
+
     def expect_note(key, event, when, facts, kind="info"):
         notes[f"journal/{key}/{event}"] = (key, event, when, tuple(map(str, facts)), kind)
 
@@ -299,7 +311,8 @@ def _context(plan, objects, kinds):
         contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, f"{key.removeprefix('site/')}.facilities",
                                  site_area(key))
         expect_assignment(key, contact, "facilities", "/facilities", "secondary")
-        expect_note(key, "access-plan", scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), (contact_name,))
+        expect_note(key, "access-plan", later(scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), service_day.get(key, "")),
+                    (contact_name,))
     terms = defaultdict(list)
     far_terms = defaultdict(list)
     for term in kinds["circuit_termination"]:
@@ -378,7 +391,8 @@ def _context(plan, objects, kinds):
             anchors[scope] = vm
     for vm in anchors.values():
         key, refs = vm["key"], vm["refs"]
-        expect_note(key, "resource-plan", scheduled(key, "resource-plan", recipe.get("as_of"), 120, 31),
+        expect_note(key, "resource-plan", later(scheduled(key, "resource-plan", recipe.get("as_of"), 120, 31),
+                                                service_day.get(objects.get(refs.get("device"), {}).get("refs", {}).get("site"), "")),
                     (attrs(refs.get("device")).get("name"),), "success")
 
     equipment_anchors, supplies, interfaces = {}, defaultdict(list), defaultdict(dict)
@@ -412,7 +426,10 @@ def _context(plan, objects, kinds):
         access = objects.get(refs.get("primary_ip4"), {}).get("refs", {}).get("assigned_object")
         if objects.get(access, {}).get("refs", {}).get("device") != key:
             fail("operations-journal-facts", key, "Installation history must name the device's own primary inventory interface.")
-        expect_note(key, "equipment-record", scheduled(key, "equipment-record", recipe.get("as_of"), 100, 20),
+        site = refs.get("site")
+        installed = (scheduled(key, "equipment-record", service_day[site], 7, 31) if site in service_day
+                     else scheduled(key, "equipment-record", recipe.get("as_of"), 100, 20))
+        expect_note(key, "equipment-record", installed,
                     (attrs(refs.get("device_type")).get("model"), data.get("serial"),
                      room, rack, data.get("position"), attrs(access).get("name")), "success")
         if supplies[key]:
@@ -422,7 +439,7 @@ def _context(plan, objects, kinds):
             bay = objects.get(module_refs.get("module_bay"), {})
             if module.get("kind") != "module" or module_refs.get("device") != key or bay.get("refs", {}).get("device") != key:
                 fail("operations-journal-facts", key, "Replacement planning must follow the installed supply through its own module and bay.")
-            expect_note(key, "psu-replacement-plan", scheduled(key, "psu-replacement-plan", recipe.get("as_of"), 1, 19),
+            expect_note(key, "psu-replacement-plan", later(scheduled(key, "psu-replacement-plan", recipe.get("as_of"), 1, 19), installed),
                         (attrs(module_refs.get("module_type")).get("model"), bay.get("attrs", {}).get("name"),
                          module.get("attrs", {}).get("serial")), "warning")
         dtype = objects.get(refs.get("device_type"), {})
@@ -441,7 +458,7 @@ def _context(plan, objects, kinds):
                 fail("operations-journal-facts", key, "Optical planning must follow the fixed cage through its own installed module, bay and type.")
             assembly = any(part.get("manufacturer") == maker and part.get("model") == module_type.get("attrs", {}).get("model")
                            and part.get("assembly") for part in hardware_catalog()["optics"]["parts"].values())
-            expect_note(key, "optic-replacement-plan", scheduled(key, "optic-replacement-plan", recipe.get("as_of"), 40, 20),
+            expect_note(key, "optic-replacement-plan", later(scheduled(key, "optic-replacement-plan", recipe.get("as_of"), 40, 20), installed),
                         (port["attrs"].get("name"), bay.get("attrs", {}).get("name"),
                          f"{maker} {module_type.get('attrs', {}).get('model')}", module.get("attrs", {}).get("serial"),
                          "the whole cable assembly" if assembly else "the transceiver"))

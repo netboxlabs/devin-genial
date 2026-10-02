@@ -774,7 +774,11 @@ lifecycle sidecar may stock one. New racks gain stories without rewriting
 existing rack history. When that device's first fixed optical cage is
 occupied, an `Optic replacement note` names its interface, bay, installed part
 and serial, and whether a failure replaces the transceiver or the whole AOC
-assembly. The fixed
+assembly. Dates follow each site's own timeline, read from the graph: a
+site's service day is its first circuit's install date (a PoP's first span, a
+premises' access circuit), the `Installed` note falls 7–37 days before it, and
+site, VM, spare-PSU and optic notes never predate it; a site without circuits
+keeps the `as_of`-anchored window. The fixed
 cage is chosen before occupancy; later port growth cannot change the note's
 subject. See [installed optics](#installed-optics-policy) for the assembly and
 native deletion limits.

@@ -106,6 +106,16 @@ def enrich(world):
         except OverflowError as exc:
             raise DesignError(f"{target}: as_of is too early for the authored operations chronology") from exc
 
+    # A site's service day is its first circuit's install date (the graph's own
+    # timeline: a PoP's first span, a premises' access circuit). Equipment is
+    # installed in a lead window before it, and no note predates it.
+    service_day = {}
+    for term in kinds["circuit_termination"]:
+        site = term["refs"]["termination"]
+        if site.startswith("site/"):
+            day = world.obj(term["refs"]["circuit"])["attrs"]["install_date"]
+            service_day[site] = min(day, service_day.get(site, day))
+
     def journal(target, event, when, title, body, kind="info"):
         add("journal_entry", f"journal/{target}/{event}", {"kind": kind, "comments": f"{when} — {title}\n{body}"}, {"assigned_object": target})
 
@@ -117,7 +127,7 @@ def enrich(world):
         assign(key, desk, "facilities", "/facilities", "secondary")
         if key in biomedical_desks:
             assign(key, biomedical_desks[key], "biomedical", "/biomedical", "tertiary")
-        journal(key, "access-plan", dated(key, "access-plan", as_of, 60, 31), "Site access",
+        journal(key, "access-plan", max(dated(key, "access-plan", as_of, 60, 31), service_day.get(key, "")), "Site access",
             f"Equipment-room visits are booked through {world.obj(desk)['attrs']['name']}; "
             "give two working days' notice and flag any planned power work.")
 
@@ -181,7 +191,8 @@ def enrich(world):
     # ordinals keep the anchor stable. A future retirement workflow needs review.
     for vm in anchors.values():
         key, refs = vm["key"], vm["refs"]
-        journal(key, "resource-plan", dated(key, "resource-plan", as_of, 120, 31), "First instance placed",
+        site = world.obj(refs["device"])["refs"]["site"]
+        journal(key, "resource-plan", max(dated(key, "resource-plan", as_of, 120, 31), service_day.get(site, "")), "First instance placed",
             f"Placed on {world.obj(refs['device'])['attrs']['name']}; later replicas follow the same sizing.", "success")
 
     # Permanent U allocation makes this local selection stable when a new
@@ -213,7 +224,9 @@ def enrich(world):
         rack, room, site = (world.obj(refs[field])["attrs"]["name"] for field in ("rack", "location", "site"))
         model = world.obj(refs["device_type"])["attrs"]["model"]
         access = world.obj(world.obj(refs["primary_ip4"])["refs"]["assigned_object"])["attrs"]["name"]
-        journal(key, "equipment-record", dated(key, "equipment-record", as_of, 100, 20), "Installed",
+        installed = (dated(key, "equipment-record", service_day[refs["site"]], 7, 31) if refs["site"] in service_day
+                     else dated(key, "equipment-record", as_of, 100, 20))
+        journal(key, "equipment-record", installed, "Installed",
             f"{model} serial {attrs['serial']} racked in {room}, cabinet {rack} at U{attrs['position']}; "
             f"managed through {access}.", "success")
         if supplies[key]:
@@ -221,7 +234,7 @@ def enrich(world):
             module = world.obj(port["refs"]["module"])
             bay = world.obj(module["refs"]["module_bay"])["attrs"]["name"]
             model = world.obj(module["refs"]["module_type"])["attrs"]["model"]
-            journal(key, "psu-replacement-plan", dated(key, "psu-replacement-plan", as_of, 1, 19), "Keep a spare PSU",
+            journal(key, "psu-replacement-plan", max(dated(key, "psu-replacement-plan", as_of, 1, 19), installed), "Keep a spare PSU",
                 f"Confirm a like-for-like {model} is on hand for {bay} (installed serial "
                 f"{module['attrs']['serial']}) before the next maintenance window.", "warning")
         dtype = world.obj(refs["device_type"])
@@ -238,7 +251,7 @@ def enrich(world):
             assembly = any(part["manufacturer"] == maker and part["model"] == module_type["attrs"]["model"] and part.get("assembly")
                            for part in world.catalog["optics"]["parts"].values())
             replace = "the whole cable assembly" if assembly else "the transceiver"
-            journal(key, "optic-replacement-plan", dated(key, "optic-replacement-plan", as_of, 40, 20), "Optic replacement note",
+            journal(key, "optic-replacement-plan", max(dated(key, "optic-replacement-plan", as_of, 40, 20), installed), "Optic replacement note",
                 f"{port['attrs']['name']} ({bay}) holds {maker} {module_type['attrs']['model']} serial {module['attrs']['serial']}; "
                 f"if it fails, swap in a like-for-like part and replace {replace}.")
     wireless_context(world)

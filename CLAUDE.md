@@ -132,7 +132,8 @@ because growth and scenario snapshots must never delete one. Statuses other than
 cabinet), never invented events; required paths stay `active`.
 Journals are short operational lines whose kind follows the event (completed
 success, open action warning, else info); never restate the record's own
-fields. Contact priority follows desk order (technical primary, local or
+fields; dates follow the site's service day (its first circuit's install date,
+read from the graph). Contact priority follows desk order (technical primary, local or
 commercial secondary, specialist tertiary).
 WAN procurement accounts retain bank design lineage across acquisition/refresh;
 provider customer/NOC/transport accounts keep their separate authored policy.
