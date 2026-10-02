@@ -595,7 +595,7 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
                 fibre.land(site,term,port,carrier=provider != "provider/operator")
             else:
                 site.cable(port,term,"cat6" if w.obj(port)["attrs"]["type"] == "1000base-t" else "smf")
-            w.obj(port)["attrs"]["speed"] = handoff*1000
+            w.obj(port)["attrs"].update(speed=handoff*1000,enabled=True)
             # A path requirement: at a PoP or the NOC it runs through a panel.
             site.contract["required_connections"].append(dict(a=port,b=term))
     return key
@@ -654,6 +654,10 @@ def _pop(w,item):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
         for n in (6,7):
             w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["speed"] = 10000000
+        # Unused SFP+ positions are shut; _circuit enables the NOC handoff
+        # (xe-0/1/4) and transit (xe-0/1/7) where a PoP has one.
+        for n in (4,5,7):
+            w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["enabled"] = False
         # The growth path is stated where an engineer meets the ceiling.
         w.obj(device)["attrs"]["description"] += "; MX204 SFP+ ports exhausted at 8, next platform MX304"
         loop = w.add("interface",f"{device}/if/lo0",dict(name="lo0",type="virtual",enabled=True,
@@ -841,7 +845,12 @@ def _topology(w,pop_sites,points,spans,launch):
     launched = w.reservations["provider-pop-launch"]
     carriers = span_carriers(spans,metro)
     graph = []
-    for site,routers in pop_sites.values(): graph.append((f"pair/{site.id}",routers[0],routers[1],100000))
+    for site,routers in pop_sites.values():
+        graph.append((f"pair/{site.id}",routers[0],routers[1],100000))
+        # Each side's aggregation switch hangs off its own PE on a 4x10G LAG.
+        for side,router in zip("ab",routers):
+            graph.append((f"lag/{site.id}/{side}",f"device/{site.id}/agg-{side}",router,
+                          10000*len(w.catalog["models"][fibre.AGGREGATION]["lag_ports"])))
     for ordinal,(key,a,b) in enumerate(spans):
         devices = [f"device/pop-{pop}/pe-{side}" for pop,side in (a,b)]
         sites = [pop_sites[pop][0] for pop,_ in (a,b)]

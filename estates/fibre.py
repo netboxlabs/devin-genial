@@ -172,10 +172,11 @@ OOB_HOST, AGG_EM0_HOSTS, PDU_HOSTS = 3, (6, 7), (8, 9, 10, 11)
 FUNCTION_COLORS = {"xc": "ffeb3b", "osp": "2196f3", "mgmt": "9e9e9e",
                    "console": CABLE_COLORS["console"], "power-a": CABLE_COLORS["power-a"],
                    "power-b": CABLE_COLORS["power-b"]}
-# Authored run lengths, metres: an in-cabinet patch cord, a cord from a 0U PDU,
-# the feed whip, the hotel's meet-me-room cross-connect to the cage, and our
-# own building-entrance fibre from the riser to the cage.
-PATCH_M, POWER_M, FEED_M, XC_RUN_M, OSP_RUN_M = 2, 2, 3, 45, 30
+# Authored run lengths, metres: an in-cabinet patch cord (the optics policy's
+# 3 m local minimum, catalog optics.local_min_m), a cord from a 0U PDU, the
+# feed whip, the hotel's meet-me-room cross-connect to the cage, and our own
+# building-entrance fibre from the riser to the cage.
+PATCH_M, POWER_M, FEED_M, XC_RUN_M, OSP_RUN_M = 3, 2, 3, 45, 30
 LABEL_CAPACITY = 1000
 
 
@@ -303,13 +304,19 @@ def build(site):
             key = devices[label] = site.device(alias, label, ROLES[alias], rack=rack, position=position)
             node = w.obj(key)
             if alias in PASSIVE:
-                node["attrs"].pop("serial", None)
+                # Serials follow the catalog's own format, passive or not.
                 node["attrs"]["name"] = {OSP_PANEL: f"{rack_name} OSP Panel", COLO_PANEL: f"{rack_name} Colo Demarc"}.get(
                     alias, f"{rack_name} {'Blank' if alias in (BLANKING_1U, BLANKING_2U) else 'CM'}-{position}")
                 node["attrs"]["description"] = _passive_text(alias, colo_name)
             if alias == COLO_PANEL:
                 node["refs"]["tenant"] = colo
     pes, aggs = [devices["pe-a"], devices["pe-b"]], [devices["agg-a"], devices["agg-b"]]
+    spec = w.catalog["models"][AGGREGATION]
+    for agg in aggs:
+        # Unused data ports are shut; provider._circuit enables a UNI it lands on.
+        for port in spec["interfaces"]:
+            if not port.get("mgmt_only") and port["name"] not in spec["lag_ports"]:
+                w.obj(site.interface(agg, port["name"]))["attrs"]["enabled"] = False
     for side, pe, agg in zip("ab", pes, aggs):
         _lag(site, side, pe, agg)
     site.pdu_alias, site.feed_electrics = POP_PDU, POP_FEED
@@ -534,7 +541,7 @@ def _noc_demarc(site, edge):
     return key
 
 
-def circuit_behind(objects, endpoint, peers=None):
+def far_end(objects, endpoint, peers=None):
     """The far end a cable end reaches through 1:1 panels (a circuit termination,
     an interface), else the panel port where the path stops.
 

@@ -230,7 +230,7 @@ class PopPlant(unittest.TestCase):
                 jumper = next(o for o in self.objects.values() if o["kind"] == "cable" and front in o["refs"].values())
                 pe_port = next(v for v in jumper["refs"].values() if v != front)
                 self.assertEqual(self.objects[pe_port]["refs"]["device"].rsplit("/", 1)[-1][:3], "pe-")
-                self.assertEqual(fibre.circuit_behind(self.objects, front), term["key"])
+                self.assertEqual(fibre.far_end(self.objects, front), term["key"])
         self.assertEqual(kinds, {True, False}, "both an owned dark-fibre span and a carrier wave")
 
     def test_cellular_oob_is_uncabled_and_mark_connected(self):
