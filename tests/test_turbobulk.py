@@ -698,7 +698,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
             "_site_id": 10, "_location_id": 20, "_rack_id": 30,
         })
         self.assertEqual(_rendered_columns(objects["interface:1"]), {
-            "name", "type", "device_id", "_site_id", "_location_id", "_rack_id",
+            "name", "type", "device_id", "_site_id", "_location_id", "_rack_id", "_name",
         })
 
     def test_component_cache_readback_uses_exact_placement_filters(self):
@@ -783,7 +783,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
         })
         self.assertEqual(target.path, "/api/schema/?format=json")
 
-        with self.assertRaisesRegex(LoadError, "lacks component-cache readback filters: rack_id"):
+        with self.assertRaisesRegex(LoadError, "lacks cache readback filters: rack_id"):
             _component_filter_preflight(Target({"site_id", "location_id"}), objects)
 
     def test_terminal_job_must_account_for_every_row_and_hook(self):
@@ -958,7 +958,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                                            sort_keys=True).encode()).hexdigest()
         self.assertEqual(
             (COMPILER_VERSION, golden),
-            ("v02-turbobulk-13",
+            ("v02-turbobulk-14",
              "bc1f571dc42b7c17a12c8c2982daa9c96f282d2831f5df6550a8ab521a97cb6e"))
 
     def test_supersede_refuses_when_rq_reports_the_job_alive(self):
@@ -1755,7 +1755,7 @@ class TurboBulkLoaderTests(unittest.TestCase):
                 return 200, {"results": [{"id": 1, "name": "Demo", "schema_id": "schema1",
                                           "status": {"value": "ready"}}]}
 
-            def all(self, path):
+            def all(self, path, ordering="id"):
                 self.last_path = path
                 return [{"id": 51, "label": "CAB-1"}]
 
