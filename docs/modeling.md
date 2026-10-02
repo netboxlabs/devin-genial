@@ -846,31 +846,78 @@ dual-homes to its nearest PoPs with a free transport port, in its own metro or a
 neighbouring one; existing spans never move. A new metro that would sit
 *between* two metros already joined by spans is refused: rebaseline. The
 `provider-pop-launch` ledger fixes a breadth-first launch order along the
-backbone, and `provider-span-upgrades` records a leased span raised to 100G, so
-growth may raise a commitment but never lowers one.
+backbone.
 
 **Capacity.** Owned fiber is lit at 100G and purchases nothing (`commit_rate` is
-omitted). Leased spans are Ethernet transport on a 100G handoff committed at
-10 Gbps unless the declared spoke-to-hub flows, after any single span loss and
-the reserve, need the full port. Each span carries `distance` in km: the
-great-circle distance between its PoPs times a 1.3 route factor.
+omitted). Leased inter-metro spans are **100G wavelengths** committed at the
+full 100G of the `et-` port they land on: a port-based service matches the port
+that terminates it, so a 10 Gbps private line handed off on a 100G port is
+never emitted. (The retired `provider-span-upgrades` ledger must be absent.)
+The declared spoke-to-hub flows must still fit after any single span loss and
+the reserve. Each span carries `distance` in km: the great-circle distance
+between its PoPs times a 1.3 route factor.
+
+**Port naming.** The MX204's eight SFP+ ports keep their `xe-0/1/N` names when
+a customer handoff runs at 1G: on this platform the 1G speed is set under the
+`xe-` interface (`gigether-options speed 1g`) with the chassis port left at
+10G, and Junos does not rename it `ge-` the way EX/QFX switches follow the
+inserted optic ([Juniper port-speed guide](https://www.juniper.net/documentation/us/en/software/junos/interfaces-ethernet/topics/topic-map/port-speed-mx-routers.html);
+[juniper-nsp, "MX204 port 1G", Oct 2020](https://puck.nether.net/pipermail/juniper-nsp/2020-October/038472.html)).
+The interface `speed` field carries the 1G operating rate.
+
+**NOC handoffs.** The NOC sits in the metro of `noc_pop_a`. A NOC handoff to a
+PoP in that metro is the operator's own 1G access tail (`ILF-NOC-0001`); one to
+a PoP in another metro is a leased, port-based **1G Ethernet private line**
+from a transport carrier (NOC A from Ridgeline, B from Ironwood), with the route
+`distance` recorded — never an operator access circuit stretched across the
+region on a 10 km optic. Both handoff /31s sit in Carrier Management.
 
 **Carriers.** Ridgeline Lightwave and Ironwood Fiber sell the inter-metro
 transport; Corvane Global IP and Halyard Internet sell transit. None shares a
 first word with another carrier or a customer, and each support desk answers
 from the carrier's own `.example` domain. Third-party circuit IDs follow each
-carrier's order shape (`RLW-EPL-104882`, `IWT/EPL/214682`, `CVN-IPT-2524750`,
-`HAL-DIA-813166`), seeded by the namespace; the operator's own services use its
+carrier's order shape (`RLW-WAV-104882`, `IWT/WAV/214682`, `CVN-IPT-2524750`,
+`HAL-DIA-813166`, `BWB-31840274`), seeded by the namespace; the operator's own services use its
 initials (`ILF-DF-0001`, `ILF-PL3-00315`, `ILF-NOC-0001`, `ILF-VPN-0001`).
 Carrier accounts carry ten-digit numbers; customer accounts read `ILF-C00001`.
 
 **Numbering.** The operator and both upstreams hold distinct RFC 5398
 documentation ASNs (64496–64511) under an RIR named `ARIN`, chosen by namespace.
 Customer VPN ASNs stay in the private 32-bit `asn_base` block. PE loopbacks
-(192.0.2.0/25), transit handoffs (192.0.2.128/26), PoP pair links
-(198.51.100.0/25) and inter-PoP spans (203.0.113.0/24) are carrier-owned RFC 5737
-space under three ARIN aggregates, alongside the 2001:db8::/32 IPv6 pool.
-Management, NOC and customer access links stay in the private address pool.
+(192.0.2.0/24, from host `.1` — never the network or broadcast address of the
+/24), PoP pair links (198.51.100.0/25) and inter-PoP spans (203.0.113.0/24) are
+carrier-owned RFC 5737 space under three ARIN aggregates, alongside the IPv6
+pool. Each **transit /31 is numbered by its upstream** from that upstream's own
+recorded assignment (Corvane 198.51.100.224/28, Halyard 198.51.100.240/28):
+the container carries no operator tenancy, sits outside every operator
+aggregate, the upstream holds the even address and the operator the odd one.
+With IPv6 the transit /127 likewise comes from an upstream documentation /64
+outside the operator pool (`3fff:fff:1::/64`, `3fff:fff:2::/64` for a
+2001:db8 pool). Management, NOC and customer access links stay in the private
+address pool.
+
+**Routing contexts.** The backbone core — PE `lo0`, pair and span /31s and the
+transit /31s — is the **global table** (no VRF), as `inet.0` is on Junos.
+PoP management switches, console servers, PE `fxp0`, the switch-to-PE uplinks
+and the NOC handoffs are the **Carrier Management** VRF (`<ASN>:9000`). Each
+customer VRF imports its own target plus the management **hub** target
+(`<ASN>:9000`) and exports its own plus the CE management **spoke** target
+(`<ASN>:9001`); Carrier Management imports hub and spoke and exports hub only.
+That hub-and-spoke extranet is how the NOC reaches CE management addresses
+that live in customer VRFs without customers reaching each other. With IPv6,
+each routing context owns its own routed /64 (the global table the first,
+loopbacks the second, every VRF its own after that), so no /64 is declared once
+per VRF. The out-of-band broadband handoffs sit in a separate `Out-of-Band
+Broadband` VRF with no route targets and stay IPv4-only.
+
+**Out-of-band.** Each PE's dedicated `fxp0` is cabled to its own PoP
+management-switch port and addressed in the Carrier Management /26 (hosts .4
+and .5). The console server keeps NET1 on that LAN and takes an **independent
+uplink** on its catalog NET2 port: a best-effort business-broadband circuit
+(`circuit/oob/<pop>`, Brightwire Business Broadband, no committed rate) whose
+far end is the ISP's provider network, addressed from a per-PoP /30 of RFC 6598
+shared space (100.64.0.0/24, ledger `provider-oob-links`). Only inventory is
+recorded: no VPN, tunnel or console configuration.
 Recipe order is onboarding order: customer slots, ASNs, route distinguishers
 (`<operator ASN>:<1001+slot>`) and accounts follow it.
 
@@ -881,10 +928,30 @@ starting with its hub circuit; other premises follow their PoP's readiness.
 PoP, premises and NOC sites carry `meta.in_service`, the date shared enrichment
 should use for site-level history.
 
-**Premises.** A customer premises is named after the authored neighbourhood or
-suburb it sits in (`Lakeshore Health Ohio City`), 2–25 km from its serving PoP,
-chosen by a hash of its site id in allocation-slot order so growth never moves
-or renames one.
+**Premises.** The recipe homes each premises on a PoP (`sites = [{pop=…,
+count=…}]`), so placement follows that PoP: a premises takes an authored
+neighbourhood or suburb anchor in the PoP's **service area** — within 25 km of
+it and nearer it than any other same-metro PoP that existed when the premises
+was ordered — and is named after it (`Cedar Regional Bank Oak Creek` is homed
+on the Oak Creek PoP). Earlier site-allocation slots mean earlier PoPs, so a
+PoP appended later never pulls an existing premises out of its area; among the
+eligible anchors a hash of the site id picks, in allocation-slot order, so
+growth never moves or renames one. A PoP whose area holds no anchor is refused
+with an actionable error.
+
+**Premises equipment.** With `lan_endpoints > 0` a premises is a CE trunking
+management and client VLANs to a same-room access switch that serves the office
+pod. With `lan_endpoints = 0` it is the **CE only**: `port1` hands the client
+VLAN off untagged to customer-owned equipment (not inventoried), and the CE is
+managed on its own `/32` loopback (host .1 of the site /24) in the customer VRF,
+exported to Carrier Management through the spoke target. Growing a CE-only
+customer to `lan_endpoints > 0` moves CE management and needs a new baseline.
+
+**Contacts.** A customer's NOC and premises facilities desks answer from the
+customer's own domain (`noc@cedar-regional-bank.example`). A PoP cage's
+facilities desk is the remote-hands desk of the carrier hotel's operator — one
+invented colocation company per metro (Windward Interconnect, Motorline Data
+Centers, Cuyahoga Colocation, Kinnickinnic Colocation) — not carrier staff.
 
 **Known gap.** Intra-metro dark fiber is lit by the PE's JNP-QSFP-100G-LR4
 (10 km reach) while some metro routes are longer; a source-backed 40 km optic
@@ -918,7 +985,7 @@ What the estate emits:
 Sessions come in three families, and every field is attributed from the
 finished graph rather than authored per site:
 
-- **iBGP** runs over the PEs' in-band `lo0` loopbacks, as a **route-reflector
+- **iBGP** runs over the PEs' global-table `lo0` loopbacks, as a **route-reflector
   pair** rather than a full mesh. The reflectors are PE A at the first PoP in
   the permanent `provider-pop-order` ledger and PE A at the first later PoP in
   a different metro, so no single metro holds both; every other PE peers with

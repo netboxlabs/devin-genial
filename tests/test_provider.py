@@ -24,6 +24,10 @@ def example(patching="direct"):
     return raw
 
 
+def objects_of(plan):
+    return {o["key"]:o for o in plan["objects"]}
+
+
 def physical_router_graph(plan):
     """Derive edges through actual cables and Circuit A/Z, without contracts."""
     objects = {o["key"]:o for o in plan["objects"]}
@@ -108,8 +112,12 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(kinds["virtual_circuit"],1)
         self.assertEqual(kinds["virtual_circuit_termination"],3)
         # Two diverse spans per metro adjacency (Chicago-Detroit, Detroit-Cleveland),
-        # three customer access circuits, two NOC handoffs and two transit ports.
-        self.assertEqual(kinds["circuit"],11)
+        # three customer access circuits, two NOC handoffs, two transit ports
+        # and one out-of-band broadband circuit per PoP.
+        self.assertEqual(kinds["circuit"],14)
+        # The NOC sits in Chicago: its Detroit handoff is a leased private line.
+        self.assertEqual(objects_of(plan)["circuit/noc/b"]["refs"]["provider"],"provider/transport-b")
+        self.assertEqual(objects_of(plan)["circuit/noc/a"]["refs"]["provider"],"provider/operator")
         objects={o["key"]:o for o in plan["objects"]}
         spans=[k for k,o in objects.items() if o["kind"]=="circuit" and k.startswith("circuit/backbone/")]
         self.assertEqual(len(spans),4)
@@ -202,15 +210,23 @@ class ProviderTests(unittest.TestCase):
             net=prefix[f'prefix/link/circuit/transit/{side}']
             known=[o for o in assigned if ipaddress.ip_interface(o['attrs']['address']).ip in net]
             self.assertEqual(len(known),1)
-            self.assertEqual(ipaddress.ip_interface(known[0]['attrs']['address']).ip,net[0])
+            # The upstream assigned the /31 and holds its even address.
+            self.assertEqual(ipaddress.ip_interface(known[0]['attrs']['address']).ip,net[1])
+            self.assertNotIn('vrf',known[0]['refs'])
+            self.assertFalse(any(net.subnet_of(ipaddress.ip_network(o['attrs']['prefix']))
+                                 for o in p['objects'] if o['kind']=='aggregate'))
         for o in p['objects']:
             if o['kind']=='device' and o['refs'].get('role')=='role/provider-edge':
                 primary=objects[o['refs']['primary_ip4']]
                 self.assertEqual(primary['refs']['assigned_object'],o['key']+'/if/lo0')
-                self.assertEqual(ipaddress.ip_interface(primary['attrs']['address']).network.prefixlen,32)
+                loop=ipaddress.ip_interface(primary['attrs']['address'])
+                self.assertEqual(loop.network.prefixlen,32)
+                self.assertNotIn(int(loop.ip)%256,(0,255))
+                self.assertNotIn('vrf',primary['refs'])  # the core is the global table
+                # Out-of-band: fxp0 is cabled and addressed in Carrier Management.
                 fxp=o['key']+'/if/fxp0'
-                self.assertFalse(any(i['refs']['assigned_object']==fxp for i in assigned))
-                self.assertFalse(any(fxp in c['refs'].values() for c in p['objects'] if c['kind']=='cable'))
+                self.assertEqual([i['refs']['vrf'] for i in assigned if i['refs']['assigned_object']==fxp],['vrf/provider'])
+                self.assertTrue(any(fxp in c['refs'].values() for c in p['objects'] if c['kind']=='cable'))
 
     def test_catalog_mode_is_bounded_and_psu_names_keep_source_spaces(self):
         spec=hardware_catalog()['models']['provider-edge']

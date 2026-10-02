@@ -25,6 +25,12 @@ _MAX_ENDPOINT_HOSTS = 2
 # Restated, not imported: real metro area codes; the 555-0100..0199 block is
 # reserved for fictional use, so no contact can carry a dialable number.
 AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
+# Restated: one invented carrier-hotel operator per metro, keyed by the state
+# on the PoP's own postal address (each authored metro sits in its own state).
+PROVIDER_COLOCATION = {"Illinois": ("Windward Interconnect", "windward-interconnect.example"),
+                       "Michigan": ("Motorline Data Centers", "motorline-dc.example"),
+                       "Ohio": ("Cuyahoga Colocation", "cuyahoga-colo.example"),
+                       "Wisconsin": ("Kinnickinnic Colocation", "kinnickinnic-colo.example")}
 
 
 def _renders_csv_rows(code):
@@ -233,6 +239,10 @@ def _context(plan, objects, kinds):
     if recipe.get("profile") == "hospital-clinics":
         roles["biomedical"] = ("Biomedical support", "Biomedical engineering")
     contacts, assignments, notes, priorities = {}, {}, {}, {}
+
+    def provider_customer(tenant):
+        # A provider's customer desk answers from the customer's own domain.
+        return recipe.get("profile") == "provider-backbone" and str(tenant).startswith("tenant/cust-")
     external_handoffs = set()
     infrastructure_roles = {f"role/{role}" for role in (
         "wan-edge", "distribution", "access", "spine", "leaf", "server", "management",
@@ -279,7 +289,8 @@ def _context(plan, objects, kinds):
         key = tenant["key"]
         suffix = "" if key == "tenant" else f"/{key}"
         label = "" if key == "tenant" else f" {key.removeprefix('tenant/')}"
-        mailbox = "noc" if key == "tenant" else f"{key.removeprefix('tenant/')}.noc"
+        mailbox = ("noc" if key == "tenant" else f"noc@{key.removeprefix('tenant/cust-')}.example" if provider_customer(key)
+                   else f"{key.removeprefix('tenant/')}.noc")
         expect_contact(f"contact/operations{suffix}", f"{tenant['attrs'].get('name', '')} NOC duty desk", "operations", tenant["attrs"].get("name", ""), mailbox)
     for obj in kinds["site"] + kinds["cluster"] + kinds["circuit"] + (kinds["virtual_circuit"] if recipe.get("profile") == "provider-backbone" else []):
         tenant = obj["refs"].get("tenant", "")
@@ -307,9 +318,16 @@ def _context(plan, objects, kinds):
         if not isinstance(address, str):
             fail("operations-journal-facts", key, "Site history needs a textual address from the actual site record.")
             address = ""
-        contact_name = f"{name} facilities desk"
-        contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, f"{key.removeprefix('site/')}.facilities",
-                                 site_area(key))
+        contact_name, mailbox = f"{name} facilities desk", f"{key.removeprefix('site/')}.facilities"
+        if recipe.get("profile") == "provider-backbone" and key.startswith("site/pop-"):
+            # A PoP cage's facilities desk is its carrier hotel's remote hands.
+            lines = address.split("\n")
+            colo = PROVIDER_COLOCATION.get(lines[1].rpartition(", ")[2] if len(lines) > 1 else None, ("", ""))
+            contact_name, mailbox = f"{colo[0]} remote hands at {name}", f"remote-hands@{colo[1]}"
+        elif provider_customer(site["refs"].get("tenant", "")):
+            mailbox = (f"facilities.{str(data.get('facility') or key.removeprefix('site/'))[:40].lower()}"
+                       f"@{site['refs']['tenant'].removeprefix('tenant/cust-')}.example")
+        contact = expect_contact(f"contact/{key}", contact_name, "facilities", name, mailbox, site_area(key))
         expect_assignment(key, contact, "facilities", "/facilities", "secondary")
         expect_note(key, "access-plan", later(scheduled(key, "access-plan", recipe.get("as_of"), 60, 31), service_day.get(key, "")),
                     (contact_name,))
@@ -470,7 +488,7 @@ def _context(plan, objects, kinds):
         for kind, label in (("contact_role", title), ("contact_group", group)):
             key = f"{kind.replace('_', '-')}/{role}"
             if kind == "contact_group":
-                name = f"{ns} {label}"
+                name = label if recipe.get("tenancy") == "dedicated" else f"{ns} {label}"
                 expected = {"name": name, "slug": name.lower().replace(" ", "-")}
             else:
                 expected = {"name": label, "slug": f"{ns}-{label.lower().replace(' ', '-')}"}
@@ -504,7 +522,8 @@ def _context(plan, objects, kinds):
         description = data.get("description", "")
         responsibility = re.fullmatch(responsibility_forms[role], description) if isinstance(description, str) else None
         if (name != expected_name or data.get("title") != roles[role][0]
-                or (data.get("email") != f"{mailbox}@{ns}.example" or len(mailbox) > 64 if mailbox is not None else
+                or (data.get("email") != (mailbox if "@" in mailbox else f"{mailbox}@{ns}.example") or len(mailbox) > 64
+                    if mailbox is not None else
                     not (own := re.fullmatch(r"support@([a-z0-9-]{1,40})\.example", str(data.get("email")))) or own.group(1) == ns)
                 or not responsibility or responsibility.group(1) != scope or len(description) > 200
                 or set(data) != {"name", "title", "phone", "email", "description"}

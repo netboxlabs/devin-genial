@@ -51,8 +51,10 @@ class IPv6EmitterTests(unittest.TestCase):
                 world = self.world(profile)
                 before = deepcopy(world.objects)
                 enrich(world)
+                # The provider's out-of-band ISP handoffs are IPv4-only.
                 expected = {f"ipv6/{obj['key']}" for obj in before.values() if obj["kind"] == "ip_address"
-                            and before[obj["refs"]["assigned_object"]]["kind"] in {"interface", "vm_interface"}}
+                            and before[obj["refs"]["assigned_object"]]["kind"] in {"interface", "vm_interface"}
+                            and obj["refs"].get("vrf") != "vrf/oob"}
                 actual = {key for key, obj in world.objects.items() if key.startswith("ipv6/") and obj["kind"] == "ip_address"}
                 self.assertEqual(actual, expected)
                 for key, old in before.items():
@@ -92,7 +94,11 @@ class IPv6EmitterTests(unittest.TestCase):
         for obj in loops:
             self.assertEqual(ip_network(obj["attrs"]["prefix"]).prefixlen, 128)
         for obj in before.values():
+            # fxp0 sits on the dual-stack management LAN; the broadband
+            # out-of-band handoff on the console server's NET2 stays IPv4-only.
             if obj["kind"] == "interface" and obj["attrs"]["name"] == "fxp0":
+                self.assertIn(f"ipv6/ip/{obj['key']}", world.objects)
+            if obj["kind"] == "interface" and obj["attrs"]["name"] == "NET2":
                 self.assertNotIn(f"ipv6/ip/{obj['key']}", world.objects)
 
     def test_lan_radio_recovery_offsets_and_ipv4_only_fhrp(self):

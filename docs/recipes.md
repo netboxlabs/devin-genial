@@ -291,12 +291,14 @@ Each `[[customers]]` entry (`estates/provider.py:95`) requires `key`, `hub_pop` 
 | `sites` | array of tables | required | `2`–`len(pops)` entries, each a distinct known PoP | grow-only |
 | `site_peak_mbps` | integer | `50` | `1`–`800` directed traffic from each non-hub premises toward its hub; ≤ `1000 × (1 − reserve_fraction)` | **rebaseline** |
 | `hub_commit_mbps` | integer | `1000` | `1`–`1000`, must be a member of `wan_tiers_mbps`, and must cover `(premises − 1) × site_peak_mbps` after reserve | **rebaseline** (bandwidth renewal) |
-| `lan_endpoints` | integer | `4` | `0`–`12` wired office desks at each premises; `0` is a CPE and managed switch with no office pod | grow-only |
+| `lan_endpoints` | integer | `4` | `0`–`12` wired office desks at each premises; `0` is the CE alone, handing the LAN to customer-owned equipment and managed on a loopback | grow-only; `0` to more needs a new baseline |
 
 Each `sites` entry (`estates/provider.py:116`) accepts `pop` (required, a known PoP
 key, unique within the customer) and `count` (optional, default `1`, `1`–`12`).
 Combined customer and NOC attachments cannot exceed twelve per PoP. Composed site
-identities (`ce-<customer>-<pop>-<nnn>`) must not collide.
+identities (`ce-<customer>-<pop>-<nnn>`) must not collide. The `pop` homes those
+premises: each is placed (and named) in that PoP's service area — within 25 km
+and nearer it than any other same-metro PoP that existed when it was ordered.
 
 ## Retail chain
 

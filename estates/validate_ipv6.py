@@ -11,6 +11,17 @@ from ipaddress import IPv6Network, IPv6Address, ip_interface, ip_network
 # Provider /31 ledgers, restated: private access/management links plus the
 # public PoP-pair, inter-PoP span and transit links.
 PROVIDER_LINK_SCOPES = ("provider-link-prefixes", "provider-pair-links", "provider-span-links", "provider-transit-links")
+# Restated provider policy: the out-of-band ISP context is IPv4-only; the
+# backbone core is the global table (no VRF, ledgered as "global"); each routed
+# context owns its own /64 (first context the first /64, loopbacks the second,
+# later contexts after); an upstream numbers its transit /127 from its own
+# documentation /64 outside the operator pool.
+PROVIDER_IPV4_ONLY_VRFS = {"vrf/oob"}
+
+
+def _upstream(pool, side):
+    root = IPv6Network("3fff:fff::/32") if pool.subnet_of(IPv6Network("2001:db8::/32")) else IPv6Network("2001:db8::/32")
+    return IPv6Network((int(root.network_address) + ((1 + "ab".index(side)) << 80), 64))
 
 
 def validate(plan):
@@ -76,7 +87,7 @@ def validate(plan):
 
     sites = {k for k, o in objects.items() if o["kind"] == "site"}
     scopes = {"ipv6-sites": (1 << (48-pool.prefixlen))-1,
-              "ipv6-routed-links": 1000000, "ipv6-loopbacks": 1000000}
+              "ipv6-routed-links": 1000000, "ipv6-loopbacks": 1000000, "ipv6-routed-contexts": 65536}
     scopes.update({f"ipv6-segments/{site}": 65536 for site in sites})
     for scope, slots in ledgers.items():
         if not scope.startswith("ipv6-"):
@@ -144,16 +155,31 @@ def validate(plan):
     source_loops = ledgers.get("provider-loopbacks", {})
     routed_prefixes = {f"prefix/link/{k}" for links in source_links if isinstance(links, dict) for k in links} if provider else set()
     loop_prefixes = {f"prefix/loopback/{k}" for k in source_loops} if provider and isinstance(source_loops, dict) else set()
+    def routed_base(vrf):
+        index = slot("ipv6-routed-contexts", vrf or "global")
+        return None if index is None else infra + ((0 if index == 0 else index + 1) << 64)
+
     for key, net4 in networks.items():
         if kind(key) != "prefix" or net4.version != 4 or attrs(key).get("status") == "container":
             continue
         rel = refs(key)
         site, vrf = rel.get("scope_site"), rel.get("vrf")
         tenant = rel.get("tenant")
-        if kind(vrf) != "vrf" or kind(tenant) != "tenant":
+        if provider and vrf in PROVIDER_IPV4_ONLY_VRFS:
+            continue
+        if (kind(vrf) != "vrf" and not (provider and vrf is None)) or kind(tenant) != "tenant":
             report("ipv6-prefix-scope", key, "Dual-stack prefixes require real VRF and tenant ownership.")
         net6, purpose = None, None
-        if ((kind(rel.get("vlan")) == "vlan" and site in sites) or
+        context = vrf or "global"
+        if (provider and site in sites and not rel.get("vlan") and net4.prefixlen == 32 and
+                key == f"prefix/{site.removeprefix('site/')}/management"):
+            purpose = "ce-loopback"
+            n = slot(f"ipv6-segments/{site}", key)
+            if n is not None and site in site_nets:
+                net6 = IPv6Network((int(site_nets[site].network_address)+(n << 64)+1, 128))
+                require_prefix(f"ipv6/reservation/{site}/{vrf}", site_nets[site],
+                               {"vrf": vrf, "tenant": tenant, "scope_site": site}, "container")
+        elif ((kind(rel.get("vlan")) == "vlan" and site in sites) or
                 (bank and site in sites and not rel.get("vlan") and net4.prefixlen == 31)):
             purpose = "segment" if rel.get("vlan") else "radio"
             if purpose == "radio" and (len(ipv4_owners[(vrf, net4)]) != 2 or
@@ -167,17 +193,23 @@ def validate(plan):
         elif net4.prefixlen == 31 and not site and not rel.get("vlan") and (key in routed_prefixes or bank and key == "prefix/recovery"):
             purpose = "routed"
             n = slot("ipv6-routed-links", key)
-            if n is not None:
-                net6 = IPv6Network((infra+2*(n+1), 127))
-                require_prefix(f"ipv6/infrastructure/{vrf}/routed", IPv6Network((infra, 64)),
-                               {"vrf": vrf, "tenant": tenant}, "container")
+            if provider and key.startswith("prefix/link/circuit/transit/"):
+                side = key.rsplit("/", 1)[1]
+                upstream = _upstream(pool, side) if side in ("a", "b") else None
+                if upstream is not None:
+                    net6 = IPv6Network((int(upstream.network_address), 127))
+                    require_prefix(f"ipv6/upstream/transit-{side}", upstream, {}, "container")
+            elif n is not None and (base := routed_base(vrf)) is not None:
+                net6 = IPv6Network((base+2*(n+1), 127))
+                require_prefix(f"ipv6/infrastructure/{context}/routed", IPv6Network((base, 64)),
+                               {k: v for k, v in (("vrf", vrf), ("tenant", tenant)) if v is not None}, "container")
         elif key in loop_prefixes and net4.prefixlen == 32 and not site and not rel.get("vlan"):
             purpose = "loopback"
             n = slot("ipv6-loopbacks", key)
             if n is not None:
                 net6 = IPv6Network((infra+(1 << 64)+n+1, 128))
-                require_prefix(f"ipv6/infrastructure/{vrf}/loopbacks", IPv6Network((infra+(1 << 64), 64)),
-                               {"vrf": vrf, "tenant": tenant}, "container")
+                require_prefix(f"ipv6/infrastructure/{context}/loopbacks", IPv6Network((infra+(1 << 64), 64)),
+                               {k: v for k, v in (("vrf", vrf), ("tenant", tenant)) if v is not None}, "container")
         else:
             report("ipv6-policy", key, "IPv4 leaf has no reviewed IPv6 segment or routed-link policy.")
         identity = (vrf, net4)
@@ -203,6 +235,8 @@ def validate(plan):
             continue  # Unassigned inventory is explicitly outside this interface-address pass.
         if kind(owner) == "fhrp_group":
             continue  # Existing FHRP is explicitly IPv4-only, including its VIP.
+        if provider and rel.get("vrf") in PROVIDER_IPV4_ONLY_VRFS:
+            continue  # The out-of-band ISP hands off IPv4 only.
         if kind(owner) not in {"interface", "vm_interface"}:
             report("ipv6-policy", key, "Address has no reviewed interface-owner policy for an IPv6 companion.")
             continue
@@ -223,6 +257,9 @@ def validate(plan):
                 refs(refs(owner).get("device")).get("role") not in {
                     "role/provider-edge", "role/customer-edge", "role/management", "role/wan-edge"}):
             report("ipv6-policy", owner, "Provider /127 policy requires an actual reserved routed physical interface.")
+        if purpose == "ce-loopback" and (attrs(owner).get("name") != "Management" or attrs(owner).get("type") != "virtual" or
+                refs(owner).get("parent") or refs(refs(owner).get("device")).get("role") != "role/customer-edge"):
+            report("ipv6-policy", owner, "Provider CE /128 policy requires the CE's own management loopback.")
         if purpose == "loopback" and (attrs(owner).get("name") != "lo0" or attrs(owner).get("type") != "virtual" or
                 refs(refs(owner).get("device")).get("role") != "role/provider-edge" or
                 refs(refs(owner).get("device")).get("primary_ip4") != key or

@@ -139,7 +139,14 @@ model IPv6 FHRP or default-router execution.
 
 `ipv6-sites` reserves canonical site keys; `ipv6-segments/<site-key>` reserves
 existing IPv4 leaf-prefix keys. `ipv6-routed-links` and `ipv6-loopbacks` also
-reserve leaf-prefix keys, using infrastructure /64 numbers zero and one. LAN
+reserve leaf-prefix keys; loopbacks use infrastructure /64 number one, and
+routed /127s take one /64 per routing context, ledgered in
+`ipv6-routed-contexts` by VRF key (the provider's global table as `global`):
+context ordinal zero keeps /64 number zero, ordinal *n* > 0 takes /64 *n*+1, so
+no /64 is declared once per VRF. Provider exceptions: a transit /127 comes from
+its upstream's documentation /64 outside the pool, a CE-only premises'
+management /32 gains a /128 in its site /48, and the out-of-band ISP context
+(`vrf/oob`) stays IPv4-only. LAN
 host IDs retain the IPv4 offset as an integer (`.10` becomes `::a`); diagnostic
 radios add one to avoid IID zero. Routed slots start at address `2*(slot+1)`,
 loopbacks at `slot+1`; each infrastructure ledger has a one-million-slot ceiling.

@@ -28,7 +28,7 @@ exactly from its recipe and ledgers before ordinary growth can use it.
 | `pops` | 3–64 keyed entries across at least three distinct metros; explicit metro: chicago, detroit, cleveland or milwaukee |
 | `customers` | 1–256 private-L3 customers, each spanning at least two modeled PoPs |
 | `sites` | Per-customer keyed PoP entries with `count` 1–12; combined customer and NOC attachments cannot exceed twelve per PoP |
-| `lan_endpoints` | 0–12 wired office desks at each customer premises; 0 models the CPE and managed switch only (no office pod) |
+| `lan_endpoints` | 0–12 wired office desks at each customer premises; 0 models the CE only (customer LAN handed off to customer-owned equipment, CE managed on its loopback); growing 0 to more needs a new baseline |
 | `site_peak_mbps` | 1–800 Mbps of directed traffic from each non-hub premises toward its hub |
 | `hub_pop` | Explicit hub location; ordinal 001 at that PoP is the hub premises |
 | `hub_commit_mbps` | Fixed purchased tier from `wan_tiers_mbps`; must cover the sum of spoke demand after reserve |
@@ -68,14 +68,15 @@ Inter-PoP circuits have actual A and Z site terminations, each physically cabled
 to a catalog port; the circuit's `distance` is the authored route length
 (great-circle distance between the two PoPs times 1.3). Same-metro spans are the
 operator's own dark fiber, lit at 100G with no purchased commitment. Inter-metro
-spans are Ethernet transport from Ridgeline Lightwave or Ironwood Fiber on a
-100G handoff, committed at 10 Gbps unless the declared flows need the full
-port; an upgraded span stays upgraded under growth. /31s belong to the two real
-interfaces and come from RFC 5737 documentation space, as do the PE loopbacks
-and transit handoffs, all under ARIN aggregates. Transit circuits are
-fixed at founder slot 0 PE-a and founder slot 1 PE-b on `xe-0/1/7`, with a 10G
-handoff and commitment. Only their known local IP is created; the remote owner
-is unknown and the whole /31 stays reserved. Separate carrier names do not
+spans are 100G wavelengths from Ridgeline Lightwave or Ironwood Fiber, committed
+at the full 100G of the `et-` port they land on. Backbone /31s belong to the
+two real interfaces and come from RFC 5737 documentation space under ARIN
+aggregates, as do the PE loopbacks (from `.1`, never a /24's network address);
+all of them, and the transit /31s, are in the global table rather than a VRF.
+Transit circuits are fixed at founder slot 0 PE-a and founder slot 1 PE-b on
+`xe-0/1/7`, with a 10G handoff and commitment; each upstream numbers its /31
+from its own recorded assignment outside the operator's aggregates, holding the
+even address. Only the operator's local IP is created. Separate carrier names do not
 establish duct diversity. Per-PoP carrier diversity is not guaranteed: two spans
 can use one carrier. The report counts actual inter-PoP span providers per PoP;
 carrier-wide failure is outside the resilience checks. External-transit journals
@@ -88,12 +89,18 @@ distance plus three metres of service slack: five metres between those racks.
 Same-rack links and circuit handoff tails use three-metre local patches;
 the external circuit's geographic route remains unknown.
 
-PE `lo0` /32 addresses are in-band management. `fxp0` is present, unaddressed and
-uncabled. A management switch has its own /26 SVI and a console server; two
-routed /31 links connect it to the PE data ports. Serial console cables are
-separate from Ethernet. This is not an independent out-of-band network.
-With optional IPv6, numbered router links gain /127s and `lo0` gains a /128
-primary; LANs use /64s. Transit still has only its known local owner. These are
+PE `lo0` /32s are the routers' identities in the global table. Management is
+the Carrier Management VRF: a management switch with its own /26 SVI, the
+console server's NET1, and each PE's dedicated `fxp0` cabled to its own switch
+port; two routed /31 links also connect the switch to the PE data ports. The
+console server has an independent out-of-band path on NET2 — a best-effort
+business-broadband circuit from Brightwire Business Broadband, addressed from
+a per-PoP RFC 6598 /30 in its own VRF. Customer VRFs export a CE-management
+spoke target that Carrier Management imports and import its hub target, so the
+NOC reaches every CE. Serial console cables are separate from Ethernet.
+A NOC handoff into another metro is a leased 1G Ethernet private line, not an
+operator access tail. With optional IPv6, numbered router links gain /127s in
+one /64 per routing context and `lo0` gains a /128 primary; LANs use /64s. Transit still has only its known local owner. These are
 inventory additions qualified in the [pinned local provider example](../lab/README.md#current-v09-qualification),
 not executed router configuration.
 
@@ -102,23 +109,26 @@ target, operator account and private-L3 virtual circuit. Recipe order is
 onboarding order: it numbers the customer slot, the ASN, the
 `<operator ASN>:<1001+slot>` route distinguisher and the `ILF-C00001`-style
 account, and the customer's hub circuit is its first install. Premises are
-named after the neighbourhood or suburb they sit in, 2–25 km from the serving
-PoP, not after the PoP.
+placed in their serving PoP's area — within 25 km and nearer it than any other
+same-metro PoP of their time — and named after the neighbourhood or suburb they
+sit in. A customer's NOC and facilities desks answer from its own domain; a PoP
+cage's facilities desk is its carrier hotel's remote hands.
 Account association to a customer is represented by its circuit/service account
 reference and tenant reference; the pinned native/SDK ProviderAccount has no
 tenant field. Customer and NOC account numbers have separate identity domains.
 Native peer
 terminations refer to virtual CE interfaces parented to actual physical WAN
 ports. The physical access circuit has two site ends: CE copper patch and
-provider optical patch. Customer LANs use one CE gateway, one local access
-switch, a management /26, a clients /25 and fixed office desk positions. Direct
-or full panel/outlet access channels use the same demand. Customer access is
-single-homed. Wireless is omitted in this wired private-L3 service scope.
-`lan_endpoints = 0` drops the desks and the office pod: the premises is the
-carrier's CPE and managed switch, which is what a carrier's own inventory holds.
+provider optical patch. Customer LANs with desks use one CE gateway, one local
+access switch, a management /26, a clients /25 and fixed office desk positions.
+Direct or full panel/outlet access channels use the same demand. Customer access
+is single-homed. Wireless is omitted in this wired private-L3 service scope.
+`lan_endpoints = 0` is the CE only: its `port1` hands the clients /25 off
+untagged to customer-owned equipment and it is managed on a /32 loopback, which
+is what a carrier's own inventory holds.
 A premises is one room at the site root with the small-room kit — a 13U
 two-post rack, one 120 V / 20 A circuit feeding one 1U 120 V PDU, and no console
-server — since one CE and one switch have no redundant pair to feed twice.
+server — since one CE (and, with desks, one switch) has no redundant pair to feed twice.
 
 A PoP is a leased carrier-hotel suite holding the provider's cage (`Suite 317`
 → `Cage G09`); its two 24U cabinets each carry a PE, a 1U fibre enclosure and,

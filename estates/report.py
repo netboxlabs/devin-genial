@@ -740,7 +740,7 @@ def markdown(plan):
             "Open a customer virtual circuit, follow its peer interface to the CE's physical parent, then follow the circuit's A and Z handoffs to the serving PoP port. "
             "The provider's private-L3 network groups service membership; its PoP interior is represented by actual routers and two-site circuits.", "",
             "Customer premises are single-homed. The backbone's router/link survival checks do not make a customer's CE or access circuit redundant. "
-            "PE management uses lo0 in-band; fxp0 remains uncabled and unaddressed. NOC services have two physical PoP attachments. "
+            "PE fxp0 and the PoP management switch sit in the Carrier Management VRF, which reaches every CE through a hub-and-spoke management extranet; each PoP console server also has an independent broadband out-of-band circuit. NOC services have two physical PoP attachments. "
             "External transit remote interfaces and their owners are unknown.", "",
             "BGP inventory documents the same graph a second way: open a PE's BGP Sessions tab to see its route-reflector "
             "peerings over lo0, its transit peering at the carrier handoff, and one customer peering per access circuit. "

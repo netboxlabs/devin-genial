@@ -9,13 +9,28 @@ from datetime import date, timedelta
 
 from .automation import enrich as automation_records
 from .model import DesignError, digest
-from .naming import rate_kbps, titleize
+from .naming import main_scoped_name, rate_kbps, titleize
 from .wireless_context import enrich as wireless_context
 
 # Real metro area codes with the 555-0100..0199 block the North American
 # Numbering Plan reserves for fictional use, so a directory reads like one
 # without ever dialling a real subscriber.
 AREA_CODES = {"Chicago": "312", "Detroit": "313", "Cleveland": "216", "Milwaukee": "414"}
+# A provider's PoPs are cages in carrier hotels: their facilities desk is the
+# building operator's remote-hands desk, one invented colocation company per metro.
+COLOCATION = {"Chicago": ("Windward Interconnect", "windward-interconnect.example"),
+              "Detroit": ("Motorline Data Centers", "motorline-dc.example"),
+              "Cleveland": ("Cuyahoga Colocation", "cuyahoga-colo.example"),
+              "Milwaukee": ("Kinnickinnic Colocation", "kinnickinnic-colo.example")}
+
+
+def customer_domain(tenant):
+    """A provider customer's own mail domain: tenant/cust-acme-bank -> acme-bank.example."""
+    return f"{tenant.removeprefix('tenant/cust-')}.example"
+
+
+def provider_customer(world, tenant):
+    return world.recipe["profile"] == "provider-backbone" and tenant.startswith("tenant/cust-")
 
 
 def enrich(world):
@@ -40,8 +55,10 @@ def enrich(world):
         # ContactGroup keeps the namespace in its display name: its canonical
         # slug is derived from that name and is deliberately omitted on the
         # wire so the pinned plugin's auto-slug matcher can resolve it, so a
-        # clean name would silently change the matching identity.
-        name = f"{ns} {groups[key]}"
+        # clean name would silently change the matching identity. A dedicated
+        # tenant holds one estate, so the bare label and its derived slug
+        # cannot collide there and the auto-slug matcher still resolves it.
+        name = main_scoped_name(world.recipe, groups[key])
         add("contact_group", f"contact-group/{key}", {"name": name, "slug": name.lower().replace(" ", "-")})
 
     city = {obj["key"]: obj["meta"]["geography"]["city"] for obj in kinds["site"]}
@@ -73,7 +90,9 @@ def enrich(world):
         tenant = obj["key"]
         suffix = "" if tenant == "tenant" else f"/{tenant}"
         label = "" if tenant == "tenant" else f" {tenant.removeprefix('tenant/')}"
-        mailbox = "noc" if tenant == "tenant" else f"{tenant.removeprefix('tenant/')}.noc"
+        # A provider's customer answers from its own domain, not the carrier's.
+        mailbox = ("noc" if tenant == "tenant" else f"noc@{customer_domain(tenant)}" if provider_customer(world, tenant)
+                   else f"{tenant.removeprefix('tenant/')}.noc")
         # Contacts are branch-scoped and their Diode identity is the name, so
         # the label names the tenant they answer for, not the namespace.
         tenant_desks[tenant] = contact(f"contact/operations{suffix}", f"{obj['attrs']['name']} NOC duty desk", "operations", mailbox,
@@ -122,7 +141,13 @@ def enrich(world):
     as_of = world.recipe["as_of"]
     for site in kinds["site"]:
         key, attrs = site["key"], site["attrs"]
-        desk = contact(f"contact/{key}", f"{attrs['name']} facilities desk", "facilities", f"{key.removeprefix('site/')}.facilities",
+        name, mailbox = f"{attrs['name']} facilities desk", f"{key.removeprefix('site/')}.facilities"
+        if world.recipe["profile"] == "provider-backbone" and key.startswith("site/pop-"):
+            colo, domain = COLOCATION[city[key]]
+            name, mailbox = f"{colo} remote hands at {attrs['name']}", f"remote-hands@{domain}"
+        elif provider_customer(world, site["refs"].get("tenant", "")):
+            mailbox = f"facilities.{(attrs.get('facility') or key.removeprefix('site/'))[:40].lower()}@{customer_domain(site['refs']['tenant'])}"
+        desk = contact(f"contact/{key}", name, "facilities", mailbox,
             f"Equipment-room access, cabinet visits and planned power-work coordination at {attrs['name']}.", city[key])
         assign(key, desk, "facilities", "/facilities", "secondary")
         if key in biomedical_desks:
