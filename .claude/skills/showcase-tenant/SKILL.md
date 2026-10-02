@@ -35,6 +35,10 @@ product skills to read per feature), `visual-review` (the acceptance pass),
    docs/loading.md ("Procurement history"). `seed-main-explain` must show only
    allowlisted occupancy (builtin `module_type_profile`).
 2. **Generate.** `just generate profiles/showcase-provider.toml build/showcase`.
+   The recipe sets `tenancy = "dedicated"` (solo-tenant mode): owner, export
+   template, webhook, event rule, custom-link and choice-set names carry no
+   `inland-fiber ` prefix. Teardown reads the mode from each artifact's own
+   plan, so tearing down an older shared-mode artifact still matches by prefix.
 3. **Seed.** `TURBOBULK_WRITES=1 ALLOW_MAIN_WRITES=1 just seed-main
    build/showcase/plan.json $NETBOX_URL 10000` (explain first with the same
    flags — without them the explain only reports "flag not set"). Main seeds

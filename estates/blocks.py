@@ -128,11 +128,9 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
                   "description": f"{titleize(name)} site allocations"}, {"vrf": f"vrf/{name}", "tenant": "tenant"})
     for side, provider in (("a", "Northstar Transit"), ("b", "Meridian Carrier")) if include_carriers else ():
         w.add("provider", f"provider/{side}", {"name": provider, "slug": f"{ns}-carrier-{side}",
-              "comments": f"Minimum private access commitment {50 if side == 'a' else 100} Mbps. "
-                          "Separate modeled provider domains do not establish diverse ducts."})
+              "comments": f"Minimum private access commitment {50 if side == 'a' else 100} Mbps."})
         w.add("provider_network", f"carrier/{side}", {"name": f"Private WAN {side.upper()}",
-              "description": "Carrier-managed private L3 WAN",
-              "comments": "The provider interior is not modeled."}, {"provider": f"provider/{side}"})
+              "description": "Carrier-managed private L3 WAN"}, {"provider": f"provider/{side}"})
     if include_carriers:
         w.add("circuit_type", "circuit-type/wan", {"name": "Private WAN access", "slug": f"{ns}-private-wan"})
     w.add("cluster_type", "cluster-type", {"name": "Virtualization", "slug": f"{ns}-virtualization"})
@@ -357,7 +355,7 @@ class Site:
             points = [self.w.obj(room)["meta"]["position_m"] for room in rooms]
             self.w.obj(key)["attrs"].update(
                 length=math.ceil(sum(abs(x-y) for x, y in zip(*points)) + 10),
-                description=f"{self.w.obj(rooms[0])['attrs']['name']} to {self.w.obj(rooms[1])['attrs']['name']}; modeled building route")
+                description=f"{self.w.obj(rooms[0])['attrs']['name']} to {self.w.obj(rooms[1])['attrs']['name']} building backbone")
         elif self.rack_grid:
             racks = []
             for end in (a, b):

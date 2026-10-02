@@ -7,6 +7,7 @@ authored inventory does not create accounts, issue work orders, or run changes.
 from collections import defaultdict
 
 from .model import DesignError
+from .naming import main_scoped_name
 from .networking import ipam_roles
 from .operations_context import enrich as operational_context
 
@@ -52,8 +53,8 @@ def enrich(w):
 
     anchor = "site/dc-01"
     contract = next(c for c in w.contracts if c["site"] == anchor)
-    owner_group = add("owner_group", "owner-group/operations", {"name": f"{ns} Infrastructure teams"})
-    owner = add("owner", "owner/operations", {"name": f"{ns} Network operations",
+    owner_group = add("owner_group", "owner-group/operations", {"name": main_scoped_name(w.recipe, "Infrastructure teams")})
+    owner = add("owner", "owner/operations", {"name": main_scoped_name(w.recipe, "Network operations"),
                 "description": "Accountable infrastructure team"}, {"group": owner_group})
     w.obj(anchor)["refs"]["owner"] = owner
     tenants = add("tenant_group", "tenant-group/banking", {"name": "Banking entities", "slug": f"{ns}-banking"}, {"owner": owner})
@@ -79,7 +80,7 @@ def enrich(w):
             "description": "Primary VM volume"},
             {"virtual_machine": vm["key"], "owner": owner})
 
-    racks = add("rack_group", "rack-group/estate", {"name": "Estate cabinets", "slug": f"{ns}-estate-cabinets"}, {"owner": owner})
+    racks = add("rack_group", "rack-group/estate", {"name": "Equipment cabinets", "slug": f"{ns}-estate-cabinets"}, {"owner": owner})
     rack_types = {}
     for height in sorted({rack["attrs"]["u_height"] for rack in by_kind["rack"]}):
         # APC NetShelter SX 24U AR3104, 600 x 1070 mm: the footprint the
@@ -108,14 +109,14 @@ def enrich(w):
                 if any(start <= unit < start + height for unit in units):
                     raise DesignError("DC01 future WAN reservation overlaps installed equipment; choose a new reviewed reservation")
         reservation = add("rack_reservation", "rack-reservation/dc-01/future-wan", {"units": units, "status": "pending",
-            "description": "Future WAN edge pair reservation", "comments": "Planning reservation only; no equipment purchase or installation has occurred"},
+            "description": "Future WAN edge pair reservation"},
             {"rack": rack["key"], "user": user, "tenant": "tenant", "owner": owner})
 
     # Bundle only the two A-side service-host fibers, retaining the B-side
     # physical paths outside this example bundle.
     service_hosts = {"device/dc-01/identity-host-01", "device/dc-01/dns-host-01"}
     bundle = add("cable_bundle", "cable-bundle/dc-01/service-hosts-a", {"name": "DC01 service hosts A",
-                 "description": "Modeled bundle of identity and DNS A-side host fibers; B-side links are separate"}, {"owner": owner})
+                 "description": "Identity and DNS A-side host fibers; B-side links run separately"}, {"owner": owner})
     bundled = 0
     for cable in by_kind["cable"]:
         endpoints = [w.obj(key) for key in cable["refs"].values() if isinstance(key, str) and key in w.objects]
@@ -126,7 +127,7 @@ def enrich(w):
     if bundled != 2:
         raise DesignError("Operations cable bundle requires the two existing DC01 identity/DNS A-side host fibers")
 
-    choices = add("custom_field_choice_set", "custom-field-choices/operations-tier", {"name": f"{ns} Operations tiers",
+    choices = add("custom_field_choice_set", "custom-field-choices/operations-tier", {"name": main_scoped_name(w.recipe, "Operations tiers"),
                   "extra_choices": ["tier-1:Tier 1", "tier-2:Tier 2"], "order_alphabetically": False}, {"owner": owner})
     # Custom-field names are matched EXACTLY by estates/branch.py's retirement
     # (CUSTOM_FIELD_NAMES): adding a field here means extending that tuple too.
@@ -136,7 +137,7 @@ def enrich(w):
                 {"choice_set": choices, "owner": owner})
     w.obj(anchor)["attrs"].setdefault("custom_fields", {})[field_name] = {"selection": "tier-1"}
     w.obj(anchor)["meta"].setdefault("requires", []).append(field)
-    add("custom_link", "custom-link/site-equipment", {"name": f"{ns} Site equipment", "object_types": ["dcim.site"],
+    add("custom_link", "custom-link/site-equipment", {"name": main_scoped_name(w.recipe, "Site equipment"), "object_types": ["dcim.site"],
         "enabled": True, "link_text": "{% if object.name.startswith('" + ns + "-') %}Site equipment{% endif %}",
         "link_url": "/dcim/devices/?site_id={{ object.pk }}", "button_class": "default", "new_window": False}, {"owner": owner})
     ipam_roles(w)
@@ -149,8 +150,8 @@ def enrich(w):
 def supporting_records(world):
     """Attach operational context to observed infrastructure, without bank anchors."""
     ns = world.recipe["namespace"]
-    owner_group = world.add("owner_group", "owner-group/operations", {"name": f"{ns} Infrastructure teams"})
-    owner = world.add("owner", "owner/operations", {"name": f"{ns} Infrastructure operations",
+    owner_group = world.add("owner_group", "owner-group/operations", {"name": main_scoped_name(world.recipe, "Infrastructure teams")})
+    owner = world.add("owner", "owner/operations", {"name": main_scoped_name(world.recipe, "Infrastructure operations"),
         "description": "Accountable infrastructure team"}, {"group": owner_group})
     rir = "rir/private"
     if rir not in world.objects:

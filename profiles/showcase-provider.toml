@@ -19,6 +19,10 @@ noc_pop_a = "chicago-cermak"
 noc_pop_b = "detroit-new-center"
 noc_peak_mbps = 200
 discovery_lab = true
+# Solo-tenant mode: main-scoped names (owner, export templates, webhook, event
+# rule, custom link, choice set) drop the "inland-fiber " prefix on this
+# dedicated tenant; slugs and identities keep the namespace.
+tenancy = "dedicated"
 
 [hardware]
 access = "juniper"

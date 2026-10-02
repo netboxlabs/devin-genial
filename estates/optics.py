@@ -95,17 +95,19 @@ def enrich(world):
                 fields = {field: {"type": kind} for field, kind in (
                     ("protocol", "string"), ("medium", "string"), ("connector", "string"),
                     ("rate_kbps", "integer"), ("reach_m", "integer"),
-                    ("power_reservation_mw", "integer"), ("power_basis", "string"),
-                    ("source", "string"))}
+                    ("power_reservation_mw", "integer"), ("source", "string"))}
                 world.add("module_type_profile", profile,
                           {"name": "Installed pluggable optic",
                            "description": "Field-replaceable pluggable transceiver",
                            "schema": json.dumps({"type": "object", "properties": fields,
-                                                 "required": sorted(fields)}, sort_keys=True)})
+                                                 "required": sorted(set(fields) - {"source"})}, sort_keys=True)})
             attributes = {field: part[field] for field in (
                 "protocol", "medium", "connector", "rate_kbps", "reach_m",
-                "power_reservation_mw", "power_basis")}
-            attributes["source"] = "\n".join(catalog["sources"][key]["url"] for key in part["source_ids"])
+                "power_reservation_mw")}
+            # Vendor datasheets only: the catalog's power_basis and in-repo
+            # policy anchors are provenance for the docs, not record text.
+            if urls := [url for key in part["source_ids"] if (url := catalog["sources"][key]["url"]).startswith("http")]:
+                attributes["source"] = "\n".join(urls)
             world.add("module_type", module_type,
                       {"model": part["model"], "attributes": json.dumps(attributes, sort_keys=True)},
                       {"manufacturer": f"manufacturer/{part['manufacturer']}",

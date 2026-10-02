@@ -32,18 +32,17 @@ SERVICE_POLICY = (("identity", "premises", 128, 4, 8192, 100000, 443),
                   ("provisioning", "premises", 128, 4, 8192, 100000, 443))
 # The BGP obligation, restated here rather than read from estates/bgp.py. These
 # records document an intended peering: nothing is configured, applied or
-# established anywhere in this generator, so the inert note below is mandatory
-# on every one of them and the reviewed kind set stays closed (a policy *rule*,
-# a community or a prefix list would read as configuration and is refused).
+# established anywhere in this generator. Records carry operational fields only
+# (the limitation lives in docs/modeling.md and the report), and the reviewed
+# kind set and field set stay closed: a policy *rule*, a community, a prefix
+# list or a session-state field would read as configuration and is refused.
 BGP_KINDS = {"bgp_routing_policy", "bgp_peer_group", "bgp_session"}
-BGP_NOTE = ("Documentation inventory: the intended peering is recorded, nothing is "
-            "configured, applied or established. No session state, route exchange or "
-            "policy evaluation is claimed.")
+BGP_FIELDS = {"bgp_routing_policy": {"name", "weight", "description"},
+              "bgp_peer_group": {"name", "description"},
+              "bgp_session": {"name", "status", "description"}}
 # The service note must point at the documented CE-to-PE sessions, never deny
 # them: the BGP inventory above is emitted for every premises.
-VIRTUAL_CIRCUIT_NOTE = ("Peer membership is service inventory, not an all-to-all traffic matrix. "
-                        "Each premises' CE-to-PE peering is documented in the Customer Private L3 BGP peer group; "
-                        "like those sessions, it is inventory, not configured routing.")
+VIRTUAL_CIRCUIT_NOTE = "Each premises' CE-to-PE peering is in the Customer Private L3 BGP peer group."
 BGP_POLICIES = {
     "transit-in": ("Transit Import", 100,
                    "Import policy for upstream transit peers"),
@@ -743,8 +742,6 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         used_pe_ports[router].add(port)
         key, provider = f"circuit/transit/{side}", f"provider/transit-{side}"
         transit_peerings[side] = (router, port, provider, key)
-        if attrs(f"provider-network/transit/{side}").get("comments") != "External transit interior and remote interface owner are unknown.":
-            report("provider-scope-text", f"provider-network/transit/{side}", "External transit must not invent an inspected remote interior or interface owner.")
         routed(key, (port,), "vrf/provider")
         circuit(key, port, None, f"site/pop-{pop}", f"provider-network/transit/{side}", provider, 10000000, 10000000,
                 account=f"provider-account/{provider}")
@@ -793,7 +790,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         vc, account = f"virtual-circuit/customer/{key}", f"provider-account/customer/{key}"
         if (attrs(vc).get("description") != f"{titleize(key)} private L3 VPN, hub at {titleize(customer['hub_pop'])}" or
                 attrs(vc).get("comments") != VIRTUAL_CIRCUIT_NOTE):
-            report("provider-scope-text", vc, "The service must distinguish peer membership from its finite offered traffic and avoid claiming configured forwarding or availability.")
+            report("provider-scope-text", vc, "The service must name its customer and hub and point at its customer BGP peer group.")
         expected_vcs.add(vc); expected_accounts.add(account)
         if (kind(tenant) != "tenant" or kind(vrf) != "vrf" or refs(vrf).get("tenant") != tenant or attrs(vrf).get("enforce_unique") is not True or
                 attrs(vrf).get("rd") != f"{base}:{customer_slots[key] + 1}" or
@@ -863,8 +860,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                "peer groups.")
     for slug, (name, weight, description) in BGP_POLICIES.items():
         key = f"bgp-routing-policy/{slug}"
-        expected = {"name": name, "weight": weight, "description": description,
-                    "comments": BGP_NOTE}
+        expected = {"name": name, "weight": weight, "description": description}
         if kind(key) != "bgp_routing_policy" or attrs(key) != expected or refs(key):
             report("provider-bgp-policy", key, "Each named routing policy must retain its authored "
                    "name, weight and reference-intent description and carry no rule references.")
@@ -877,7 +873,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             if policies:
                 expected[field] = [f"bgp-routing-policy/{p}" for p in policies]
         if (kind(key) != "bgp_peer_group" or refs(key) != expected or
-                attrs(key) != {"name": name, "description": description, "comments": BGP_NOTE}):
+                attrs(key) != {"name": name, "description": description}):
             report("provider-bgp-group", key, "Each peer group must retain its authored name, the "
                    "operator's own routing identity and exactly its authored import/export policies.")
     reflector_pop = ordered[0]
@@ -897,7 +893,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         if tenant is not None:
             expected["tenant"] = tenant
         return {"name": f"{name_of(local)} to {remote_label}", "status": "active",
-                "description": description, "comments": BGP_NOTE}, expected
+                "description": description}, expected
 
     expected_sessions[f"bgp-session/ibgp/{reflectors[0].removeprefix('device/')}/"
                       f"{reflectors[1].removeprefix('device/')}"] = peering(
@@ -917,8 +913,7 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
         candidates = prefixes_by_vrf_network[("vrf/provider", str(network))]
         expected_sessions[f"bgp-session/transit/{side}"] = peering(
             router, f"{name_of(provider)} transit", f"asn/transit-{side}", "transit",
-            f"External transit peering over {attrs(circuit_key).get('cid')}; the remote address "
-            "and interface owner are unknown", ipv4_of(port),
+            f"External transit peering over {attrs(circuit_key).get('cid')}", ipv4_of(port),
             remote_prefix=candidates[0] if len(candidates) == 1 else None)
     for sid, (router, port, cpe, cpe_wan, tenant, ckey, circuit_key) in sorted(customer_peerings.items()):
         expected_sessions[f"bgp-session/customer/{sid}"] = peering(
@@ -938,9 +933,9 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
             report("provider-bgp-session", key, "Each peering record must be attributed from the "
                    "actual loopback, handoff address, routing identity and circuit it documents.")
     for key in sorted(k for kind_name in BGP_KINDS for k in by_kind[kind_name]):
-        if attrs(key).get("comments") != BGP_NOTE:
-            report("provider-bgp-scope-text", key, "Every BGP record must state that it is "
-                   "documentation inventory and claims no configured or established session.")
+        if extra := set(attrs(key)) - BGP_FIELDS[kind(key)]:
+            report("provider-bgp-scope-text", key, "BGP records carry inventory fields only; "
+                   + ", ".join(sorted(extra)) + " would read as configured or established session state.")
 
     findings.extend(validate_power(objects, catalog, [d for d in infrastructure if d not in routers], children, peers, cable_of, poe_watts=poe_watts, optics_watts=optics_watts))
     findings.extend(validate_resolved(plan, catalog, sites={"site/dc-01"}, workloads=_workloads(len(premises), len(pops)),

@@ -211,7 +211,8 @@ separate and is recorded in the private receipt.
 To retire a finished demo — delete its branch and its namespace's main-scoped
 rows (owners, custom-field definitions and the automation export templates,
 webhook and event rule), leaving the target as found — use
-`just retire https://netbox.example "Demo branch" NAMESPACE`
+`just retire https://netbox.example "Demo branch" NAMESPACE` (append
+`dedicated` for a `tenancy = "dedicated"` recipe, whose rows carry no prefix)
 (see [first target §8](docs/first-target.md#8-retiring-a-demo)).
 To instead empty a disposable Cloud branch for another run, replace that
 branch and wait for its new schema to become ready:

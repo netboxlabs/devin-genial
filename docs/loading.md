@@ -110,6 +110,10 @@ ALLOW_MAIN_WRITES=1 just seed-main build/my-estate https://netbox.example
 
 Preflight it first with zero writes:
 `ALLOW_MAIN_WRITES=1 just seed-main-explain build/my-estate https://netbox.example`.
+Generate such an estate with `tenancy = "dedicated"`
+([recipe keys](recipes.md#common-keys)) so its owner, automation and custom-link
+names read without the `<namespace> ` prefix shared tenants need; teardown reads
+the mode from the artifact.
 It refuses without both `--delivery-policy main-seed` and `ALLOW_MAIN_WRITES=1`,
 refuses when a branch is named, and requires empty emitted-kind inventories on
 main (the same fresh-load occupancy preflight as every load). TurboBulk data
@@ -157,7 +161,8 @@ protects referenced rows rather than cascading: deleting a site that still has
 racks returns 409 naming every dependent object. Cable terminations go with
 their cable rather than separately, and the Branching-exempt main-scoped rows
 (the automation records, custom-field definitions and owner pair) are retired
-last through the same exact-name matching `just retire` uses. Each bounded
+last through the same exact-name matching `just retire` uses (bare labels when
+the artifact's recipe sets `tenancy = "dedicated"`, read from the plan). Each bounded
 batch writes its intent to a receipt before the delete, and because NetBox's
 bulk endpoint rejects a batch naming an already-absent row, every batch
 re-resolves what is actually present first — which is also what makes an

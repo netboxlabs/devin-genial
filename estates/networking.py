@@ -25,9 +25,6 @@ def _display(w, key, fallback=""):
     return (w.objects.get(key) or {}).get("attrs", {}).get("name") or fallback
 
 
-PROVENANCE = "Planning intent; no configuration, protocol convergence or measured performance is asserted."
-
-
 def _number(namespace, key, modulus):
     return int.from_bytes(sha256(f"{namespace}/{key}".encode()).digest()[:8], "big") % modulus
 
@@ -97,10 +94,10 @@ def ipam_roles(w):
 def registry(w, sites):
     ns = w.recipe["namespace"]
     rir = w.add("rir", "rir/private", {"name": "Private registry", "slug": f"{ns}-private",
-                "is_private": True, "description": "Local private-address and private-ASN registry", "comments": PROVENANCE})
+                "is_private": True, "description": "Local private-address and private-ASN registry"})
     base = 4200000000 + _number(ns, "asn-block", 1000000)*64
     w.add("asn_range", "asn-range/private", {"name": "Routing domains", "slug": f"{ns}-routing",
-          "start": base, "end": base+63, "description": "Private 32-bit ASNs reserved for this estate"}, {"rir": rir})
+          "start": base, "end": base+63, "description": "Private 32-bit ASNs for the enterprise routing domains"}, {"rir": rir})
     # NetBox's ASN model carries no name, so the visualization layer labels an
     # AS node from its description. Name the party that actually holds the AS —
     # a carrier AS reading "carrier-a" contradicted the provider named on every
@@ -111,7 +108,7 @@ def registry(w, sites):
         if label == "birch" and not any(o["meta"].get("lineage") == "birch" for o in sites):
             continue
         holder = holders[label] or titleize(label)
-        w.add("asn", f"asn/{label}", {"asn": base+i, "description": f"{holder} routing domain", "comments": PROVENANCE}, {"rir": rir})
+        w.add("asn", f"asn/{label}", {"asn": base+i, "description": f"{holder} routing domain"}, {"rir": rir})
     for side in ("a", "b"):
         w.obj(f"provider/{side}")["refs"]["asns"] = [f"asn/carrier-{side}"]
     pools = {w.recipe["address_pool"]}
@@ -121,8 +118,7 @@ def registry(w, sites):
         pool = str(network)
         # Aggregates have no name either; the description is the rendered label.
         w.add("aggregate", f"aggregate/{pool}", {"prefix": pool,
-              "description": f"{holders['bank'] or w.recipe['name']} private address allocation",
-              "comments": PROVENANCE}, {"rir": rir})
+              "description": f"{holders['bank'] or w.recipe['name']} private address allocation"}, {"rir": rir})
     for site in sites:
         sid, tenant = site["key"].split("/", 1)[1], site["refs"]["tenant"]
         # Retained routing identity survives acquisition and access refresh.
@@ -170,8 +166,7 @@ def first_hop(w):
         used.add(group_id)
         w.add("fhrp_group", key, {"name": f"{_site_display(w, sid) or titleize(sid)} {titleize(network_role)} Gateway",
               "protocol": "vrrp3", "group_id": group_id,
-              "description": "VRRPv3 virtual gateway with two physical owners",
-              "comments": "Authored VRRPv3 gateway intent; target group-ID conflict preflight required. " + PROVENANCE})
+              "description": "VRRPv3 virtual gateway with two physical owners"})
         for i, port in enumerate(sorted(ports)):
             w.add("fhrp_group_assignment", f"{key}/member/{i+1}", {"priority": 110-i*10}, {"group": key, "interface": port})
         w.add("ip_address", f"ip/{key}", {"address": f"{net[254]}/{net.prefixlen}", "status": "active", "role": "vip",
@@ -184,7 +179,7 @@ def private_wan(w):
     w.add("virtual_circuit_type", "virtual-circuit-type/private-l3", {"name": "Managed L3 VPN", "slug": f"{ns}-managed-l3", "color": "e65100"})
     for side in ("a", "b"):
         w.add("virtual_circuit", f"virtual-circuit/{side}", {"cid": f"{ns}-private-{side}", "status": "active",
-              "description": "Carrier-private routed bank WAN service", "comments": PROVENANCE},
+              "description": "Carrier-private routed bank WAN service"},
               {"provider_network": f"carrier/{side}", "type": "virtual-circuit-type/private-l3"})
     peers = _physical_peers(w.objects)
     for port, peer in sorted(peers.items()):
@@ -211,11 +206,11 @@ def recovery_overlay(w):
     w.add("ip_sec_proposal", "ipsec-proposal/recovery", {"name": "Recovery ESP", "encryption_algorithm": "aes-256-cbc",
           "authentication_algorithm": "hmac-sha256", "sa_lifetime_seconds": 3600})
     w.add("ip_sec_policy", "ipsec-policy/recovery", {"name": "Recovery IPsec", "pfs_group": "14"}, {"proposals": ["ipsec-proposal/recovery"]})
-    w.add("ip_sec_profile", "ipsec-profile/recovery", {"name": "Recovery Protection", "mode": "esp", "comments": PROVENANCE},
+    w.add("ip_sec_profile", "ipsec-profile/recovery", {"name": "Recovery Protection", "mode": "esp"},
           {"ike_policy": "ike-policy/recovery", "ipsec_policy": "ipsec-policy/recovery"})
     w.add("tunnel_group", "tunnel-group/recovery", {"name": "Recovery", "slug": f"{ns}-recovery"})
     w.add("tunnel", "tunnel/recovery", {"name": "DC Recovery", "status": "planned", "encapsulation": "ipsec-tunnel",
-          "description": "Planned protected DC recovery transport", "comments": PROVENANCE},
+          "description": "Planned protected DC recovery transport"},
           {"group": "tunnel-group/recovery", "ipsec_profile": "ipsec-profile/recovery", "tenant": "tenant"})
     w.add("vrf", "vrf/recovery", {"name": "Recovery", "enforce_unique": True}, {"tenant": "tenant"})
     base = w.obj("asn/bank")["attrs"]["asn"]
@@ -226,7 +221,7 @@ def recovery_overlay(w):
           {"vrf": "vrf/recovery", "tenant": "tenant"})
     w.add("l2vpn", "l2vpn/recovery", {"name": "Recovery Segment", "slug": f"{ns}-recovery-segment",
           "type": "vxlan", "identifier": 1+_number(ns, "recovery-vni", 16777214), "status": "planned",
-          "description": "Planned data center recovery segment", "comments": PROVENANCE},
+          "description": "Planned data center recovery segment"},
           {"tenant": "tenant", "import_targets": [target], "export_targets": [target]})
     for i in range(2):
         sid = f"dc-{i+1:02}"
@@ -328,9 +323,9 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
             vlan = f"vlan/{sid}/{network}"
             description = "Staff WLAN; user VLAN separate from AP management" if network == "users" else f"{label.title()} WLAN; {network} VLAN separate from AP management"
             attrs = {"ssid": f"{ns}-{label}", "status": "active", "auth_type": "wpa-enterprise",
-                     "auth_cipher": "aes", "description": description, "comments": PROVENANCE}
+                     "auth_cipher": "aes", "description": description}
             if label == "guest" and site["key"] in guest_sites:
-                attrs.update(auth_type="open", comments="Open guest access planning; no captive portal, authentication or isolation enforcement is modeled.")
+                attrs.update(auth_type="open")
                 attrs.pop("auth_cipher")
             wlan = w.add("wireless_lan", f"wireless-lan/{sid}/{label}", attrs,
                          {"group": site_group, "vlan": vlan, "scope_site": site["key"], "tenant": tenant})
@@ -373,8 +368,7 @@ def wireless(w, sites, *, lan_roles=(("staff", "users", "wlan0"),), diagnostic=T
         points = [w.obj(device)["meta"]["placement"]["position_m"] for device in devices[:2]]
         w.add("wireless_link", f"wireless-link/{sid}/diagnostic", {"ssid": f"{ns}-{sid}-diag"[:32], "status": "connected",
               "auth_type": "wpa-enterprise", "auth_cipher": "aes", "distance": max(1, math.ceil(math.dist(*points))), "distance_unit": "m",
-              "description": "Indoor diagnostic radio hop",
-              "comments": "No site survey or RF link budget is claimed. " + PROVENANCE},
+              "description": "Indoor diagnostic radio hop"},
               {"interface_a": ports[0], "interface_b": ports[1], "tenant": tenant})
 
 

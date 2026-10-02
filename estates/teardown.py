@@ -27,6 +27,7 @@ import re
 import time
 
 from .branch import retire_namespace_rows
+from .naming import dedicated
 from .diode import _phases
 from .model import digest
 from .turbobulk import (Client, LoadError, REST_PATCH_ROWS, SPECS, _artifact,
@@ -288,7 +289,8 @@ def teardown(artifact, *, url, token, receipt_path, branch="", confirm=False,
     # owns this exact order and the exact-name matching that keeps it from
     # reaching a customer's own webhook.
     if not receipt["retired_rows"]:
-        receipt["retired_rows"] = retire_namespace_rows(client, receipt["namespace"])
+        receipt["retired_rows"] = retire_namespace_rows(
+            client, receipt["namespace"], dedicated=dedicated(plan.get("recipe") or {}))
         _write_receipt(receipt_path, receipt)
 
     remaining = _survivors(client, plan, objects, kinds)

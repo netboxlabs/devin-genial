@@ -150,8 +150,8 @@ created on a spare interface or an unmodeled far end of a circuit.
     infrastructure = int(pool.network_address) + (site_capacity << 80)
     namespace = world.recipe["namespace"]
     world.add("rir", "ipv6/rir", {
-        "name": "IPv6 documentation registry", "slug": f"{namespace}-ipv6-docs",
-        "is_private": False, "description": "Documentation address registry"})
+        "name": "IPv6 allocations", "slug": f"{namespace}-ipv6-docs",
+        "is_private": False, "description": "Global IPv6 address allocations"})
     world.add("aggregate", "ipv6/aggregate", {
         "prefix": str(pool), "description": "IPv6 address allocation"}, {"rir": "ipv6/rir"})
 
@@ -169,7 +169,7 @@ created on a spare interface or an unmodeled far end of a circuit.
             # The IPv4 leaf already names its purpose and site; its gateway
             # reservation clause is IPv4-only, so only the first clause carries.
             description = (f"{obj['attrs']['description'].split(';')[0][:193]} (IPv6)" if policy == "lan"
-                           else "IPv6 routed diagnostic radio segment; no RF budget claimed")
+                           else "IPv6 routed diagnostic radio segment")
         else:
             routed = policy == "routed"
             purpose = "routed" if routed else "loopbacks"

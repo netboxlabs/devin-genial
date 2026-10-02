@@ -148,10 +148,11 @@ def analyze(plan, catalog=None):
         module_parts[module] = part
         if module_type not in checked_types:
             checked_types.add(module_type)
-            fields = ("protocol", "medium", "connector", "rate_kbps", "reach_m", "power_reservation_mw", "power_basis")
+            fields = ("protocol", "medium", "connector", "rate_kbps", "reach_m", "power_reservation_mw")
             try:
                 expected = {f: part[f] for f in fields}
-                expected["source"] = "\n".join(sources[s]["url"] for s in part["source_ids"])
+                if urls := [sources[s]["url"] for s in part["source_ids"] if sources[s]["url"].startswith("http")]:
+                    expected["source"] = "\n".join(urls)
                 details = json.loads(attrs(module_type).get("attributes", ""))
                 truthful = isinstance(details, dict) and all(type(details.get(f)) is type(v) and details.get(f) == v
                                                             for f, v in expected.items())

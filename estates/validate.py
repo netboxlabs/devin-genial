@@ -23,7 +23,7 @@ from .validate_datacenter import validate as validate_datacenter
 from .validate_school import validate as validate_school
 from .equipment import validate as validate_equipment
 from .model import DesignError, resolve_hardware, selected_alias, serial_pattern
-from .naming import COHORT_LABELS
+from .naming import COHORT_LABELS, disclaimer
 
 
 # Independent expectations for the authored bank services. These are demo intent,
@@ -91,7 +91,7 @@ def _speed(port_type):
 
 def validate(plan):
     """Return stable ``{code, object, message}`` findings; never mutate the plan."""
-    lab = []
+    lab, original = [], plan
     if (isinstance(plan, dict) and isinstance(plan.get("recipe"), dict)
             and plan["recipe"].get("profile") == "provider-backbone" and isinstance(plan.get("objects"), list)
             and all(isinstance(o, dict) and isinstance(o.get("key"), str) and isinstance(o.get("kind"), str)
@@ -100,6 +100,13 @@ def validate(plan):
         # slice; every other check then sees the estate without it.
         from .validate_provider import discovery_lab
         lab, plan = discovery_lab(plan, {"models": _catalog()})
+    # Records carry operational text only; limitations live in the docs and report.
+    objects = original.get("objects") if isinstance(original, dict) else None
+    for obj in objects if isinstance(objects, list) else []:
+        if isinstance(obj, dict) and isinstance(obj.get("attrs"), dict) and (phrase := disclaimer(obj)):
+            lab.append({"code": "record-disclaimer", "object": obj.get("key", "plan"),
+                        "message": f"Record text carries the disclaimer {phrase!r}; state limitations in "
+                                   "docs/modeling.md and the report, never on a NetBox record."})
     return sorted(lab + _validate(plan), key=lambda item: (item["code"], str(item["object"]), item["message"]))
 
 

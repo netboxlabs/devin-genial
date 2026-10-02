@@ -813,10 +813,13 @@ def _facts(plan):
 
 def _wlan(lans):
     """The WLAN whose comments name the service inventory it depends on."""
-    chosen = next((lan for lan in lans if "inventory:" in lan["attrs"].get("comments", "")), None)
+    def served(line):
+        return line.startswith(("DNS TCP/53:", "DNS UDP/53:", "RADIUS UDP/1812,1813:"))
+
+    chosen = next((lan for lan in lans if any(map(served, lan["attrs"].get("comments", "").split("\n")))), None)
     if chosen is None:
         return None
-    dependencies = [line for line in chosen["attrs"]["comments"].split("\n") if "inventory:" in line]
+    dependencies = [line for line in chosen["attrs"]["comments"].split("\n") if served(line)]
     return {"ssid": chosen["attrs"]["ssid"], "dependencies": dependencies}
 
 
@@ -1060,9 +1063,9 @@ def demo_markdown(spec, facts, artifacts, live):
                          "hosts, protocols and ports it depends on — quoted below"])
         ns = spec["namespace"]
         rows.append(["Config contexts merging onto devices", _ui(live, "/extras/config-contexts/"),
-                     f"`{ns} Global service baseline` — its ntp/syslog/dns/service endpoints are "
+                     "`Global service baseline` — its ntp/syslog/dns/service endpoints are "
                      "THIS estate's own service VM addresses — and the role-scoped "
-                     f"`{ns} Switch platform baseline` weighted above it. Open any access switch's "
+                     "`Switch platform baseline` weighted above it. Open any access switch's "
                      "Config Context tab to show the merge"])
         rows.append(["Export templates that render", _ui(live, "/extras/export-templates/"),
                      f"`{ns} Device inventory (CSV)` and `{ns} Cable report (CSV)` — working Jinja "
@@ -1070,7 +1073,7 @@ def demo_markdown(spec, facts, artifacts, live):
         rows.append(["Event rule + webhook (inert by design)", _ui(live, "/extras/event-rules/"),
                      f"`{ns} Device change notification` → `{ns} NetOps automation endpoint`: the "
                      "shape of a ServiceNow/ITSM hook, deliberately disabled with an unreachable "
-                     "host — nothing fires, and the records say so"])
+                     "host — nothing fires"])
         _table(lines, ["What", "Where", "What is actually there"], rows)
         if facts["wlan"]:
             lines.extend([

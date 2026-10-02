@@ -100,7 +100,7 @@ def _laboratory(site):
     w.obj(child)["meta"]["powered_by_enclosure"] = parent
     source = w.add("cooling_source", f"cooling/{site.id}/source",
                    {"name": "Lab chiller", "type": "chiller", "status": "active", "fluid_type": "water-glycol",
-                    "cooling_capacity": 4, "description": "Closed-loop laboratory chiller; 4 kW rated planning capacity"},
+                    "cooling_capacity": 4, "description": "Closed-loop laboratory chiller; 4 kW rated capacity"},
                    {"site": site.key, "location": room})
     w.add("cooling_feed", f"cooling/{site.id}/feed",
           {"name": "Analytics loop", "status": "active", "cooling_capacity": 1,
