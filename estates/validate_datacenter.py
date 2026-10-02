@@ -21,7 +21,7 @@ HOST = {"vcpus": 64, "memory_mb": 262144, "disk_mb": 8000000}
 # Each selectable vendor line shares its family's authored role allowance.
 WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
          "leaf": 160, "leaf-juniper": 160, "core": 220, "edge": 40,
-         "server": 250, "console-server": 40, "liquid-chassis": 400}
+         "server": 250, "console-server": 40, "console-server-48": 40, "liquid-chassis": 400}
 NETWORK_OFFSETS = {"management": 0, "applications": 6, "database": 7,
                    "backup": 8, "wan": 9, "storage": 10}
 
@@ -381,8 +381,9 @@ def validate_resolved(plan, catalog, *, sites, workloads, peak, reserve, strict_
                 if len(upstreams) != 1:
                     report("dc-management-uplink", device, "Management switch requires its single active connected management-VLAN uplink to a local gateway leaf.")
             # Management switches are built after serial allocation and their
-            # console ports are explicitly spare; primary equipment is required.
-            if device not in roles["role/management"]:
+            # console ports are explicitly spare, as is a console server's own
+            # console port; primary equipment is required.
+            if device not in roles["role/management"] and device not in roles["role/console-server"]:
                 for specification in model.get("console_ports", []):
                     if specification.get("type") != "rj-45":
                         continue

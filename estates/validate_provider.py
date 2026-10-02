@@ -617,7 +617,11 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
 
     def console_management(sid, switch, network, vlan, vrf, tenant):
         device = f"device/{sid}/console-01"
-        port, peer = f"{device}/if/mgmt0", f"{switch}/if/{access_ports[-2]}"
+        # The console server's cabled management port is its first catalog
+        # mgmt_only port (Opengear NET1), never a literal name.
+        console_mgmt = next((p["name"] for p in catalog.get("console-server", {}).get("interfaces", [])
+                             if p.get("mgmt_only")), None)
+        port, peer = f"{device}/if/{console_mgmt}", f"{switch}/if/{access_ports[-2]}"
         if (not physical(port, peer) or vlans(port) != {vlan} or vlans(peer) != {vlan} or
                 not address(port, network, vrf, 3, tenant) or not primary(device, port)):
             report("provider-console-management", device, "The local console server needs its active management address and actual VLAN channel into the routed site switch.")

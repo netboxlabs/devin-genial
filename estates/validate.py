@@ -22,7 +22,7 @@ from .validate_wireless_context import validate as validate_wireless_context
 from .validate_datacenter import validate as validate_datacenter
 from .validate_school import validate as validate_school
 from .equipment import validate as validate_equipment
-from .model import DesignError, resolve_hardware, selected_alias
+from .model import DesignError, resolve_hardware, selected_alias, serial_pattern
 
 
 # Independent expectations for the authored bank services. These are demo intent,
@@ -46,7 +46,7 @@ BANK_BRANCHES_PER_INSTANCE = {
 BANK_HOST_RESOURCES = {"vcpus": 64, "memory_mb": 262144, "disk_mb": 8000000}
 BANK_POWER_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                     "leaf": 160, "leaf-juniper": 160, "core": 220, "edge": 40,
-                    "server": 250, "console-server": 40, "liquid-chassis": 400}
+                    "server": 250, "console-server": 40, "console-server-48": 40, "liquid-chassis": 400}
 BANK_BRANCH_ENDPOINTS = {"s": (12, 2, 2, 2), "m": (36, 4, 4, 4), "l": (84, 6, 8, 8)}
 
 # Branch designs name a role family and its required uplink/inlet count. The
@@ -74,7 +74,7 @@ def _medium(kind, port_type):
         return "console"
     if "stack" in port_type or port_type == "juniper-vcp":
         return "stack"
-    if port_type in {"8p8c", "rj-45"} or "base-t" in port_type:
+    if port_type in {"8p8c", "rj-45", "110-punch"} or "base-t" in port_type:
         return "copper"
     if port_type in {"lc", "sc", "st", "mpo", "mpo-12", "mpo-24"} or any(s in port_type for s in ("sfpp", "sfp28", "sfp", "qsfp", "base-x")):
         return "fiber"
@@ -318,6 +318,18 @@ def validate(plan):
         device_type = refs(device).get("device_type")
         if device_type and model.get("model") and (kind(device_type) != "device_type" or attrs(device_type).get("model") != model["model"]):
             report("hardware-device-type", device, "Referenced device type differs from the catalog hardware model.")
+        if model.get("serial_format") and re.fullmatch(serial_pattern(model["serial_format"]),
+                                                       str(attrs(device).get("serial", ""))) is None:
+            report("hardware-serial", device, f"Serial must follow the catalog {alias} format, not a synthetic placeholder.")
+        platform = refs(device).get("platform")
+        expected_platform = model.get("platform")
+        if expected_platform is None and platform is not None:
+            report("hardware-platform", device, f"{alias} declares no catalog platform; none may be referenced.")
+        elif expected_platform is not None and (
+                kind(platform) != "platform" or attrs(platform).get("name") != expected_platform["name"] or
+                attrs(refs(platform).get("manufacturer")).get("name") != model.get("manufacturer")):
+            report("hardware-platform", device, f"{alias} must reference its catalog platform {expected_platform['name']} "
+                                                "under its own manufacturer.")
         for typ, field in (("interface", "interfaces"), ("power_port", "power_ports"), ("power_outlet", "power_outlets")):
             expected = {p["name"]: p for p in model.get(field, [])}
             actual = {}
@@ -338,10 +350,11 @@ def validate(plan):
             for missing in expected.keys() - actual.keys():
                 report("hardware-inventory", device, f"Missing {typ} {missing} from hardware model {alias}.")
         if count := model.get("passive_ports"):
-            for typ, prefix in (("front_port", "F"), ("rear_port", "R")):
-                expected = {f"{prefix}{i:02}" for i in range(1, count+1)}
-                actual = {attrs(key).get("name") for key in children[("device", device)] if kind(key) == typ}
-                if expected != actual:
+            for typ, field in (("front_port", "front_ports"), ("rear_port", "rear_ports")):
+                expected = {(p["name"], p["type"]) for p in model.get(field, [])}
+                actual = {(attrs(key).get("name"), attrs(key).get("type"))
+                          for key in children[("device", device)] if kind(key) == typ}
+                if len(expected) != count or expected != actual:
                     report("passive-inventory", device, f"{alias} requires all {count} catalog {typ}s, including unused positions.")
 
     # Per-face intervals are checked in sorted order, so large racks stay O(n log n).
@@ -995,7 +1008,7 @@ def validate(plan):
             vlan = f"vlan/{site_id}/{network_roles[role]}"
             endpoint_vlans = {vlan, f"vlan/{site_id}/users"} if role == "role/ap" else {vlan}
             for device in endpoints:
-                ports = [key for key in children[("device", device)] if kind(key) == "interface" and attrs(key).get("type") == "1000base-t"]
+                ports = [key for key in children[("device", device)] if kind(key) == "interface" and str(attrs(key).get("type")).endswith("base-t")]
                 if (len(ports) != 1 or refs(available_peers.get(ports[0])).get("device") not in access or
                         refs(ports[0]).get("untagged_vlan") != vlan or carried_vlans(ports[0]) != endpoint_vlans or
                         any(device not in gateway_reachable.get(segment, set()) for segment in endpoint_vlans)):

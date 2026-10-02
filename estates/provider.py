@@ -320,7 +320,8 @@ def _console_management(site,switch):
     access_ports = site.w.hardware("access")["access_ports"]
     for device in list(site.devices):
         if site.w.obj(device)["refs"]["device_type"] != "hardware/console-server": continue
-        port = site.interface(device,"mgmt0"); peer = site.interface(switch,access_ports[-2])
+        mgmt = next(p["name"] for p in site.w.hardware("console-server")["interfaces"] if p.get("mgmt_only"))
+        port = site.interface(device,mgmt); peer = site.interface(switch,access_ports[-2])
         site.cable(port,peer)
         for key in (port,peer):
             site.w.obj(key)["attrs"]["mode"] = "access"

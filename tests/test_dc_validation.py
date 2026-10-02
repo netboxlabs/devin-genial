@@ -72,7 +72,7 @@ class DCValidationTests(unittest.TestCase):
 
     def test_required_power_paths_need_active_feeds_pdus_and_connected_cables(self):
         port = self.host + "/power/PSU1"
-        inlet = "device/dc-01/pdu-compute-01-a/power/Input"
+        inlet = "device/dc-01/pdu-compute-01-a/power/Power Port 1"
         cables = [key for key, o in self.objects.items() if o["kind"] == "cable" and
                   (port in o["refs"].values() or inlet in o["refs"].values())]
         cases = [("feed/rack/dc-01/compute-01/a", "offline"),
@@ -109,7 +109,7 @@ class DCValidationTests(unittest.TestCase):
                 self.objects[key]["attrs"]["status"] = "active"
 
     def test_required_uplink_needs_connected_cable_enabled_ports_and_active_peers(self):
-        interface = self.host + "/if/eth0"
+        interface = self.host + "/if/eth1"
         cable = next(o for o in self.objects.values() if o["kind"] == "cable" and interface in o["refs"].values())
         peer = next(key for key in cable["refs"].values() if key != interface)
         for key, field, value in ((cable["key"], "status", "planned"),

@@ -117,7 +117,12 @@ VM disk values use NetBox's MB unit, consistent with its
 and [VM aggregate disk validation](https://github.com/netbox-community/netbox/blob/v4.7.0/netbox/virtualization/models/virtualmachines.py).
 
 The [hardware catalog](../catalog/README.md) distinguishes pinned community vendor
-definitions from fictional reference servers, PDUs, panels, and endpoints.
+definitions from the few plainly named `Generic` parts (endpoints, ATMs, the
+liquid-cooled lab pair, server optics). Servers, PDUs, patch panels, wall boxes,
+console servers and APs are pinned real models; serials follow fictional
+vendor-shaped formats and network gear carries its vendor platform
+([serials](../catalog/README.md#serial-numbers),
+[platforms](../catalog/README.md#platforms)).
 
 ## Physical-detail iteration
 

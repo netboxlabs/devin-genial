@@ -629,14 +629,14 @@ class ManufacturingValidatorTests(unittest.TestCase):
 
     def test_a_plant_floor_console_port_leaving_the_console_server_is_reported(self):
         def rewire(plan, objects):
-            cable = objects[f"cable/device/{SITE}/console-01/console_server_port/Console07--"
+            cable = objects[f"cable/device/{SITE}/console-01/console_server_port/Port 7--"
                             f"device/{SITE}/ot-access-01/console_port/Console"]
             cable["refs"]["b"] = f"device/{SITE}/edge-a/console_port/Console"
         self.assertIn("mfg-zone-isolation", self.mutated(rewire))
 
     def test_a_plant_floor_segment_on_the_console_server_is_reported(self):
         self.assertIn("mfg-zone-isolation", self.mutated(
-            lambda plan, objects: objects[f"device/{SITE}/console-01/if/mgmt0"]["refs"].__setitem__(
+            lambda plan, objects: objects[f"device/{SITE}/console-01/if/NET1"]["refs"].__setitem__(
                 "untagged_vlan", f"vlan/{SITE}/process")))
 
     def test_a_record_binding_a_plant_floor_interface_is_reported(self):

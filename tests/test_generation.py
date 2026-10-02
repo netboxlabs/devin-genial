@@ -43,19 +43,19 @@ class GenerationTests(unittest.TestCase):
                 a, b = deepcopy(original), deepcopy(variant)
                 for obj in (a, b):
                     if obj["kind"] == "device":
-                        self.assertRegex(obj["attrs"].pop("serial"), r"^SYN-\d{10}$")
+                        self.assertRegex(obj["attrs"].pop("serial"), r"^[0-9A-Z]{8,20}$")
                     if obj["kind"] == "module":
                         self.assertRegex(obj["attrs"].pop("serial"), (r"^(OPT|AOC)-[0-9a-f]{24}$"
-                            if obj["key"].startswith("optics-module/") else r"^SYN-PSU-\d{10}$"))
+                            if obj["key"].startswith("optics-module/") else r"^[0-9A-Z]{8,20}$"))
                     if obj["kind"] == "circuit":
                         obj["attrs"].pop("install_date")
                     if obj["kind"] == "journal_entry":
                         obj["attrs"]["comments"] = re.sub(r"\d{4}-\d{2}-\d{2}", "<authored-date>", obj["attrs"]["comments"])
                         if obj["key"].endswith("/equipment-record"):
-                            obj["attrs"]["comments"], count = re.subn(r"(?m)^Serial: SYN-\d{10}$", "Serial: <device-serial>", obj["attrs"]["comments"])
+                            obj["attrs"]["comments"], count = re.subn(r"(?m)^Serial: [0-9A-Z]{8,20}$", "Serial: <device-serial>", obj["attrs"]["comments"])
                             self.assertEqual(count, 1)
                         if obj["key"].endswith("/psu-replacement-plan"):
-                            obj["attrs"]["comments"], count = re.subn(r"(?m)^Installed PSU serial: SYN-PSU-\d{10}$", "Installed PSU serial: <module-serial>", obj["attrs"]["comments"])
+                            obj["attrs"]["comments"], count = re.subn(r"(?m)^Installed PSU serial: [0-9A-Z]{8,20}$", "Installed PSU serial: <module-serial>", obj["attrs"]["comments"])
                             self.assertEqual(count, 1)
                     if "lifecycle_cohort" in obj["meta"]:
                         self.assertIn(obj["meta"].pop("lifecycle_cohort"),

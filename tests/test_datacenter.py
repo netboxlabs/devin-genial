@@ -51,7 +51,7 @@ class DataCenterTests(unittest.TestCase):
                 self.assertNotIn(b, peers)
                 peers[a], peers[b] = b, a
         for host in allocations:
-            upstreams = {objects[peers[f"{host}/if/eth{i}"]]["refs"]["device"] for i in (0, 1)}
+            upstreams = {objects[peers[f"{host}/if/{port}"]]["refs"]["device"] for port in ("eth1", "eth2")}
             self.assertEqual(len(upstreams), 2)
             self.assertTrue(all(objects[key]["refs"]["role"] == "role/leaf" for key in upstreams))
             self.assertIn(objects[host]["refs"]["rack"], objects)

@@ -332,6 +332,10 @@ by what it costs a demo.
   `aurora-peak Service Linux`, assigned to nothing — real estates carry Junos /
   IOS-XE / EOS / FortiOS per vendor and NetBox uses it for config rendering),
   `asset_tag` 0/300, `oob_ip` 0/300, `airflow` 0/300, `config_template` 0/300.
+  *Addressed in catalog 0.12:* network models now reference their vendor
+  platform (Cisco IOS XE / AP-COS, Arista EOS, Juniper Junos, Fortinet
+  FortiOS, ArubaOS) and serials follow vendor-shaped fictional formats; see
+  [catalog platforms](catalog/README.md#platforms).
   Healthy by contrast: `serial` 300/300, `description` 300/300, `primary_ip4`
   255/300, plus 340 modules, 18 VRFs and 12 services.
 - Only **114 of 300 devices sit in a rack and 69 carry a U position** — the rest
