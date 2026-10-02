@@ -129,9 +129,8 @@ MANAGEMENT_HUB_RT, MANAGEMENT_SPOKE_RT = 9000, 9001
 TRANSPORT_TIERS_MBPS = (100000,)
 # Authored span route length: great-circle distance times a fibre route factor.
 ROUTE_FACTOR = 1.3
-# One timeline: PoPs launch in backbone order, spans come up before a PoP
-# serves customers, and customers onboard in their permanent slot order.
-LAUNCH_EPOCH_DAYS, LAUNCH_STEP_DAYS, LAUNCH_CAP_DAYS = 2555, 45, 1825
+# One timeline (estates/timeline.py): PoPs launch in metro bursts, spans come
+# up before a PoP serves customers, customers onboard in permanent slot order.
 # A premises lies in its serving PoP's service area: no farther than this from
 # it, and no nearer any other same-metro PoP that existed when it was ordered.
 PREMISES_KM = 25
@@ -882,9 +881,11 @@ def _pop(w,item):
     site.code = item["key"]
     w.obj(site.key)["refs"]["asns"] = ["asn/operator"]
     _site_network(site,"management",26,0,10)
-    # The cage plant (estates/fibre.py): R01/R02 elevations, panels, the
-    # aggregation pair and its LAGs, management LAN, consoles and power.
+    # The plant (estates/fibre.py) from the frozen timeline (estates/timeline.py):
+    # cage or single cabinet, stratigraphy with gaps, panels, the aggregation
+    # pair and its LAGs, management LAN, consoles and power.
     routers,aggs = fibre.build(site)
+    tl = timeline.of(w)
     for device in routers:
         for n in range(4):
             w.obj(site.interface(device,f"et-0/0/{n}"))["attrs"].update(enabled=n<3,speed=100000000)
@@ -895,15 +896,17 @@ def _pop(w,item):
         for n in (4,5,7):
             w.obj(site.interface(device,f"xe-0/1/{n}"))["attrs"]["enabled"] = False
         # The growth path is stated where an engineer meets the ceiling.
-        w.obj(device)["attrs"]["description"] += "; MX204 SFP+ ports exhausted at 8, next platform MX304"
+        w.obj(device)["attrs"]["description"] += ("; SFP+ positions exhausted, MX304 successor planned" if tl.mx304[item["key"]]
+                                                  else "; MX204 SFP+ ports exhausted at 8, next platform MX304")
         loop = w.add("interface",f"{device}/if/lo0",dict(name="lo0",type="virtual",enabled=True,
                      description="Backbone router identity loopback"),dict(device=device))
         net = loopback_network(w.reserve("provider-loopbacks",device,LOOPBACK_CAPACITY))
         w.add("prefix",f"prefix/loopback/{device}",dict(prefix=str(net),status="active",description=f"{w.obj(device)['attrs']['name']} router loopback"),dict(tenant="tenant"))
         _ip(w,loop,net,0,CORE_VRF,"tenant",True)
-    # The PE pair link: a direct labelled inter-cabinet cord.
+    # The PE pair link: a direct labelled cord (inter-cabinet in a cage).
     a,b = [site.interface(d,"et-0/0/0") for d in routers]
-    fibre.cable(site,a,b,"data","smf",description="PE pair link, direct inter-cabinet cord with service slack")
+    fibre.cable(site,a,b,"data","smf",description="PE pair link, direct inter-cabinet cord with service slack"
+                if tl.tier[item["key"]] == "core" else "PE pair link, in-cabinet cord")
     _routed_pair(w,f"pair/{site.id}",a,b)
     site.contract["required_connections"].append(dict(a=a,b=b))
     switch = f"device/{site.id}/mgmt-01"
@@ -914,17 +917,24 @@ def _pop(w,item):
         fibre.cable(site,a,b,"mgmt","smf",description="Management switch routed uplink")
         _routed_pair(w,f"management/{site.id}/{'ab'[i]}",a,b,MANAGEMENT_VRF)
         site.contract["required_connections"].append(dict(a=a,b=b))
-    site.contract.update(required_device_roles={"role/provider-edge":2,"role/aggregation":2,"role/management":1,
-                                                "role/console-server":1,"role/patch-panel":4,"role/cable-management":6},
+    # Roles of the equipment in service; history (relics, planned, staged,
+    # inventory) is racked but carries its own status.
+    roles = Counter(w.obj(d)["refs"]["role"] for d in site.devices
+                    if w.obj(d)["attrs"]["status"] == "active" and w.obj(d)["refs"]["role"] != "role/pdu")
+    site.contract.update(required_device_roles=dict(sorted(roles.items())),
                          demand=dict(provider_routers=2,aggregation_switches=2,
                                      direct_attachment_capacity=2*fibre.UNIS_PER_AGG),
                          management_mode="out-of-band and in-band")
+    agg_model = w.catalog["models"][w.obj(aggs[0])["meta"]["hardware"]]["model"]
+    placement = ("Two MX204 chassis occupy separate cabinets." if tl.tier[item["key"]] == "core"
+                 else "Both MX204 chassis share the PoP's single cabinet, so a cabinet loss isolates the PoP.")
     site.contract["assumptions"].extend([
-        "Two MX204 chassis occupy separate cabinets. Exactly three 100G ports per chassis are enabled in the reviewed port-level mode; one is local peer and two are finite transport attachments.",
-        "Each PE reaches its same-cabinet ACX5448-M over a straight 4x10G LAG; an attachment is single-homed on its home side, so a PE, LAG or aggregation loss isolates that side's single-homed premises. No MC-LAG or protection switching is modeled.",
+        f"{placement} Exactly three 100G ports per chassis are enabled in the reviewed port-level mode; one is local peer and two are finite transport attachments.",
+        f"Each PE reaches its same-side {agg_model} over a straight 4x10G LAG; an attachment is single-homed on its home side, so a PE, LAG or aggregation loss isolates that side's single-homed premises. No MC-LAG or protection switching is modeled.",
         "PE lo0 is the router identity in the global table. fxp0, em0, the console server and the switched PDUs are cabled to the PoP management switch and addressed in the Carrier Management /26; "
         "the switch reaches the PEs over two routed /31 uplinks in the same VRF, and the console server has an independent cellular out-of-band service.",
-        "Installed PSU inventory comes from pinned sources; 320 W PE and 300 W aggregation planning allowances are synthetic, separate from PSU output ratings."])
+        "Installed PSU inventory comes from pinned sources; 320 W PE and 300 W aggregation planning allowances are synthetic, separate from PSU output ratings.",
+        "Install dates, removed predecessors and the planned successor follow the frozen provider timeline; vendor end-of-life dates are quoted per vendor notice, other milestones are authored."])
     return site,routers
 
 
@@ -1048,27 +1058,19 @@ def _plan_spans(w,points):
 
 
 def _launch(w,spans):
-    """PoP launch dates: breadth-first along the backbone from the first PoP.
+    """PoP launch dates from the frozen provider timeline (estates/timeline.py).
 
-    The launch ledger is permanent, so growth appends launches and never
-    re-dates an existing PoP.
+    Metros enter in bursts from the founding (``as_of`` - 15 years); a metro's
+    later PoPs follow every 6-20 months and no PoP launches in the quiet last
+    years. ``provider-pop-launch`` keeps the launch order as a permanent
+    ledger; the dates themselves are frozen in ``provider-timeline``, so growth
+    appends a current-era launch and never re-dates an existing PoP. ``spans``
+    is unused since v0.18 (launches no longer follow the backbone breadth-first;
+    a span is installed before the later of its two PoPs launches).
     """
-    order = w.reservations["provider-pop-order"]
-    if not w.reservations.get("provider-pop-launch"):
-        adjacency = defaultdict(set)
-        for _,(a,_),(b,_) in spans: adjacency[a].add(b); adjacency[b].add(a)
-        start = min(order,key=order.get); queue = deque([start]); w.reserve("provider-pop-launch",start,64)
-        while queue:
-            for peer in sorted(adjacency[queue.popleft()],key=order.get):
-                if peer not in w.reservations["provider-pop-launch"]:
-                    w.reserve("provider-pop-launch",peer,64); queue.append(peer)
-    for pop in sorted(order,key=order.get): w.reserve("provider-pop-launch",pop,64)
-    try:
-        epoch = date.fromisoformat(w.recipe["as_of"])-timedelta(days=LAUNCH_EPOCH_DAYS)
-        return {pop:epoch+timedelta(days=min(LAUNCH_STEP_DAYS*slot,LAUNCH_CAP_DAYS)+w.choose(pop,"pop-launch",range(15)))
-                for pop,slot in w.reservations["provider-pop-launch"].items()}
-    except OverflowError as exc:
-        raise DesignError("as_of is too early for the authored provider build-out history") from exc
+    tl = timeline.of(w)
+    for pop in tl.order: w.reserve("provider-pop-launch",pop,64)
+    return dict(tl.launch)
 
 
 def _transport_text(ends):
@@ -1110,20 +1112,12 @@ def _topology(w,pop_sites,points,spans,launch):
 
 
 def _onboarding(w,ready):
-    """Customer onboarding dates in permanent slot order; the hub circuit comes first."""
-    as_of = date.fromisoformat(w.recipe["as_of"])
-    slots = w.reservations["provider-customers"]
-    dates,previous = {},None
-    for c in sorted(w.recipe["customers"],key=lambda c:slots[c["key"]]):
-        day = ready[anchor_pop(c)]+timedelta(days=30)
-        # ponytail: the first two dozen customers arrive months apart, later ones
-        # days apart, and every date clamps a week before as_of, so a very long
-        # list onboards its tail on one day; scale the gap by count if that matters.
-        if previous is not None:
-            gap = range(60,241) if slots[c["key"]] < 24 else range(3,15)
-            day = max(day,previous+timedelta(days=w.choose(c["key"],"onboarding-gap",gap)))
-        dates[c["key"]] = previous = min(day,as_of-timedelta(days=7))
-    return dates
+    """Customer signing days in permanent slot order: the timeline's frozen S-curve.
+
+    Spread from founding + 1 year to ``as_of`` - 7 days, never before the
+    anchor PoP is ready + 30 days, with no clamp pile-up (estates/timeline.py).
+    """
+    return timeline.onboarding(w,w.recipe["customers"],w.reservations["provider-customers"],ready,anchor_pop)
 
 
 def serving_pops(w,sid,pop):
@@ -2090,8 +2084,11 @@ def _generate(recipe,previous=None):
     as_of=date.fromisoformat(recipe["as_of"])
     def installed(sid,c,pop,n):
         if pop==anchor_pop(c) and n==1: return onboarded[c["key"]]
-        day=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=w.choose(sid,"premises-install",range(7,366)))
-        return min(day,as_of-timedelta(days=1))
+        # A customer adds premises over the years after signing (at most six),
+        # never before the serving PoP is ready: spread, not piled after a launch.
+        start=max(onboarded[c["key"]],ready[pop]+timedelta(days=30))+timedelta(days=7)
+        reach=max(1,min((as_of-timedelta(days=1)-start).days,2190))
+        return min(start+timedelta(days=w.choose(sid,"premises-install",range(reach))),as_of-timedelta(days=1))
     w.provider_service_records=defaultdict(list)
     placed=_premises_places(w,entries,points)
     attachments=[_customer(w,sid,c,pop,n,pop_sites,placed,installed(sid,c,pop,n)) for sid,c,pop,n in entries]

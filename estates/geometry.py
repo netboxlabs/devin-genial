@@ -113,6 +113,13 @@ def _floorplans(plan):
             raise GeometryError(
                 f"floorplan name {name!r} exceeds {NAME_LIMIT} characters; "
                 "shorten the site or location name")
+        width = max(shape["x"] + shape["width"] for shape in shapes) + MARGIN
+        # A provider cage is drawn at its contracted size (fibre.CAGE_CONTRACT):
+        # every contracted bay is floor area, but only installed cabinets are
+        # shapes, so no empty reserved box is ever seeded.
+        positions = location["meta"].get("cabinet_positions")
+        if positions and all(authored):
+            width = max(width, min(shape["x"] for shape in shapes) + positions * RACK_WIDTH + MARGIN)
         floorplans.append({
             "site": site["attrs"]["name"],
             "location_slug": location["attrs"]["slug"],
@@ -120,7 +127,7 @@ def _floorplans(plan):
             "name": name,
             "layout": "authored" if all(authored) else "rows",
             "base_unit": "cm",
-            "width": max(shape["x"] + shape["width"] for shape in shapes) + MARGIN,
+            "width": width,
             "depth": max(shape["y"] + shape["depth"] for shape in shapes) + MARGIN,
             "layer": {"name": "Base"},
             "shapes": shapes,

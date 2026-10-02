@@ -12,8 +12,10 @@ Frozen, append-only
 -------------------
 Dates that depend on the population (the launch burst schedule, the
 complexity-ranked PE refresh, the onboarding S-curve) are written once, as
-date ordinals, to the dated ledger ``provider-timeline`` (keys
-``launch/<pop>``, ``refresh/<pop>``, ``onboard/<customer>``). Growth reads
+date ordinals, to the dated ledger: one reservation scope per event,
+``provider-timeline/launch/<pop>``, ``provider-timeline/refresh/<pop>`` and
+``provider-timeline/onboard/<customer>``, each ``{"day": ordinal}`` (the
+``site-in-service/`` shape: reservation values must be unique per scope). Growth reads
 them back and only appends: a PoP or customer that is new to an existing
 ledger is a current-era event (launched / signed shortly before ``as_of``),
 so it never re-dates, re-ranks or re-platforms an existing one. Everything
@@ -22,7 +24,7 @@ else is a pure function of those frozen dates, the recipe and stable
 
 The ledger is dated local variation (it follows the seed), like
 ``site-in-service/``: a seed-invariance comparison of allocation ledgers must
-exclude ``TIMELINE_LEDGER`` too.
+exclude the ``provider-timeline/`` scopes too.
 
 CONTRACT (WP-C services/records, WP-D validators, WP-E sidecars)
 ---------------------------------------------------------------
@@ -105,6 +107,27 @@ SFP_PLUS_BASE = 5                          # 4 LAG members + management uplink
 BUSINESS_HOURS, NIGHT_HOURS = (14, 22), (4, 9)  # UTC, [start, end)
 
 
+class _Ledger:
+    """The dated ledger as one scope per event, ``provider-timeline/<event>/<subject>``
+    holding {"day": ordinal}: reservation scopes need unique values, dates repeat."""
+
+    def __init__(self, reservations):
+        self.reservations = reservations
+
+    def __contains__(self, key):
+        return f"{TIMELINE_LEDGER}/{key}" in self.reservations
+
+    def __getitem__(self, key):
+        return self.reservations[f"{TIMELINE_LEDGER}/{key}"]["day"]
+
+    def __setitem__(self, key, ordinal):
+        self.reservations[f"{TIMELINE_LEDGER}/{key}"] = {"day": ordinal}
+
+    def __iter__(self):
+        prefix = f"{TIMELINE_LEDGER}/"
+        return (scope.removeprefix(prefix) for scope in list(self.reservations) if scope.startswith(prefix))
+
+
 def _years_before(day, years):
     try:
         return day.replace(year=day.year - years)
@@ -133,7 +156,7 @@ class Timeline:
         metros = sorted(dict.fromkeys(p["metro"] for p in pops),
                         key=lambda m: (m != pops[0]["metro"], -demand[m], m))
         self.founding_pop = {m: next(p["key"] for p in pops if p["metro"] == m) for m in metros}
-        self.ledger = w.reservations.setdefault(TIMELINE_LEDGER, {})
+        self.ledger = _Ledger(w.reservations)
         self.launch = self._launches(pops, metros)
         self.order = sorted(self.launch, key=lambda p: (self.launch[p], position[p]))
         self.metro_entry = {m: min(self.launch[p] for p in self.launch if self.metro[p] == m) for m in metros}

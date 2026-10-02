@@ -1,21 +1,26 @@
-"""The provider PoP plant: cage, cabinets, panels, aggregation and cable policy.
+"""The provider PoP plant: cage or cabinet, panels, aggregation, history and cable policy.
 
-DESIGN.md §§2 and 5 (build/footprint-design, final revision) is the spec. One
-PoP is a carrier-hotel cage (site -> suite -> cage) holding four cabinet
-positions in one row: R01 and R02 are installed APC AR3100 42U cabinets, R03
-and R04 are contracted positions with no equipment, feeds or PDUs. Each
-installed cabinet is one side of the PoP, top-down:
+DESIGN.md §3 (build/lived-in-design, final locked revision, v0.18) is the
+spec; build/footprint-design §§2 and 5 (v0.17) set the cable policy kept here.
 
-    U42     our OSP panel (CommScope FMS-48), 48 front <-> 48 rear, 1:1
-    U40-41  2U cable manager                  (hygiene rule)
-    U39     colo demarc panel (Generic LC-24), the carrier hotel's, 1:1
-    U38     1U cable manager                  (hygiene rule)
-    U37     PE (Juniper MX204)
-    U36     1U cable manager                  (hygiene rule)
-    U35     aggregation switch (Juniper ACX5448-M)
-    U34     PoP management switch (EX3400-24T)     R01 only
-    U33     cellular console server (OM2216-L)     R01 only
-    0U      R0n PDU-A, R0n PDU-B (switched AP8941, 208 V 30 A feeds)
+Tier (``timeline.of(w).tier``): a core PoP (NOC handoff, transit or IX port)
+is a carrier-hotel cage (site -> suite -> cage) with two installed APC AR3100
+42U cabinets, R01 (side A) and R02 (side B). An edge PoP is one cabinet
+(site -> suite -> ``Cabinet <facility id>``) holding both sides. No reserved
+cabinet is modelled: the cage location's description carries the contract
+("Cage contract: 4 cabinet positions; 2 installed; expansion by change order").
+
+Stratigraphy (K4). Each cabinet is filled top-down in install order, from the
+frozen timeline (estates/timeline.py): the launch kit, then every later event
+(original aggregation -> ACX5048, original console server -> EX3400 +
+OM2216-L, cold spare, MX80 -> MX204 refresh, the planned MX304 successor, the
+staged DDoS appliance). A removed device keeps its units as a gap that is never
+reused: the append-only ledger ``provider-cabinet-u/<rack>`` records each
+item's position once, so growth appends below the lowest used unit and never
+moves an existing one. Gaps are blanked (exclude_from_utilization) and each
+removed device has a dated rack journal ("Removed: …, CHG…"). Hygiene: a 2U
+cable manager under each 48-port panel, 1U under each 24-port panel and under
+each router (pair).
 
 Cable policy: every PoP cable carries a label (site code, cabinet and
 ordinal, or the carrier's cross-connect ID), a medium, a colour by function
@@ -23,8 +28,19 @@ and a length. Owned fibre (customer access tails, owned dark-fibre spans and
 owned NOC links) lands on our OSP panel; a carrier's circuit (leased waves,
 transit, NOC private lines) is a cross-connect from the meet-me room onto the
 colo's demarc panel, its xconnect_id on the circuit termination and on the
-cable label. Every circuit termination stays site-scoped (VE WAN-map
-limitation). Nothing here claims a route, light level or patch order.
+cable label. Panel front ports carry TIA-606-style labels
+``<facility_id>.<U>:<port>`` (style only; no standard compliance is claimed).
+Every circuit termination stays site-scoped (VE WAN-map limitation). Nothing
+here claims a route, light level or patch order.
+
+Device keys (WP-C wires the service devices the plant racks):
+
+    pe-a/pe-b, agg-a/agg-b, mgmt-01, console-01    in service
+    ntp-01      Meinberg M300 (NOC-handoff PoPs), R01, active
+    ddos-01     Arbor TMS (MX304 PoPs with transit and DIA), R01, staged
+    pe-a2/pe-b2 MX304 successor pair, planned or staged, no power
+    legacy-pe-a/legacy-pe-b   MX80 relics, decommissioning, uncabled
+    agg-spare   cold-spare aggregation chassis, inventory, uncabled (R02)
 
 Interface for the services work package (WP-C), which owns the home-side
 ledger ``provider-agg-home/<pop>`` and the per-side UNI ledger:
@@ -53,13 +69,21 @@ Circuit-type keys the plant emits unless the registry already has them:
 
 import ipaddress
 
+from . import timeline
 from .blocks import device_type
 from .model import DesignError
 from .naming import CABLE_COLORS, ROLE_COLORS, titleize
 
 
-# Catalog aliases (WP-A, catalog/README.md "Regional-carrier footprint aliases").
+# Catalog aliases (WP-A, catalog/README.md "Regional-carrier footprint aliases"
+# and "Lived-in carrier aliases").
 AGGREGATION = "aggregation"            # Juniper ACX5448-M
+AGGREGATION_LEGACY = "aggregation-legacy"   # Juniper ACX5048-AC
+PE = "provider-edge"                   # Juniper MX204
+PE_LEGACY = "provider-edge-legacy"     # Juniper MX80 (relic)
+PE_SUCCESSOR = "provider-edge-successor"    # Juniper MX304 (planned/staged)
+DDOS = "ddos-mitigation"               # Arbor TMS HD 1000
+TIMING = "time-server"                 # Meinberg LANTIME M300
 POP_MANAGEMENT = "pop-mgmt"            # Juniper EX3400-24T, no PoE
 POP_OOB = "oob-server"                 # Opengear OM2216-L
 POP_PDU = "pdu-switched"               # APC AP8941, 0U, 208 V 30 A, networked
@@ -70,33 +94,39 @@ CABLE_MANAGER_2U = "cable-manager-2u"
 BLANKING_1U = "blanking-1u"            # exclude_from_utilization
 BLANKING_2U = "blanking-2u"
 NOC_DEMARC_PANEL = "patch-panel"       # pinned Panduit 24-port Cat 6 panel
+AGG_MODELS = {"acx5048": AGGREGATION_LEGACY, "acx5448m": AGGREGATION}
 
 PASSIVE = (OSP_PANEL, COLO_PANEL, CABLE_MANAGER_1U, CABLE_MANAGER_2U, BLANKING_1U, BLANKING_2U)
-PLANT_ALIASES = (AGGREGATION, POP_MANAGEMENT, POP_OOB, POP_PDU, *PASSIVE)
+PLANT_ALIASES = (AGGREGATION, AGGREGATION_LEGACY, PE_LEGACY, PE_SUCCESSOR, DDOS, TIMING,
+                 POP_MANAGEMENT, POP_OOB, POP_PDU, *PASSIVE)
 
 
-ROLES = {"provider-edge": "provider-edge", AGGREGATION: "aggregation", POP_MANAGEMENT: "management",
+ROLES = {PE: "provider-edge", PE_LEGACY: "provider-edge", PE_SUCCESSOR: "provider-edge",
+         AGGREGATION: "aggregation", AGGREGATION_LEGACY: "aggregation", POP_MANAGEMENT: "management",
          POP_OOB: "console-server", OSP_PANEL: "patch-panel", COLO_PANEL: "patch-panel",
          CABLE_MANAGER_1U: "cable-management", CABLE_MANAGER_2U: "cable-management",
-         BLANKING_1U: "cable-management", BLANKING_2U: "cable-management", POP_PDU: "pdu"}
+         BLANKING_1U: "cable-management", BLANKING_2U: "cable-management", POP_PDU: "pdu",
+         DDOS: "ddos-mitigation", TIMING: "time-server"}
+# The two v0.18 roles have their own colours (K16), never a status colour.
+# ponytail: kept here until naming.ROLE_COLORS (WP-C) carries them.
+NEW_ROLE_COLORS = {"ddos-mitigation": "d32f2f", "time-server": "00897b"}
 
-# The cage: four bays in one row; the first two installed.
 RACK_HEIGHT = 42
-CAGE_BAYS = 4
-INSTALLED_BAYS = 2
-RESERVED_DESCRIPTION = "Contracted cabinet position, not installed"
+CAGE_POSITIONS = 4
+CAGE_CONTRACT = (f"Cage contract: {CAGE_POSITIONS} cabinet positions; 2 installed; expansion by change order")
+EDGE_CABINET = "Leased single cabinet in the carrier hotel; both PoP sides share it"
 # The AP8941 inlet is a NEMA L6-30P: its branch circuit is 208 V / 30 A.
 POP_FEED = (208, 30)
 
 # Aggregation port plan (DESIGN.md §2): forty UNIs, a four-member LAG to the
-# same-rack PE. The PE side is MX204 xe-0/1/0-3 into ae1.
+# same-side PE. The PE side is MX204 xe-0/1/0-3 into ae1.
 UNIS_PER_AGG = 40
 AGG_LAG, PE_LAG = "ae0", "ae1"
 PE_LAG_MEMBERS = tuple(f"xe-0/1/{n}" for n in range(4))
 PE_NOC_PORT = "xe-0/1/4"
 NID_VIDS = {"a": 4001, "b": 4002}
 # Host ordinals on the PoP management /26: switch irb 1, console server 3,
-# PE fxp0 4/5 (provider.FXP0_HOSTS), AGG em0 6/7, then the four PDUs 8-11.
+# PE fxp0 4/5 (provider.FXP0_HOSTS), AGG em0 6/7, then the PDUs 8-11.
 OOB_HOST, AGG_EM0_HOSTS, PDU_HOSTS = 3, (6, 7), (8, 9, 10, 11)
 
 # Colour by function (DESIGN.md §5). Data links between our own chassis take
@@ -111,18 +141,48 @@ FUNCTION_COLORS = {"xc": "ffeb3b", "osp": "2196f3", "mgmt": "9e9e9e",
 PATCH_M, POWER_M, FEED_M, XC_RUN_M, OSP_RUN_M = 3, 2, 3, 45, 30
 LABEL_CAPACITY = 1000
 
+# Legacy (pre-NS-2) hostnames: <facility lower>-<abbreviation><n> (CLLI-style only).
+LEGACY_ABBREVIATIONS = {"provider-edge": "rtr", "aggregation": "agg", "time-server": "ntp",
+                        "management": "sw", "console-server": "con"}
+# What a removed, never-inventoried predecessor was (DESIGN.md §4.1).
+ORIGINAL = {"agg": ("the original aggregation switch; not inventoried", 1),
+            "oob": ("the original console server with its integrated management ports; not inventoried", 1)}
+# Racked but not in service (NetBox's own status meanings).
+NOT_IN_SERVICE = ("decommissioning", "planned", "staged", "inventory")
+
+
+def _stub_models(w):
+    """STUB(WP-A): stand-ins until catalog/hardware.json carries the lived-in aliases.
+
+    Remove at integration: every alias below is WP-A's pinned model.
+    """
+    if all(alias in w.catalog["models"] for alias in (PE_LEGACY, PE_SUCCESSOR, DDOS, TIMING)):
+        return
+    w.catalog = {**w.catalog, "models": dict(w.catalog["models"])}  # never mutate the shared catalog
+    models = w.catalog["models"]
+    def clone(alias, base, **changes):
+        if alias not in models:
+            models[alias] = {**models[base], **changes}
+    clone(PE_LEGACY, PE, model="MX80 (stub)", slug="stub-mx80", u_height=2)
+    clone(PE_SUCCESSOR, PE, model="MX304 (stub)", slug="stub-mx304", u_height=2, power_ports=[], console_ports=[],
+          configured_modules=[], interfaces=[dict(name=f"et-0/0/{n}", type="400gbase-x-qsfpdd") for n in range(16)])
+    clone(DDOS, POP_OOB, model="TMS HD 1000 (stub)", slug="stub-tms", u_height=2, console_server_ports=[])
+    clone(TIMING, POP_OOB, model="LANTIME M300 (stub)", slug="stub-m300", u_height=1, console_server_ports=[])
+
 
 def ensure_models(w):
     """Register the PoP plant's catalog device types (catalog/hardware.json carries every alias)."""
-    for alias in (*PLANT_ALIASES, "provider-edge"):
-        device_type(w, alias)
+    _stub_models(w)
+    for alias in (*PLANT_ALIASES, PE):
+        if alias in w.catalog["models"]:  # STUB(WP-A): drop the guard with the stubs
+            device_type(w, alias)
 
 
 def _role(w, role):
     key = f"role/{role}"
     if key not in w.objects:
         w.add("device_role", key, {"name": titleize(role), "slug": f"{w.recipe['namespace']}-{role}",
-                                   "color": ROLE_COLORS[role]})
+                                   "color": ROLE_COLORS.get(role) or NEW_ROLE_COLORS[role]})
     return key
 
 
@@ -134,57 +194,129 @@ def circuit_type(w, kind, name):
     return key
 
 
-def hygiene(stack, heights, top=RACK_HEIGHT):
-    """The deterministic rack-hygiene rule over one cabinet's top-down stack.
+def _blanking(occupied):
+    """Blanking panels filling every gap strictly inside the occupied band.
 
-    ``stack`` is [(label, alias, kind)] top-down, kind one of "panel-48",
-    "panel-24", "pe", "agg" or None. A 2U cable manager goes under each 48-port
-    panel, a 1U one under each 24-port panel and between a PE and the
-    aggregation switch directly below it. Items mount contiguously down from
-    ``top``. Blanking panels fill only 1-2U gaps inside the occupied band.
-    Returns [(position, label, alias)] top-down; managers are labelled
-    ``cm-<U>`` and blanking panels ``blank-<U>``.
+    ``occupied`` is the set of units holding equipment or a removed device's
+    ledgered position. Each gap takes 2U panels from its top, then one 1U.
+    Returns [(position, alias)].
     """
-    items = []
-    for i, (label, alias, kind) in enumerate(stack):
-        items.append((label, alias))
-        below = stack[i+1][2] if i+1 < len(stack) else None
-        if kind == "panel-48":
-            items.append((None, CABLE_MANAGER_2U))
-        elif kind == "panel-24" or (kind == "pe" and below == "agg"):
-            items.append((None, CABLE_MANAGER_1U))
-    placed, unit = [], top
-    for label, alias in items:
-        position = unit - heights[alias] + 1
-        if position < 1:
-            raise DesignError(f"Cabinet stack exceeds {top}U")
-        placed.append((position, label or f"cm-{position}", alias))
-        unit = position - 1
-    return sorted(placed + _blanking(placed, heights), key=lambda item: -item[0])
-
-
-def _blanking(placed, heights):
-    """One blanking panel per 1-2U gap strictly inside the occupied band."""
-    occupied = {u for position, _, alias in placed for u in range(position, position + heights[alias])}
     fill, gap = [], []
     for u in range(max(occupied), min(occupied) - 1, -1):
         if u not in occupied:
             gap.append(u)
             continue
-        if 1 <= len(gap) <= 2:
-            fill.append((min(gap), f"blank-{min(gap)}", BLANKING_1U if len(gap) == 1 else BLANKING_2U))
-        gap = []
+        while gap:
+            if len(gap) >= 2:
+                fill.append((gap[1], BLANKING_2U)); gap = gap[2:]
+            else:
+                fill.append((gap[0], BLANKING_1U)); gap = []
     return fill
 
 
-def stack(side):
-    """Top-down active stack of one installed cabinet, before the hygiene rule."""
-    rack = f"r{1 + 'ab'.index(side):02}"
-    rows = [(f"{rack}-osp", OSP_PANEL, "panel-48"), (f"{rack}-demarc", COLO_PANEL, "panel-24"),
-            (f"pe-{side}", "provider-edge", "pe"), (f"agg-{side}", AGGREGATION, "agg")]
-    if side == "a":
-        rows += [("mgmt-01", POP_MANAGEMENT, None), ("console-01", POP_OOB, None)]
-    return rows
+def history(w, pop):
+    """One PoP's install ledger: [(rack name, item)] in install order.
+
+    An item is dict(label, alias, kind, day, status, removed, text, legacy):
+    ``kind`` drives the hygiene rule ("panel-48", "panel-24", "router" or
+    None); ``removed`` is the removal date of a device that is gone (its units
+    stay a gap); ``text`` names a removed predecessor.
+    """
+    tl = timeline.of(w)
+    core, launch = tl.tier[pop] == "core", tl.launch[pop]
+    # STUB(WP-A): ACX5048 builds as the ACX5448-M until its catalog entry and optics land.
+    agg_alias = lambda model: AGG_MODELS[model] if AGG_MODELS[model] in w.catalog["models"] else AGGREGATION
+    rack = lambda side: "R01" if side == "a" or not core else "R02"
+    items = []
+
+    def add(side, label, alias, kind, day, *, status="active", removed=None, text=None, order=0):
+        items.append((day, order, len(items), rack(side), dict(label=label, alias=alias, kind=kind, day=day,
+                      status=status, removed=removed, text=text, legacy=tl.legacy(day))))
+
+    sides = "ab"
+    pe0 = PE_LEGACY if tl.pe_at_launch[pop] == "mx80" else PE
+    for side in (sides if core else "a"):
+        add(side, f"{rack(side).lower()}-osp", OSP_PANEL, "panel-48", launch)
+        add(side, f"{rack(side).lower()}-demarc", COLO_PANEL, "panel-24", launch)
+    for side in sides:
+        relic = tl.refresh[pop] is not None
+        add(side, f"legacy-pe-{side}" if relic else f"pe-{side}", pe0, "router", launch,
+            status="decommissioning" if relic and tl.relic[pop] else "active",
+            removed=tl.refresh[pop] if relic and not tl.relic[pop] else None)
+    if tl.timing[pop]:
+        add("a", "ntp-01", TIMING, None, tl.timing[pop])
+    for side in sides:
+        if tl.agg_swap[pop]:
+            add(side, f"original-agg-{side}", None, None, launch, removed=tl.agg_swap[pop], text=ORIGINAL["agg"][0])
+        else:
+            add(side, f"agg-{side}", agg_alias(tl.agg[pop]), None, launch)
+    if tl.oob_swap[pop]:
+        add("a", "original-console", None, None, launch, removed=tl.oob_swap[pop], text=ORIGINAL["oob"][0])
+    else:
+        add("a", "mgmt-01", POP_MANAGEMENT, None, launch)
+        add("a", "console-01", POP_OOB, None, launch)
+    # Later events, each a dated programme; same-day items keep this order.
+    if tl.agg_swap[pop]:
+        for side in sides:
+            add(side, f"agg-{side}", agg_alias(tl.agg[pop]), None, tl.agg_swap[pop])
+    if tl.oob_swap[pop]:
+        add("a", "mgmt-01", POP_MANAGEMENT, None, tl.oob_swap[pop])
+        add("a", "console-01", POP_OOB, None, tl.oob_swap[pop])
+    if tl.spare[pop]:
+        model, day = tl.spare[pop]
+        add("b", "agg-spare", agg_alias(model), None, day, status="inventory")
+    if tl.refresh[pop]:
+        for side in sides:
+            add(side, f"pe-{side}", PE, "router", tl.refresh[pop])
+    if tl.mx304[pop]:
+        plan = tl.mx304[pop]
+        for side in sides:
+            add(side, f"pe-{side}2", PE_SUCCESSOR, "router", plan["received"] or plan["ordered"], status=plan["status"])
+    if tl.ddos[pop]:
+        add("a", "ddos-01", DDOS, None, tl.ddos[pop], status="staged", order=1)
+    return [(name, item) for _, _, _, name, item in sorted(items, key=lambda row: row[:3])]
+
+
+def _elevation(w, rack_key, items, heights):
+    """Top-down positions for one cabinet's install ledger, frozen in ``provider-cabinet-u/<rack>``.
+
+    Returns (placed, gaps): placed [(position, item-or-manager)] for devices
+    to create, gaps [(position, item)] for removed devices.
+    """
+    ledger = w.reservations.setdefault(f"provider-cabinet-u/{rack_key}", {})
+    floor = min(ledger.values(), default=RACK_HEIGHT + 1)
+    placed, gaps = [], []
+
+    def mount(label, height):
+        nonlocal floor
+        if label not in ledger:
+            position = floor - height
+            if position < 1:
+                raise DesignError(f"{rack_key}: cabinet stack exceeds {RACK_HEIGHT}U; add a cabinet by change order")
+            ledger[label] = position
+        floor = min(floor, ledger[label])
+        return ledger[label]
+
+    for i, item in enumerate(items):
+        height = heights[item["alias"]] if item["alias"] else ORIGINAL["agg" if "agg" in item["label"] else "oob"][1]
+        position = mount(item["label"], height)
+        (gaps if item["removed"] else placed).append((position, height, item))
+        after = items[i + 1] if i + 1 < len(items) else None
+        manager = {"panel-48": CABLE_MANAGER_2U, "panel-24": CABLE_MANAGER_1U}.get(item["kind"])
+        # A router pair racked together shares one manager below the pair.
+        if item["kind"] == "router" and not (after and after["kind"] == "router" and after["day"] == item["day"]):
+            manager = CABLE_MANAGER_1U
+        if manager:
+            cm = dict(label=f"cm-under-{item['label']}", alias=manager, kind=None, day=item["day"],
+                      status="active", removed=None, text=None, legacy=False)
+            placed.append((mount(cm["label"], heights[manager]), heights[manager], cm))
+    return placed, gaps
+
+
+def _legacy_name(w, site, alias, label):
+    facility = (w.obj(site.key)["attrs"].get("facility") or site.code).lower()
+    n = 2 if label.endswith("-b") else 1
+    return f"{facility}-{LEGACY_ABBREVIATIONS[ROLES[alias]]}{n}"
 
 
 def colo_tenant(w, site):
@@ -210,40 +342,84 @@ def _passive_text(alias, colo_name):
             BLANKING_1U: "Blanking panel", BLANKING_2U: "Blanking panel"}.get(alias, "Horizontal cable manager")
 
 
+def _journal(w, target, event, day, title, body, kind="info"):
+    """A dated plant-history journal entry (P0-8 shape; business hours UTC)."""
+    key = f"journal/{target}/{event}"
+    return w.add("journal_entry", key, {"kind": kind, "comments": timeline.entry(title, day.isoformat(), body),
+                 "created": timeline.created(day.isoformat(), key)}, {"assigned_object": target}, {"history": True})
+
+
 def build(site):
-    """Install one PoP's cage plant (physical and L2); return (PEs, AGGs).
+    """Install one PoP's plant (physical and L2) from its timeline; return (PEs, AGGs) in service.
 
     The caller (provider._pop) has already created the PoP management /26.
     """
-    w = site.w
+    w, pop = site.w, site.id.removeprefix("pop-")
+    tl = timeline.of(w)
     ensure_models(w)
-    for role in set(ROLES.values()):
-        _role(w, role)
-    heights = {alias: w.catalog["models"][alias]["u_height"] for alias in ROLES}
+    heights = {alias: w.catalog["models"][alias]["u_height"] for alias in ROLES if alias in w.catalog["models"]}
     colo, colo_name = colo_tenant(w, site)
-    racks = [site.authored_rack(f"R{bay+1:02}", bay, height=RACK_HEIGHT,
-                                status="active" if bay < INSTALLED_BAYS else "reserved",
-                                description=f"Side {'AB'[bay]} network cabinet" if bay < INSTALLED_BAYS else RESERVED_DESCRIPTION)
-             for bay in range(CAGE_BAYS)]
+    core = tl.tier[pop] == "core"
+    ledger = history(w, pop)
+    room = w.obj(site.equipment_location)
+    racks = {}
+    for name in ("R01", "R02") if core else ("R01",):
+        racks[name] = site.authored_rack(name, len(racks), height=RACK_HEIGHT,
+                                         description=f"Side {'AB'[len(racks)]} network cabinet" if core
+                                         else "Network cabinet, sides A and B")
+    if core:
+        room["attrs"]["description"] = f"Operator cage; {CAGE_CONTRACT}"
+        room["meta"]["cabinet_positions"] = CAGE_POSITIONS
+    else:
+        # The edge PoP's room is the cabinet itself.
+        room["attrs"].update(name=f"Cabinet {w.obj(racks['R01'])['attrs']['facility_id']}", description=EDGE_CABINET)
     devices = {}
-    for side, rack in zip("ab", racks):
+    for name, rack in racks.items():
         rack_name = w.obj(rack)["attrs"]["name"]
-        for position, label, alias in hygiene(stack(side), heights):
-            if label.startswith(("cm-", "blank-")):
-                label = f"{rack_name.lower()}-{label}"
+        placed, gaps = _elevation(w, rack, [item for r, item in ledger if r == name], heights)
+        # Removed devices' units are the gaps the blanking fills.
+        occupied = {u for position, height, _ in placed for u in range(position, position + height)}
+        blanks = [(position, heights[alias], dict(label=f"blank-{position}", alias=alias, kind=None, status="active",
+                   day=None, removed=None, text=None, legacy=False)) for position, alias in _blanking(occupied)]
+        for position, _, item in sorted(placed + blanks, key=lambda row: -row[0]):
+            alias, label = item["alias"], item["label"]
+            if alias in (CABLE_MANAGER_1U, CABLE_MANAGER_2U, BLANKING_1U, BLANKING_2U):
+                label = f"{rack_name.lower()}-{'blank' if alias in (BLANKING_1U, BLANKING_2U) else 'cm'}-{position}"
+            _role(w, ROLES[alias])
             key = devices[label] = site.device(alias, label, ROLES[alias], rack=rack, position=position)
             node = w.obj(key)
+            node["attrs"]["status"] = item["status"]
+            if item["status"] in ("decommissioning", "planned", "inventory"):
+                # Powered off, uncabled, or not yet here: every port is shut.
+                for port in w.catalog["models"][node["meta"]["hardware"]]["interfaces"]:
+                    w.obj(f"{key}/if/{port['name']}")["attrs"]["enabled"] = False
+            if item["day"]:
+                node["meta"]["installed"] = item["day"].isoformat()
             if alias in PASSIVE:
-                # Serials follow the catalog's own format, passive or not.
                 node["attrs"]["name"] = {OSP_PANEL: f"{rack_name} OSP Panel", COLO_PANEL: f"{rack_name} Colo Demarc"}.get(
                     alias, f"{rack_name} {'Blank' if alias in (BLANKING_1U, BLANKING_2U) else 'CM'}-{position}")
                 node["attrs"]["description"] = _passive_text(alias, colo_name)
+                if alias in (OSP_PANEL, COLO_PANEL):
+                    _panel_labels(w, key, w.obj(rack)["attrs"]["facility_id"], position)
+            elif item["legacy"]:
+                node["attrs"]["name"] = _legacy_name(w, site, alias, item["label"])
+                node["meta"]["legacy_naming"] = True
             if alias == COLO_PANEL:
                 node["refs"]["tenant"] = colo
+        removed = []
+        for position, height, item in sorted(gaps, key=lambda row: -row[0]):
+            text = item["text"] or f"Juniper MX80 {_legacy_name(w, site, PE_LEGACY, item['label'])}"
+            change = timeline.change(w, f"{rack}/{item['label']}", "-removed")
+            units = f"U{position}" if height == 1 else f"U{position}-U{position + height - 1}"
+            removed.append(dict(label=item["label"], units=units, text=text, installed=item["day"].isoformat(),
+                                removed=item["removed"].isoformat(), change=change))
+            _journal(w, rack, f"removed/{item['label']}", item["removed"], "Removed",
+                     f"Removed: {text}, {change}. {units} left empty and blanked; units are not reused.")
+        w.obj(rack)["meta"]["removed"] = removed
     pes, aggs = [devices["pe-a"], devices["pe-b"]], [devices["agg-a"], devices["agg-b"]]
-    spec = w.catalog["models"][AGGREGATION]
     for agg in aggs:
         # Unused data ports are shut; provider._circuit enables a UNI it lands on.
+        spec = w.catalog["models"][w.obj(agg)["meta"]["hardware"]]
         for port in spec["interfaces"]:
             if not port.get("mgmt_only") and port["name"] not in spec["lag_ports"]:
                 w.obj(site.interface(agg, port["name"]))["attrs"]["enabled"] = False
@@ -253,7 +429,78 @@ def build(site):
     site.power()
     _dress_power(site)
     _management(site, devices["mgmt-01"], devices["console-01"], pes, aggs)
+    _history_journals(site, devices)
     return pes, aggs
+
+
+def _panel_labels(w, panel, facility, position):
+    """TIA-606-style front-port labels: <facility_id>.<U>:<port> (style only, no compliance claim)."""
+    n = 1
+    while f"{panel}/front/{n}" in w.objects:
+        w.obj(f"{panel}/front/{n}")["attrs"]["label"] = f"{facility}.{position}:{n:02}"
+        n += 1
+
+
+def _history_journals(site, devices):
+    """Dated device history: predecessor cut-overs, relic notices, the successor order."""
+    w, pop = site.w, site.id.removeprefix("pop-")
+    tl = timeline.of(w)
+    name = lambda label: w.obj(devices[label])["attrs"]["name"]
+    for side in "ab":
+        if tl.refresh[pop]:
+            old = f"legacy-pe-{side}"
+            predecessor = name(old) if old in devices else _legacy_name(w, site, PE_LEGACY, old)
+            change = timeline.change(w, devices[f"pe-{side}"], "-cutover")
+            _journal(w, devices[f"pe-{side}"], "cut-over", tl.refresh[pop], "Cut over",
+                     f"Replaced Juniper MX80 {predecessor} under {change}; services cut over "
+                     f"{tl.refresh[pop]:%Y-%m}. Spans re-lit at 100G (the MX80 has only 10G XFP).", "success")
+            if old in devices:
+                _journal(w, devices[old], "installed", tl.launch[pop], "Installed",
+                         f"Racked as the launch PE of {site.display} under {timeline.change(w, devices[old])}.", "success")
+                _journal(w, devices[old], "cut-over", tl.refresh[pop], "Cut over",
+                         f"Services moved to {name(f'pe-{side}')} under {change}; uncabled and powered off, "
+                         "de-rack scheduled.", "warning")
+                if timeline.MX80_END_OF_SUPPORT <= tl.as_of:
+                    _journal(w, devices[old], "end-of-support", timeline.MX80_END_OF_SUPPORT, "End of support",
+                             f"Vendor end of support {timeline.MX80_END_OF_SUPPORT} per vendor notice "
+                             f"(end of sale {timeline.MX80_END_OF_SALE}).", "warning")
+        if tl.agg_swap[pop]:
+            _journal(w, devices[f"agg-{side}"], "replaced", tl.agg_swap[pop], "Replaced predecessor",
+                     f"Replaced {ORIGINAL['agg'][0]}, under {timeline.change(w, devices[f'agg-{side}'], '-replace')}; "
+                     f"services cut over {tl.agg_swap[pop]:%Y-%m}.", "success")
+    if tl.oob_swap[pop]:
+        for label in ("mgmt-01", "console-01"):
+            _journal(w, devices[label], "replaced", tl.oob_swap[pop], "Replaced predecessor",
+                     f"Replaced {ORIGINAL['oob'][0]}, under {timeline.change(w, devices[label], '-replace')}; "
+                     f"management cut over {tl.oob_swap[pop]:%Y-%m}.", "success")
+    if tl.agg[pop] == "acx5048":
+        for side in "ab":
+            _journal(w, devices[f"agg-{side}"], "end-of-sale", timeline.ACX5048_LAST_ORDER, "Last order date",
+                     f"ACX5048 last order {timeline.ACX5048_LAST_ORDER}, end of support "
+                     f"{timeline.ACX5048_END_OF_SUPPORT}, per vendor notice. No aggregation refresh has started.")
+    if "agg-spare" in devices:
+        model, day = tl.spare[pop]
+        bought = (f"bought before the {timeline.ACX5048_LAST_ORDER} last order date, per vendor notice"
+                  if model == "acx5048" else "the metro's aggregation model")
+        w.obj(devices["agg-spare"])["attrs"]["description"] = f"Cold-spare aggregation chassis, pre-racked and uncabled; {bought}"
+        _journal(w, devices["agg-spare"], "racked", day, "Cold spare racked",
+                 f"Pre-racked as the metro's cold-spare aggregation chassis under {timeline.change(w, devices['agg-spare'])}; "
+                 f"{bought}.")
+    if tl.mx304[pop]:
+        plan = tl.mx304[pop]
+        reason = "; ".join(plan["reasons"])
+        for side in "ab":
+            successor, current = devices[f"pe-{side}2"], devices[f"pe-{side}"]
+            w.obj(successor)["attrs"]["description"] = (f"Planned successor to {name(f'pe-{side}')}: {reason}. "
+                                                        "MX304 orderable since 1H2022 per Juniper (authored 2022-07-01)")[:200]
+            _journal(w, current, "successor-ordered", plan["ordered"], "Successor ordered",
+                     f"MX304 successor {name(f'pe-{side}2')} ordered under {timeline.change(w, successor, '-order')}: {reason}.",
+                     "warning")
+            _journal(w, successor, "ordered", plan["ordered"], "Ordered",
+                     f"Purchase order raised under {timeline.change(w, successor, '-order')}; units reserved in the cabinet.")
+            if plan["received"]:
+                _journal(w, successor, "received", plan["received"], "Received and staged",
+                         "Shipment received; chassis racked and staged, not in service.", "success")
 
 
 def _label(site, device, key):
@@ -298,7 +545,7 @@ def _lag(site, side, pe, agg):
             name=name, type="lag", enabled=True, mode="tagged",
             description=f"4x10G LAG to {w.obj(peer)['attrs']['name']}; home-side service VLANs and NID management"),
             dict(device=device, tagged_vlans=[vlan])))
-    for a_name, b_name in zip(w.catalog["models"][AGGREGATION]["lag_ports"], PE_LAG_MEMBERS, strict=True):
+    for a_name, b_name in zip(w.catalog["models"][w.obj(agg)["meta"]["hardware"]]["lag_ports"], PE_LAG_MEMBERS, strict=True):
         a, b = site.interface(agg, a_name), site.interface(pe, b_name)
         for port, lag in ((a, lags[0]), (b, lags[1])):
             w.obj(port)["attrs"]["speed"] = 10000000
@@ -354,7 +601,7 @@ def attachment(w, pop, side, ordinal):
                           "exhausted at 8; the next platform is MX304, or split hub and access PoPs")
     sid = f"pop-{pop}"
     agg, pe = f"device/{sid}/agg-{side}", f"device/{sid}/pe-{side}"
-    uni = w.catalog["models"][AGGREGATION]["uni_ports"][ordinal]
+    uni = w.catalog["models"][w.obj(agg)["meta"]["hardware"]]["uni_ports"][ordinal]
     return dict(site=f"site/{sid}", agg=agg, uni=f"{agg}/if/{uni}", agg_lag=f"{agg}/if/{AGG_LAG}",
                 pe=pe, pe_lag=f"{pe}/if/{PE_LAG}")
 
@@ -390,7 +637,7 @@ def _management(site, switch, console, pes, aggs):
     network = next(p["name"] for p in w.catalog["models"][POP_PDU]["interfaces"] if p.get("mgmt_only"))
     plan = [(pes[0], "fxp0", FXP0_HOSTS[0], False), (pes[1], "fxp0", FXP0_HOSTS[1], False),
             (aggs[0], "em0", AGG_EM0_HOSTS[0], True), (aggs[1], "em0", AGG_EM0_HOSTS[1], True),
-            (console, eth0, OOB_HOST, True), *((pdu, network, host, True) for pdu, host in zip(pdus, PDU_HOSTS, strict=True))]
+            (console, eth0, OOB_HOST, True), *((pdu, network, host, True) for pdu, host in zip(pdus, PDU_HOSTS[:len(pdus)], strict=True))]
     vlan, _ = site.network("management")
     for index, (device, name, host, primary) in enumerate(plan):
         a, b = site.interface(device, name), site.interface(switch, copper[index])
