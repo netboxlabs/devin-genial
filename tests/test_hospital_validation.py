@@ -286,7 +286,7 @@ class HospitalValidationTests(unittest.TestCase):
                 self.strip_explanations()
                 self.assertIn("dc-workload-resources", self.codes())
         self.setUp()
-        self.objects["service/vm/dc-01/imaging-archive/001"]["attrs"]["ports"] = [443]
+        self.objects["service/vm/dc-01/imaging-archive/001"]["attrs"]["port_mappings"] = ["tcp/443"]
         self.strip_explanations()
         self.assertIn("dc-workload-listener", self.codes())
         self.setUp()

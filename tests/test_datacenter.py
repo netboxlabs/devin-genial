@@ -65,7 +65,7 @@ class DataCenterTests(unittest.TestCase):
             for suffix, port in (("", 8443), ("/metrics", 9090)):
                 listener = objects[f"service/{vm['key']}{suffix}"]
                 self.assertEqual(listener["refs"], {"virtual_machine": vm["key"], "ipaddresses": [address["key"]]})
-                self.assertEqual(listener["attrs"]["ports"], [port])
+                self.assertEqual(listener["attrs"]["port_mappings"], [f"tcp/{port}"])
         circuits = [obj for obj in objects.values() if obj["kind"] == "circuit"]
         self.assertEqual(len(circuits), 4, "900 Mbps with 20% reserve needs two 1 Gbps paths per provider")
         self.assertEqual({obj["attrs"]["commit_rate"] for obj in circuits}, {1000000})
@@ -78,9 +78,18 @@ class DataCenterTests(unittest.TestCase):
         demand = workload(instances=2)
         plan = generate([demand])
         listeners = [obj for obj in plan["objects"] if obj["kind"] == "service" and obj["attrs"]["name"] == demand["key"]]
-        listeners[0]["attrs"]["ports"].append(9443)
-        self.assertEqual(listeners[1]["attrs"]["ports"], [8443])
+        listeners[0]["attrs"]["port_mappings"].append("tcp/9443")
+        self.assertEqual(listeners[1]["attrs"]["port_mappings"], ["tcp/8443"])
         self.assertEqual(demand["listeners"][0]["ports"], [8443])
+
+    def test_a_protocol_suffixed_listener_folds_into_one_multi_protocol_service(self):
+        demand = workload(instances=2)
+        demand["listeners"] = [dict(key="", name="dns", protocol="tcp", ports=[53]),
+                               dict(key="udp", name="dns-udp", protocol="udp", ports=[53])]
+        services = [obj for obj in generate([demand])["objects"] if obj["kind"] == "service"]
+        self.assertEqual(len(services), 2)
+        self.assertTrue(all(obj["attrs"]["name"] == "dns" and obj["attrs"]["port_mappings"] == ["tcp/53", "udp/53"]
+                            and not obj["key"].endswith("/udp") for obj in services))
 
     def test_invalid_resolved_demand_fails_before_allocating_dc(self):
         cases = [([], "nonempty"), ([workload(), workload()], "unique"),

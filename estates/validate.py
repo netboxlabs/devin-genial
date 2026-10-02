@@ -31,7 +31,7 @@ from .places import FLAT_KINDS
 # not product deployment instructions or a claim about real bank applications.
 BANK_SERVICE_PORTS = {
     "identity": (("identity", "tcp", 443), ("radius", "udp", 1812), ("radius", "udp", 1813)),
-    "dns": (("dns", "tcp", 53), ("dns-udp", "udp", 53)),
+    "dns": (("dns", "tcp", 53), ("dns", "udp", 53)),
     "teller-api": (("teller-api", "tcp", 443),),
     "atm-switch": (("atm-switch", "tcp", 443),),
     "ledger-db": (("ledger-db", "tcp", 5432),),
@@ -153,6 +153,11 @@ def _validate(plan):
 
     def kind(key):
         return objects.get(key, {}).get("kind") if isinstance(key, str) else None
+
+    def term_site(term):
+        """A circuit termination's site, through the location it may sit in."""
+        target = refs(term).get("termination")
+        return refs(target).get("site") if kind(target) == "location" else target
 
     # Two sites never share one postal address (a reviewer read two customers
     # at one street number as copy-paste data).
@@ -441,8 +446,8 @@ def _validate(plan):
             report("circuit-terminations", circuit, "A complete generated circuit needs exactly A and Z terminations.")
         for term in terms:
             target = refs(term).get("termination")
-            if kind(target) not in {"site", "provider_network"}:
-                report("circuit-attachment", term, "Termination must attach to a site or provider network.")
+            if kind(target) not in {"site", "provider_network", "location"} or kind(term_site(term)) not in {"site", "provider_network"}:
+                report("circuit-attachment", term, "Termination must attach to a site, a location in a site, or a provider network.")
             elif kind(target) == "provider_network" and refs(target).get("provider") != refs(circuit).get("provider"):
                 report("circuit-provider", term, "Provider network and circuit belong to different providers.")
     for cable in by_kind["cable"]:
@@ -459,7 +464,10 @@ def _validate(plan):
             occupied[endpoint] = cable
         for endpoint, peer in ((a, b), (b, a)):
             if kind(endpoint) == "circuit_termination":
-                target = refs(endpoint).get("termination")
+                room = refs(endpoint).get("termination")
+                if kind(room) == "location" and refs(refs(peer).get("device")).get("location") != room:
+                    report("circuit-site", cable, "Circuit handoff cable leaves the room its termination names.")
+                target = term_site(endpoint)
                 if kind(target) == "site" and site(peer) and site(peer) != target:
                     report("circuit-site", cable, "Circuit handoff cable terminates at a different site.")
         ma = _medium(kind(a), attrs(a).get("type", ""))
@@ -881,7 +889,7 @@ def _validate(plan):
         if not any(kind(refs(term).get("termination")) == "provider_network" and refs(refs(term)["termination"]).get("provider") == provider for term in terms):
             continue
         for term in terms:
-            location = refs(term).get("termination")
+            location = term_site(term)
             peer = terminal_peers.get(term)
             if kind(location) == "site" and kind(peer) == "interface" and site(peer) == location:
                 speeds = [attrs(term).get("port_speed") or 0, attrs(circuit).get("commit_rate") or 0, attrs(peer).get("speed") or _speed(attrs(peer).get("type", "")) or 0]
@@ -1682,7 +1690,7 @@ def _validate(plan):
                     if refs(vm).get("primary_ip4") not in refs(service).get("ipaddresses", []):
                         report("service-address", service, "Generated service must explicitly bind its VM's primary address.")
                 for name, protocol, port in expected_ports:
-                    if not any(attrs(key).get("name") == name and attrs(key).get("protocol") == protocol and isinstance(attrs(key).get("ports"), list) and port in attrs(key)["ports"] and not refs(key).get("device") for key in services):
+                    if not any(attrs(key).get("name") == name and isinstance(attrs(key).get("port_mappings"), list) and f"{protocol}/{port}" in attrs(key)["port_mappings"] and not refs(key).get("device") for key in services):
                         report("service-endpoint", vm, f"Required service {name} must be owned by this VM and expose {protocol}/{port}.")
             if len(available_vms) != expected_count:
                 report("service-count", site_key, f"Need {expected_count} available placed {service_name} VMs; found {len(available_vms)}.")

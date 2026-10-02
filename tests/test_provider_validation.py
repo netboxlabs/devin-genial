@@ -15,6 +15,98 @@ from estates.validate_provider import _loads
 ROOT = Path(__file__).parents[1]
 
 
+LIFECYCLE_RECIPE = {"profile": "provider-backbone", "customers": [
+    dict(key="harbor-logistics", hub_pop="chicago-west", sites=[
+        dict(pop="chicago-west"), dict(pop="detroit-south", status="planned"),
+        dict(pop="cleveland-east", status="decommissioning")]),
+    dict(key="maple-schools", hub_pop="detroit-south", status="planned", lan_endpoints=0,
+         sites=[dict(pop="detroit-south"), dict(pop="cleveland-east")])]}
+
+
+class ProviderLifecycleTests(unittest.TestCase):
+    """Onboarding, provisioning and decommissioning premises are honest, never healthy capacity."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.baseline = generate(LIFECYCLE_RECIPE)
+
+    def setUp(self):
+        self.plan = deepcopy(self.baseline)
+        self.objects = {o["key"]: o for o in self.plan["objects"]}
+
+    def codes(self):
+        return {finding["code"] for finding in validate(self.plan)}
+
+    def test_each_premises_lifecycle_reaches_every_record_it_owns(self):
+        self.assertEqual(validate(self.plan), [])
+        o = self.objects
+        for sid, site, device, circuit, ip, bgp in (
+                ("ce-maple-schools-detroit-south-001", "planned", "planned", "planned", "reserved", "planned"),
+                ("ce-harbor-logistics-detroit-south-001", "staging", "staged", "provisioning", "reserved", "planned"),
+                ("ce-harbor-logistics-cleveland-east-001", "decommissioning", "decommissioning", "deprovisioning", "deprecated", "offline"),
+                ("ce-harbor-logistics-chicago-west-001", "active", "active", "active", "active", "active")):
+            with self.subTest(sid=sid):
+                self.assertEqual(o[f"site/{sid}"]["attrs"]["status"], site)
+                self.assertEqual(o[f"device/{sid}/edge-01"]["attrs"]["status"], device)
+                self.assertEqual(o[f"circuit/customer/{sid}"]["attrs"]["status"], circuit)
+                self.assertEqual(o[f"ip/device/{sid}/edge-01/if/wan1"]["attrs"]["status"], ip)
+                self.assertEqual(o[f"bgp-session/customer/{sid}"]["attrs"]["status"], bgp)
+                self.assertEqual("install_date" in o[f"circuit/customer/{sid}"]["attrs"], circuit in ("active", "deprovisioning"))
+        self.assertEqual(o["virtual-circuit/customer/maple-schools"]["attrs"]["status"], "planned")
+        # Nothing records an installation that has not happened.
+        self.assertNotIn("journal/device/ce-maple-schools-detroit-south-001/edge-01/equipment-record", o)
+        self.assertFalse([k for k in o if k.startswith("journal/circuit/customer/ce-maple-schools-")])
+        # Only in-service premises offer traffic to the capacity model.
+        capacity = next(c for c in self.plan["contracts"] if c.get("provider"))["provider"]["capacity"]
+        self.assertFalse(any(capacity["normal_load_mbps"].values()))
+
+    def test_status_counterexamples_are_reported(self):
+        sid = "ce-maple-schools-detroit-south-001"
+        cases = ((f"circuit/customer/{sid}", "install_date", "2026-01-01", "provider-timeline"),
+                 (f"site/{sid}", "status", "active", "provider-site-context"),
+                 (f"device/ce-harbor-logistics-cleveland-east-001/edge-01", "status", "active", "provider-device-inventory"),
+                 (f"ip/device/{sid}/edge-01/if/wan1", "status", "active", "provider-routed-address"),
+                 (f"bgp-session/customer/{sid}", "status", "active", "provider-bgp-session"),
+                 (f"circuit/customer/ce-harbor-logistics-detroit-south-001", "status", "active", "provider-circuit-path"),
+                 ("virtual-circuit/customer/maple-schools", "status", "active", "provider-customer-service"))
+        for key, field, value, code in cases:
+            with self.subTest(key=key, field=field):
+                self.setUp()
+                self.objects[key]["attrs"][field] = value
+                self.assertIn(code, self.codes())
+
+    def test_recipe_lifecycle_bounds(self):
+        bad = deepcopy(LIFECYCLE_RECIPE)
+        bad["customers"][0]["sites"][0]["status"] = "planned"  # the hub of an active customer
+        with self.assertRaisesRegex(DesignError, "hub_pop entry of an active customer"):
+            generate(bad)
+        bad = deepcopy(LIFECYCLE_RECIPE)
+        bad["customers"][1]["sites"][0]["status"] = "active"
+        with self.assertRaisesRegex(DesignError, "every premises of a planned customer is planned"):
+            generate(bad)
+        bad = deepcopy(LIFECYCLE_RECIPE)
+        bad["customers"][0]["sites"][1]["status"] = "retired"
+        with self.assertRaisesRegex(DesignError, "status must be one of"):
+            generate(bad)
+
+    def test_lifecycle_moves_forward_as_growth(self):
+        grown = deepcopy(self.plan["recipe"])
+        grown["customers"][1]["status"] = "active"
+        for entry in grown["customers"][1]["sites"]:
+            entry.pop("status", None)
+        next(e for e in grown["customers"][0]["sites"] if e["pop"] == "detroit-south").pop("status")
+        plan = generate(grown, previous=self.plan)
+        self.assertEqual(validate(plan), [])
+        after = {o["key"]: o for o in plan["objects"]}
+        self.assertEqual(after["circuit/customer/ce-maple-schools-detroit-south-001"]["attrs"]["status"], "active")
+        self.assertEqual(after["circuit/customer/ce-harbor-logistics-chicago-west-001"],
+                         self.objects["circuit/customer/ce-harbor-logistics-chicago-west-001"])
+        back = deepcopy(self.plan["recipe"])
+        next(e for e in back["customers"][0]["sites"] if e["pop"] == "cleveland-east").pop("status")  # decommissioning -> active
+        with self.assertRaisesRegex(DesignError, "requires a new baseline"):
+            generate(back, previous=self.plan)
+
+
 class ProviderValidationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -148,7 +240,7 @@ class ProviderValidationTests(unittest.TestCase):
     def test_customer_virtual_membership_and_physical_parent_are_required(self):
         term = f"virtual-circuit-termination/{self.customer}"
         port = f"device/{self.customer}/edge-01/if/PrivateL3"
-        for key, field, value in ((term, "role", "hub"), (port, "parent", f"device/{self.customer}/edge-01/if/wan2"),
+        for key, field, value in ((term, "role", "peer"), (port, "parent", f"device/{self.customer}/edge-01/if/wan2"),
                                   (port, "vrf", "vrf/provider"), (port, "type", "1000base-t")):
             with self.subTest(key=key, field=field):
                 self.setUp()
@@ -159,6 +251,78 @@ class ProviderValidationTests(unittest.TestCase):
         self.plan["objects"].remove(self.objects[term])
         self.strip()
         self.assertIn("provider-service-inventory", self.codes())
+
+    def test_spoke_membership_cannot_claim_the_hub_role(self):
+        spoke = "virtual-circuit-termination/ce-harbor-logistics-detroit-south-001"
+        self.assertEqual(self.objects[spoke]["attrs"]["role"], "spoke")
+        self.assertEqual(self.objects[f"virtual-circuit-termination/{self.customer}"]["attrs"]["role"], "hub")
+        self.objects[spoke]["attrs"]["role"] = "hub"
+        self.strip()
+        self.assertIn("provider-virtual-membership", self.codes())
+
+    def test_access_circuit_records_its_route_length(self):
+        circuit = self.objects[f"circuit/customer/{self.customer}"]
+        self.assertEqual(circuit["attrs"]["distance_unit"], "km")
+        self.assertGreater(circuit["attrs"]["distance"], 0)
+        for change in ({"distance": circuit["attrs"]["distance"] + 5}, {"distance": None}):
+            with self.subTest(change=change):
+                self.setUp()
+                attrs = self.objects[f"circuit/customer/{self.customer}"]["attrs"]
+                attrs.update(change)
+                if attrs["distance"] is None:
+                    del attrs["distance"], attrs["distance_unit"]
+                self.strip()
+                self.assertIn("provider-access-geography", self.codes())
+
+    def test_customer_asn_belongs_to_its_customer_and_upstream_asns_to_nobody(self):
+        self.assertEqual(self.objects["asn/customer/harbor-logistics"]["refs"]["tenant"], "tenant/cust-harbor-logistics")
+        for key, change in (("asn/customer/harbor-logistics", "tenant"), ("asn/transit-a", "tenant")):
+            with self.subTest(key=key):
+                self.setUp()
+                self.objects[key]["refs"]["tenant"] = change
+                self.strip()
+                self.assertIn("provider-asn", self.codes())
+
+    def test_local_handoffs_terminate_in_their_equipment_room(self):
+        term = self.term(f"circuit/customer/{self.customer}", "A")
+        self.assertEqual(term["refs"]["termination"], f"location/{self.customer}")
+        for target in (f"site/{self.customer}", "location/pop-chicago-west"):
+            with self.subTest(target=target):
+                self.setUp()
+                self.term(f"circuit/customer/{self.customer}", "A")["refs"]["termination"] = target
+                self.strip()
+                self.assertIn("provider-circuit-path", self.codes())
+
+    def test_carrier_handoffs_into_a_pop_record_cross_connect_and_enclosure_position(self):
+        span = next(k for k, o in self.objects.items() if o["kind"] == "circuit" and k.startswith("circuit/backbone/")
+                    and o["refs"]["provider"] != "provider/operator")
+        term = self.term(span, "A")
+        self.assertRegex(term["attrs"]["xconnect_id"], r"^XC-\d{7}$")
+        self.assertRegex(term["attrs"]["pp_info"], r"^chicago-west-odf-[ab], panel [1-4], port \d+$")
+        customer = self.term(f"circuit/customer/{self.customer}", "Z")
+        self.assertNotIn("xconnect_id", customer["attrs"])
+        other = self.term(f"circuit/transit/a", "A")
+        cases = ((term, "xconnect_id", None), (term, "pp_info", "odf-9, panel 1, port 1"),
+                 (customer, "xconnect_id", "XC-1234567"), (other, "xconnect_id", term["attrs"]["xconnect_id"]))
+        for index, (target, field, value) in enumerate(cases):
+            with self.subTest(case=index):
+                self.setUp()
+                obj = self.objects[target["key"]]
+                if value is None:
+                    del obj["attrs"][field]
+                else:
+                    obj["attrs"][field] = value
+                self.strip()
+                self.assertIn("provider-cross-connect", self.codes())
+
+    def test_one_global_site_block_parents_every_segment(self):
+        block = self.objects["prefix/pop-chicago-west/reservation"]
+        self.assertNotIn("vrf", block["refs"])
+        self.assertFalse([k for k in self.objects if k.startswith("prefix/dc-01/") and k.endswith("/reservation")
+                          and k != "prefix/dc-01/reservation"])
+        block["refs"]["vrf"] = "vrf/provider"
+        self.strip()
+        self.assertIn("provider-site-network", self.codes())
 
     def test_customer_tenant_account_route_target_and_asn_cannot_be_swapped(self):
         cases = (("virtual-circuit/customer/harbor-logistics", "tenant", "tenant", "provider-customer-service"),
@@ -358,7 +522,7 @@ class ProviderValidationTests(unittest.TestCase):
         self.assertIn("dc-replica-diversity", self.codes())
         self.setUp()
         service = next(o for o in self.plan["objects"] if o["kind"] == "service" and o["refs"].get("virtual_machine") == "vm/dc-01/dns/001")
-        service["attrs"]["ports"] = [443]
+        service["attrs"]["port_mappings"] = ["tcp/443"]
         self.strip()
         self.assertIn("dc-workload-listener", self.codes())
 
@@ -416,7 +580,7 @@ class ProviderRealismTests(unittest.TestCase):
         metro = {f"site/pop-{p['key']}": p["metro"] for p in self.plan["recipe"]["pops"]}
         pairs = Counter()
         for key, span in self.spans().items():
-            a, z = (metro[self.objects[f"{key}/{side}"]["refs"]["termination"]] for side in "AZ")
+            a, z = (metro[self.objects[self.objects[f"{key}/{side}"]["refs"]["termination"]]["refs"]["site"]] for side in "AZ")
             if a == z:
                 self.assertEqual(span["refs"]["provider"], "provider/operator", key)
                 self.assertNotIn("commit_rate", span["attrs"])

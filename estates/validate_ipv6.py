@@ -177,8 +177,8 @@ def validate(plan):
             n = slot(f"ipv6-segments/{site}", key)
             if n is not None and site in site_nets:
                 net6 = IPv6Network((int(site_nets[site].network_address)+(n << 64)+1, 128))
-                require_prefix(f"ipv6/reservation/{site}/{vrf}", site_nets[site],
-                               {"vrf": vrf, "tenant": tenant, "scope_site": site}, "container")
+                require_prefix(f"ipv6/reservation/{site}", site_nets[site],
+                               {"tenant": refs(site).get("tenant"), "scope_site": site}, "container")
         elif ((kind(rel.get("vlan")) == "vlan" and site in sites) or
                 (bank and site in sites and not rel.get("vlan") and net4.prefixlen == 31)):
             purpose = "segment" if rel.get("vlan") else "radio"
@@ -188,8 +188,8 @@ def validate(plan):
             n = slot(f"ipv6-segments/{site}", key)
             if n is not None and site in site_nets:
                 net6 = IPv6Network((int(site_nets[site].network_address)+(n << 64), 64))
-                require_prefix(f"ipv6/reservation/{site}/{vrf}", site_nets[site],
-                               {"vrf": vrf, "tenant": tenant, "scope_site": site}, "container")
+                require_prefix(f"ipv6/reservation/{site}", site_nets[site],
+                               {"tenant": refs(site).get("tenant"), "scope_site": site}, "container")
         elif net4.prefixlen == 31 and not site and not rel.get("vlan") and (key in routed_prefixes or bank and key == "prefix/recovery"):
             purpose = "routed"
             n = slot("ipv6-routed-links", key)

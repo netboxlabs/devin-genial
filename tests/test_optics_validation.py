@@ -301,7 +301,7 @@ class OpticsValidationTests(unittest.TestCase):
         self.assertIn("module-type/Juniper/SFP-1GE-LX", installed)
         mutations = (lambda port, module, circuit: module["refs"].update(module_type="module-type/Juniper/SFP-1GE-LX"),
                      lambda port, module, circuit: circuit["attrs"].update(distance=90, distance_unit="km"),
-                     lambda port, module, circuit: objects[objects[circuit["key"] + "/A"]["refs"]["termination"]]["attrs"].update(latitude=44.5))
+                     lambda port, module, circuit: objects[objects[objects[circuit["key"] + "/A"]["refs"]["termination"]]["refs"]["site"]]["attrs"].update(latitude=44.5))
         for index, mutate in enumerate(mutations):
             with self.subTest(mutation=index):
                 plan, objects = self.fixture(self.provider)

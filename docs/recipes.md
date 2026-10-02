@@ -292,9 +292,17 @@ Each `[[customers]]` entry (`estates/provider.py:95`) requires `key`, `hub_pop` 
 | `site_peak_mbps` | integer | `50` | `1`–`800` directed traffic from each non-hub premises toward its hub; ≤ `1000 × (1 − reserve_fraction)` | **rebaseline** |
 | `hub_commit_mbps` | integer | `1000` | `1`–`1000`, must be a member of `wan_tiers_mbps`, and must cover `(premises − 1) × site_peak_mbps` after reserve | **rebaseline** (bandwidth renewal) |
 | `lan_endpoints` | integer | `4` | `0`–`12` wired office desks at each premises; `0` is the CE alone, handing the LAN to customer-owned equipment and managed on a loopback | grow-only; `0` to more needs a new baseline |
+| `status` | string | `active` | `active` or `planned` (onboarding: every premises planned, its virtual circuit planned) | growth may move `planned` → `active` |
 
-Each `sites` entry (`estates/provider.py:116`) accepts `pop` (required, a known PoP
-key, unique within the customer) and `count` (optional, default `1`, `1`–`12`).
+Each `sites` entry accepts `pop` (required, a known PoP key, unique within the
+customer), `count` (optional, default `1`, `1`–`12`) and `status` (optional,
+default the customer's: `active`, `planned` — provisioning under an active
+customer — or `decommissioning`; every entry of a planned customer is planned,
+and an active customer's `hub_pop` entry stays active). The status applies to
+every premises in the entry and to every record they own; see
+[provider customer lifecycle](modeling.md#provider-customer-lifecycle).
+Growth may move an entry forward (planned → active, active → decommissioning);
+any other change, or removing a premises, needs a new baseline.
 Combined customer and NOC attachments cannot exceed twelve per PoP. Composed site
 identities (`ce-<customer>-<pop>-<nnn>`) must not collide. The `pop` homes those
 premises: each is placed (and named) in that PoP's service area — within 25 km

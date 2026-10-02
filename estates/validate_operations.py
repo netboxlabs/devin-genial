@@ -231,6 +231,11 @@ def _context(plan, objects, kinds):
     def fail(code, key, message):
         findings.append({"code": code, "object": key, "message": message})
 
+    def site_of(target):
+        """A termination target's site, through the room it may name."""
+        target = str(target or "")
+        return str(objects.get(target, {}).get("refs", {}).get("site", "")) if target.startswith("location/") else target
+
     def attrs(key):
         return objects.get(key, {}).get("attrs", {}) if isinstance(key, str) else {}
 
@@ -276,7 +281,7 @@ def _context(plan, objects, kinds):
     # graph (never from metadata). Installs lead it; no note predates it.
     service_day = {}
     for term in kinds["circuit_termination"]:
-        site = str(term["refs"].get("termination", ""))
+        site = site_of(term["refs"].get("termination"))
         day = attrs(term["refs"].get("circuit")).get("install_date")
         if site.startswith("site/") and isinstance(day, str):
             service_day[site] = min(day, service_day.get(site, day))
@@ -285,7 +290,8 @@ def _context(plan, objects, kinds):
     # serial's date code is a manufacture 30-180 days before the install of the
     # unit it sits in, or before the circuit an optic's own port serves.
     # Re-derived from the graph alone.
-    circuit_day = {t["key"]: attrs(t["refs"].get("circuit")).get("install_date") for t in kinds["circuit_termination"]}
+    circuit_day = {t["key"]: attrs(t["refs"].get("circuit")).get("install_date") for t in kinds["circuit_termination"]
+                   if attrs(t["refs"].get("circuit")).get("install_date")}
     port_day = {}
     for cable in kinds["cable"]:
         ends = (cable["refs"].get("a"), cable["refs"].get("b"))
@@ -425,28 +431,32 @@ def _context(plan, objects, kinds):
         contact = expect_contact(f"contact/{provider}", f"{provider_name} support desk", "carrier", provider_name,
                                  None if own_domain else f"carrier-{provider.removeprefix('provider/')}.support")
         expect_assignment(key, contact, "carrier", "/carrier", "secondary")
+        if data.get("status") in {"planned", "provisioning"}:
+            if "install_date" in data:
+                fail("operations-journal", key, "A circuit not yet in service has no install date.")
+            continue  # and no dated order or handoff history yet
         if "commit_rate" in data or recipe.get("profile") != "provider-backbone":  # owned fiber purchases nothing
             expect_note(key, "capacity-request", scheduled(key, "capacity-request", data.get("install_date"), 30, 31),
                         (_rate(data.get("commit_rate")), provider_name, data.get("cid")))
         local = terms[key]
-        if len(local) != 1 or objects.get(local[0]["refs"].get("termination"), {}).get("kind") != "site":
+        if len(local) != 1 or objects.get(site_of(local[0]["refs"].get("termination")), {}).get("kind") != "site":
             fail("operations-journal", key, "Handoff history needs one actual A-side site termination.")
         term = local[0] if local else {"attrs": {}, "refs": {}}
         if recipe.get("profile") == "provider-backbone":
             remote = far_terms[key]
-            if len(remote) != 1 or objects.get(remote[0]["refs"].get("termination"), {}).get("kind") not in {"site", "provider_network"}:
+            if len(remote) != 1 or objects.get(site_of(remote[0]["refs"].get("termination")), {}).get("kind") not in {"site", "provider_network"}:
                 fail("operations-journal", key, "Circuit history needs one actual Z-side site or provider-network termination.")
             far = remote[0] if remote else {"attrs": {}, "refs": {}}
             external = objects.get(far["refs"].get("termination"), {}).get("kind") == "provider_network"
             if external:
                 external_handoffs.add(key)
-            facts = (data.get("cid"), attrs(term["refs"].get("termination")).get("name"),
-                     attrs(far["refs"].get("termination")).get("name"), _rate(term["attrs"].get("port_speed")))
+            facts = (data.get("cid"), attrs(site_of(term["refs"].get("termination"))).get("name"),
+                     attrs(site_of(far["refs"].get("termination"))).get("name"), _rate(term["attrs"].get("port_speed")))
             expect_note(key, "handoff-plan", data.get("install_date"),
                         facts + (() if external else (_rate(far["attrs"].get("port_speed")),)) + (data.get("install_date"),))
         else:
             expect_note(key, "handoff-plan", data.get("install_date"),
-                        (provider_name, attrs(term["refs"].get("termination")).get("name"), _rate(term["attrs"].get("port_speed"))),
+                        (provider_name, attrs(site_of(term["refs"].get("termination"))).get("name"), _rate(term["attrs"].get("port_speed"))),
                         "success")
     listeners = defaultdict(list)
     for service in kinds["service"]:
@@ -495,8 +505,9 @@ def _context(plan, objects, kinds):
     for device in kinds["device"]:
         refs, data = device["refs"], device["attrs"]
         rack, position = refs.get("rack"), data.get("position")
-        if refs.get("role") not in infrastructure_roles or not rack or position is None:
-            continue
+        if (refs.get("role") not in infrastructure_roles or not rack or position is None
+                or data.get("status") in {"planned", "staged", "inventory"}):
+            continue  # equipment not yet installed carries no installation note
         if type(position) not in (int, float):
             fail("operations-journal-facts", device["key"], "Equipment history requires an actual numeric rack position.")
             continue
@@ -728,8 +739,11 @@ def _shared(plan, objects, kinds, report):
             hubs.add(related(related(obj, "interface"), "device").get("refs", {}).get("site"))
     for term in kinds["circuit_termination"]:
         circuit = related(term, "circuit")
-        if str(term["refs"].get("termination", "")).startswith("site/") and circuit.get("attrs", {}).get("status") == "active":
-            carriers[term["refs"]["termination"]].add(circuit.get("refs", {}).get("provider"))
+        target = term["refs"].get("termination", "")
+        if str(target).startswith("location/"):
+            target = objects.get(target, {}).get("refs", {}).get("site")
+        if str(target).startswith("site/") and circuit.get("attrs", {}).get("status") == "active":
+            carriers[target].add(circuit.get("refs", {}).get("provider"))
     for field in kinds["custom_field"]:
         choices = related(field, "choice_set")
         values = {choice.split(":", 1)[0] for choice in choices.get("attrs", {}).get("extra_choices", [])}

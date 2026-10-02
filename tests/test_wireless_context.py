@@ -96,8 +96,8 @@ class WirelessContextTests(unittest.TestCase):
         objects = {obj["key"]: obj for obj in self.bank["objects"]}
         vm = objects[service]["refs"]["virtual_machine"]
         host, primary = (objects[vm]["refs"][field] for field in ("device", "primary_ip4"))
-        cases = [lambda p, o: o[service]["attrs"].update(ports=[1812]),
-                 lambda p, o: o[service]["attrs"].update(protocol="tcp"),
+        cases = [lambda p, o: o[service]["attrs"].update(port_mappings=["udp/1812"]),
+                 lambda p, o: o[service]["attrs"].update(port_mappings=["tcp/1812", "tcp/1813"]),
                  lambda p, o: o[service]["refs"].update(ipaddresses=[]),
                  lambda p, o: o[vm]["refs"].update(tenant="tenant/inherited"),
                  lambda p, o: o[host]["attrs"].update(status="offline"),
@@ -131,8 +131,8 @@ class WirelessContextTests(unittest.TestCase):
                 continue
             if obj["kind"] == "ip_address":
                 available.discard(ip_interface(obj["attrs"]["address"]).ip)
-            elif obj["kind"] == "ip_range" and obj["refs"].get("role") != "ip-role/dhcp":
-                # A DHCP scope is client capacity; held ranges consume it.
+            elif obj["kind"] == "ip_range" and obj["attrs"].get("status") == "reserved":
+                # DHCP and static pools are client capacity; held ranges consume it.
                 first, last = (ip_interface(obj["attrs"][field]).ip for field in ("start_address", "end_address"))
                 available = {address for address in available if not first <= address <= last}
         self.assertEqual(self.entry(updated, "wireless-lan/br-s0001/staff")["available_ipv4"], len(available))
@@ -190,12 +190,12 @@ class WirelessContextTests(unittest.TestCase):
                 obj["attrs"]["comments"] = "Old planning comment"
         enrich(world)
         self.assertEqual(world.objects, before)
-        self.assertFalse(any(obj["kind"] == "service" and 67 in obj["attrs"].get("ports", []) for obj in world.objects.values()))
+        self.assertFalse(any(obj["kind"] == "service" and "udp/67" in obj["attrs"].get("port_mappings", []) for obj in world.objects.values()))
 
     def test_missing_owned_listener_fails_generation_and_comments_cannot_claim_old_dependencies(self):
         world = SimpleNamespace(recipe=deepcopy(self.bank["recipe"]), contracts=deepcopy(self.bank["contracts"]),
                                 objects={obj["key"]: deepcopy(obj) for obj in self.bank["objects"]
-                                         if not (obj["kind"] == "service" and obj["attrs"]["protocol"] == "udp" and obj["attrs"]["ports"] == [1812, 1813])})
+                                         if not (obj["kind"] == "service" and obj["attrs"]["port_mappings"] == ["udp/1812", "udp/1813"])})
         with self.assertRaisesRegex(DesignError, "radius_udp"):
             enrich(world)
         self.mutation(lambda p, o: o["wireless-lan/br-s0001/staff"]["attrs"].update(comments="Services are running"), "wireless-context-comments")

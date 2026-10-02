@@ -61,7 +61,7 @@ def validate(plan):
                 addresses[key] = ip_interface(attrs(key).get("address"))
                 if addresses[key].version == 4:
                     allocated[refs(key).get("vrf")].append((int(addresses[key].ip), int(addresses[key].ip)))
-            elif obj["kind"] == "ip_range" and refs(key).get("role") != "ip-role/dhcp":
+            elif obj["kind"] == "ip_range" and attrs(key).get("status") == "reserved":
                 first, last = (ip_interface(attrs(key).get(field)) for field in ("start_address", "end_address"))
                 if first.version == last.version == 4 and first.ip <= last.ip:
                     allocated[refs(key).get("vrf")].append((int(first.ip), int(last.ip)))
@@ -78,15 +78,15 @@ def validate(plan):
                 merged.append([lower, upper])
         spans[vrf], ends[vrf] = merged, [upper for _, upper in merged]
 
-    signatures = {"dns_tcp": ("tcp", [53]), "dns_udp": ("udp", [53]), "radius_udp": ("udp", [1812, 1813])}
+    signatures = {"dns_tcp": {"tcp/53"}, "dns_udp": {"udp/53"}, "radius_udp": {"udp/1812", "udp/1813"}}
 
     @cache
     def valid_service(key, tenant, family):
-        protocol, ports = signatures[family]
         vm = refs(key).get("virtual_machine")
         host, cluster = refs(vm).get("device"), refs(vm).get("cluster")
         site = refs(host).get("site")
-        if (kind(key) != "service" or attrs(key).get("protocol") != protocol or attrs(key).get("ports") != ports or refs(key).get("device") or
+        mappings = attrs(key).get("port_mappings")
+        if (kind(key) != "service" or not isinstance(mappings, list) or not signatures[family] <= set(mappings) or refs(key).get("device") or
                 kind(vm) != "virtual_machine" or kind(host) != "device" or kind(cluster) != "cluster" or kind(site) != "site" or
                 any(attrs(node).get("status") != "active" or refs(node).get("tenant") != tenant for node in (vm, host, cluster, site)) or
                 refs(host).get("role") != "role/server" or refs(host).get("cluster") != cluster or refs(cluster).get("scope_site") != site):

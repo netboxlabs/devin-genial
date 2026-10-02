@@ -497,8 +497,8 @@ tenant/circuit/rack/cluster groups, rack types, per-role VM types, the site
 service-tier field, fixed-geometry IP ranges (`networking.address_ranges`),
 graph-derived tags (`naming.TAGS`), unused-taxonomy pruning, unused
 access/leaf ports disabled, a planned next compute cabinet per gridded room,
-platform SVI names, fabric MTU, interface-qualified DNS names and loopback IP
-roles. `validate_operations._shared` re-derives each independently; see
+platform SVI names, fabric MTU, DNS names on primaries, VMs, loopbacks and
+management ports only, and loopback IP roles. `validate_operations._shared` re-derives each independently; see
 [docs/modeling.md](docs/modeling.md#list-view-hygiene).
 Direct technical assignments on infrastructure roles use the device's actual
 tenant desk. Bank WAN accounts distinguish permanent procurement lineages through
@@ -750,6 +750,7 @@ omitted owner groups. Pre-correction enterprise/school artifacts are preserved a
 predecessor evidence and must be regenerated; the qualified bank is unchanged.
 
 When the estate pool is exactly one site reservation, foundation omits equal
-per-VRF global roots. The scoped site containers remain authoritative parents of
-active role subnets. This permits the documented enterprise one-DC /16 boundary
+per-VRF global roots. The scoped site container — one global block per site
+since 0.16.0, never one per VRF — remains the authoritative parent of active
+role subnets. This permits the documented enterprise one-DC /16 boundary
 without duplicate prefix identity; larger pools retain the hierarchy unchanged.

@@ -9,7 +9,8 @@ from .model import DesignError
 
 # A DHCP scope is where wireless clients land, so it is client capacity, not
 # consumption; held (reserved) ranges and assigned addresses still count.
-DHCP_ROLE = "ip-role/dhcp"
+# Listener families by port mapping; one DNS service carries both tcp and udp.
+SERVICE_FAMILIES = {"dns_tcp": {"tcp/53"}, "dns_udp": {"udp/53"}, "radius_udp": {"udp/1812", "udp/1813"}}
 
 
 def enrich(world):
@@ -31,17 +32,22 @@ def enrich(world):
                 prefixes[(refs.get("vlan"), refs.get("scope_site"), refs.get("tenant"))].append(obj)
         elif obj["kind"] == "contact_assignment" and refs.get("role") == "contact-role/operations" and attrs.get("priority") == "primary":
             contacts[refs["object"]].append(refs["contact"])
-        elif obj["kind"] in {"ip_address", "ip_range"} and refs.get("role") != DHCP_ROLE:
+        # Held ranges consume capacity; active DHCP and static pools are what
+        # clients draw from, and their concrete addresses count on their own.
+        elif obj["kind"] == "ip_address" or obj["kind"] == "ip_range" and attrs.get("status") == "reserved":
             start = ip_interface(attrs["address"] if obj["kind"] == "ip_address" else attrs["start_address"])
             end = start if obj["kind"] == "ip_address" else ip_interface(attrs["end_address"])
             if start.version == end.version == 4:
                 occupied[refs.get("vrf")].append((int(start.ip), int(end.ip)))
         elif obj["kind"] == "service":
-            family = {("tcp", (53,)): "dns_tcp", ("udp", (53,)): "dns_udp", ("udp", (1812, 1813)): "radius_udp"}.get((attrs.get("protocol"), tuple(attrs.get("ports", []))))
+            # One DNS service carries tcp/53 and udp/53, so it serves both families.
+            mappings = set(attrs.get("port_mappings", ()))
             vm = objects.get(refs.get("virtual_machine"), {})
             host = objects.get(vm.get("refs", {}).get("device"), {})
-            if family and vm.get("attrs", {}).get("status") == host.get("attrs", {}).get("status") == "active":
-                services[(vm["refs"].get("tenant"), family)].append(obj["key"])
+            if vm.get("attrs", {}).get("status") == host.get("attrs", {}).get("status") == "active":
+                for family, wanted in SERVICE_FAMILIES.items():
+                    if wanted <= mappings:
+                        services[(vm["refs"].get("tenant"), family)].append(obj["key"])
     # Merge once per VRF, then seek only the occupied spans intersecting a LAN.
     # Address ranges consume planned capacity even without concrete client rows.
     spans, ends = {}, {}

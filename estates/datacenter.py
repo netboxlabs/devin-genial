@@ -114,6 +114,27 @@ def _workloads(workloads, site):
     return sorted(workloads, key=lambda workload: workload["slot"])
 
 
+def services(listeners):
+    """(key, name, port_mappings) per emitted service, in listener order.
+
+    NetBox 4.7 services carry ``port_mappings`` ("tcp/53", "udp/53"), so one
+    service may span protocols: a listener named ``<other>-<its protocol>``
+    (dns-udp beside dns) folds into that service instead of standing alone.
+    """
+    result, by_name = [], {}
+    for listener in listeners:
+        mappings = [f"{listener['protocol']}/{port}" for port in listener["ports"]]
+        host = by_name.get(listener["name"].removesuffix(f"-{listener['protocol']}"))
+        if host is not None and listener["name"] != host[1]:
+            host[2].extend(mappings)
+            host[2].sort()
+            continue
+        entry = (listener["key"], listener["name"], mappings)
+        by_name[listener["name"]] = entry
+        result.append(entry)
+    return result
+
+
 def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True, wan_attachment=None):
     """Allocate a DC from resolved workload policy; no industry demand sizing here.
 
@@ -231,12 +252,11 @@ def build(site, *, workloads, wan_peak_mbps, assumptions, include_equipment=True
             vif = w.add("vm_interface", f"{vm}/eth0", {"name": "eth0", "enabled": True, "mode": "access"},
                         {"virtual_machine": vm, "untagged_vlan": site.network(network)[0]})
             address = site.address(vif, network, primary=True, device=vm)
-            for listener in workload["listeners"]:
-                suffix = f"/{listener['key']}" if listener["key"] else ""
-                attrs = {"name": listener["name"], "protocol": listener["protocol"],
-                         "ports": list(listener["ports"])}
+            for key, label, mappings in services(workload["listeners"]):
+                suffix = f"/{key}" if key else ""
+                attrs = {"name": label, "port_mappings": mappings}
                 if not suffix:
-                    attrs["description"] = f"{titleize(listener['name'])} listener on {w.obj(vm)['attrs']['name']}"
+                    attrs["description"] = f"{titleize(label)} listener on {w.obj(vm)['attrs']['name']}"
                 w.add("service", f"service/{vm}{suffix}", attrs,
                       {"virtual_machine": vm, "ipaddresses": [address]})
         if domain != "none":

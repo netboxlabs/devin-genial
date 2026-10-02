@@ -146,8 +146,7 @@ class ValidationTests(unittest.TestCase):
              "refs": {"assigned_object": "dns/eth0", "vrf": "vrf"}},
         ])
         self.plan["contracts"][0]["required_services"] = {"dns": 1}
-        for protocol, name in (("tcp", "dns"), ("udp", "dns-udp")):
-            self.plan["objects"].append({"key": f"dns/{protocol}", "kind": "service", "attrs": {"name": name, "protocol": protocol, "ports": [53]}, "refs": {"virtual_machine": "vm", "ipaddresses": ["dns/ip"]}})
+        self.plan["objects"].append({"key": "dns/service", "kind": "service", "attrs": {"name": "dns", "port_mappings": ["tcp/53", "udp/53"]}, "refs": {"virtual_machine": "vm", "ipaddresses": ["dns/ip"]}})
 
     def test_valid_graph_and_no_mutation(self):
         before = deepcopy(self.plan)
@@ -317,11 +316,11 @@ class ValidationTests(unittest.TestCase):
     def test_required_service_checks_protocol_port_and_owner(self):
         self.add_dns_service()
         self.assertEqual(validate(self.plan), [])
-        udp = next(o for o in self.plan["objects"] if o["key"] == "dns/udp")
-        udp["attrs"]["ports"] = [54]
+        dns = next(o for o in self.plan["objects"] if o["key"] == "dns/service")
+        dns["attrs"]["port_mappings"] = ["tcp/53", "udp/54"]
         self.assertIn("service-endpoint", self.codes())
-        udp["attrs"]["ports"] = [53]
-        udp["refs"] = {"device": "d1"}
+        dns["attrs"]["port_mappings"] = ["tcp/53", "udp/53"]
+        dns["refs"] = {"device": "d1"}
         self.assertIn("service-endpoint", self.codes())
 
     def test_required_service_checks_replica_count_and_site(self):

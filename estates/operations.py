@@ -84,7 +84,8 @@ def _wan_accounts(w, owner):
                  "account": f"{ns}-{lineage}-{code}",
                  "description": "Retained Birch WAN procurement account" if suffix else "WAN circuit billing account"},
                 {"provider": key, "owner": owner})
-    local_sites = {o["refs"]["circuit"]: o["refs"]["termination"]
+    local_sites = {o["refs"]["circuit"]: (w.obj(o["refs"]["termination"])["refs"]["site"]
+                                          if o["refs"]["termination"].startswith("location/") else o["refs"]["termination"])
                    for o in objects if o["kind"] == "circuit_termination" and o["attrs"]["term_side"] == "A"}
     for circuit in (o for o in objects if o["kind"] == "circuit"):
         sid = local_sites[circuit["key"]].removeprefix("site/")
@@ -105,10 +106,12 @@ def _site_facts(w):
             hubs.add(obj["refs"]["scope_site"])
         elif obj["kind"] == "virtual_circuit_termination" and obj["attrs"].get("role") == "hub":
             hubs.add(w.obj(w.obj(obj["refs"]["interface"])["refs"]["device"])["refs"]["site"])
-        elif obj["kind"] == "circuit_termination" and str(obj["refs"].get("termination", "")).startswith("site/"):
+        elif obj["kind"] == "circuit_termination" and str(obj["refs"].get("termination", "")).startswith(("site/", "location/")):
             circuit = circuits[obj["refs"]["circuit"]]
+            target = obj["refs"]["termination"]
+            site = w.obj(target)["refs"]["site"] if target.startswith("location/") else target
             if circuit["attrs"].get("status") == "active":
-                carriers[obj["refs"]["termination"]].add(circuit["refs"]["provider"])
+                carriers[site].add(circuit["refs"]["provider"])
     return hubs, {site for site, providers in carriers.items() if len(providers) >= 2}
 
 
@@ -496,7 +499,7 @@ def _ports(w):
 
 
 def _addresses(w):
-    """DNS names on primaries and loopbacks only; interface-qualified elsewhere."""
+    """DNS names on primaries, VMs, loopbacks and management ports only."""
     objects, domain = w.objects, f"{w.recipe['namespace']}.example"
     primaries = {obj.get("refs", {}).get(field) for obj in objects.values()
                  if obj["kind"] in {"device", "virtual_machine"} for field in ("primary_ip4", "primary_ip6")}
@@ -512,8 +515,12 @@ def _addresses(w):
             obj["attrs"]["role"] = "loopback"
         if obj["key"] in primaries or port["kind"] == "vm_interface":
             obj["attrs"]["dns_name"] = f"{owner}.{domain}"
-        else:
+        elif loopback or port["attrs"].get("mgmt_only"):
             obj["attrs"]["dns_name"] = f"{dns_label(port['attrs']['name'])}.{owner}.{domain}"
+        else:
+            # Routed links, gateways and service attachments carry no name:
+            # an operator publishes loopback, primary and management records.
+            obj["attrs"].pop("dns_name", None)
 
 
 def _prune(w):

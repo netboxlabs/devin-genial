@@ -121,8 +121,11 @@ def create(plan):
     for obj in plan["objects"]:
         kinds[obj["kind"]].append(obj)
     namespace = plan["recipe"]["namespace"]
+    # Equipment not yet installed (a planned or staged premises) has no
+    # installation to date a delivery from; it stays out of the BOMs.
     selected = {obj["key"] for obj in kinds["device"]
-                if obj["refs"].get("rack") or obj["refs"].get("role") in UNRACKED_ROLES}
+                if (obj["refs"].get("rack") or obj["refs"].get("role") in UNRACKED_ROLES)
+                and obj["attrs"].get("status") not in {"planned", "staged", "inventory"}}
     modules_by_device = defaultdict(list)
     for module in kinds["module"]:
         modules_by_device[module["refs"]["device"]].append(module)

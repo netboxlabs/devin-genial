@@ -214,7 +214,7 @@ class UtilityCompositionTests(unittest.TestCase):
         control_ports = {102, 502, 2222, 2404, 4840, 20000, 34962, 34963, 34964, 44818, 47808}
         for obj in self.plan["objects"]:
             if obj["kind"] == "service":
-                self.assertEqual(set(obj["attrs"]["ports"]) & control_ports, set(), obj["key"])
+                self.assertEqual({int(m.split("/")[1]) for m in obj["attrs"]["port_mappings"]} & control_ports, set(), obj["key"])
 
     def test_every_explicit_non_claim_is_written_into_the_contracts(self):
         denials = {text for contract in self.plan["contracts"] for text in contract["assumptions"]}
@@ -970,9 +970,9 @@ class UtilityValidatorTests(unittest.TestCase):
             lambda plan, objects: objects[f"prefix/{SITE}/protection"]["attrs"].__setitem__(
                 "prefix", "10.9.9.0/24")))
 
-    def test_reservation_container_leaving_its_segment_context_is_reported(self):
+    def test_site_block_pinned_into_one_routing_context_is_reported(self):
         self.assertIn("utl-prefix-policy", self.mutated(
-            lambda plan, objects: objects[f"prefix/{SITE}/telemetry/reservation"]["refs"].__setitem__(
+            lambda plan, objects: objects[f"prefix/{SITE}/reservation"]["refs"].__setitem__(
                 "vrf", "vrf/office")))
 
     def test_undersized_substation_wan_commitment_is_reported(self):

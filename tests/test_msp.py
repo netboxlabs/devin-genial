@@ -546,9 +546,9 @@ class MspValidatorTests(unittest.TestCase):
             objects["prefix/off-summit-legal-01/staff"]["attrs"]["prefix"] = "10.9.9.0/24"
         self.assertIn("msp-prefix-policy", self.mutated(renumber))
 
-    def test_reservation_container_leaving_the_customer_vrf_is_reported(self):
+    def test_site_block_pinned_into_one_vrf_is_reported(self):
         def borrow(plan, objects):
-            objects["prefix/off-summit-legal-01/staff/reservation"]["refs"]["vrf"] = "vrf/management"
+            objects["prefix/off-summit-legal-01/reservation"]["refs"]["vrf"] = "vrf/management"
         self.assertIn("msp-prefix-policy", self.mutated(borrow))
 
     def test_customer_record_borrowing_a_provider_global_vrf_is_reported(self):
@@ -558,7 +558,7 @@ class MspValidatorTests(unittest.TestCase):
 
     def test_noc_reservation_moved_into_a_customer_vrf_is_reported(self):
         def borrow(plan, objects):
-            objects["prefix/noc-01/management/reservation"]["refs"]["vrf"] = \
+            objects["prefix/noc-01/reservation"]["refs"]["vrf"] = \
                 "vrf/customer/summit-legal/management"
         self.assertIn("msp-tenant-isolation", self.mutated(borrow))
 

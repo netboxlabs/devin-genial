@@ -18,6 +18,11 @@ _COPPER = {"cat5e", "cat6", "cat6a", "cat7", "cat7a", "cat8"}
 _LENGTH = {"m": 1, "cm": .01, "ft": .3048, "in": .0254, "km": 1000}
 
 
+# A PSE port's PoE configuration is inventory on its switch in any lifecycle
+# state (planned, staged, in service or being withdrawn); only in-service
+# paths count toward power budgets.
+_CONFIGURED_OWNER = frozenset({"active", "planned", "staged", "decommissioning"})
+
 def analyze(plan, catalog):
     """Return ``(findings, extra_AC_watts_by_PSE_device)`` without mutation.
 
@@ -148,7 +153,7 @@ def analyze(plan, catalog):
             if (attrs(port).get("poe_mode") != expected or attrs(port).get("poe_type") != _TYPE or
                     not str(attrs(port).get("type")).endswith("base-t") or
                     (attrs(port).get("enabled") is not True and (expected == "pd" or port in cabled)) or
-                    attrs(port).get("mgmt_only", False) or attrs(refs(port).get("device")).get("status") != "active"):
+                    attrs(port).get("mgmt_only", False) or attrs(refs(port).get("device")).get("status") not in _CONFIGURED_OWNER):
                 report("poe-port", port, "Catalog PoE port needs its correct Type 2 mode, enabled BASE-T copper interface and active owner.")
         elif attrs(port).get("poe_mode") or attrs(port).get("poe_type"):
             report("poe-port", port, "PoE flags are only valid on catalog PSE access ports or the PD input, never management, optical, radio or virtual ports.")

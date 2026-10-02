@@ -1277,14 +1277,23 @@ def _required_content_types(objects):
 
 
 def _service_port_mappings(obj):
-    protocol = obj["attrs"].get("protocol")
-    ports = obj["attrs"].get("ports")
-    if protocol not in {"tcp", "udp"}:
-        raise LoadError(f"{obj['key']}: service protocol must be tcp or udp")
-    if (not isinstance(ports, list) or not ports or len(ports) != len(set(ports))
-            or any(type(port) is not int or not 1 <= port <= 65535 for port in ports)):
-        raise LoadError(f"{obj['key']}: service ports must be unique integers from 1 through 65535")
-    return [f"{protocol}/{port}" for port in ports]
+    """The service's canonical NetBox 4.7 port_mappings ("tcp/53", "udp/53")."""
+    mappings = obj["attrs"].get("port_mappings")
+    pairs = [m.split("/", 1) for m in mappings] if isinstance(mappings, list) and all(
+        isinstance(m, str) for m in mappings) else None
+    if (not pairs or len(set(mappings)) != len(mappings) or
+            any(len(p) != 2 or p[0] not in {"tcp", "udp"} or not p[1].isdigit() or not 1 <= int(p[1]) <= 65535
+                for p in pairs)):
+        raise LoadError(f"{obj['key']}: service port_mappings must be unique tcp/udp port strings from 1 through 65535")
+    return list(mappings)
+
+
+def _legacy_service_fields(obj):
+    """The pre-4.7 protocol plus ports pair; only a single-protocol service has one."""
+    pairs = [m.split("/", 1) for m in _service_port_mappings(obj)]
+    if len({protocol for protocol, _ in pairs}) != 1:
+        raise LoadError(f"{obj['key']}: a multi-protocol service needs a target with port_mappings (NetBox 4.7)")
+    return pairs[0][0], [int(port) for _, port in pairs]
 
 
 def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
@@ -1308,12 +1317,12 @@ def _render(obj, objects, ids, content_types, service_shape="protocol_ports"):
     if obj["kind"] == "virtual_machine" and "start_on_boot" not in row:
         row["start_on_boot"] = "off"
     if obj["kind"] == "service":
-        mappings = _service_port_mappings(obj)
         if service_shape == "port_mappings":
-            row["port_mappings"] = mappings
-            row.pop("protocol", None)
-            row.pop("ports", None)
-        elif service_shape != "protocol_ports":
+            row["port_mappings"] = _service_port_mappings(obj)
+        elif service_shape == "protocol_ports":
+            row["protocol"], row["ports"] = _legacy_service_fields(obj)
+            row.pop("port_mappings", None)
+        else:
             raise LoadError(f"unknown TurboBulk service shape {service_shape!r}")
     for name, column in DIRECT_REFS.items():
         if name in obj["refs"] and not (obj["kind"] == "service" and name == "virtual_machine") \
@@ -1345,11 +1354,13 @@ def _rendered_columns(obj, service_shape="protocol_ports"):
     if obj["kind"] == "cable" and "bundle" in obj["refs"]:
         columns.add("bundle_id")
     if obj["kind"] == "service":
-        _service_port_mappings(obj)
         if service_shape == "port_mappings":
-            columns.difference_update(("protocol", "ports"))
-            columns.add("port_mappings")
-        elif service_shape != "protocol_ports":
+            _service_port_mappings(obj)
+        elif service_shape == "protocol_ports":
+            _legacy_service_fields(obj)
+            columns.discard("port_mappings")
+            columns.update(("protocol", "ports"))
+        else:
             raise LoadError(f"unknown TurboBulk service shape {service_shape!r}")
     if "custom_fields" in columns:
         columns.remove("custom_fields")
@@ -2688,6 +2699,9 @@ def _verify_circuit_terminations(client, objects, ids, expect_caches=True):
         side = obj["attrs"]["term_side"].lower()
         expected_pointers.setdefault(circuit_id, {})[side] = ids[obj["key"]]
         target = objects.get(obj["refs"].get("termination"))
+        if target is not None and target["kind"] == "location":
+            # save() caches a location termination's own site too.
+            target = objects.get(target["refs"].get("site"))
         if target is not None and target["kind"] == "site":
             expected_by_site[ids[target["key"]]].add(circuit_id)
 

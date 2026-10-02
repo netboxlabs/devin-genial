@@ -153,9 +153,16 @@ class EstateHygieneTests(unittest.TestCase):
         for address in self.of(plan, "ip_address"):
             port = objects.get(address["refs"].get("assigned_object"), {})
             self.assertNotIn("description", address["attrs"]) if port.get("kind") == "interface" else None
+            # DNS names only on primaries, loopbacks and management ports; never
+            # on routed links, gateways or service attachments.
             if port.get("kind") == "interface" and objects[port["refs"]["device"]]["refs"].get("primary_ip4") != address["key"]:
-                self.assertEqual(address["attrs"]["dns_name"].split(".", 1)[1].split(".")[0],
-                                 objects[port["refs"]["device"]]["attrs"]["name"])
+                named = address["attrs"].get("role") == "loopback" or port["attrs"].get("mgmt_only")
+                self.assertEqual("dns_name" in address["attrs"], bool(named), address["key"])
+                if named:
+                    self.assertEqual(address["attrs"]["dns_name"].split(".", 1)[1].split(".")[0],
+                                     objects[port["refs"]["device"]]["attrs"]["name"])
+        self.assertFalse([a["key"] for a in self.of(self.plans["provider-backbone"], "ip_address")
+                          if a["attrs"]["address"].endswith(("/31", "/127")) and "dns_name" in a["attrs"]])
         loopbacks = [obj for obj in self.of(self.plans["provider-backbone"], "ip_address") if obj["attrs"].get("role") == "loopback"]
         self.assertTrue(loopbacks)
 
@@ -164,9 +171,11 @@ class EstateHygieneTests(unittest.TestCase):
         objects = {obj["key"]: obj for obj in plan["objects"]}
         first = {}
         for term in self.of(plan, "circuit_termination"):
-            if term["refs"]["termination"].startswith("site/"):
+            target = term["refs"]["termination"]
+            site = objects[target]["refs"]["site"] if target.startswith("location/") else target
+            if site.startswith("site/"):
                 day = objects[term["refs"]["circuit"]]["attrs"]["install_date"]
-                first[term["refs"]["termination"]] = min(day, first.get(term["refs"]["termination"], day))
+                first[site] = min(day, first.get(site, day))
         checked = 0
         for note in self.of(plan, "journal_entry"):
             subject = objects[note["refs"]["assigned_object"]]

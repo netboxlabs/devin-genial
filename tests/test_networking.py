@@ -20,6 +20,22 @@ class NetworkingTests(unittest.TestCase):
         edit(objects, plan)
         self.assertIn(code, {f["code"] for f in validate(plan)})
 
+    def test_client_segment_ranges_tile_the_prefix_without_an_unexplained_gap(self):
+        """Gateway, held infrastructure, static, DHCP and headroom run contiguously to the top."""
+        from ipaddress import ip_interface, ip_network
+        objects = {o["key"]: o for o in self.plan["objects"]}
+        prefix = objects["prefix/br-s0002/users"]
+        net = ip_network(prefix["attrs"]["prefix"])
+        ranges = sorted((int(ip_interface(o["attrs"]["start_address"]).ip), int(ip_interface(o["attrs"]["end_address"]).ip), o)
+                        for o in self.plan["objects"] if o["kind"] == "ip_range" and o["key"].startswith("ip-range/br-s0002/users/"))
+        self.assertEqual([o["key"].rsplit("/", 1)[1] for *_, o in ranges], ["infrastructure", "static", "dhcp", "headroom"])
+        self.assertEqual(ranges[-1][1], int(net.broadcast_address) - 1)
+        for (_, end, _), (start, _, _) in zip(ranges, ranges[1:]):
+            self.assertEqual(start, end + 1)
+        dhcp = ranges[2]
+        self.assertGreaterEqual(dhcp[1] - dhcp[0] + 1, net.num_addresses // 4)  # a believable share, not 25 of 128
+        self.assertEqual(objects[ranges[1][2]["refs"]["role"]]["attrs"]["name"], "Users")
+
     def test_all_families_are_connected(self):
         self.assertEqual(validate(self.plan), [])
         kinds = {o["kind"] for o in self.plan["objects"]}

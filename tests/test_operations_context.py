@@ -48,7 +48,10 @@ class OperationsContextTests(unittest.TestCase):
         for circuit in (o for o in objects.values() if o["kind"] == "circuit"):
             key, data = circuit["key"], circuit["attrs"]
             a, z = terms[key, "A"], terms[key, "Z"]
-            local, remote = (objects[t["refs"]["termination"]] for t in (a, z))
+            # A local handoff terminates in its room; the note names that room's site.
+            local, remote = (objects[objects[t["refs"]["termination"]]["refs"].get("site", t["refs"]["termination"])]
+                             if objects[t["refs"]["termination"]]["kind"] == "location" else objects[t["refs"]["termination"]]
+                             for t in (a, z))
             note = objects[f"journal/{key}/handoff-plan"]
             header = f"{data['install_date']} — Circuit handoff plan\n"
             if remote["kind"] == "provider_network":

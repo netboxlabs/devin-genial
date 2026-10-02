@@ -269,9 +269,9 @@ def markdown(envelope):
            [[stage, name(path["power_port"]), name(path["outlet"]), name(path["pdu"]), name(path["feed"]), name(path["panel"])]
             for stage, paths in envelope["paths"].items() for path in paths])
     lines.extend(["", "## Follow the dependent services", ""])
-    _table(lines, ["VM", "Listener", "Protocol / ports", "Addresses"],
+    _table(lines, ["VM", "Listener", "Port mappings", "Addresses"],
            [[objects[objects[key]["refs"]["virtual_machine"]]["attrs"]["name"], objects[key]["attrs"]["name"],
-             f"{objects[key]['attrs']['protocol']} / {', '.join(str(port) for port in objects[key]['attrs']['ports'])}",
+             ", ".join(objects[key]["attrs"]["port_mappings"]),
              ", ".join(objects[ip]["attrs"]["address"] for ip in objects[key]["refs"]["ipaddresses"])]
             for key in envelope["affected"]["services"]])
     lines.extend(["", "## Expected findings", "", "One planted defect; the independent validators report:", ""])

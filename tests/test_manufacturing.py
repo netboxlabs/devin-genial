@@ -160,7 +160,8 @@ class ManufacturingCompositionTests(unittest.TestCase):
         industrial_ports = {502, 20000, 2222, 4840, 34962, 34963, 34964, 44818, 47808}
         for obj in self.plan["objects"]:
             if obj["kind"] == "service":
-                self.assertEqual(set(obj["attrs"]["ports"]) & industrial_ports, set(), obj["key"])
+                ports = {int(m.split("/")[1]) for m in obj["attrs"]["port_mappings"]}
+                self.assertEqual(ports & industrial_ports, set(), obj["key"])
         denials = {text for contract in self.plan["contracts"] for text in contract["assumptions"]}
         self.assertTrue(any("No industrial protocol is configured" in text for text in denials))
         self.assertTrue(any("IEC 62443 compliance state" in text for text in denials))
@@ -814,9 +815,9 @@ class ManufacturingValidatorTests(unittest.TestCase):
             lambda plan, objects: objects[f"prefix/{SITE}/process"]["attrs"].__setitem__(
                 "prefix", "10.9.9.0/24")))
 
-    def test_reservation_container_leaving_its_segment_context_is_reported(self):
+    def test_site_block_pinned_into_one_routing_context_is_reported(self):
         self.assertIn("mfg-prefix-policy", self.mutated(
-            lambda plan, objects: objects[f"prefix/{SITE}/process/reservation"]["refs"].__setitem__(
+            lambda plan, objects: objects[f"prefix/{SITE}/reservation"]["refs"].__setitem__(
                 "vrf", "vrf/office")))
 
     def test_undersized_plant_wan_commitment_is_reported(self):

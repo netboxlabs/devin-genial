@@ -16,7 +16,7 @@ from estates.validate_optics import analyze as analyze_optics
 
 
 class EnterpriseTests(unittest.TestCase):
-    def test_single_site_pool_boundary_has_one_container_per_vrf_and_builds(self):
+    def test_single_site_pool_boundary_has_one_global_site_block_and_builds(self):
         from estates.__main__ import build
         for pool in ("192.168.0.0/16", "172.16.0.0/16", "10.64.0.0/16"):
             with self.subTest(pool=pool), tempfile.TemporaryDirectory() as directory:
@@ -27,7 +27,8 @@ class EnterpriseTests(unittest.TestCase):
                 identities = [(o["refs"].get("vrf"), o["attrs"]["prefix"]) for o in prefixes]
                 self.assertEqual(len(identities), len(set(identities)))
                 containers = [o for o in prefixes if o["attrs"]["prefix"] == pool]
-                self.assertEqual(len(containers), 6)
+                self.assertEqual(len(containers), 1)
+                self.assertNotIn("vrf", containers[0]["refs"])
                 self.assertTrue(all(o["refs"].get("scope_site") == "site/dc-01" for o in containers))
                 self.assertEqual(canonical(generate(plan["recipe"])), canonical(plan))
                 result = build(plan, Path(directory) / "artifact")

@@ -157,7 +157,12 @@ class _Graph:
     def site_circuits(self, site_key):
         circuits = {}
         for term in self.kinds["circuit_termination"]:
-            if term["refs"].get("termination") == site_key:
+            target = term["refs"].get("termination")
+            # A termination in a room counts for that room's site, as NetBox's
+            # own _site cache does (assumed, not verified against the plugin).
+            if self.objects.get(target, {}).get("kind") == "location":
+                target = self.objects[target]["refs"].get("site")
+            if target == site_key:
                 circuit = self.objects[term["refs"]["circuit"]]
                 peer = self.peer.get(term["key"], "")
                 circuits[circuit["key"]] = (circuit, peer.split("/if/")[0] if "/if/" in peer else None)

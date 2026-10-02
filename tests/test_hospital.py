@@ -62,7 +62,7 @@ class HospitalTests(unittest.TestCase):
                          {"identity":2,"dns":2,"clinical-records":4,"imaging-archive":4,"monitoring":4})
         archives = [obj for obj in plan["objects"] if obj["kind"] == "service" and obj["attrs"]["name"] == "imaging-archive"]
         self.assertEqual(len(archives),4)
-        self.assertTrue(all(obj["attrs"]["protocol"] == "tcp" and obj["attrs"]["ports"] == [11112] and obj["refs"].get("ipaddresses") for obj in archives))
+        self.assertTrue(all(obj["attrs"]["port_mappings"] == ["tcp/11112"] and obj["refs"].get("ipaddresses") for obj in archives))
 
     def test_growth_preserves_old_rooms_ports_addresses_and_dated_records(self):
         for patching in ("direct","panels"):

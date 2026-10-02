@@ -558,8 +558,8 @@ def validate(plan, catalog, *, objects, children, peers, component_of,
                         refs(prefix).get("vlan") != f"vlan/{sid}/{network}" or
                         attrs(f"vlan/{sid}/{network}").get("vid") != 10*(offset+1) or
                         refs(f"vlan/{sid}/{network}").get("site") != site or
-                        refs(f"{prefix}/reservation").get("vrf") != f"vrf/{network}"):
-                    report("mfg-prefix-policy", prefix, "Plant role /24 and its reservation container must retain "
+                        attrs(f"prefix/{sid}/reservation").get("status") != "container" or "vrf" in refs(f"prefix/{sid}/reservation")):
+                    report("mfg-prefix-policy", prefix, "Plant role /24 (under one global site block) must retain "
                                                          "the fixed offset, site VLAN and segment routing context "
                                                          "inside the reserved /16.")
 

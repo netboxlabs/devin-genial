@@ -139,7 +139,7 @@ class ShowcaseText(unittest.TestCase):
         role = lambda key: self.objects[self.objects[key]["refs"]["role"]]["attrs"]["name"]
         self.assertEqual(role("prefix/loopback/device/pop-chicago-west/pe-a"), "Loopbacks")
         self.assertEqual(role("prefix/link/pair/pop-chicago-west"), "Transit")
-        self.assertEqual(role("prefix/pop-chicago-west/reservation"), "Backbone")
+        self.assertEqual(role("prefix/pop-chicago-west/reservation"), "Allocation pools")  # one global site block
         self.assertEqual(role("prefix/ce-harbor-logistics-chicago-west-001/clients"), "Users")
         self.assertEqual(role("vlan/pop-chicago-west/management"), "Management")
         # Wrong role, missing role, and a prefix that disagrees with its VLAN.

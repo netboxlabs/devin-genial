@@ -326,7 +326,7 @@ def _unused_address(objects, documented, vrf, taken, pool=False):
     """Highest unused host in the documented prefix holding `documented`.
 
     Descending keeps the choice stable while the estate's own allocators append
-    upward. Documented addresses and documented ranges are both avoided; the
+    upward. Documented addresses and held or DHCP ranges are avoided; the
     result is still not an allocator reservation, only an unused address today.
     `pool` instead holds a host route (a /32 loopback) in the most specific
     documented pool around it, and keeps the documented host-route length.
@@ -342,20 +342,30 @@ def _unused_address(objects, documented, vrf, taken, pool=False):
         if obj["kind"] == "ip_address" and obj["refs"].get("vrf") == vrf:
             used.add(ip_interface(obj["attrs"]["address"]).ip)
     ranges = [(ip_interface(obj["attrs"]["start_address"]).ip, ip_interface(obj["attrs"]["end_address"]).ip)
-              for obj in objects.values() if obj["kind"] == "ip_range" and obj["refs"].get("vrf") == vrf]
-    for offset in range(1, 257):
-        candidate = _ip(int(network.broadcast_address) - offset)
-        if candidate <= network.network_address:
-            break
-        if candidate in used or any(start <= candidate <= end for start, end in ranges):
+              for obj in objects.values() if obj["kind"] == "ip_range" and obj["refs"].get("vrf") == vrf
+              # The static-assignment range is exactly where an undocumented
+              # static host turns up; held and DHCP ranges stay avoided.
+              and not obj["key"].endswith("/static")]
+    # Descend from the top, stepping over whole avoided ranges; 256 examined
+    # addresses outside them bound the search.
+    candidate, examined = int(network.broadcast_address) - 1, 0
+    while examined < 256 and candidate > int(network.network_address):
+        within = [start for start, end in ranges if int(start) <= candidate <= int(end)]
+        if within:
+            candidate = int(min(within)) - 1
             continue
+        examined, candidate = examined + 1, candidate - 1
+        address = _ip(candidate + 1)
+        if address in used:
+            continue
+        candidate_ip = address
         # The candidate must still live in the SAME holding prefix: a more
         # specific documented block covering it would change the story's home.
-        if _holding_prefix(objects, f"{candidate}/{network.prefixlen}", vrf) != holder:
+        if _holding_prefix(objects, f"{candidate_ip}/{network.prefixlen}", vrf) != holder:
             continue
-        taken.add(candidate)
-        return holder, f"{candidate}/{ip_interface(documented).network.prefixlen if pool else network.prefixlen}"
-    raise DesignError(f"{LABEL}: documented prefix {network} has no unused host address in its top 256 for an "
+        taken.add(candidate_ip)
+        return holder, f"{candidate_ip}/{ip_interface(documented).network.prefixlen if pool else network.prefixlen}"
+    raise DesignError(f"{LABEL}: documented prefix {network} has no unused host address among 256 outside its ranges for an "
                       "undocumented discovery record; grow the estate into a larger block or choose another baseline")
 
 

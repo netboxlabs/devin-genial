@@ -741,8 +741,7 @@ def _facts(plan):
         address = next((index[key] for key in service["refs"].get("ipaddresses", [])
                         if key in index), None)
         listener = {"name": service["attrs"]["name"],
-                    "protocol": service["attrs"]["protocol"].upper(),
-                    "ports": "/".join(str(port) for port in service["attrs"]["ports"]),
+                    "ports": ", ".join(service["attrs"]["port_mappings"]),
                     "host": machine["attrs"]["name"] if machine else "its host",
                     "address": address["attrs"]["address"] if address else None}
     field = next(iter(kinds.get("custom_field", [])), None)
@@ -967,7 +966,7 @@ def demo_markdown(spec, facts, artifacts, live):
         steps.append((
             "Land on something an application owner cares about.",
             f"{_ui(live, '/ipam/services/')} — **{_cell(listener['name'])}** listens on "
-            f"{listener['protocol']}/{listener['ports']} on `{_cell(listener['host'])}`"
+            f"{listener['ports']} on `{_cell(listener['host'])}`"
             + (f" at `{listener['address']}`" if listener["address"] else "")
             + f". {counts.get('service', 0)} service records, each bound to a real interface "
               "address. This is the row the official demo dataset ships empty."))
@@ -1044,7 +1043,7 @@ def demo_markdown(spec, facts, artifacts, live):
             rows.append(["Service endpoints a template renders",
                          _ui(live, "/ipam/services/"),
                          f"e.g. `{_cell(facts['listener']['name'])}` on "
-                         f"{facts['listener']['protocol']}/{facts['listener']['ports']}"
+                         f"{facts['listener']['ports']}"
                          + (f" at `{facts['listener']['address']}`" if facts["listener"]["address"] else "")])
         if facts["custom_field"]:
             rows.append(["A custom field already carrying intent",
