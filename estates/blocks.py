@@ -22,7 +22,12 @@ NETWORKS = ("management", "users", "atm", "wireless", "security", "voice",
 PLANNED_WATTS = {"access": 120, "access-juniper": 120, "inherited-access": 120,
                  "leaf": 160, "leaf-juniper": 160,
                  "core": 220, "edge": 40, "server": 250,
-                 "console-server": 40, "console-server-48": 40, "liquid-chassis": 400, "provider-edge": 320}
+                 "console-server": 40, "console-server-48": 40, "liquid-chassis": 400, "provider-edge": 320,
+                 # PoP plant (estates/fibre.py): the ACX5448-M allowance is the
+                 # design's declared 300 W; the PoP management switch shares
+                 # the access family's and the cellular console server the
+                 # console family's planning figure.
+                 "aggregation": 300, "pop-mgmt": 120, "oob-server": 40}
 
 # Equipment-room layout grammar, in metres. Cabinets are bayed contiguously
 # along a row (pitch equals the 0.6 m cabinet width); rows are spaced by the
@@ -114,24 +119,11 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
         # Provider customer premises take the small-room 120 V PDU.
         selected.add("pdu-120")
     manufacturers = set()
-    for alias, spec in w.catalog["models"].items():
+    for alias in w.catalog["models"]:
         if selected is not None and alias not in selected:
             continue
-        manufacturer = spec["manufacturer"]
-        if manufacturer not in manufacturers:
-            w.add("manufacturer", f"manufacturer/{manufacturer}", {"name": manufacturer,
-                  "slug": manufacturer.lower().replace(" ", "-")})
-            manufacturers.add(manufacturer)
-        if "platform" in spec and f"platform/{spec['platform']['slug']}" not in w.objects:
-            # Same identity grammar as the Service Linux platform: an authored
-            # vendor OS name, a namespaced slug, linked to its manufacturer.
-            w.add("platform", f"platform/{spec['platform']['slug']}",
-                  {"name": spec["platform"]["name"], "slug": f"{ns}-{spec['platform']['slug']}"},
-                  {"manufacturer": f"manufacturer/{manufacturer}"})
-        w.add("device_type", f"hardware/{alias}",
-              {k: spec[k] for k in ("model", "slug", "part_number", "u_height", "is_full_depth", "subdevice_role",
-                                   "cooling_method", "airflow", "weight", "weight_unit") if k in spec},
-              {"manufacturer": f"manufacturer/{manufacturer}"})
+        device_type(w, alias)
+        manufacturers.add(w.catalog["models"][alias]["manufacturer"])
     # Optic makers need a manufacturer row even when no chassis shares it
     # (generic third-party server optics in an otherwise vendor-only estate).
     for part in w.catalog["optics"]["parts"].values():
@@ -157,6 +149,34 @@ def foundation(w, *, industry="bank", inherited=True, networks=NETWORKS,
     if include_carriers:
         w.add("circuit_type", "circuit-type/wan", {"name": "Private WAN access", "slug": f"{ns}-private-wan"})
     w.add("cluster_type", "cluster-type", {"name": "Virtualization", "slug": f"{ns}-virtualization"})
+
+
+def device_type(w, alias):
+    """Emit one catalog model's device type, with its maker and platform, once.
+
+    foundation() calls this for an estate's selected aliases; a builder that
+    adds role families of its own (estates/fibre.py's PoP plant) calls it for
+    those. Idempotent: an existing type is returned unchanged.
+    """
+    key = f"hardware/{alias}"
+    if key in w.objects:
+        return key
+    spec = w.catalog["models"][alias]
+    manufacturer = spec["manufacturer"]
+    if f"manufacturer/{manufacturer}" not in w.objects:
+        w.add("manufacturer", f"manufacturer/{manufacturer}", {"name": manufacturer,
+              "slug": manufacturer.lower().replace(" ", "-")})
+    if "platform" in spec and f"platform/{spec['platform']['slug']}" not in w.objects:
+        # Same identity grammar as the Service Linux platform: an authored
+        # vendor OS name, a namespaced slug, linked to its manufacturer.
+        w.add("platform", f"platform/{spec['platform']['slug']}",
+              {"name": spec["platform"]["name"], "slug": f"{w.recipe['namespace']}-{spec['platform']['slug']}"},
+              {"manufacturer": f"manufacturer/{manufacturer}"})
+    return w.add("device_type", key,
+                 {k: spec[k] for k in ("model", "slug", "part_number", "u_height", "is_full_depth", "subdevice_role",
+                                      "cooling_method", "airflow", "weight", "weight_unit",
+                                      "exclude_from_utilization") if k in spec},
+                 {"manufacturer": f"manufacturer/{manufacturer}"})
 
 
 class Site:
@@ -253,8 +273,12 @@ class Site:
     def room_prefix(self, location):
         return "" if location == self.equipment_location else location.rsplit("/", 1)[-1] + "-"
 
-    def device(self, alias, label, role, group="network", racked=True, meta=None, location=None, rack_domain=None):
-        location = location or self.equipment_location
+    def device(self, alias, label, role, group="network", racked=True, meta=None, location=None, rack_domain=None,
+               rack=None, position=None):
+        """One device. ``rack``/``position`` is the authored-elevation hook: the
+        caller owns the cabinet and unit (an authored_rack), bypassing the lane
+        ledger; ``position`` None racks a 0U device without a unit."""
+        location = (self.w.obj(rack)["refs"]["location"] if rack else None) or location or self.equipment_location
         # Single resolution point: builders name a role family, the recipe's
         # selected vendor line names the catalog model that is actually built.
         alias = self.w.hardware_alias(alias)
@@ -270,7 +294,14 @@ class Site:
         if "platform" in spec:
             refs["platform"] = f"platform/{spec['platform']['slug']}"
         metadata = dict(hardware=alias, purpose=role, **(meta or {}))
-        if racked and spec["u_height"]:
+        if rack is not None:
+            if rack not in self.rack_members or not self.w.obj(rack)["meta"].get("authored_elevation"):
+                raise DesignError(f"{key}: an explicit rack must be an installed authored elevation of {self.id}")
+            if position is not None:
+                attrs.update(position=position, face="front")
+            refs.update(rack=rack, location=location)
+            self.rack_members[rack].append(key)
+        elif racked and spec["u_height"]:
             if rack_domain is not None and not self.rack_domains:
                 if self.racks:
                     raise DesignError("Rack lanes must be selected before allocating equipment; use a new site baseline")
@@ -352,6 +383,35 @@ class Site:
                 self.w.obj(key)["meta"]["position_m"] = [
                     round(ROOM_ORIGIN_M + ZONE_PITCH_M*zone + CABINET_WIDTH_M*column, 3),
                     round(ROOM_ORIGIN_M + CABINET_ROW_PITCH_M*row, 3), 0]
+        return key
+
+    def authored_rack(self, name, bay, *, height, status="active", description, group="network"):
+        """One cabinet of an authored elevation: a fixed bay in a single row.
+
+        The caller places every device by unit (device(rack=, position=));
+        bays sit at the cabinet pitch from the room origin, so a contracted
+        position reserved today keeps its coordinates once it is installed.
+        Only an active cabinet holds equipment and takes PDUs and feeds; a
+        reserved one is floor space under contract, with no asset tag.
+        """
+        location = self.equipment_location
+        key = f"rack/{self.id}/{name.lower()}"
+        if key in self.racks:
+            raise DesignError(f"{key}: authored cabinet already exists")
+        room_name = self.w.obj(location)["attrs"]["name"]
+        tag = room_name.removeprefix("Cage ") if room_name.startswith("Cage ") else "".join(
+            word if word.isupper() or word[0].isdigit() else word[0].upper() for word in room_name.split())
+        attrs = {"name": name, "u_height": height, "status": status,
+                 "facility_id": f"{tag}-{bay+1:02}", "description": description}
+        if status == "active":
+            attrs["asset_tag"] = f"{self.w.recipe['namespace'].upper()}-{self.w.reserve('asset-tags', key, 100000) + 1:05}"
+        self.w.add("rack", key, attrs,
+                   {"site": self.key, "location": location, "tenant": self.tenant, "role": f"rack-role/{group}"},
+                   {"authored_elevation": True,
+                    "position_m": [round(ROOM_ORIGIN_M + CABINET_WIDTH_M*bay, 3), ROOM_ORIGIN_M, 0]})
+        self.racks[key] = True
+        if status == "active":
+            self.rack_members[key] = []
         return key
 
     def interface(self, device, name):
@@ -630,8 +690,10 @@ class Site:
         # separate A and B panels, feeds and PDUs.
         sides = ("a",) if self.small_kit else ("a", "b")
         country = self.w.obj(self.key)["meta"].get("geography", {}).get("country")
-        voltage, amperage = FEED_ELECTRICS.get((country, self.small_kit), DEFAULT_FEED)
-        pdu_alias = "pdu-120" if self.small_kit and country == "US" else "pdu"
+        # A builder may name its own PDU and matching feed (a PoP's switched
+        # 208 V 30 A AP8941 on an L6-30 circuit, estates/fibre.py).
+        voltage, amperage = getattr(self, "feed_electrics", None) or FEED_ELECTRICS.get((country, self.small_kit), DEFAULT_FEED)
+        pdu_alias = getattr(self, "pdu_alias", None) or ("pdu-120" if self.small_kit and country == "US" else "pdu")
         pdu_spec = self.w.hardware(pdu_alias)
         for location in self.contract["placement"]["equipment_locations"].values():
             room = self.room_prefix(location)
@@ -646,11 +708,16 @@ class Site:
         for rack, members in self.rack_members.items():
             location = self.w.obj(rack)["refs"]["location"]
             room = self.room_prefix(location)
+            authored = self.w.obj(rack)["meta"].get("authored_elevation")
             outlets = {}
             for side in sides:
                 label = f"pdu-{rack.split('/')[-1]}-{side}"
                 pdu = self.device(pdu_alias, label, "pdu", racked=False)
                 self.w.obj(pdu)["refs"].update(rack=rack, location=location)
+                if authored:
+                    # "R01 PDU-A": short, unique per site and untruncated in the
+                    # power chain, and never the first device in a name sort.
+                    self.w.obj(pdu)["attrs"]["name"] = f"{self.w.obj(rack)['attrs']['name']} PDU-{side.upper()}"
                 if pdu_spec["u_height"]:
                     # The 1U horizontal PDU takes the top unit, above the lane.
                     self.w.obj(pdu)["attrs"].update(position=self.w.obj(rack)["attrs"]["u_height"], face="front")
@@ -671,11 +738,17 @@ class Site:
                 for port in pdu_spec["power_outlets"]:
                     outlet = self.w.add("power_outlet", f"{pdu}/outlet/{port['name']}", dict(port), {"device": pdu, "power_port": inlet})
                     outlets[side].append(outlet)
+            # An authored elevation is fixed: its powered members take outlets
+            # in mounting order from the bottom, wherever in a 42U cabinet
+            # they sit; lane racks keep the unit-indexed rule.
+            powered = sorted((d for d in members
+                              if self.w.catalog["models"][self.w.obj(d)["meta"]["hardware"]]["power_ports"]),
+                             key=lambda d: self.w.obj(d)["attrs"]["position"]) if authored else []
             for device in members:
                 # Rack slots persist across growth; emission order need not.
                 # One outlet per supply, indexed by the member's mounting unit:
                 # with one PDU a member's supplies take adjacent outlets.
-                i = self.w.obj(device)["attrs"]["position"] - 1
+                i = powered.index(device) if authored and device in powered else self.w.obj(device)["attrs"]["position"] - 1
                 ports = self.w.catalog["models"][self.w.obj(device)["meta"]["hardware"]]["power_ports"]
                 allowance = PLANNED_WATTS.get(self.w.obj(device)["meta"]["hardware"], 0)
                 for j, port in enumerate(ports):

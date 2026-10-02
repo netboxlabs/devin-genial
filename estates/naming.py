@@ -191,6 +191,9 @@ ROLE_COLORS = {
     "rtu": "00695c", "protection-relay": "ad1457", "station-gateway": "4527a0",
     "provider-edge": "5e35b1", "customer-edge": "0097a7",
     "console-server": "455a64", "laboratory": "37474f", "stack": "283593", "lab-router": "ff6f00",
+    # PoP plant (estates/fibre.py): passive hygiene reads neutral grey beside
+    # the grey patch panels; the aggregation pair takes its own blue.
+    "aggregation": "0277bd", "cable-management": "bdbdbd",
     # VM roles
     "application": "43a047", "database": "3949ab", "backup-service": "8d6e63",
 }
@@ -291,6 +294,7 @@ SEGMENT_PURPOSES = {
     "protection": "Protection relays", "telemetry": "Remote terminal units",
     "station": "Station HMIs and gateway", "clients": "Office workstations",
     "provider": "Provider backbone",
+    "nid-management": "Customer-premises NID in-band management",
 }
 
 
@@ -354,6 +358,7 @@ IPAM_ROLES = {
     "customer": ("Customer", "Address space allocated to customer VPNs"),
     "dhcp": ("DHCP pools", "Dynamic client address scopes"),
     "reserved": ("Reserved", "Addresses held for onboarding and growth"),
+    "nid-management": ("NID management", "In-band management of customer-premises network interface devices"),
 }
 
 # The IPAM role each addressed segment (the VLAN/VRF role key) belongs to.  An
@@ -368,7 +373,7 @@ SEGMENT_ROLES = {
     "clinical": "clinical", "medical": "clinical", "imaging": "clinical",
     "process": "ot", "supervisory": "ot", "protection": "ot", "telemetry": "ot", "station": "ot",
     "wan": "transit", "conduit": "transit", "recovery": "transit",
-    "provider": "backbone", "oob": "management",
+    "provider": "backbone", "oob": "management", "nid-management": "nid-management",
 }
 
 
