@@ -1477,17 +1477,23 @@ def _plan_prefix_hierarchy(objects, ids=None, existing=()):
     would; that container's own ``_children`` is not rewritten, because the
     loader never writes rows the plan does not own.
     """
-    vrf = ((lambda obj: obj["refs"].get("vrf")) if ids is None else
-           (lambda obj: ids[obj["refs"]["vrf"]] if "vrf" in obj["refs"] else None))
-    rows = [(obj["key"], vrf(obj), obj["attrs"]["prefix"])
+    # Plan rows keep their plan VRF key (a VRF need not be on the target yet);
+    # existing target rows translate their VRF id back to a plan key when the
+    # plan owns that VRF, else stay a foreign ("vrf-id", N) scope.
+    inverse = {target: key for key, target in (ids or {}).items() if str(key).startswith("vrf/")}
+    rows = [(obj["key"], obj["refs"].get("vrf"), obj["attrs"]["prefix"])
             for obj in objects.values() if obj["kind"] == "prefix"]
     # A row with a plan prefix's own (VRF, prefix) identity is that prefix,
     # already loaded by an earlier batch or attempt — not a second row.
-    owned = {(vrf_id, ipaddress.ip_network(prefix, strict=False)) for _, vrf_id, prefix in rows}
-    rows += [(("existing", row["id"]), _nested_id(row.get("vrf")), row["prefix"])
+    owned = {(vrf_key, ipaddress.ip_network(prefix, strict=False)) for _, vrf_key, prefix in rows}
+
+    def scope(row):
+        vrf_id = _nested_id(row.get("vrf"))
+        return None if vrf_id is None else inverse.get(vrf_id, ("vrf-id", vrf_id))
+
+    rows += [(("existing", row["id"]), scope(row), row["prefix"])
              for row in existing
-             if (_nested_id(row.get("vrf")), ipaddress.ip_network(row["prefix"], strict=False))
-             not in owned]
+             if (scope(row), ipaddress.ip_network(row["prefix"], strict=False)) not in owned]
     return _prefix_hierarchy(rows)
 
 

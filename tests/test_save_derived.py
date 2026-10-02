@@ -194,3 +194,21 @@ class Readback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HierarchyBeforeVrfsExist(unittest.TestCase):
+    """Found live: prefix hierarchy was computed before every customer VRF had a target id."""
+
+    def test_plan_vrfs_need_no_target_id_and_existing_rows_map_back(self):
+        from estates.turbobulk import _plan_prefix_hierarchy
+        objects = {
+            "vrf/a": {"kind": "vrf", "key": "vrf/a", "attrs": {}, "refs": {}},
+            "p/root": {"kind": "prefix", "key": "p/root", "attrs": {"prefix": "10.0.0.0/8"}, "refs": {}},
+            "p/a": {"kind": "prefix", "key": "p/a", "attrs": {"prefix": "10.1.0.0/24"}, "refs": {"vrf": "vrf/a"}},
+            "p/a2": {"kind": "prefix", "key": "p/a2", "attrs": {"prefix": "10.1.0.0/25"}, "refs": {"vrf": "vrf/a"}},
+        }
+        existing = [{"id": 9, "prefix": "10.1.0.0/16", "vrf": {"id": 77}}]   # vrf/a on the target
+        hierarchy = _plan_prefix_hierarchy(objects, {"vrf/a": 77}, existing)
+        self.assertEqual(hierarchy["p/a2"][0], hierarchy["p/a"][0] + 1)
+        self.assertGreaterEqual(hierarchy["p/a"][0], 1)   # under the existing /16 in the same VRF
+        _plan_prefix_hierarchy(objects, {}, [])            # no VRF ids at all: must not raise
