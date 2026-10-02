@@ -646,11 +646,11 @@ inspection on the pinned stack. The final offline scale and SDK results are
 indexed in [GOAL.md](../GOAL.md); these do not prove optical loss budgets or a
 large live load.
 
-The finite [catalog](../catalog/README.md) selects LR/LX/LR4 parts for reviewed
+The finite [catalog](../catalog/README.md) selects LR/LX/LR4 (and long-reach LH/ER4 Lite) parts for reviewed
 Cisco, Juniper, Arista and Fortinet cages, plus an explicit reference-server
 transceiver. The alternate Juniper access and leaf lines carry their own
-reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives LX even though its cage can
-also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
+reviewed parts, including a `JNP-100G-AOC-3M` peer assembly. A configured 1G MX204 handoff receives a 1G part (LX, or LH past 10 km of owned
+fiber) even though its cage can also carry 10G. Existing three-meter Arista peer links use `AOC-Q-Q-100G-3M`:
 one active optical cable, two captive end modules, one shared assembly serial.
 The existing cable label remains stable and its comments show the assembly
 serial. The two end records are not two independently replaceable purchases.
@@ -986,9 +986,12 @@ facilities desk is the remote-hands desk of the carrier hotel's operator — one
 invented colocation company per metro (Windward Interconnect, Motorline Data
 Centers, Cuyahoga Colocation, Kinnickinnic Colocation) — not carrier staff.
 
-**Known gap.** Intra-metro dark fiber is lit by the PE's JNP-QSFP-100G-LR4
-(10 km reach) while some metro routes are longer; a source-backed 40 km optic
-and distance-aware optic selection are the follow-up.
+**Optic reach.** Intra-metro dark fiber and access tails are the operator's own
+fiber, so each optic is chosen by the run it lights (since 0.16.0): spans up to
+10 km keep JNP-QSFP-100G-LR4, longer ones take QSFP-100G-ER4L (30 km without
+host FEC); premises tails up to 10 km keep SFP-1GE-LX, longer ones SFP-1GE-LH
+(70 km, with the vendor's short-link attenuator noted on the module). See the
+[installed optics policy](#installed-optics-policy).
 
 ## Provider BGP inventory
 
