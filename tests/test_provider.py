@@ -67,7 +67,7 @@ class ProviderTests(unittest.TestCase):
         for obj in objects.values():
             obj['meta'] = {}
         first, second = 'circuit/backbone/chicago-west-a/detroit-south-a', 'circuit/backbone/chicago-west-b/detroit-south-b'
-        site = objects[objects[first + '/A']['refs']['termination']]['refs']['site']
+        site = objects[first + '/A']['refs']['termination']
         site_name = objects[site]['attrs']['name']
         provider = objects[first]['refs']['provider']
         provider_name = objects[provider]['attrs']['name']
@@ -126,7 +126,7 @@ class ProviderTests(unittest.TestCase):
             ends=[objects[key+'/'+side]['refs']['termination'] for side in ('A','Z')]
             self.assertNotEqual(*ends)
             # Local handoffs terminate in the room their equipment stands in.
-            self.assertTrue(all(objects[e]['kind']=='location' and objects[objects[e]['refs']['site']]['kind']=='site' for e in ends))
+            self.assertTrue(all(objects[e]['kind']=='site' for e in ends))
         for side in ('a','b'):
             self.assertEqual(objects[f'circuit/transit/{side}/Z']['refs']['termination'],f'provider-network/transit/{side}')
         for banned in ('wireless_lan','tunnel','ike_policy','l2vpn'):

@@ -567,11 +567,15 @@ def _circuit(w,key,provider,account,kind,a_site,a_port,z_site,z_port,rate_mbps,t
         refs["provider_account"] = account
     w.add("circuit",key,attrs,refs,dict(procurement=dict(cohort=f"provider-{kind}",handoff_mbps=handoff)))
     for side,site,port in (("A",a_site,a_port),("Z",z_site,z_port)):
-        # A local handoff terminates in the room its equipment stands in (the
-        # PoP cage, the premises or NOC equipment room); a far end NetBox
-        # cannot see stays on the carrier's provider network.
-        target = w.obj(w.obj(port)["refs"]["device"])["refs"]["location"] if port else (site.key if isinstance(site,Site) else site)
-        attrs = dict(term_side=side,port_speed=handoff*1000,description="Local routed handoff" if port else "Upstream carrier handoff")
+        # A local handoff terminates on its site and names the room its
+        # equipment stands in (PoP cage, premises or NOC equipment room) in
+        # the description; a far end NetBox cannot see stays on the carrier's
+        # provider network. Site scope, not the Location, because Visual
+        # Explorer's WAN map resolves a circuit end only from a dcim.site
+        # termination: Location-scoped circuits drew no arcs (docs/modeling.md).
+        target = site.key if isinstance(site,Site) else site
+        room = w.obj(w.obj(w.obj(port)["refs"]["device"])["refs"]["location"])["attrs"]["name"] if port else None
+        attrs = dict(term_side=side,port_speed=handoff*1000,description=f"Local routed handoff, {room}" if port else "Upstream carrier handoff")
         if port and provider != "provider/operator" and site.id.startswith("pop-"):
             attrs.update(_cross_connect(w,f"{key}/{side}",port))
         term = w.add("circuit_termination",f"{key}/{side}",attrs,dict(circuit=key,termination=target))
@@ -970,9 +974,17 @@ def _service_port(w,pop_sites,pop,target):
     return site,site.interface(routers[slot%2],f"xe-0/1/{slot//2}")
 
 
+def premises_description(customer):
+    """A customer premises' site description, from what the site contains."""
+    return ("Private-L3 customer premises and wired office" if customer["lan_endpoints"] > 0 else
+            "Private-L3 customer premises; CE hands off to the customer's own LAN")
+
+
 def _customer(w,sid,c,pop,number,pop_sites,placed,installed):
     key=c["key"]; tenant=f"tenant/cust-{key}"; vrf=f"vrf/customer/{key}"
-    site = Site(w,sid,"customer","Private-L3 customer premises and wired office",tenant=tenant,routing_domain=vrf)
+    # Describe what the premises actually holds: a carrier-managed office, or
+    # only a CE handing off to the customer's own LAN.
+    site = Site(w,sid,"customer",premises_description(c),tenant=tenant,routing_domain=vrf)
     if sid in placed:
         # Named and plotted where the premises is, not after its serving PoP.
         name,latitude,longitude,anchor = placed[sid]

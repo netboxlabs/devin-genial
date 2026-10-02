@@ -735,8 +735,11 @@ for the separately recorded pinned-target live qualification.
   disconnect-order journal. PoP Junos ports are addressed on `<port>.0` units
   (like `lo0.0`), which BGP local addresses cite. Customer desks answer from the customer's own domain and PoP
   facilities desks are the carrier hotel's remote hands. Local circuit handoffs
-  terminate in the cage or equipment room (a Location), so the save-hook cache
-  still resolves the site; carrier handoffs into a PoP carry `xconnect_id` and,
+  terminate on their site, naming the cage or equipment room in the description
+  (`Local routed handoff, Cage G09`): Visual Explorer's WAN map resolves a
+  circuit end only from a `dcim.site` termination, so R4a's Location-scoped
+  handoffs drew "0 circuits" on a live Cloud review (COVERAGE.md product
+  findings; readback stays tolerant of both). Carrier handoffs into a PoP carry `xconnect_id` and,
   for fibre, the carrier hotel's meet-me-room panel position in `pp_info`. Customer virtual
   circuits terminate `hub`/`spoke`; access circuits record their route
   `distance`; customer ASNs carry their tenant. A customer may be onboarding

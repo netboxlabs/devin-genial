@@ -70,7 +70,7 @@ class ShowcaseCustomerEdgeTests(unittest.TestCase):
         self.assertLess(len(tagged & pops), len(pops))
         for site in tagged & pops:
             carriers = {self.o[t["refs"]["circuit"]]["refs"]["provider"] for t in self.of("circuit_termination")
-                        if self.o.get(t["refs"]["termination"], {}).get("refs", {}).get("site") == site
+                        if t["refs"]["termination"] == site
                         and self.o[t["refs"]["circuit"]]["refs"]["type"] != "circuit-type/out-of-band"
                         and self.o[t["refs"]["circuit"]]["refs"]["provider"] != "provider/operator"}
             self.assertGreaterEqual(len(carriers), 2, site)

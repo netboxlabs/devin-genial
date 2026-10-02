@@ -791,6 +791,14 @@ own design pass and touches every provider builder):
   `courier_account` despite the schema marking them optional.
 - Visual Explorer: the WAN map opens at globe zoom and never fits to data;
   at site scope the BGP topology force layout stacks every node on one point.
+- Visual Explorer: the WAN map drops circuits terminated on a Location. It
+  resolves a circuit end's site only when `termination_type` is `dcim.site`;
+  it fetches locations but never maps a Location termination to its site, so
+  R4a's 204 cage/equipment-room terminations rendered "75 sites | 0 circuits"
+  (live Cloud visual review, 2026-10-02) although NetBox caches each
+  termination's site. Worked around in the generator: local handoffs terminate
+  on the site again and name the room in their description
+  (docs/modeling.md, Terminations).
 - Diode SDK 1.14.0 has no `created` on JournalEntry, so dated journals reach a
   target only through `just load`.
 
