@@ -53,13 +53,19 @@ class EstateHygieneTests(unittest.TestCase):
                 ranges = Counter(obj["attrs"]["status"] for obj in self.of(plan, "ip_range"))
                 self.assertTrue(ranges["active"] and ranges["reserved"])
                 self.assertTrue(any(obj["attrs"].get("enabled") is False for obj in self.of(plan, "interface")))
-                self.assertGreaterEqual(len({obj["attrs"]["kind"] for obj in self.of(plan, "journal_entry")}), 3)
+                # Completed events (success) and problems (warning) everywhere;
+                # since 0.18 site access is site comments, so only the provider's
+                # paperwork and plant history add the informational kind.
+                kinds = {obj["attrs"]["kind"] for obj in self.of(plan, "journal_entry")}
+                self.assertLessEqual({"success", "warning"}, kinds)
+                if profile == "provider-backbone":
+                    self.assertIn("info", kinds)
                 self.assertIn("secondary", {obj["attrs"]["priority"] for obj in self.of(plan, "contact_assignment")})
 
     def test_tags_are_graph_derived_scoped_and_discriminating(self):
         self.assertEqual({t["key"] for t in self.of(self.plans["provider-backbone"], "tag")},
                          {"tag/hub-site", "tag/dual-homed", "tag/route-reflector", "tag/transit-edge", "tag/managed-ce",
-                          "tag/managed-service"})
+                          "tag/managed-service", "tag/legacy-naming"})
         self.assertIn("tag/pci-scope", {t["key"] for t in self.of(self.plans["regional-bank"], "tag")})
         self.assertIn("tag/ot-zone", {t["key"] for t in self.of(self.plans["manufacturing"], "tag")})
         objects = {obj["key"]: obj for obj in self.plans["provider-backbone"]["objects"]}
@@ -182,17 +188,18 @@ class EstateHygieneTests(unittest.TestCase):
         for note in self.of(plan, "journal_entry"):
             subject = objects[note["refs"]["assigned_object"]]
             site = subject["key"] if subject["kind"] == "site" else subject["refs"].get("site")
-            when = note["attrs"]["comments"][:10]
-            if note["key"].endswith("/equipment-record") and site in first:
-                self.assertLessEqual(when, first[site])  # racked before the site's first circuit
+            when = note["attrs"]["comments"].split("\n", 1)[0].rsplit(" · ", 1)[1]
+            # A PoP's plant follows the provider timeline (launch, refresh);
+            # every other site is racked before its first circuit.
+            if note["key"].endswith("/equipment-record") and site in first and not site.startswith("site/pop-"):
+                self.assertLessEqual(when, first[site])
                 checked += 1
-            elif note["key"].endswith("/access-plan") and site in first:
-                self.assertLess(when, first[site])  # the site is readied before service
         self.assertTrue(checked)
 
         def shifted(plan, objects):
             note = next(obj for obj in objects.values() if obj["key"].endswith("/equipment-record"))
-            note["attrs"]["comments"] = plan["recipe"]["as_of"] + note["attrs"]["comments"][10:]
+            title, rest = note["attrs"]["comments"].split(" · ", 1)
+            note["attrs"]["comments"] = f"{title} · {plan['recipe']['as_of']}{rest[10:]}"
 
         self.assertIn("operations-journal-date", codes(operations(self.mutate("provider-backbone", shifted))))
 

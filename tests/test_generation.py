@@ -33,6 +33,13 @@ class GenerationTests(unittest.TestCase):
         with self.assertRaisesRegex(DesignError, "version.*rebaseline"):
             generate(plan["recipe"], previous=previous)
 
+    def test_allocation_ledgers_exclude_dated_local_variation(self):
+        # Service days and the provider timeline follow the seed; every other
+        # scope (including a provider ledger that merely shares a stem) stays.
+        plan = {"reservations": {"site-in-service/site/a": {"day": 1}, "provider-timeline/launch/x": {"day": 2},
+                                 "provider-pop-order": {"x": 0}, "provider-timelines": {"y": 0}}}
+        self.assertEqual(allocation_ledgers(plan), {"provider-pop-order": {"x": 0}, "provider-timelines": {"y": 0}})
+
     def test_seed_changes_only_declared_local_variation(self):
         changed = generate(self.baseline["recipe"] | {"seed": 43})
         self.assertEqual(validate(changed), [])
@@ -59,8 +66,10 @@ class GenerationTests(unittest.TestCase):
                         obj["attrs"].pop("install_date")
                     if obj["kind"] == "journal_entry":
                         obj["attrs"]["comments"] = re.sub(r"\d{4}-\d{2}-\d{2}", "<authored-date>", obj["attrs"]["comments"])
-                        # created is the same seeded event date, at 15:00 UTC.
-                        self.assertRegex(obj["attrs"].pop("created"), r"^\d{4}-\d{2}-\d{2}T15:00:00Z$")
+                        # created is the same seeded event date at a business-hours
+                        # time keyed by the journal, never the seed.
+                        self.assertRegex(obj["attrs"]["created"], r"^\d{4}-\d{2}-\d{2}T(1[4-9]|2[01]):[0-5]\d:00Z$")
+                        obj["attrs"]["created"] = obj["attrs"]["created"][10:]
                         # A change ticket is a seeded choice, like a serial.
                         obj["attrs"]["comments"] = re.sub(r"CHG\d{7}", "<change>", obj["attrs"]["comments"])
                     if "lifecycle_cohort" in obj["meta"]:

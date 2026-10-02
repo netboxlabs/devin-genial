@@ -174,8 +174,10 @@ class ShowcaseText(unittest.TestCase):
                         + self.of(plan, "virtual_machine_type")):
                 self.assertNotRegex(obj["attrs"].get("description", ""), r"; no |not applied|unspecified|Inert|Wiring only")
         notes = [e["attrs"]["comments"] for e in self.of(self.provider, "journal_entry")]
-        # A journal never restates its record: no rate, cid or termination.
-        self.assertFalse([n for n in notes if "bps" in n])
+        # A journal never restates its record: no rate, cid or termination. A
+        # committed-rate upgrade (v0.18 P1-11) names the earlier tiers the
+        # record no longer shows; nothing else states a rate.
+        self.assertFalse([n for n in notes if "bps" in n and not n.startswith("**Committed rate raised** · ")])
         self.assertEqual({c["attrs"]["comments"].split(" order: ")[0] for c in self.of(self.bank, "circuit")},
                          {"Standard branch", "Data center aggregation", "Retained Birch contract"})
         hook = self.of(self.bank, "webhook")[0]

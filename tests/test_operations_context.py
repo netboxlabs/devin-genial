@@ -12,6 +12,11 @@ from estates.diode import export
 from estates.validate_operations import validate
 
 
+def noted(note):
+    """A journal's event date: the bold title line is ``**<title>** · <date>``."""
+    return date.fromisoformat(note["attrs"]["comments"].split("\n", 1)[0].rsplit(" · ", 1)[1])
+
+
 PROFILES = ("regional-bank", "enterprise-data-center", "school-district")
 CONTEXT_KINDS = {"contact", "contact_group", "contact_role", "contact_assignment", "journal_entry"}
 
@@ -45,8 +50,8 @@ class OperationsContextTests(unittest.TestCase):
         for circuit in (o for o in objects.values() if o["kind"] == "circuit" and "install_date" in o["attrs"]):
             key, data = circuit["key"], circuit["attrs"]
             note = objects[f"journal/{key}/handover"]
-            body = note["attrs"]["comments"].split("\n", 1)[1]
-            self.assertTrue(note["attrs"]["comments"].startswith(f"{data['install_date']} — Handed over\n"))
+            body = note["attrs"]["comments"].split("\n\n", 1)[1]
+            self.assertTrue(note["attrs"]["comments"].startswith(f"**Handed over** · {data['install_date']}\n\n"))
             self.assertEqual(note["attrs"]["kind"], "success")
             # Nothing the circuit already shows: no cid, rate or termination.
             self.assertNotIn(data["cid"], body)
@@ -84,9 +89,12 @@ class OperationsContextTests(unittest.TestCase):
                 slips = [o for o in journals if o["key"].endswith("/delivery-slip")]
                 self.assertTrue(all(o["attrs"]["kind"] == "warning" for o in slips))
                 self.assertLess(len(slips), sum(o["kind"] == "circuit" for o in plan["objects"]))
-                # One placement note per workload scope, one access note per
-                # site and one handover per circuit (plus the occasional slip).
-                self.assertEqual(len(legacy_notes), len(scopes) + sum({"site": 1, "circuit": 1}.get(o["kind"], 0) for o in plan["objects"]))
+                # One placement note per workload scope and one handover per
+                # circuit (plus the occasional slip); site access is a standing
+                # policy in each site's comments, never a dated journal.
+                self.assertEqual(len(legacy_notes), len(scopes) + sum(o["kind"] == "circuit" for o in plan["objects"]))
+                self.assertTrue(all(o["attrs"]["comments"].endswith("flag any planned power work.")
+                                    for o in plan["objects"] if o["kind"] == "site"))
                 for vm in (o for o in plan["objects"] if o["kind"] == "virtual_machine"):
                     self.assertEqual(objects[f"contact-assignment/{vm['key']}/operations"]["attrs"], {"priority": "secondary"})
                 by_target = {}
@@ -96,7 +104,7 @@ class OperationsContextTests(unittest.TestCase):
                     by_target.setdefault(target, []).append(note)
                     self.assertIn(objects[target]["kind"], {"site", "circuit", "virtual_machine", "device"})
                 for notes in by_target.values():
-                    dates = [date.fromisoformat(o["attrs"]["comments"][:10]) for o in notes]
+                    dates = [noted(o) for o in notes]
                     self.assertEqual(len(set(dates)), len(notes))
                     self.assertLess(max(dates), date.fromisoformat(plan["recipe"]["as_of"]))
                 contacts = [o for o in plan["objects"] if o["kind"] == "contact"]
@@ -169,7 +177,7 @@ class OperationsContextTests(unittest.TestCase):
         self.assert_code(plan, "operations-contact")
 
     def test_journal_kind_follows_its_event(self):
-        for key, kind in (("journal/site/dc-01/access-plan", "success"),
+        for key, kind in (("journal/device/dc-01/spine-a/equipment-record", "info"),
                           ("journal/circuit/dc-01/a/1/handover", "info"),
                           ("journal/vm/dc-01/inventory-api/001/resource-plan", "warning")):
             with self.subTest(key=key):
@@ -200,7 +208,7 @@ class OperationsContextTests(unittest.TestCase):
         for mode in ("remove", "retype"):
             with self.subTest(mode=mode):
                 plan, objects = self.plan()
-                note = objects["journal/site/dc-01/access-plan"]
+                note = objects["journal/circuit/dc-01/a/1/handover"]
                 if mode == "remove":
                     plan["objects"].remove(note)
                 else:
@@ -208,9 +216,10 @@ class OperationsContextTests(unittest.TestCase):
                 self.assert_code(plan, "operations-journal")
 
     def test_journal_subject_and_account_binding_are_checked(self):
-        for refs in ({"assigned_object": "site/dc-02"}, {"assigned_object": "site/dc-01", "created_by": "owner/operations"}):
+        for refs in ({"assigned_object": "circuit/dc-01/b/1"},
+                     {"assigned_object": "circuit/dc-01/a/1", "created_by": "owner/operations"}):
             plan, objects = self.plan()
-            objects["journal/site/dc-01/access-plan"]["refs"] = refs
+            objects["journal/circuit/dc-01/a/1/handover"]["refs"] = refs
             self.assert_code(plan, "operations-journal")
 
     def test_journal_facts_and_added_execution_claim_are_rejected(self):
@@ -224,15 +233,26 @@ class OperationsContextTests(unittest.TestCase):
                 note["attrs"]["comments"] = note["attrs"]["comments"].replace(before, after)
                 self.assert_code(plan, "operations-journal-facts")
         plan, objects = self.plan()
-        objects["journal/site/dc-01/access-plan"]["attrs"]["comments"] += "\nChange executed successfully."
+        objects["journal/circuit/dc-01/a/1/handover"]["attrs"]["comments"] += "\nChange executed successfully."
         self.assert_code(plan, "operations-journal-facts")
 
     def test_invalid_future_and_shifted_dates_are_rejected(self):
         for replacement in ("2099-01-01", "2026-02-30", "2000-01-01"):
             with self.subTest(date=replacement):
                 plan, objects = self.plan()
-                note = objects["journal/site/dc-01/access-plan"]
-                note["attrs"]["comments"] = replacement + note["attrs"]["comments"][10:]
+                note = objects["journal/circuit/dc-01/a/1/handover"]
+                title, rest = note["attrs"]["comments"].split(" · ", 1)
+                note["attrs"]["comments"] = f"{title} · {replacement}{rest[10:]}"
+                self.assert_code(plan, "operations-journal-date")
+        # created must be the entry's own band time on its event day.
+        for created in ("{day}T15:00:00Z", "{day}T05:00:00Z"):
+            with self.subTest(created=created):
+                plan, objects = self.plan()
+                note = objects["journal/circuit/dc-01/a/1/handover"]
+                stamped = created.format(day=noted(note))
+                if stamped == note["attrs"]["created"]:
+                    continue
+                note["attrs"]["created"] = stamped
                 self.assert_code(plan, "operations-journal-date")
 
     def test_one_timeline_installs_lead_service_and_manufacture_leads_install(self):
@@ -250,9 +270,11 @@ class OperationsContextTests(unittest.TestCase):
                 first[term["refs"]["termination"]] = min(day, first.get(term["refs"]["termination"], day))
             for note in (o for o in objects.values() if o["key"].endswith("/equipment-record")):
                 device = objects[note["refs"]["assigned_object"]]
-                installed = date.fromisoformat(note["attrs"]["comments"][:10])
+                installed = noted(note)
                 with self.subTest(profile=profile, device=device["key"]):
-                    if device["refs"]["site"] in first:
+                    # A provider PoP's plant follows its own frozen timeline
+                    # (launch, refresh, later arrivals), not its first circuit.
+                    if device["refs"]["site"] in first and not device["refs"]["site"].startswith("site/pop-"):
                         self.assertTrue(7 <= (date.fromisoformat(first[device["refs"]["site"]]) - installed).days <= 37)
                     dtype = objects[device["refs"]["device_type"]]
                     fmt = specs[(objects[dtype["refs"]["manufacturer"]]["attrs"]["name"], dtype["attrs"]["model"])]["serial_format"]
@@ -275,7 +297,7 @@ class OperationsContextTests(unittest.TestCase):
             objects["contact/operations"]["attrs"][field] = []
             self.assert_code(plan, "operations-contact")
         plan, objects = self.plan()
-        objects["journal/site/dc-01/access-plan"]["attrs"]["comments"] = None
+        objects["journal/circuit/dc-01/a/1/handover"]["attrs"]["comments"] = None
         self.assert_code(plan, "operations-journal-facts")
 
     def test_nontext_source_site_facts_are_findings(self):
@@ -328,7 +350,9 @@ class OperationsContextTests(unittest.TestCase):
             assignments = [e["contact_assignment"] for e in entities if "contact_assignment" in e]
             journals = [e["journal_entry"] for e in entities if "journal_entry" in e]
             self.assertTrue(any("object_virtual_machine" in assignment for assignment in assignments))
-            for target in ("site", "circuit", "virtual_machine", "device"):
+            # Site access is site comments since 0.18: a DC journals its
+            # circuits, workloads and equipment.
+            for target in ("circuit", "virtual_machine", "device"):
                 self.assertTrue(any(f"assigned_object_{target}" in journal for journal in journals), target)
             self.assertTrue(all("created_by" not in journal for journal in journals))
 

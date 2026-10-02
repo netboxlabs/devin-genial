@@ -42,9 +42,10 @@ SERVICE_DAY_LEDGER = "site-in-service/"
 
 def allocation_ledgers(plan):
     """The plan's seed-invariant allocation ledgers: every reservation scope
-    except the frozen service days, which are dated local variation."""
+    except the frozen service days and the provider timeline, which are dated
+    local variation."""
     return {scope: items for scope, items in plan["reservations"].items()
-            if not scope.startswith(SERVICE_DAY_LEDGER)}
+            if not scope.startswith((SERVICE_DAY_LEDGER, f"{history.TIMELINE_LEDGER}/"))}
 
 
 def _freeze_service_days(world, kinds):
