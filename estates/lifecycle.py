@@ -283,7 +283,9 @@ def create(plan):
             "rules": [{"object_types": ["dcim.device"],
                        "parameters": {"site": [site["slug"]],
                                       "role": sorted(objects[role]["attrs"]["slug"] for role in roles),
-                                      **({"status": statuses} if statuses != ["active"] else {})}},
+                                      # Always explicit: an unfiltered rule also selects a
+                                      # same-role cold spare (inventory) on the target.
+                                      "status": statuses}},
                       {"object_types": ["dcim.module"], "parameters": {"site": [site["slug"]]}}]
                      + ([{"object_types": ["dcim.module"], "action": "exclude",
                           "parameters": {"site": [site["slug"]], "device": foreign}}] if foreign else []),

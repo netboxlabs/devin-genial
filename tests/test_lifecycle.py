@@ -72,7 +72,7 @@ class Story(unittest.TestCase):
         self.assertEqual(sorted(a["device"] for a in bom["assets"]),
                          ["acme-dev0", "acme-dev0", "acme-dev1", "acme-dev1"])
         self.assertEqual(bom["rules"][0]["parameters"],
-                         {"site": ["acme-site"], "role": ["acme-pe", "acme-role"]})
+                         {"site": ["acme-site"], "role": ["acme-pe", "acme-role"], "status": ["active"]})
         # The PE router goes to the carrier distributor; the PSU it shares
         # with the switch stays with the regional reseller.
         orders = {order["vendor"]: sorted(item[3] for item, _ in order["items"]) for order in bom["orders"]}
@@ -149,6 +149,23 @@ class FieldDepot(unittest.TestCase):
         dtype = self.objects[obj["refs"]["device_type" if obj["kind"] == "device" else "module_type"]]
         maker = self.objects[dtype["refs"]["manufacturer"]]["attrs"]["slug"]
         return ("dcim.devicetype" if obj["kind"] == "device" else "dcim.moduletype", maker, dtype["attrs"]["model"])
+
+    def test_device_rules_select_exactly_the_bom_devices(self):
+        # The target applies a rule's parameters as plain filters: a rule with
+        # no status selected the racked cold spare live (crsk8600, 2026-10-02).
+        devices = [o for o in self.plan["objects"] if o["kind"] == "device"]
+        slug = lambda key: self.objects[key]["attrs"]["slug"]
+        for bom in self.artifact["boms"]:
+            for rule in bom["rules"]:
+                if rule["object_types"] != ["dcim.device"] or rule.get("action") == "exclude":
+                    continue
+                params = rule["parameters"]
+                self.assertIn("status", params, bom["name"])
+                chosen = {d["attrs"]["name"] for d in devices
+                          if slug(d["refs"]["site"]) in params["site"] and slug(d["refs"]["role"]) in params["role"]
+                          and d["attrs"].get("status", "active") in params["status"]}
+                wanted = {a["device"] for a in bom["assets"] if a["object_type"] == "dcim.device"}
+                self.assertEqual(chosen, wanted, bom["name"])
 
     def test_one_depot_at_the_noc(self):
         self.assertEqual(len(self.depots), 1)
