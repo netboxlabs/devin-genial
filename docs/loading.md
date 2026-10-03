@@ -267,11 +267,26 @@ rebaseline. Everything is derived from the finished graph:
   and a planned one has no delivery; nothing is installed. A captive AOC end
   in a successor ships with that successor, so one BOM line can span two
   orders. Planned premises with no paperwork yet stay out of every BOM.
-- **Cold spares**: each `inventory` chassis is one serialized spare item in a
-  `<site> — Field depot` pool at its own room, matched to the device by
-  (device type, serial), and never a BOM asset. Asset Lifecycle 0.3.1 spare
-  items reference a type, not a device, so the plugin's *Install* action on that
-  item would create a **second** device: do not click it on the showcase.
+- **Cold spares** (each pre-racked `inventory` aggregation chassis) stay
+  NetBox devices only: never a BOM asset and never a spare item. A spare item
+  for one would count it twice, and Asset Lifecycle 0.3.1 spare items
+  reference a type, not a device, so *Install* on it would create a
+  **second** device.
+- **One Field depot at the NOC** (`<NOC site> — Field depot`, in its busiest
+  equipment room) holds the carrier's **boxed** spares, which are not NetBox
+  devices: per premises NID and CE model in service, and per each of the three
+  optic parts most installed in PoP equipment, `ceil(installed / 20)`
+  serialized units. A superseded generation (a `-legacy` catalog family, so no
+  MetroNID TE) or a model past its catalog end of sale is not restocked.
+  Serials expand from the maker's catalog format with a manufacture week
+  30–180 days before receipt, and none repeats a (type, serial) the plan's
+  devices or modules carry. The stock arrives through its own
+  `<NOC site> — Field depot stock` BOM of manual line items (no scope rules,
+  never generated, no assets): one purchase order per vendor, received at the
+  depot room 7–21 days before the latest premises installation journal, both
+  `fulfilled`, nothing installed. Only estates with customer premises (the
+  provider) carry a depot. Pressing *Install* on a depot item creates a new
+  device from it — that is the intended use for a boxed spare.
 - Vendor end-of-support dates (MX80 2026-06-30, ACX5048 2027-12-31, MX204
   2032-06-30) are not written: the plugin has no lifecycle-date field. They
   live in the catalog, the device journals and the showcase's End-of-life
@@ -303,13 +318,16 @@ individual deletion once their parent left `draft` — deleting the parent
 cascades them. Deleting a module type does **not** cascade to spare
 allocations that name it; they linger with a null item.
 
-For the v0.18 provider showcase plan the sidecar derives 252 BOMs (one on
-order), 1,936 assets, 282 purchase orders and deliveries, and 11 spares pools
-(69 allocations, four Field-depot cold spares). The seeder's mechanics, resume
-and readback were proven on a throwaway tenant against a three-device probe
-estate; the v0.18 paths (status-filtered and `exclude` scope rules, split BOM
-lines, an `ordered` PO with a `received` delivery and no installs, serialized
-device-type spare items) are exercised only against an in-memory fake
+For the v0.18 provider showcase plan the sidecar derives 253 BOMs (one on
+order, one depot stock order), 1,936 assets, 283 purchase orders and
+deliveries, and 8 spares pools (72 allocations). The NOC Field depot holds 59
+boxed spares: 17 Ciena 3903 AC, 1 RAD ETX-2i-10G, 11 Juniper SRX300, 2
+FortiGate 100F, 12 SFP-1GE-LX, 11 EX-SFP-10GE-SR and 5 SFP-1GE-LH. The seeder's
+mechanics, resume and readback were proven on a throwaway tenant against a
+three-device probe estate; the v0.18 paths (status-filtered and `exclude`
+scope rules, split BOM lines, an `ordered` PO with a `received` delivery and no
+installs, a never-generated BOM of manual lines, serialized device- and
+module-type spare items) are exercised only against an in-memory fake
 (`tests/test_lifecycle_lived_in.py`) and have **no live receipt yet**.
 
 Receipts bind the selected policy, row bound, payloads, and per-job request settings

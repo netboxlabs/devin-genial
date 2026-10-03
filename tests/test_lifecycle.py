@@ -1,6 +1,7 @@
 """The asset-lifecycle sidecar must be derived, deterministic and honestly seeded."""
 
 import copy
+from collections import Counter
 import json
 import tempfile
 import unittest
@@ -129,6 +130,67 @@ class Story(unittest.TestCase):
                     seed(root / "out", url="http://t.example", token="x",
                          receipt_path=root / "receipt.json")
             client.assert_not_called()
+
+
+class FieldDepot(unittest.TestCase):
+    """Design K10: boxed spares in one NOC Field depot; the racked cold spare is a device only."""
+
+    @classmethod
+    def setUpClass(cls):
+        import tomllib
+        from estates.generate import generate
+        root = Path(__file__).parents[1]
+        cls.plan = generate(tomllib.loads((root / "profiles/showcase-provider.toml").read_text()))
+        cls.objects = {o["key"]: o for o in cls.plan["objects"]}
+        cls.artifact = create(cls.plan)
+        cls.depots = [p for p in cls.artifact["pools"] if p["name"].endswith("Field depot")]
+
+    def _type(self, obj):
+        dtype = self.objects[obj["refs"]["device_type" if obj["kind"] == "device" else "module_type"]]
+        maker = self.objects[dtype["refs"]["manufacturer"]]["attrs"]["slug"]
+        return ("dcim.devicetype" if obj["kind"] == "device" else "dcim.moduletype", maker, dtype["attrs"]["model"])
+
+    def test_one_depot_at_the_noc(self):
+        self.assertEqual(len(self.depots), 1)
+        depot = self.depots[0]
+        noc = [o for o in self.plan["objects"] if o["kind"] == "site"
+               and o["refs"].get("group", "").endswith("/dc")]
+        self.assertEqual([depot["site_slug"]], [s["attrs"]["slug"] for s in noc])
+        self.assertEqual(depot["name"], f"{noc[0]['attrs']['name']} — Field depot")
+
+    def test_no_spare_shares_type_and_serial_with_a_plan_device(self):
+        planned = {(*self._type(o), o["attrs"]["serial"]) for o in self.plan["objects"]
+                   if o["kind"] in ("device", "module") and o["attrs"].get("serial")}
+        spares = [(s["item"][0], s["item"][2], s["item"][3], s["serial"])
+                  for pool in self.artifact["pools"] for s in pool["spares"]]
+        self.assertTrue(spares)
+        self.assertFalse(set(spares) & planned)
+        self.assertEqual(len(set(spares)), len(spares))
+        # The racked inventory chassis is neither a spare item nor a BOM asset.
+        cold = [o for o in self.plan["objects"] if o["kind"] == "device" and o["attrs"].get("status") == "inventory"]
+        self.assertTrue(cold)
+        assets = {a["device"] for bom in self.artifact["boms"] for a in bom["assets"]}
+        self.assertFalse({o["attrs"]["name"] for o in cold} & assets)
+        self.assertFalse({self._type(o)[2] for o in cold} & {s[2] for s in spares})
+
+    def test_stock_is_sized_from_the_installed_base_and_skips_a_superseded_model(self):
+        depot = self.depots[0]
+        stocked = Counter(s["item"][3] for s in depot["spares"])
+        self.assertNotIn("MetroNID TE", stocked)
+        for allocation in depot["allocations"]:
+            self.assertEqual(stocked[allocation["item"][3]], -(-allocation["installed"] // 20))
+        stock = next(b for b in self.artifact["boms"] if b.get("stock") == depot["name"])
+        self.assertEqual((stock["rules"], stock["assets"]), ([], []))
+        self.assertTrue(all(not o["installs"] and o["shipment"]["date_received"] <= self.plan["recipe"]["as_of"]
+                            for o in stock["orders"]))
+
+    def test_a_spare_reusing_a_device_serial_is_refused(self):
+        mutated = copy.deepcopy(self.artifact)
+        spare = next(s for s in mutated["pools"][-1]["spares"] if s["item"][0] == "dcim.devicetype")
+        spare["serial"] = next(o["attrs"]["serial"] for o in self.plan["objects"] if o["kind"] == "device"
+                               and o["attrs"].get("serial") and self._type(o)[2] == spare["item"][3])
+        with self.assertRaises(LifecycleError):
+            verify(mutated, self.plan)
 
 
 if __name__ == "__main__":

@@ -44,6 +44,23 @@ def _lived_in(plan):
                     "attrs": {"comments": "**Replaced predecessor** · 2016-07-06",
                               "created": "2016-07-06T19:43:00Z"},
                     "refs": {"assigned_object": "device/one/dev0"}, "meta": {}})
+    # A carrier: site one is the NOC, and one customer premises holds a NID.
+    objects += [
+        {"kind": "site_group", "key": "site-group/acme/dc", "attrs": {"slug": "acme-dc"}, "refs": {}, "meta": {}},
+        {"kind": "manufacturer", "key": "manufacturer/Ciena", "attrs": {"name": "Ciena", "slug": "ciena"},
+         "refs": {}, "meta": {}},
+        {"kind": "device_type", "key": "hardware/nid", "attrs": {"model": "3903 AC"},
+         "refs": {"manufacturer": "manufacturer/Ciena"}, "meta": {}},
+        {"kind": "device_role", "key": "role/nid", "attrs": {"slug": "acme-nid"}, "refs": {}, "meta": {}},
+        {"kind": "site", "key": "site/prem", "attrs": {"name": "acme premises", "slug": "acme-prem"},
+         "refs": {}, "meta": {}},
+        {"kind": "device", "key": "device/prem/nid", "attrs": {"name": "acme-nid1", "serial": "M21A000001"},
+         "refs": {"site": "site/prem", "device_type": "hardware/nid", "role": "role/nid"}, "meta": {}},
+        {"kind": "journal_entry", "key": "journal/device/prem/nid/equipment-record",
+         "attrs": {"comments": "Installed", "created": "2026-05-01T15:00:00Z"},
+         "refs": {"assigned_object": "device/prem/nid"}, "meta": {}},
+    ]
+    next(o for o in objects if o["key"] == "site/one")["refs"]["group"] = "site-group/acme/dc"
     return plan
 
 
@@ -77,10 +94,14 @@ class LivedIn(unittest.TestCase):
         self.assertIn("ordered 2026-08-01", planned[0]["comments"])
         self.assertTrue(all(not o["installs"] and o["target"] == "ordered" for o in bom["orders"]))
 
-    def test_a_cold_spare_is_a_serialized_depot_item_never_an_asset(self):
-        depot = next(p for p in self.artifact["pools"] if p["name"].endswith("Field depot"))
-        self.assertEqual([(s["device"], s["serial"]) for s in depot["spares"]], [("acme-dev5", "SN-dev5")])
+    def test_a_cold_spare_is_a_device_only_never_an_asset_or_spare_item(self):
+        # Design K10: the racked inventory chassis stays a NetBox device; the
+        # NOC Field depot holds boxed spares that are not devices. Never both.
+        self.assertNotIn("SN-dev5", {s["serial"] for p in self.artifact["pools"] for s in p["spares"]})
         self.assertNotIn("acme-dev5", {a["device"] for b in self.artifact["boms"] for a in b["assets"]})
+        depot = next(p for p in self.artifact["pools"] if p["name"].endswith("Field depot"))
+        self.assertEqual(depot["site_slug"], "acme-site")
+        self.assertEqual([s["item"][3] for s in depot["spares"]], ["3903 AC"])
         # Its modules are excluded from the installed BOM by device name.
         installed = self._bom("installed equipment")
         self.assertIn({"object_types": ["dcim.module"], "action": "exclude",
@@ -118,12 +139,18 @@ class LivedIn(unittest.TestCase):
         self.assertTrue(result["success"])
         statuses = {r["name"]: r["status"] for r in fake.rows["boms/"]}
         self.assertEqual(statuses, {"acme site — installed equipment": "fulfilled",
-                                    "acme site — equipment on order": "ordered"})
+                                    "acme site — equipment on order": "ordered",
+                                    "acme site — Field depot stock": "fulfilled"})
         on_order = {r["id"] for r in fake.rows["boms/"] if r["status"] == "ordered"}
         self.assertTrue(all(not a["installed"] for a in fake.rows["assets/"] if a["bom"] in on_order))
         self.assertTrue(all(a["installed"] for a in fake.rows["assets/"] if a["bom"] not in on_order))
+        # The depot stock order: manual lines, no scope rules, no assets, received.
+        stock = next(r["id"] for r in fake.rows["boms/"] if r["name"].endswith("Field depot stock"))
+        self.assertFalse([r for r in fake.rows["bom-scope-rules/"] if r["bom"] == stock])
+        self.assertFalse([a for a in fake.rows["assets/"] if a["bom"] == stock])
+        depot = next(p for p in self.artifact["pools"] if p["name"].endswith("Field depot"))
         self.assertEqual([(s["serial"], s["quantity"]) for s in fake.rows["spare-items/"] if s.get("serial")],
-                         [("SN-dev5", 1)])
+                         [(depot["spares"][0]["serial"], 1)])
 
 
 class _FakePlugin:
@@ -197,6 +224,16 @@ class _FakePlugin:
             asset = next(a for a in self.rows["assets/"] if a["id"] == int(parts[1]))
             asset.update(installed="now", shipment=payload["shipment"])
             return 200, asset
+        if method == "POST" and where == "bom-line-items/":
+            # Manual lines: the plugin resolves the type into its read-only item.
+            keys = {n: key for key, n in self.ids.items()}
+            rows = []
+            for line in payload:
+                dtype = self.objects[keys[line["item_id"]]]
+                maker = self.objects[dtype["refs"]["manufacturer"]]["attrs"]["name"]
+                rows.append(self._new(where, {**line, "item": {"manufacturer": {"name": maker},
+                                                               "model": dtype["attrs"]["model"]}}))
+            return 201, rows
         if method == "POST":
             if isinstance(payload, list):
                 return 201, [self._new(where, {**p, "qty_received": None} if where == "shipment-line-items/"

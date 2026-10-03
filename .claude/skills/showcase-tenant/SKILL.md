@@ -57,9 +57,11 @@ product skills to read per feature), `visual-review` (the acceptance pass),
    build/showcase-lifecycle`, `LIFECYCLE_WRITES=1 just seed-lifecycle
    build/showcase-lifecycle $NETBOX_URL`.
    v0.18 adds per-era orders, an `equipment on order` BOM (staged MX304 pair
-   and TMS: POs `ordered`, deliveries received, nothing installed) and Field
-   depot cold spares matched by (type, serial). Never press *Install* on a
-   Field depot spare: it would create a second device.
+   and TMS: POs `ordered`, deliveries received, nothing installed) and one
+   NOC Field depot of boxed NID, CE and optic spares received through its own
+   stock order. Racked `inventory` cold spares are devices only, never depot
+   items; *Install* on a depot item creates a new device (a boxed spare
+   deployed), so do it only when demonstrating exactly that.
 6. **Validation.** `just validation build/showcase/plan.json
    build/showcase-validation`, `VALIDATION_WRITES=1 just seed-validation
    build/showcase-validation $NETBOX_URL`. The seed runs every policy once and

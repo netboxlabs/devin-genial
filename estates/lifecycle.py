@@ -13,10 +13,13 @@ and every module installed in it, generated on the target by the plugin's own
 scope rules so its assets are the estate's real devices and modules; one
 purchase order per fictional vendor per BOM; one delivery per order to the
 site's equipment room, dated from the estate's own equipment installation
-journals; every asset installed from its delivery; and a spares pool in each
+journals; every asset installed from its delivery; a spares pool in each
 multi-cabinet equipment room stocked with the exact catalog parts installed
-there. Couriers carry no tracking URL, so a tracking number never resolves to a
-real parcel. Unit prices are deliberately absent: the plan holds no price
+there; and, for a carrier with customer premises, one Field depot at the NOC
+holding boxed premises and optic spares received through their own stock
+order. A pre-racked ``inventory`` chassis stays a NetBox device only.
+Couriers carry no tracking URL, so a tracking number never resolves to a real
+parcel. Unit prices are deliberately absent: the plan holds no price
 facts. Records are seeded and read back; nothing here claims a real purchase.
 """
 
@@ -36,11 +39,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from .model import canonical, digest
+from .model import canonical, digest, hardware_catalog, redate_serial, vendor_serial
 from .turbobulk import Client, LoadError, _write_receipt
 
 RECEIPT_VERSION = 1
-WRITER_VERSION = "asset-lifecycle-2"
+WRITER_VERSION = "asset-lifecycle-3"
 API = "/api/plugins/asset-lifecycle/"
 NAME_LIMIT = 100
 DESCRIPTION_LIMIT = 200
@@ -70,9 +73,20 @@ COURIER = {"name": "Tallgrass Freight", "code": "tallgrass-freight", "tracking_u
            "comments": ""}
 # Equipment on order: planned while its purchase order is open, staged once
 # that order's delivery is received (racked, not yet installed). Inventory is
-# a pre-racked cold spare and lives in a Field depot pool, never in a BOM.
+# a pre-racked cold spare: a NetBox device only, never a BOM asset and never a
+# spare item (an item would double-count it, and the plugin's Install action
+# on it would create a second device).
 PENDING = ("planned", "staged")
 SPARE = "inventory"
+# The NOC Field depot (design K10): boxed spares that are not NetBox devices.
+# Premises NIDs and CEs are stocked per model actually in service at premises,
+# skipping a superseded generation (a `-legacy` catalog family) or a model past
+# end of sale; optics for the DEPOT_OPTICS most-installed parts in PoP
+# equipment. Each holds ceil(installed / DEPOT_RATIO) serialized units.
+PREMISES_ROLES = ("role/nid", "role/customer-edge")
+DEPOT_RATIO = 20
+DEPOT_OPTICS = 3
+OPTIC_PROFILE = "module-profile/installed-optics"
 # Device journals that date an order and its delivery (the provider timeline).
 ORDER_EVENTS = ("ordered",)
 RECEIPT_EVENTS = ("received", "racked")
@@ -280,9 +294,14 @@ def create(plan):
         })
 
     boms += _on_order(objects, devices_by_site, modules_by_device, pending, events, vendor_of)
-    pools = _pools(objects, kinds, selected, modules_by_device) + _depots(objects, kinds)
+    pools = _pools(objects, kinds, selected, modules_by_device)
+    depot = _depot(plan, objects, kinds, events, vendor_of)
+    if depot:
+        boms.append(depot[0])
+        pools.append(depot[1])
+    used = set(vendor_of.values()) | {o["vendor"] for bom in boms for o in bom["orders"]}
     accounts = {vendor: f"{VENDORS[vendor]['code']}-{_hash(namespace, vendor, 'account') % 10**7:07d}"
-                for vendor in sorted(set(vendor_of.values()))}
+                for vendor in sorted(used)}
     return {
         "artifact": "asset-lifecycle",
         "schema_version": 1,
@@ -295,8 +314,12 @@ def create(plan):
                             "equipment on order from its own ordered/received journals",
                    "on_order": "planned devices: purchase order ordered, no delivery; staged devices: "
                                "delivery received, assets not installed",
-                   "cold_spares": "inventory devices: one serialized spare item each, in a Field depot "
-                                  "pool at their own room, never a BOM asset",
+                   "cold_spares": "inventory devices stay NetBox devices only: never a BOM asset, "
+                                  "never a spare item",
+                   "field_depot": f"one pool at the NOC: boxed premises NIDs/CEs per in-service model "
+                                  f"(no superseded or end-of-sale model) and the {DEPOT_OPTICS} most-installed "
+                                  f"PoP optics, ceil(installed / {DEPOT_RATIO}) serialized units each, "
+                                  "received through one stock order per vendor and never installed",
                    "prices": "none: unit_price is left null"},
         "vendors": [{**VENDORS[vendor], "key": vendor, "account_number": accounts[vendor]}
                     for vendor in sorted(accounts)],
@@ -392,31 +415,132 @@ def _on_order(objects, devices_by_site, modules_by_device, pending, events, vend
     return boms
 
 
-def _depots(objects, kinds):
-    """A Field depot pool per room holding pre-racked cold spares: one serialized
-    spare item per inventory device, matched to it by (device type, serial)."""
-    spares = defaultdict(list)
-    for device in kinds["device"]:
-        if device["attrs"].get("status") == SPARE:
-            if not device["attrs"].get("serial") or not device["refs"].get("location"):
-                raise LifecycleError(f"cold spare {device['attrs']['name']} needs a serial and a room")
-            spares[device["refs"]["location"]].append(device)
-    pools = []
-    for location_key in sorted(spares, key=lambda key: objects[key]["attrs"]["slug"]):
-        location = objects[location_key]
-        site = objects[location["refs"]["site"]]["attrs"]
-        devices = sorted(spares[location_key], key=lambda d: d["attrs"]["name"])
-        items = Counter(_type_key(objects, d) for d in devices)
-        pools.append({
-            "name": f"{site['name']} — Field depot",
-            "site_slug": site["slug"], "location_slug": location["attrs"]["slug"],
-            "description": f"Pre-racked cold spares at {site['name']}"[:DESCRIPTION_LIMIT],
-            "spares": [{"item": list(_type_key(objects, d)), "serial": d["attrs"]["serial"],
-                        "device": d["attrs"]["name"]} for d in devices],
-            "allocations": [{"item": list(item), "installed": 0, "min_quantity": count,
-                             "max_quantity": count, "serviceable": count, "damaged": 0,
-                             "below_minimum": False} for item, count in sorted(items.items())]})
-    return pools
+def _stocked(alias, catalog, as_of):
+    """Whether the depot still stocks a model: not a superseded catalog
+    generation (a `-legacy` family) and not past its end of sale."""
+    life = (catalog.get(alias) or {}).get("lifecycle") or {}
+    return not alias.endswith("-legacy") and not life.get("discontinued") and not any(
+        life.get(key) and life[key] <= as_of for key in ("eol_announced", "last_order"))
+
+
+def _depot(plan, objects, kinds, events, vendor_of):
+    """(stock BOM, pool) for the NOC Field depot, or None without customer premises.
+
+    Boxed spares only, never a NetBox device: per premises NID/CE model in
+    service, and per most-installed PoP optic, ceil(installed / DEPOT_RATIO)
+    serialized units in the maker's catalog serial format, received through one
+    stock order per vendor that is fulfilled and never installs anything.
+    """
+    as_of = plan["recipe"].get("as_of", "")
+    namespace = plan["recipe"]["namespace"]
+    active = lambda obj: obj["attrs"].get("status", "active") == "active"
+    premises = [d for d in kinds["device"] if d["refs"].get("role") in PREMISES_ROLES and active(d)]
+    if not premises:
+        return None
+    catalog = hardware_catalog()
+    models = catalog["models"]
+    groups = {group["key"].rsplit("/", 1)[-1]: group["key"] for group in kinds["site_group"]}
+    nocs = [site for site in kinds["site"] if site["refs"].get("group") == groups.get("dc")]
+    if len(nocs) != 1:
+        raise LifecycleError("customer premises need exactly one NOC site to hold the Field depot, "
+                             f"found {len(nocs)}")
+    noc = nocs[0]
+    racks = Counter(rack["refs"]["location"] for rack in kinds["rack"] if rack["refs"]["site"] == noc["key"])
+    if not racks:
+        raise LifecycleError(f"the NOC {noc['attrs']['name']!r} has no racked room for the Field depot")
+    room = objects[min(racks, key=lambda key: (-racks[key], objects[key]["attrs"]["slug"]))]
+
+    installed, formats = Counter(), {}
+    for device in premises:
+        alias = device["refs"]["device_type"].split("/", 1)[1]
+        if _stocked(alias, models, as_of):
+            item = _type_key(objects, device)
+            installed[item] += 1
+            formats[item] = (models.get(alias) or {}).get("serial_format")
+    pops = {site["key"] for site in kinds["site"] if site["refs"].get("group") == groups.get("pop")}
+    optics = Counter()
+    for module in kinds["module"]:
+        device = objects[module["refs"]["device"]]
+        mtype = objects[module["refs"]["module_type"]]
+        if (device["refs"]["site"] in pops and active(device) and active(module)
+                and mtype["refs"].get("profile") == OPTIC_PROFILE
+                and json.loads(mtype["attrs"].get("attributes") or "{}").get("medium") != "aoc"):
+            optics[_type_key(objects, module)] += 1
+    serial_formats = catalog["optics"]["serial_formats"]
+    for item, count in sorted(optics.items(), key=lambda pair: (-pair[1], pair[0]))[:DEPOT_OPTICS]:
+        installed[item] = count
+        formats[item] = serial_formats.get(item[1], serial_formats["Generic"])
+
+    # Dated from the plan's timeline: the stock order was received ahead of the
+    # most recent premises installation it supports.
+    days = [day for d in premises for event, day in events[d["key"]].items() if event in INSTALL_EVENTS]
+    if not days:
+        raise LifecycleError("customer premises carry no installation journal to date the depot stock from")
+    stable = f"{noc['key']}/field-depot"
+    received = _days(max(days), -_pick(stable, "received", 7, 21))
+    taken = {(_type_key(objects, obj), obj["attrs"]["serial"]) for obj in kinds["device"] + kinds["module"]
+             if obj["attrs"].get("serial")}
+    spares, lines, by_vendor = [], Counter(), defaultdict(Counter)
+    for item in sorted(installed):
+        fmt = formats[item]
+        if not isinstance(fmt, str):
+            raise LifecycleError(f"{item[3]} has no catalog serial format for a depot spare")
+        count = math.ceil(installed[item] / DEPOT_RATIO)
+        lines[item] = count
+        by_vendor[vendor_of.get(item, "regional")][item] = count
+        for index in range(count):
+            for attempt in range(64):
+                key = f"{namespace}/field-depot/{item[2]}/{item[3]}/{index}/{attempt}"
+                made = date.fromisoformat(received) - timedelta(days=_pick(key, "made", 30, 180))
+                serial = redate_serial(fmt, vendor_serial(fmt, _hash(key, "serial") % 2 ** 62), made)
+                if (item, serial) not in taken:
+                    break
+            else:
+                raise LifecycleError(f"no unused depot serial could be drawn for {item[3]}")
+            taken.add((item, serial))
+            spares.append({"item": list(item), "serial": serial})
+
+    site = noc["attrs"]
+    name = f"{site['name']} — Field depot"
+    orders = []
+    for vendor in sorted(by_vendor):
+        shipped = _days(received, -_pick(stable + vendor, "transit", 2, 5))
+        ordered = _days(received, -_pick(stable + vendor, "ordered", 30, 40))
+        approved = _days(ordered, -_pick(stable + vendor, "approved", 2, 6))
+        code = VENDORS[vendor]["code"]
+        orders.append({
+            "vendor": vendor,
+            "order_id": f"{code}-{ordered[2:4]}{ordered[5:7]}-{_hash(stable, vendor, 'po') % 16**6:06X}",
+            "description": f"Field depot stock for {site['name']}"[:DESCRIPTION_LIMIT],
+            "comments": f"Approved {approved}; ordered {ordered}; fulfilled {received}.",
+            "items": sorted([list(item), count] for item, count in by_vendor[vendor].items()),
+            "target": "fulfilled", "installs": False,
+            "shipment": {
+                "tracking_number": f"TGF{_hash(stable, vendor, 'tracking') % 10**10:010d}",
+                "date_shipped": shipped, "date_expected": _days(shipped, 3), "date_received": received,
+                "description": f"Delivery to the Field depot, {room['attrs']['name']}, {site['name']}"[:DESCRIPTION_LIMIT],
+            },
+        })
+    first = min(order["comments"][9:19] for order in orders)
+    bom = {
+        "site_slug": site["slug"], "site": site["name"], "location_slug": room["attrs"]["slug"],
+        "name": f"{name} stock",
+        "description": f"Boxed premises and optic spares for the Field depot at {site['name']}"[:DESCRIPTION_LIMIT],
+        "comments": (f"Approved {_days(first, -_pick(stable, 'bom', 1, 4))}.\n"
+                     f"Scope: one boxed spare per {DEPOT_RATIO} units in service, rounded up, for each "
+                     "premises NID and CE model still stocked and the most-installed PoP optics."),
+        "rules": [], "stock": name, "target": "fulfilled",
+        "lines": sorted([list(item), count] for item, count in lines.items()),
+        "assets": [], "orders": orders,
+    }
+    pool = {
+        "name": name, "site_slug": site["slug"], "location_slug": room["attrs"]["slug"],
+        "description": f"Boxed NID, customer-edge and optic spares held at {site['name']}"[:DESCRIPTION_LIMIT],
+        "spares": spares,
+        "allocations": [{"item": list(item), "installed": installed[item], "min_quantity": count,
+                         "max_quantity": count, "serviceable": count, "damaged": 0,
+                         "below_minimum": False} for item, count in sorted(lines.items())]}
+    return bom, pool
 
 
 def _pools(objects, kinds, selected, modules_by_device):
@@ -470,8 +594,27 @@ def _intrinsic(artifact):
     vendor_keys = {vendor["key"] for vendor in artifact["vendors"]}
     if artifact["courier"].get("tracking_url"):
         raise LifecycleError("the courier must carry no tracking URL; tracking numbers are fictional")
+    pools = {pool["name"]: pool for pool in artifact["pools"]}
+    serials = set()
+    for pool in artifact["pools"]:
+        for spare in pool["spares"]:
+            identity = (spare["item"][0], spare["item"][2], spare["item"][3], spare["serial"])
+            if not spare["serial"] or identity in serials:
+                raise LifecycleError(f"spare {spare['serial']!r} is unserialized or repeats its "
+                                     "(type, serial)")
+            serials.add(identity)
     for bom in artifact["boms"]:
         label = bom["site_slug"]
+        stock = bom.get("stock")
+        if stock is not None:
+            # A depot stock order: manual lines exactly the pool's boxed spares,
+            # no scope rules, no assets, received and never installed.
+            spares = Counter(tuple(s["item"]) for s in pools.get(stock, {}).get("spares", []))
+            if (stock not in pools or bom["rules"] or bom["assets"]
+                    or Counter({tuple(item): count for item, count in bom["lines"]}) != spares
+                    or any(o["installs"] or o["target"] != "fulfilled" or o["shipment"] is None
+                           for o in bom["orders"])):
+                raise LifecycleError(f"depot stock order {bom['name']!r} misstates its pool, lines or state")
         if len(bom["name"]) > NAME_LIMIT or bom["name"] in names:
             raise LifecycleError(f"BOM name {bom['name']!r} is duplicated or too long")
         names.add(bom["name"])
@@ -486,7 +629,7 @@ def _intrinsic(artifact):
         line_total = Counter()
         for item, count in bom["lines"]:
             line_total[item[0]] += count
-        if line_total != counted:
+        if stock is None and line_total != counted:
             raise LifecycleError(f"BOM {label!r} line quantities do not equal its assets")
         ordered = Counter()
         for order in bom["orders"]:
@@ -496,7 +639,8 @@ def _intrinsic(artifact):
                 raise LifecycleError(f"order id {order['order_id']!r} is duplicated")
             order_ids.add((order["vendor"], order["order_id"]))
             shipment = order["shipment"]
-            if order["target"] not in ("ordered", "fulfilled") or (order["target"] == "fulfilled") != order["installs"]:
+            if order["target"] not in ("ordered", "fulfilled") or \
+                    (stock is None and (order["target"] == "fulfilled") != order["installs"]):
                 raise LifecycleError(f"BOM {label!r} order {order['order_id']!r} misstates its state")
             if shipment is None:
                 if order["installs"]:
@@ -514,14 +658,7 @@ def _intrinsic(artifact):
                 ordered[tuple(item)] += count
         if ordered != Counter({tuple(item): count for item, count in bom["lines"]}):
             raise LifecycleError(f"BOM {label!r} orders do not cover its lines exactly once")
-    serials = set()
     for pool in artifact["pools"]:
-        for spare in pool["spares"]:
-            identity = (spare["item"][0], spare["item"][2], spare["item"][3], spare["serial"])
-            if not spare["serial"] or identity in serials:
-                raise LifecycleError(f"spare {spare['serial']!r} is unserialized or repeats its "
-                                     "(type, serial)")
-            serials.add(identity)
         if len(pool["name"]) > NAME_LIMIT or pool["name"] in names:
             raise LifecycleError(f"spares pool name {pool['name']!r} is duplicated or too long")
         names.add(pool["name"])
@@ -549,7 +686,7 @@ def _summary(artifact):
             "purchase_orders": sum(len(bom["orders"]) for bom in artifact["boms"]),
             "shipments": sum(1 for bom in artifact["boms"] for o in bom["orders"] if o["shipment"]),
             "on_order_boms": sum(1 for bom in artifact["boms"] if bom["target"] != "fulfilled"),
-            "cold_spares": sum(len(pool["spares"]) for pool in artifact["pools"]),
+            "depot_spares": sum(len(pool["spares"]) for pool in artifact["pools"]),
             "spares_pools": len(artifact["pools"]),
             "allocations": len(allocations),
             "below_minimum": sum(a["below_minimum"] for a in allocations),
@@ -754,7 +891,7 @@ def seed(artifact_dir, *, url, token, receipt_path):
 
     for bom in artifact["boms"]:
         receipt["boms"][bom["name"]] = _seed_bom(writer, live, bom, devices[bom["name"]], sites, rooms,
-                                                 vendor_ids, account_ids, courier["id"])
+                                                 vendor_ids, account_ids, courier["id"], module_types)
         _write_receipt(receipt_path, receipt)
     for pool in artifact["pools"]:
         receipt["pools"][pool["name"]] = _seed_pool(writer, live, pool, sites, rooms, module_types)
@@ -777,14 +914,23 @@ def _counts(order):
     return Counter({(item[0], item[1], item[3]): count for item, count in order["items"]})
 
 
-def _seed_bom(writer, live, bom, expected, sites, rooms, vendor_ids, account_ids, courier_id):
+def _seed_bom(writer, live, bom, expected, sites, rooms, vendor_ids, account_ids, courier_id, types):
     row = next((r for r in live["boms/"] if r["name"] == bom["name"]), None)
     if row is None:
         row = writer.send("POST", "boms/", {"name": bom["name"], "status": "draft",
                                             "description": bom["description"],
                                             "comments": bom["comments"]})
     bom_id = row["id"]
-    if _value(row["status"]) == "draft":
+    if _value(row["status"]) == "draft" and bom.get("stock"):
+        # A depot stock order holds manual lines only: never generated, so it
+        # has no scope rules and no assets.
+        if writer.rows(f"bom-scope-rules/?bom_id={bom_id}"):
+            raise LoadError(f"BOM {bom['name']!r} carries scope rules this artifact did not write")
+        if not writer.rows(f"bom-line-items/?bom_id={bom_id}"):
+            writer.send("POST", "bom-line-items/", [
+                {"bom": bom_id, "item_type": item[0], "item_id": types[(item[0], item[2], item[3])],
+                 "quantity": count} for item, count in bom["lines"]])
+    elif _value(row["status"]) == "draft":
         rules = writer.rows(f"bom-scope-rules/?bom_id={bom_id}")
         wanted = [{"bom": bom_id, "action": "include", "enabled": True, **rule} for rule in bom["rules"]]
         if not rules:
@@ -1098,7 +1244,7 @@ def main(argv=None):
                   f"{result['purchase_orders']} purchase orders, {result['shipments']} shipments, "
                   f"{result['spares_pools']} spares pools ({result['allocations']} allocations, "
                   f"{result['below_minimum']} below minimum, {result['damaged']} damaged); "
-                  f"{result['on_order_boms']} BOMs on order, {result['cold_spares']} cold spares"
+                  f"{result['on_order_boms']} BOMs on order, {result['depot_spares']} depot spares"
                   + (f" -> {result['output']}" if args.command == "build" else ""))
         elif args.command == "unseed":
             token = os.environ.get("NETBOX_TOKEN") or parser.error("NETBOX_TOKEN is required")
