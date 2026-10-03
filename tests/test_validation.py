@@ -160,6 +160,15 @@ class Provider(unittest.TestCase):
                      if d["key"].startswith("device/pop-")}
         self.assertEqual({e["subject"] for e in rule["expected"]}, pop_sites)
 
+    def test_an_unassigned_address_fails_every_holder_of_its_routing_table(self):
+        plan = copy.deepcopy(self.plan)
+        ip = next(o for o in plan["objects"] if o["kind"] == "ip_address" and "vrf" not in o["refs"]
+                  and o["refs"].get("assigned_object"))
+        before = {e["subject"] for e in _rules(create(plan), "Estate baseline", "no_orphan_ips")["expected"]}
+        del ip["refs"]["assigned_object"]
+        after = {e["subject"] for e in _rules(create(plan), "Estate baseline", "no_orphan_ips")["expected"]}
+        self.assertGreater(len(after), len(before))
+
     def test_only_active_devices_are_subjects(self):
         rule = _rules(self.artifact, "Estate baseline", "symmetric_cabling")
         name = next(e["subject"] for e in rule["expected"] if not e["subject"].startswith("R0"))

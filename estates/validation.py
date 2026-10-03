@@ -51,7 +51,6 @@ DOCUMENT_FIELDS = (("serial", "attrs"), ("asset_tag", "attrs"), ("platform", "re
 # the estate's own validators enforce the underlying graph properties, so a
 # failure is recorded as engine drift, never hidden.
 ASSUMED = (
-    ("no_orphan_ips", "addressing", "medium", {}),
     ("ip_vrf_consistency", "addressing", "high", {}),
     ("loopback_has_host_route", "addressing", "medium", {}),
     ("prefix_role_assigned", "standards", "low", {}),
@@ -297,6 +296,22 @@ def _baseline(g):
                    derivation="estate-wide hygiene the generator's own validators enforce",
                    model="assumed")
              for check, category, severity, parameters in ASSUMED]
+    # Observed live (crsk8600, v0.18): the engine fails every device holding an
+    # address in a VRF (or the global table) that also holds an address with no
+    # interface — an exchange's route-server addresses are exactly that.
+    orphans, held = Counter(), defaultdict(set)
+    for ip in g.kinds["ip_address"]:
+        owner = g.objects.get(ip["refs"].get("assigned_object") or "")
+        if owner is None:
+            orphans[ip["refs"].get("vrf")] += 1
+        elif owner.get("refs", {}).get("device"):
+            held[owner["refs"]["device"]].add(ip["refs"].get("vrf"))
+    rules.append(_rule("No orphan ips", "no_orphan_ips", "addressing", "medium", model="predicted",
+                       expected=[{"subject": d["attrs"]["name"],
+                                  "cause": f"{sum(orphans[v] for v in held[d['key']])} address(es) with no "
+                                           "interface in its routing tables"}
+                                 for d in g.active if any(orphans[v] for v in held[d["key"]])],
+                       derivation="unassigned addresses in the routing tables a device holds an address in"))
     # Two hygiene checks read the estate without its design: the engine
     # compares addresses across VRFs and counts a host-route prefix as full.
     # Each runs on the roles the design does not put in that position.
