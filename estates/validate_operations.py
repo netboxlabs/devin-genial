@@ -578,7 +578,9 @@ def _context(plan, objects, kinds):
             expect_note(term["key"], "cross-connect-order",
                         scheduled(term["key"], "cross-connect-order", data["install_date"], 14, 17),
                         facts + ((term["attrs"]["pp_info"],) if term["attrs"].get("pp_info") else ()))
-        if data.get("status") != "active":
+        # A span the maintenance scenario takes offline keeps its paperwork:
+        # journals are immutable history, not a reflection of today's status.
+        if data.get("status") not in ("active", "offline"):
             return
         third_party = refs.get("type") in NOTICE_TYPES and refs.get("provider") != "provider/operator"
         access = (str(refs.get("type", "")).endswith("-access") and refs.get("provider") == "provider/operator"
@@ -733,6 +735,10 @@ def _context(plan, objects, kinds):
         """The provider plant's dated history (v0.18 §3-§4), re-derived from the
         frozen ``provider-timeline`` ledger, device models and rack contents."""
         as_of = str(recipe.get("as_of"))
+        try:
+            date.fromisoformat(as_of)
+        except ValueError:
+            return  # the provider validator reports the malformed recipe date
         if as_of > NOTICES_BEGIN.isoformat() and "site/dc-01" in objects:
             expect_note("site/dc-01", "notice-journaling", NOTICES_BEGIN.isoformat(), ())
         model = lambda device: str(attrs(objects.get(device, {}).get("refs", {}).get("device_type")).get("model", ""))
