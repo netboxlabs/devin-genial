@@ -105,13 +105,82 @@ class Provider(unittest.TestCase):
         device = next(o for o in plan["objects"] if o["key"] == cable["refs"]["b"].split("/power/")[0])
         artifact = create(plan)
         name = device["attrs"]["name"]
-        redundant = _rules(artifact, "Provider PoPs standards", "redundant_power")
+        redundant = _rules(artifact, "Carrier PoPs standards", "redundant_power")
         self.assertEqual([e["subject"] for e in redundant["expected"]], [name])
-        feeds = _rules(artifact, "Provider PoPs resilience", "power_feed_blast_radius")["expected"]
+        # The single-supply time servers are already findings; the move adds exactly one.
+        before = _rules(self.artifact, "Carrier PoPs resilience", "power_feed_blast_radius")["expected"]
+        feeds = [e for e in _rules(artifact, "Carrier PoPs resilience", "power_feed_blast_radius")["expected"]
+                 if e not in before]
         self.assertEqual(len(feeds), 1)
         self.assertTrue(feeds[0]["subject"].endswith(f": {name}"))
         with self.assertRaisesRegex(ValidationError, "not bound"):
             verify(self.artifact, plan)
+
+    def test_mismatched_cable_ends_are_predicted_on_both_devices(self):
+        rule = _rules(self.artifact, "Estate baseline", "symmetric_cabling")
+        before = {e["subject"] for e in rule["expected"]}
+        plan = copy.deepcopy(self.plan)
+        g = _Graph(plan)
+        pair = next((i, g.objects[g.peer[i["key"]]]) for i in g.kinds["interface"]
+                    if g.objects.get(g.peer.get(i["key"]), {}).get("kind") == "interface"
+                    and g.objects[g.peer[i["key"]]]["attrs"].get("type") == i["attrs"].get("type")
+                    and not {g.objects[i["refs"]["device"]]["attrs"]["name"],
+                             g.objects[g.objects[g.peer[i["key"]]]["refs"]["device"]]["attrs"]["name"]} & before
+                    and all(g.objects[x["refs"]["device"]]["attrs"].get("status", "active") == "active"
+                            for x in (i, g.objects[g.peer[i["key"]]])))
+        pair[0]["attrs"]["type"] = "25gbase-x-sfp28"
+        after = {e["subject"] for e in _rules(create(plan), "Estate baseline", "symmetric_cabling")["expected"]}
+        self.assertEqual(after - before, {g.objects[x["refs"]["device"]]["attrs"]["name"] for x in pair})
+
+    def test_panel_terminated_circuits_are_omitted_with_their_reason(self):
+        pops = next(p for p in self.artifact["policies"] if p["name"].endswith("Carrier PoPs resilience"))
+        self.assertEqual({o["check_name"] for o in pops["omitted"]},
+                         {"site_connectivity_redundancy", "circuit_path_diversity"})
+        self.assertIn("patch-panel rear ports", pops["omitted"][0]["reason"])
+        # Re-cable one PoP termination straight onto a PE port: the engine now
+        # sees that circuit, so the rules return and every other PoP reads 0.
+        plan = copy.deepcopy(self.plan)
+        g = _Graph(plan)
+        term, end = next((t, g.objects[g.peer[t["key"]]]) for t in g.kinds["circuit_termination"]
+                         if g.peer.get(t["key"], "").startswith("device/pop-")
+                         and g.objects[t["refs"]["circuit"]]["attrs"].get("status", "active") == "active")
+        self.assertEqual(end["kind"], "rear_port")
+        cable = next(c for c in g.kinds["cable"] if end["key"] in (c["refs"]["a"], c["refs"]["b"]))
+        side = "a" if cable["refs"]["a"] == end["key"] else "b"
+        panel = g.objects[end["refs"]["device"]]
+        port = next(i for i in g.kinds["interface"] if i["refs"]["device"].startswith("device/pop-")
+                    and g.objects[i["refs"]["device"]]["refs"]["site"] == panel["refs"]["site"]
+                    and "/pe-a" in i["refs"]["device"] and i["key"] not in g.peer
+                    and g.objects[i["refs"]["device"]]["attrs"].get("status", "active") == "active")
+        cable["refs"][side] = port["key"]
+        mutated = next(p for p in create(plan)["policies"] if p["name"].endswith("Carrier PoPs resilience"))
+        self.assertEqual(mutated["omitted"], [])
+        rule = next(r for r in mutated["rules"] if r["check_name"] == "site_connectivity_redundancy")
+        pop_sites = {g.objects[d["refs"]["site"]]["attrs"]["name"] for d in g.active
+                     if d["key"].startswith("device/pop-")}
+        self.assertEqual({e["subject"] for e in rule["expected"]}, pop_sites)
+
+    def test_only_active_devices_are_subjects(self):
+        rule = _rules(self.artifact, "Estate baseline", "symmetric_cabling")
+        name = next(e["subject"] for e in rule["expected"] if not e["subject"].startswith("R0"))
+        plan = copy.deepcopy(self.plan)
+        next(o for o in plan["objects"] if o["kind"] == "device" and o["attrs"]["name"] == name)["attrs"]["status"] = "staged"
+        after = _rules(create(plan), "Estate baseline", "symmetric_cabling")["expected"]
+        self.assertNotIn(name, {e["subject"] for e in after})
+
+    def test_a_cross_cabinet_cut_cable_is_predicted(self):
+        rule = _rules(self.artifact, "Carrier PoPs resilience", "cable_single_point_of_failure")
+        self.assertTrue(rule["expected"])
+        # Every predicted cut is a management uplink to the far cabinet's PDU;
+        # disabling that PDU (not active) takes the cut out of the engine's graph.
+        plan = copy.deepcopy(self.plan)
+        far = rule["expected"][0]["cause"].split(" the only cabled path to ")[1].split(" in the other")[0]
+        pop = rule["expected"][0]["subject"].rsplit("-", 1)[0]
+        pdu = next(o for o in plan["objects"] if o["kind"] == "device" and o["attrs"]["name"] == far
+                   and o["key"].startswith(f"device/pop-{pop}"))
+        pdu["attrs"]["status"] = "offline"
+        after = _rules(create(plan), "Carrier PoPs resilience", "cable_single_point_of_failure")["expected"]
+        self.assertEqual(len(after), len(rule["expected"]) - 1)
 
 
 class Artifact(unittest.TestCase):
@@ -133,6 +202,16 @@ class Artifact(unittest.TestCase):
         policy = artifact["policies"][0]
         policy["rules"].append(dict(policy["rules"][0], name="Duplicate"))
         with self.assertRaisesRegex(ValidationError, "repeats"):
+            verify(artifact, {})
+
+    def test_an_omitted_check_cannot_also_be_installed(self):
+        artifact = create(_generate("enterprise-dc"))
+        policy = artifact["policies"][0]
+        policy["omitted"] = [{"check_name": policy["rules"][0]["check_name"], "reason": "x"}]
+        with self.assertRaisesRegex(ValidationError, "omits"):
+            verify(artifact, {})
+        policy["omitted"] = [{"check_name": "site_connectivity_redundancy", "reason": ""}]
+        with self.assertRaisesRegex(ValidationError, "omits"):
             verify(artifact, {})
 
 
