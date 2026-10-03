@@ -470,8 +470,10 @@ def _history_journals(site, devices):
         reason = "; ".join(plan["reasons"])
         for side in "ab":
             successor, current = devices[f"pe-{side}2"], devices[f"pe-{side}"]
-            w.obj(successor)["attrs"]["description"] = (f"Planned successor to {name(f'pe-{side}')}: {reason}. "
-                                                        "MX304 orderable since 1H2022 per Juniper (authored 2022-07-01)")[:200]
+            # The journal carries the full vendor dates; the description names the three drivers.
+            w.obj(successor)["attrs"]["description"] = (
+                f"Successor to {name(f'pe-{side}')}: {plan['reasons'][0]}; MX204 end of life ({timeline.MX204_TSB}); "
+                "100G ports for the DDoS mitigation offramp")
             _journal(w, current, "successor-ordered", plan["ordered"], "Successor ordered",
                      f"MX304 successor {name(f'pe-{side}2')} ordered under {timeline.change(w, successor, '-order')}: {reason}.",
                      "warning")

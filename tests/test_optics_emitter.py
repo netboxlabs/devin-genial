@@ -20,6 +20,14 @@ class OpticsEmitterTests(unittest.TestCase):
         variant = recipe_from_file("profiles/school-wireless.toml")
         variant["hardware"] = {"access": "juniper", "leaf": "juniper", "ap": "aruba"}
         cls.plans["school-wireless-juniper"] = generate(variant)
+        # The provider timeline makes every PoP launched before the 2019-07-01
+        # cutover an ACX5048 site, and the showcase homes its 10G DIA customers
+        # only there; the ACX5448-M's SFPP-10GE-* single-mode rungs need a 10G
+        # UNI on a later PoP. Rehome one 2G DIA customer to a Milwaukee PoP.
+        variant = recipe_from_file("profiles/showcase-provider.toml")
+        customer = next(c for c in variant["customers"] if c["key"] == "sable-trading")
+        customer["sites"] = [{"pop": "milwaukee-oak-creek", "count": 1}]
+        cls.plans["showcase-provider-acx5448-10g"] = generate(variant)
 
     def test_every_profile_has_only_occupied_cage_inventory_and_resolved_references(self):
         seen = set()

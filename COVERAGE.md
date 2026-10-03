@@ -823,3 +823,43 @@ own design pass and touches every provider builder):
   policy ran on the Fleet agent's backend and ingested ~200 create deviations
   (old lab hostnames, pre-seed). Fixed in `lab/discovery/vm.sh` (the dry run
   pauses the Fleet agent); all were marked Ignored.
+
+## Lived-in carrier, v0.18
+
+v0.17 closed backlog items 1 and 4 above for the provider: every PoP has an
+aggregation pair and every premises a NID, and PoP cabinets are 42U. v0.18
+(design under ignored `build/lived-in-design/`) closed what the v0.17 showcase
+still read as turnkey: every device active and new, 80% of premises signed in
+the current year, all PoPs launched within four years, one hardware generation,
+equipment bunched at the top of half-empty cabinets, empty reserved cabinets
+and a Journal list dominated by a static `Site access` note. It added the
+frozen provider timeline, stratified cabinets with blanked gaps, MX80 relics,
+the planned/staged MX304 successor, a staged DDoS appliance, M300 time servers,
+cold spares, four internet exchanges, former customers, a first NID
+generation and carrier paperwork journals
+([docs/modeling.md](docs/modeling.md#lived-in-carrier-history-v018)). Backlog
+item 2 is partly answered: pre-NS-2 devices keep CLLI-style names under a
+`legacy-naming` tag; the current standard still mixes PoP and premises stems.
+
+**Deliberately not built** (reviewed, with reasons):
+
+- **Content caches.** About 60 business DIA customers commit ~23 Gbps, of which
+  at most ~3.5 Gbps would be streaming video estate-wide, against a ~5 Gbps
+  per-site rule of thumb for an embedded cache; content networks are reached
+  over the exchanges instead.
+- **IPv4 exchange peering.** The peering LANs are IPv6-only: the IPv4
+  documentation space is consumed by the DIA allocation ceiling.
+- **Off-net ENNI** — the next build. **SONET/TDM** — never.
+- **ACX7100 aggregation successor.** No aggregation refresh has started; the
+  ACX5048's end of support (2027-12-31) makes it the next story.
+- **Shelf role.** Boxed NID and CE spares belong to Asset Lifecycle spare
+  items (the lifecycle sidecar), never a shelf device; the cold-spare chassis
+  carries the real aggregation role and its `inventory` status.
+- Atlas probes, PoP compute, a separate peering router, DWDM and −48 V plant.
+- **Acquired-carrier layer** (an absorbed Cleveland carrier with its own names
+  and a deprecated block): kept as the design's cut line.
+
+**Product limits recorded rather than worked around:** rack elevations colour
+by role only, so status shows through list badges and the "Not in service"
+saved filter, never a status-encoding role; NetBox journals have no title
+field, so a bold first line stands in.

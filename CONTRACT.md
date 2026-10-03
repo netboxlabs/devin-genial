@@ -483,11 +483,13 @@ its last independent branch is acquired. This preserves global definitions;
 selected-site assignments may change only during that explicit transition.
 
 Journal identity is `(assigned_object, comments)` on wire. Fixed seeded dates
-and immutable object facts produce two site notes, two circuit notes and two
-notes on the lowest existing VM ordinal per cluster/workload. Appended inventory
-does not rewrite existing notes. The dated body is authored history, not
-evidence of execution; the entry's `created` attribute is that same date at
-15:00 UTC, which TurboBulk inserts as supplied. Independent checks derive required
+and immutable object facts produce the notes; since 0.18 the standing
+site-access policy is site `comments`, not a note. Appended inventory
+does not rewrite existing notes. Comments open with `**Title** · YYYY-MM-DD`
+(`timeline.entry`). The dated body is authored history, not
+evidence of execution; the entry's `created` attribute is that same date at a
+journal-keyed time in the business (14:00–21:59 UTC) or night (04:00–08:59 UTC)
+band, which TurboBulk inserts as supplied. Independent checks derive required
 contacts, assignments and bounded note forms from graph/recipe, outside the
 legacy bank operations-contract gate. Emitted metadata cannot suppress them.
 
@@ -638,6 +640,20 @@ contacts retain their tenant relationships. Opaque external transit has only a
 known local IP; its far endpoint owner remains unknown. The whole /31 is reserved.
 PE primary IPs belong to in-band `lo0.0` (unit 0 of `lo0`); dedicated `fxp0` stays unaddressed and
 uncabled. Management switches reach the PE data plane through actual /31 links.
+
+Provider history (since 0.18.0, `estates/timeline.py`) is frozen in dated
+ledgers: one reservation scope per event, `provider-timeline/<event>/<subject>`
+holding `{"day": ordinal}` (`launch/<pop>`, `refresh/<pop>`, `onboard/<customer>`;
+like `site-in-service/`, they follow the seed, so seed-invariance comparisons
+exclude them). `provider-pop-launch` keeps the launch order,
+`provider-cabinet-u/<rack>` each PoP cabinet item's units once — removed
+devices included, so a gap is never reused — and `provider-former-customers`
+each former customer's slot (at most 32). Growth appends: a PoP or customer
+new to the ledgers is a current-era event, and no existing date, unit, name,
+journal or serial moves. Statuses other than `active` on PoP plant (relic
+`decommissioning`, successor `planned`/`staged`, spare `inventory`, the TMS
+`staged`) and on former or relocated circuits come only from that timeline or
+the recipe, and none of them counts as healthy capacity.
 
 The shared DC builder accepts an internal `wan_attachment` callable. Provider
 policy uses it to attach both NOC edges to distinct requested PoPs. The shared
