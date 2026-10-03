@@ -664,6 +664,10 @@ family and the 1G LX/LH parts (the ACX5000 HCT list, not the ACX5448's
 port left at its native 400G finds no part. Juniper lists `JNP-100G-AOC-3M`
 for the MX304 but nothing places a Juniper AOC in an Arbor chassis, so the
 assembly is Generic at both ends (evidence rule L12).
+Since generator 0.18 the ACX5448-M stands only at PoPs launched from 2019-07-01
+and the shipped showcase homes no 10G UNI there, so the `SFPP-10GE-LR`/`-ER`
+rungs stay reachable stock, exercised by a variant estate in
+`tests/test_optics_emitter.py` (a 2G DIA customer rehomed to Milwaukee).
 Catalog 0.14 adds the regional-carrier footprint optics above: the ACX5448-M's
 `SFPP-10GE-*` family (Juniper's HCT lists it, not `EX-SFP-10GE-*`, for the ACX),
 the LX/LH 1G parts on the ACX, two RAD 10G parts and two Generic 1G NID parts.

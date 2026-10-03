@@ -258,7 +258,7 @@ to four; `guest` defaults to `0`.
 
 ## Provider backbone
 
-Allowlist: `estates/provider.py:275`, with `COMMON` at `estates/provider.py:25`.
+Allowlist: `estates/provider.py:278`, with `COMMON` at `estates/provider.py:25`.
 Accepts every common key including `wan_tiers_mbps`; `reservation_user` must be
 empty. `demo` additionally accepts `provider-span-maintenance`.
 
@@ -272,15 +272,28 @@ empty. `demo` additionally accepts `provider-span-maintenance`.
 | `noc_peak_mbps` | integer | `100` | `1`–`800`, and ≤ `1000 × (1 − reserve_fraction)`. Excluded from backbone offered-load accounting. | **rebaseline** |
 | `asn_base` | integer | namespace-derived | `4200000000`–`4294966271`, aligned to a 1024-number block from `4200000000`; customer VPN ASNs only. The operator and upstream ASNs are RFC 5398 documentation numbers chosen by namespace. Global target ASN conflict preflight is still required. | **rebaseline** |
 | `discovery_lab` | boolean or table | `false` | `true` (three lab routers) or `{ nodes = 3 }` / `{ nodes = 4 }`. Adds the [network lab](modeling.md#provider-network-lab) the real-discovery lab runs: 392 records for three nodes. | **rebaseline** |
+| `former_customers` | array of tables | `[]` | At most `32` entries (since 0.18.0); see below. Each keeps a tenant and one `decommissioned` circuit, and takes no premises, device, UNI, ASN, VRF or address slot ([lived-in history](modeling.md#lived-in-carrier-history-v018)) | grow-only; append new entries, an existing entry must stay byte-identical |
 
-Each `[[pops]]` entry (`estates/provider.py:291`) requires exactly two keys:
+Each `[[former_customers]]` entry (`estates/provider.py:423`) requires exactly
+six keys:
+
+| Key | Type | Accepted values and bounds |
+| --- | --- | --- |
+| `key` | string | `[a-z][a-z0-9-]{0,19}`, unique across customers and former customers |
+| `name` | string | 1–60 characters, unique across customers and former customers |
+| `service` | string | `private-l3`, `dia` or `epl` |
+| `pop` | string | A known PoP key: where the circuit was served |
+| `start` | integer | Year service began, `1990`–the `as_of` year; the circuit's install date follows the PoP's launch |
+| `end` | integer | Year service ceased, `start`–the `as_of` year; at least a year after the install date |
+
+Each `[[pops]]` entry (`estates/provider.py:301`) requires exactly two keys:
 
 | Key | Type | Default | Accepted values and bounds |
 | --- | --- | --- | --- |
 | `key` | string | required | Unique `[a-z][a-z0-9-]{0,19}`, also unique after removing hyphens |
 | `metro` | string | required | `chicago`, `detroit`, `cleveland` or `milwaukee` |
 
-Each `[[customers]]` entry (`estates/provider.py:319`) requires `key` and `sites`
+Each `[[customers]]` entry (`estates/provider.py:326`) requires `key` and `sites`
 (and `hub_pop` for `private-l3`). Every service also accepts `name` (an authored
 display name, 1–60 characters, unique; default the titled key) and `status`.
 Every premises is the carrier's demarcation: a Ciena 3903 NID (a RAD ETX-2i-10G

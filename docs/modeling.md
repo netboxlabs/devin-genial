@@ -1015,8 +1015,8 @@ carriers on two different PEs at each end of every adjacency.
 dual-homes to its nearest PoPs with a free transport port, in its own metro or a
 neighbouring one; existing spans never move. A new metro that would sit
 *between* two metros already joined by spans is refused: rebaseline. The
-`provider-pop-launch` ledger fixes a breadth-first launch order along the
-backbone.
+`provider-pop-launch` ledger fixes the launch order of the frozen
+[provider history](#lived-in-carrier-history-v018).
 
 **Capacity.** Owned fiber is lit at 100G and purchases nothing (`commit_rate` is
 omitted). Leased inter-metro spans are **100G wavelengths** committed at the
