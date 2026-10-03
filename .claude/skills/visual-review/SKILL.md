@@ -53,6 +53,12 @@ are the cheapest evidence there is.
 | NetBox UI: a site | Related Objects complete? Contacts, journals, address, coordinates present? |
 | NetBox UI: a list | Do the columns a customer filters on actually populate? |
 
+Capture rules: a blank canvas is a re-capture, never evidence; a floorplan shot
+needs geometry seeded at that cage or cabinet location first; and native
+elevations colour by role only (status shows in the hover title and list
+badges), so no shot may assert a status colour — Visual Explorer's status
+rendering stays unverified until a planned device has been screenshotted.
+
 Then check the questions a customer asks the API, because a broken denormalized
 field is invisible in every offline gate:
 
