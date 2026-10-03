@@ -898,9 +898,10 @@ Journals carry only what their record cannot show (since 0.16.0): the change
 ticket an event ran under and who ordered, confirmed or escalated it — never a
 cid, termination, rate, date field, serial, cabinet, U position or module the
 record already holds. Their kind follows the event: completed events are
-`success`, a problem or open action is `warning`, everything else `info`. Each
-site has a `Site access` note (book visits through the facilities desk, info).
-Each in-service circuit has one `Handed over` note (success): `Accepted into
+`success`, a problem or open action is `warning`, everything else `info`. Since
+0.18.0 the standing site-access policy (book visits through the facilities
+desk, two working days' notice) is part of each site's own `comments`, not a
+dated journal: it is a policy, not an event. Each in-service circuit has one `Handed over` note (success): `Accepted into
 service under change CHGnnnnnnn.`, plus, for a third-party carrier, that
 carrier's support desk confirming the handover and closing its ticket. A
 provider backbone's own circuits are its products: one it sells carries a
@@ -912,8 +913,13 @@ namespace-keyed hash (so neither a reseed nor growth moves one), also has a
 `Delivery slipped` warning 5–20 days before its handover: the carrier missed
 the committed date and was escalated. The first VM in each site/workload has a
 `First instance placed` note naming its host (success). Change tickets are
-seeded per-subject choices. Each entry's
-`created` timestamp is its own event date at 15:00 UTC, so the Journal list
+seeded per-subject choices. Since 0.18.0 every entry's comments
+open with a bold title and the event date (`**Handed over** · 2019-07-23`), a
+blank line, then the body (`timeline.entry`): NetBox has no title field, and
+the date stays in the text because the Diode lane cannot set `created`. Each
+entry's `created` timestamp is its own event date at a time keyed by the
+journal: orders, installs and paperwork in US business hours (14:00–21:59
+UTC), maintenance at night (04:00–08:59 UTC), so the Journal list
 reads as history rather than as the day it was loaded: TurboBulk inserts a
 supplied `created` column as-is (it skips only auto primary keys; a missing
 nullable timestamp would stay empty). The Diode SDK's JournalEntry has no
@@ -926,9 +932,11 @@ install dates: a site's service day is its first circuit (a PoP's first span, a
 premises' access circuit) — the earliest service its equipment carries. Every
 device there is installed 7–37 days before it, so a PE pair arrives together;
 every serial's date code is a manufacture week 30–180 days before that install
-(an optic serving a later circuit is made before its own port's circuit). The `Site access` note is written 40–70
-days before the service day, ahead of any equipment. `validate_operations`
-re-derives the chain and reports `operations-serial-date` and
+(an optic serving a later circuit is made before its own port's circuit). A
+provider PoP's plant is the exception: it installs on its own frozen
+[timeline](#lived-in-carrier-history-v018) day (the PoP launch, the PE refresh
+or a later arrival journaled at that site), and the PoP's circuits come up
+after the launch kit is racked. `validate_operations` re-derives the chain and reports `operations-serial-date` and
 `operations-journal-date`.
 
 The first eligible infrastructure device by permanent U position in each rack
@@ -936,7 +944,9 @@ has an `Installed` note (success): racked and cabled under its change ticket,
 the visit booked through the site's facilities desk (a PoP's carrier-hotel
 remote hands). It is dated by that device's own install, 7–37 days before the
 site's service day; site and VM notes never predate the service day either,
-and a site without circuits keeps the `as_of`-anchored window. New racks gain
+and a site without circuits keeps the `as_of`-anchored window. Where the
+provider plant history already journals a device's arrival, no second
+`Installed` note is written. New racks gain
 stories without rewriting existing rack history. The 0.15 `Order placed`,
 `Circuit handoff plan`, `Keep a spare PSU` and `Optic replacement note`
 entries restated their record's own fields and were dropped; see [installed
@@ -1081,9 +1091,10 @@ recorded: no VPN, tunnel or console configuration.
 Recipe order is onboarding order: customer slots, ASNs, route distinguishers
 (`<operator ASN>:<1001+slot>`) and accounts follow it.
 
-**Timeline.** PoPs launch in backbone order from the first PoP; a span enters
-service shortly before the later of its two PoPs launches, so every PoP's first
-span precedes its customers. Customers onboard months apart in slot order, each
+**Timeline.** PoP launches, refreshes and customer onboarding come from the
+frozen [provider history](#lived-in-carrier-history-v018). A span enters service
+7–21 days after the later of its two PoPs launches, so the launch kit is racked
+before any circuit lands; customers sign along an S-curve in slot order, each
 starting with its hub circuit; other premises follow their PoP's readiness.
 PoP, premises and NOC sites carry `meta.in_service`, the date shared enrichment
 should use for site-level history.
@@ -1163,9 +1174,11 @@ broadband) records the carrier hotel's cross-connect order (`xconnect_id`,
 its position on the carrier hotel's meet-me-room panel — the hotel's panel, not
 the operator's (`pp_info`, `Meet-me room panel MMR-17, port 4`; ledger
 `provider-mmr-positions/<pop site>` from a stable per-PoP start, 48 ports per
-panel). The operator models no fibre enclosure: 0.16 builds before this one
-racked a 1U ODF per PE cabinet with no ports or cables, a prop. The
-operator's own circuits carry neither. Access circuits record `distance`: the
+panel). Inside the cabinet (since 0.17.0) a carrier cross-connect lands on the
+colo demarc panel (cable label = its `xconnect_id`) and the operator's own fibre
+on its OSP panel, each at the next position of that panel's append-only ledger;
+panel front ports carry TIA-606-style labels `<facility_id>.<U>:<port>` (0.18).
+The operator's own circuits carry no `xconnect_id` or `pp_info`. Access circuits record `distance`: the
 premises-to-PoP great-circle distance times the 1.3 route factor, which the
 optic chooser reads directly.
 
@@ -1212,6 +1225,110 @@ fiber, so each optic is chosen by the run it lights (since 0.16.0): spans up to
 host FEC); premises tails up to 10 km keep SFP-1GE-LX, longer ones SFP-1GE-LH
 (70 km, with the vendor's short-link attenuator noted on the module). See the
 [installed optics policy](#installed-optics-policy).
+
+### Lived-in carrier history (v0.18)
+
+Since 0.18.0 the provider reads as a carrier with fifteen years behind it, not a
+turnkey build. All of it is derived from one frozen history; no recipe key
+selects history, and `validate_provider.py` / `validate_operations.py`
+re-derive every rule below from the graph and the ledgers.
+
+**One frozen timeline** (`estates/timeline.py`). The estate is founded
+`as_of` − 15 years. Metros enter in bursts — the founding metro first, then by
+the premises demand homed there — and a metro's later PoPs follow every 6–20
+months; nothing launches in the last three calendar years. Dates that depend on
+the population (launches, the PE refresh ranking, customer onboarding) are
+written once to the dated ledger `provider-timeline/<event>/<subject>`
+(`{"day": ordinal}`); everything else is a pure function of those dates.
+Growth only appends: a PoP or customer new to an existing ledger is a
+current-era event (launched 45–150 days, or signed 14–120 days, before
+`as_of`). Customers sign along a slot-ordered S-curve from founding + 1 year,
+never before their anchor PoP is ready + 30 days, so no single year holds the
+book. Vendor dates quoted in records are the vendor's ("per vendor notice");
+our own milestones (MX204 orderable 2018-01-01, ACX5448-M from 2019-07-01,
+naming standard NS-2 from 2018-03-01, notice journaling from 2025-04-01) are
+authored values.
+
+**Generations.** A PoP launched before 2018 got an MX80 pair; the MX80 → MX204
+refresh ran 2019-03 to 2025-06 in complexity order (carrier handoffs, then
+attachments), so the founding PoP cut over last. The MX80 pair stays racked as
+`decommissioning`, uncabled and unpowered, only where the cut-over is under 24
+months old (Cermak in the showcase); elsewhere it is gone. Aggregation is the
+ACX5048 at PoPs launched before 2019-07-01 (a pre-2015 PoP's original switch,
+not inventoried, was replaced from 2016) and the ACX5448-M after; the original
+console server gave way to the EX3400 + OM2216-L from 2019. Devices installed
+before NS-2 that still exist keep their CLLI-style legacy name
+(`chcgilcr-agg1`) and carry the `legacy-naming` tag.
+
+**Rack stratigraphy.** Each cabinet fills top-down in install order. The
+append-only `provider-cabinet-u/<rack>` ledger records every item's units once,
+including devices later removed: a removed device's units stay a gap,
+blanked (`exclude_from_utilization`) and carrying a dated `Removed` rack
+journal, and growth appends below the lowest used unit. Core PoPs (a NOC
+handoff, transit or IX port) are a carrier-hotel cage with two 42U cabinets,
+R01 (side A) and R02 (side B); the cage's description carries the contract
+(`Cage contract: 4 cabinet positions; 2 installed; expansion by change
+order`) and no empty reserved cabinet is modelled. Edge PoPs are one cabinet
+(`Suite NNN` → `Cabinet <facility id>`) holding both sides.
+
+**What is next, and what is spare.** Where a PE has used all eight MX204 SFP+
+positions (four LAG members, management, NOC, transit, IX), an MX304 successor
+pair is ordered after the MX204 end-of-life notice (TSB107750): `planned`
+while on order, `staged` once received, with no power and no in-service
+cables. A transit PoP with DIA customers and an MX304 order also holds a
+`staged` Arbor TMS HD 1000, cabled to the MX304s with `planned` AOCs and
+pre-cabled `planned` management and console; it activates at the MX304
+cut-over, and the NOC runs a detection-controller VM pair. Each metro's
+founding PoP keeps one `inventory` cold-spare aggregation chassis, of the
+model the metro runs, pre-racked and uncabled in R02. NOC-handoff PoPs carry a
+Meinberg LANTIME M300 time server on the management LAN, on a single supply.
+
+**Internet exchanges.** Each metro's founding PoP hosts a 10G port on PE-A
+`xe-0/1/5` into a fictional exchange (Calumet Internet Exchange, Rouge River IX,
+Erie Shore IX, Cream City Internet Exchange). The exchange is a Provider with
+one AS from the RFC 5398 32-bit range (65536–65551, the `Exchange routing
+domains` ASN range), its peering LAN a ProviderNetwork and the port an `IX
+Port` circuit through the colo demarc cross-connect. No IX tenant exists; the
+peering LAN /64, our member address and the two route-server addresses carry
+none. The LAN is **IPv6-only**: IPv4 documentation space is consumed by the DIA
+allocation ceiling, so no IPv4 peering is modelled (the records say only that
+the IPv4 blocks are committed to DIA). With an `ipv6_pool` each port has two
+route-server sessions in the `IX route servers` peer group, sharing the
+exchange's AS; without one the circuit is kept and no session is emitted. The
+Milwaukee exchange relocated (a shape-only mirror of a real 2025 move): its old
+port at the metro's second PoP is `deprovisioning` with a termination date,
+its cables `decommissioning` and the PE port shut.
+
+**Former customers.** `[[former_customers]]` (see recipes) keeps each former
+customer's tenant and one `decommissioned` circuit with install and termination
+dates and a `Service ceased` journal — no terminations, devices, sites, UNI,
+ASN, VRF or address slot. Names are authored; nothing says why they left.
+
+**Premises NIDs.** A premises in service before 2016 on unmanaged single-NID 1G
+DIA or EPL keeps the first NID generation (Accedian MetroNID TE, launched 2008)
+behind customer-owned gear; the 10G tier keeps the RAD ETX-2i-10G.
+
+**Paperwork.** Plant and circuit journals use the shared bold-title shape
+and time bands ([journals](#contact-and-journal-context)). New events: `Cut
+over` (and the relic's own), `Replaced predecessor`, rack `Removed`,
+`Successor ordered`, `Ordered`, `Received and staged`, `Cold spare racked`,
+`Racked, awaiting activation`, `End of support` / `Last order date` per vendor
+notice, `IX port turned up`, `Cross-connect ordered` (a letter of authorization
+14–30 days before install), `Committed rate raised` (one in two long-lived
+access and transit circuits; the record keeps the current rate), `Term renewed`
+(36-month leased terms), and, since notice journaling began in 2025-04,
+`Provider maintenance completed` notices in MAINTNOTE's field shape at night
+UTC (one in three leased third-party circuits) and an annual `Cage audit`.
+
+**Limitations.** These are inventory, never execution: nothing is configured,
+diverted, scrubbed, peered or synchronised; no flowspec, route counts, timing
+stratum or offset, PTP or SyncE is claimed. The TMS chassis is far above the
+estate's DIA commit (the only pinned mitigation appliance) and its licensed
+capacity is not modelled; its PSU module type is authored fiction with an
+authored allowance. The M300 is discontinued (successor M320 per the vendor
+page) and its GPS antenna is not modelled. The exchanges, LOA numbers and
+legacy names are fictional shapes ("CLLI-style", "TIA-606-style" only), and
+no claim is made about any cut-over's outcome.
 
 ## Provider BGP inventory
 

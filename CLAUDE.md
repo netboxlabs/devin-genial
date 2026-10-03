@@ -109,6 +109,29 @@ loopbacks and management ports, and client segments tile infrastructure,
 static, DHCP and headroom ranges with no gap. Identities, names and the
 hardware digest move across every profile, so 0.15 plans reject growth by
 version and must be regenerated.
+v0.17 gave the provider a regional-carrier footprint (aggregation pairs, NIDs,
+OSP and colo-demarc panels, Q-in-Q EPL, LTE out-of-band).
+v0.18 is a new baseline, "lived-in carrier": the provider reads as fifteen
+years old. One frozen history (`estates/timeline.py`; per-event
+`provider-timeline/<event>/<subject>` ledgers) runs from `as_of` − 15 years:
+metro-entry launch bursts, a quiet last three years, MX80-era PoPs refreshed to
+MX204 in complexity order, ACX5048 aggregation before 2019-07-01 and ACX5448-M
+after, and a customer onboarding S-curve. Cabinets are stratified top-down in
+install order with the frozen `provider-cabinet-u/<rack>` ledger: a removed
+device's units stay a blanked gap with a dated rack journal, never reused.
+Core PoPs (NOC handoff, transit or IX) are a two-cabinet cage; edge PoPs are one
+cabinet. MX80 relics stay `decommissioning` (uncabled) only where the refresh
+is under 24 months old (Cermak); an exhausted MX204 pair gets a `planned`/
+`staged` MX304 successor, a transit PoP with DIA a `staged` Arbor TMS on
+`planned` cables; NOC-handoff PoPs a Meinberg M300; each metro's founding PoP
+an `inventory` cold-spare aggregation chassis. Each metro's IX is a Provider with
+one AS, an IPv6-only ProviderNetwork and an `IX Port` circuit with two
+route-server sessions. A `[[former_customers]]` recipe list keeps a tenant and
+one `decommissioned` circuit each. Journals are `**Title** · date` markdown
+with `created` in business or night UTC bands and new event types (cut-over,
+removal, successor order, notices, renewals, cross-connect orders); `Site
+access` moved into site comments. Catalog 0.15 carries the new models; 0.17
+plans reject growth by version and must be regenerated.
 The final reference-label revision also changes that digest; intermediate v0.8
 packages remain historical evidence, alongside preserved v0.7 source/artifacts.
 Final hospital and provider artifacts are under
@@ -156,17 +179,22 @@ device type's catalog entry; device types carry only pinned-source part numbers,
 weights and airflow; journal `created` is the event date (TurboBulk inserts it;
 Diode cannot, `diode.LOADER_ONLY_FIELDS`). Statuses other than
 `active` come only from ledgers (IP-range geometry, unused ports, the next grid
-cabinet) or from an explicit recipe lifecycle (the provider's customer and
-premises `status` keys), never invented events; required paths stay `active`,
+cabinet), from an explicit recipe lifecycle (the provider's customer and
+premises `status` keys, `former_customers`) or from the frozen provider
+timeline (relics, successors, spares, the relocated IX port), never invented events; required paths stay `active`,
 and a planned, provisioning or decommissioning path never counts as healthy
 capacity.
 Journals carry only what the record cannot show — a seeded change ticket,
 who confirmed or escalated — never its own fields (cid, terminations, rates,
 serials, cabinet, U, modules): one `Handed over` per in-service circuit, a
 namespace-keyed one-in-five carrier `Delivery slipped` warning, one
-`Installed` per cabinet, `Site access` per site, `First instance placed` per
-workload; kind follows the event (completed success, problem warning, else info); dates follow the site's service day (its first circuit's install date,
-read from the graph). Contact priority follows desk order (technical primary, local or
+`Installed` per cabinet (unless the provider plant history already journals
+that install), `First instance placed` per workload; the standing `Site access`
+policy lives in site comments (0.18), not a journal. Comments open with
+`**Title** · YYYY-MM-DD` (`timeline.entry`); `created` takes a keyed time in
+the business (14:00–21:59 UTC) or night (04:00–08:59, maintenance) band;
+kind follows the event (completed success, problem warning, else info); dates follow the site's service day (its first circuit's install date,
+read from the graph), or for provider PoP plant the frozen timeline. Contact priority follows desk order (technical primary, local or
 commercial secondary, specialist tertiary).
 WAN procurement accounts retain bank design lineage across acquisition/refresh;
 provider customer/NOC/transport accounts keep their separate authored policy.
@@ -175,7 +203,9 @@ responsibility remains distinct; do not collide with its device-assignment key.
 One timeline: a device installs 7-37 days before its site's first circuit (the
 earliest service its equipment carries) and every serial date code is a manufacture
 week 30-180 days before that (an optic's before its own port's circuit) (`operations_context.timeline`, re-derived by
-`validate_operations`). Never date a record from `as_of` when a circuit dates it.
+`validate_operations`). Provider PoP plant instead installs on its own
+`provider-timeline` day (launch, refresh or later arrival), and PoP circuits
+come up after the launch kit is racked. Never date a record from `as_of` when a circuit dates it.
 Equipment journals select the first eligible device per actual rack by permanent
 U position. Keep facilities facts stable; never embed current cable peers or
 mutable tenant desk names in immutable journal comments. No journal restates an
@@ -431,10 +461,16 @@ for the separately recorded pinned-target live qualification.
   append-only in the `provider-backbone-spans` ledger; carrier-owned numbering is
   RFC 5398/5737 documentation space under `ARIN`; one launch/onboarding
   timeline. See [geography and numbering](docs/modeling.md#provider-backbone-geography-and-numbering).
+- `estates/timeline.py`: the frozen provider history (launches, refreshes,
+  successors, spares, onboarding) and the shared journal shape; `estates/fibre.py`:
+  the PoP plant — cage or cabinet, stratified elevations, panels, aggregation
+  and plant journals. See [lived-in carrier](docs/modeling.md#lived-in-carrier-history-v018);
+  pinned by `tests/test_lived_in_*.py`, `test_fibre.py` and
+  `test_provider_lived_in_gates.py`.
 - `estates/bgp.py`: the provider-only BGP inventory — named routing policies,
   peer groups and one session per modeled adjacency (iBGP route-reflector pair
   in two metros, eBGP transit and eBGP customer, each with an IPv6 twin when
-  dual-stack), all attributed from the finished graph and
+  dual-stack, and two IX route-server sessions per exchange port), all attributed from the finished graph and
   all documentation records; `validate_provider.py` independently re-derives
   them and refuses any record that claims configured or established routing.
   Pinned by `tests/test_provider_bgp.py`.
@@ -691,9 +727,10 @@ for the separately recorded pinned-target live qualification.
   mounts contiguously from the bottom rail — 42U would read three-quarters
   empty — and the small-room kit (13U Panduit R2P26 two-post, one 1U 120 V
   AP9563 at the top unit, one 120 V / 20 A circuit, no console server) for a
-  single-CE premises (`Site.small_kit`, provider customers). PoP cabinets
-  hold no fibre enclosure of their own (one with no ports was a prop); a fibre
-  carrier handoff's `pp_info` is the carrier hotel's meet-me-room panel
+  single-CE premises (`Site.small_kit`, provider customers). PoP cabinets are
+  42U (`estates/fibre.py`): owned fibre lands on the operator's OSP panel and
+  carrier cross-connects on the colo demarc panel, both cabled (an enclosure
+  with no ports was a prop until 0.17); a fibre carrier handoff's `pp_info` is the carrier hotel's meet-me-room panel
   position (`provider-mmr-positions/<pop>`), not the operator's. `facility_id` is a room-scoped cabinet code (`DH-02-C03`,
   `G09-01-N02`); 0U equipment is racked
   without a position, exactly as NetBox models it. US feeds are 208 V / 20 A
@@ -985,7 +1022,8 @@ for the separately recorded pinned-target live qualification.
   metro from a permanent ledger (`CHI01`); provider PoPs and the NOC carry
   fictional CLLI-style codes (`CHCGILCR`). Rooms of single-floor kinds
   (`places.FLAT_KINDS`) hang from the site without pass-through building/floor
-  levels; a PoP is `Suite NNN` → `Cage X00`. Coordinates sit at most ~400 m from an authored
+  levels; a core PoP is `Suite NNN` → `Cage X00`, an edge PoP (0.18)
+  `Suite NNN` → `Cabinet <facility id>`. Coordinates sit at most ~400 m from an authored
   `places.ANCHORS` point or street run that was verified on land in its
   municipality; a site named after a neighbourhood, suburb or street sits there
   and its address names that municipality. Never reintroduce free metro-wide
