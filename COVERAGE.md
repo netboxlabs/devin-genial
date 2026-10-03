@@ -852,9 +852,10 @@ item 2 is partly answered: pre-NS-2 devices keep CLLI-style names under a
 - **Off-net ENNI** — the next build. **SONET/TDM** — never.
 - **ACX7100 aggregation successor.** No aggregation refresh has started; the
   ACX5048's end of support (2027-12-31) makes it the next story.
-- **Shelf role.** Boxed NID and CE spares belong to Asset Lifecycle spare
-  items (the lifecycle sidecar), never a shelf device; the cold-spare chassis
-  carries the real aggregation role and its `inventory` status.
+- **Shelf role.** Boxed NID, CE and optic spares are Asset Lifecycle spare
+  items in the one NOC Field depot (the lifecycle sidecar), never a shelf
+  device; the racked cold-spare chassis carries the real aggregation role and
+  its `inventory` status and is a NetBox device only, never also a spare item.
 - Atlas probes, PoP compute, a separate peering router, DWDM and −48 V plant.
 - **Acquired-carrier layer** (an absorbed Cleveland carrier with its own names
   and a deprecated block): kept as the design's cut line.
