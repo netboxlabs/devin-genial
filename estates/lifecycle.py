@@ -891,9 +891,19 @@ def seed(artifact_dir, *, url, token, receipt_path):
                         "attach fictional tracking numbers to it")
     receipt.update(vendors=vendor_ids, vendor_accounts=account_ids, courier=courier["id"])
 
+    existing = {r["name"] for r in live["boms/"]}
     for bom in artifact["boms"]:
-        receipt["boms"][bom["name"]] = _seed_bom(writer, live, bom, devices[bom["name"]], sites, rooms,
-                                                 vendor_ids, account_ids, courier["id"], module_types)
+        try:
+            receipt["boms"][bom["name"]] = _seed_bom(writer, live, bom, devices[bom["name"]], sites, rooms,
+                                                     vendor_ids, account_ids, courier["id"], module_types)
+        except Exception:
+            # A BOM this run created must stay receipt-bound even when it fails
+            # mid-way, or unseed misses it and a fresh seed refuses it.
+            created = [r for r in writer.rows("boms/") if r["name"] == bom["name"]]
+            if created and bom["name"] not in existing:
+                receipt["boms"].setdefault(bom["name"], {"bom": created[0]["id"]})
+                _write_receipt(receipt_path, receipt)
+            raise
         _write_receipt(receipt_path, receipt)
     for pool in artifact["pools"]:
         receipt["pools"][pool["name"]] = _seed_pool(writer, live, pool, sites, rooms, module_types)

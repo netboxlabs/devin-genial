@@ -153,6 +153,22 @@ class LivedIn(unittest.TestCase):
                          [(depot["spares"][0]["serial"], 1)])
 
 
+    def test_a_bom_failing_mid_seed_stays_bound_to_the_receipt(self):
+        # Live (crsk8600): an unscoped rule generated one extra asset, the seed
+        # stopped, and the unbound draft BOM blocked both unseed and a reseed.
+        fake = _FakePlugin(self.plan)
+        fake.devices = fake.devices + [fake.devices[0]]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plan.json").write_bytes(canonical(self.plan) + b"\n")
+            build(root / "plan.json", root / "out")
+            with patch.object(lifecycle, "Client", return_value=fake), \
+                    patch.dict("os.environ", {"LIFECYCLE_WRITES": "1"}), self.assertRaises(Exception):
+                seed(root / "out", url="http://t.example", token="x", receipt_path=root / "r.json")
+            bound = json.loads((root / "r.json").read_text())["boms"]
+        self.assertEqual({r["name"]: r["id"] for r in fake.rows["boms/"]},
+                         {name: record["bom"] for name, record in bound.items()})
+
 class _FakePlugin:
     """An in-memory Asset Lifecycle API, enough for seed and readback (not a claim about the plugin)."""
     base = "http://t.example"
