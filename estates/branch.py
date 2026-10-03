@@ -13,6 +13,7 @@ import os
 import time
 import urllib.parse
 
+from .showcase import FILTER_LABELS as SHOWCASE_FILTER_LABELS
 from .turbobulk import Client, LoadError
 
 BRANCHES = "/api/plugins/branching/branches/"
@@ -113,6 +114,7 @@ def delete_branch(client, name, *, timeout=300, poll_interval=2, sleep=time.slee
 # custom-field trio (estates/turbobulk.py BRANCH_EXEMPT_KINDS); config contexts
 # are branch-scoped and go with the branch, so they are not listed here.
 RETIREMENT_ENDPOINTS = (
+    ("/api/extras/saved-filters/", "exact"),
     ("/api/extras/event-rules/", "exact"),
     ("/api/extras/webhooks/", "exact"),
     ("/api/extras/export-templates/", "exact"),
@@ -135,6 +137,9 @@ RETIREMENT_ENDPOINTS = (
 # before the service-class field replaced the operations tier still retires.
 CUSTOM_FIELD_NAMES = ("{ns}_service_class", "{ns}_operations_tier")
 RETIREMENT_LABELS = {
+    # The showcase sidecar's shared saved filters (estates/showcase.py); main-scoped
+    # rows nothing references, so they go first.
+    "/api/extras/saved-filters/": SHOWCASE_FILTER_LABELS,
     "/api/extras/event-rules/": ("Device change notification",),
     "/api/extras/webhooks/": ("NetOps automation endpoint",),
     "/api/extras/export-templates/": ("Device inventory (CSV)", "Cable report (CSV)"),
@@ -164,7 +169,8 @@ def retire_namespace_rows(client, namespace, *, dedicated=False, endpoints=RETIR
                           attempts=8, poll_interval=3, sleep=time.sleep):
     """Delete the namespace's own main-scoped rows.
 
-    These are the Branching-exempt records a branch load writes to main: the
+    These are the Branching-exempt records a branch load writes to main (and
+    the showcase sidecar's shared saved filters): the
     automation event rule, webhook and export templates, the custom-link,
     custom-field and choice-set definitions, and the owner/owner_group pair.
     Branch deletion leaves them behind and they block the namespace's next fresh

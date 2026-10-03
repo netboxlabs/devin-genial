@@ -131,6 +131,24 @@ unseed-geometry receipt target:
 unseed-lifecycle receipt target:
     @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.lifecycle unseed {{quote(receipt)}} {{quote(target)}}
 
+# Derive the showcase tour (saved filters, bookmarks, home dashboard) and the
+# offline F1-F5 first-impression numbers from a frozen carrier plan
+showcase plan out:
+    python3 -m estates.showcase build {{quote(plan)}} --out {{quote(out)}}
+
+# Recompute a saved showcase artifact from its bound plan (operands match `showcase`)
+showcase-check plan out:
+    python3 -m estates.showcase check {{quote(out)}} --plan {{quote(plan)}}
+
+# Write the tour over REST and read it back exactly. Requires SHOWCASE_WRITES=1,
+# the estate on main, and one Home visit by the token's user (creates its dashboard).
+seed-showcase out target receipt='':
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.showcase seed {{quote(out)}} {{quote(target)}} {{if receipt == '' { '' } else { '--receipt ' + quote(receipt) }}}
+
+# Restore the prior dashboard and delete exactly the filters and bookmarks a receipt created
+unseed-showcase receipt target:
+    @[ -n "${NETBOX_TOKEN:-}" ] || { set -a; [ ! -f .env ] || . ./.env; set +a; }; python3 -m estates.showcase unseed {{quote(receipt)}} {{quote(target)}}
+
 # Regenerate docs/schema-map.md (kind -> NetBox model -> endpoint -> identity -> delivery)
 schema-map:
     python3 -m estates.schema_map
