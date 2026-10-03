@@ -218,12 +218,14 @@ PLAN OUT` recomputes and byte-compares it, and
 REST with a private receipt and exact readback. No canonical-graph change, no
 rebaseline. Everything is derived from the finished graph:
 
-- **One BOM per site** — `<site> — initial build` — scoped to the racked
+- **One BOM per site** — `<site> — installed equipment` — scoped to the racked
   devices plus access points and every module (PSUs, optics) installed in
   them; endpoints, wall outlets and other unracked devices stay out. The BOM
-  is generated *on the target* by the plugin's own scope rules (devices by site
-  and role slugs, modules by site slug), so its assets are the estate's real
-  device and module rows. `build` refuses a site whose devices could not be
+  is generated *on the target* by the plugin's own scope rules (devices by site,
+  role slugs and — when anything but `active` is installed, such as a
+  `decommissioning` relic — status; modules by site slug, minus an `exclude`
+  rule naming the devices outside the BOM by name), so its assets are the
+  estate's real device and module rows. `build` refuses a site whose devices could not be
   expressed that way, and `seed` refuses (leaving the BOM in `draft`) if the
   generated assets or summed line quantities differ from the prediction.
   Line items are compared per type, not per variant: the plugin splits lines by
@@ -232,8 +234,12 @@ rebaseline. Everything is derived from the finished graph:
 - **Two fictional vendors.** A type goes to *Ostrander Carrier Systems* only
   when every installed instance is (or sits in) a provider-edge router; all
   else is *Tallgrass Network Supply*. One USD purchase order per vendor per
-  BOM, with a hash-derived `order_id`, its lines at the BOM quantities and
-  `unit_price` left **null** — the plan holds no prices, so none are invented.
+  installation era: a device's own install journal (`Installed`, `Replaced
+  predecessor`, or its equipment record) dates its order, and every other
+  device arrived with the site's first build — so a founding PoP carries its
+  2011, 2016, 2019 and 2025 orders. Each has a hash-derived `order_id`, lines
+  at its own quantities and `unit_price` left **null** — the plan holds no
+  prices, so none are invented.
   Approval/order dates live in the PO comments; the plugin has no date fields.
 - **One delivery per order** from the fictional courier *Tallgrass Freight*,
   which deliberately has **no tracking URL**: the builtin UPS/FedEx/DHL couriers
@@ -254,6 +260,22 @@ rebaseline. Everything is derived from the finished graph:
   between them. By stable hash, two allocations across the estate run below
   minimum and one more holds a unit flagged `damaged` at audit — the plugin's
   own `below_minimum` flag is read back against that prediction.
+- **Equipment on order** (`planned` and `staged` devices dated by their own
+  `Ordered`/`Received`/`Racked` journals) gets a second BOM per site,
+  `<site> — equipment on order`, scoped by status. Its purchase orders stop at
+  `ordered`; a staged device's delivery is `received` (dated from its journal)
+  and a planned one has no delivery; nothing is installed. A captive AOC end
+  in a successor ships with that successor, so one BOM line can span two
+  orders. Planned premises with no paperwork yet stay out of every BOM.
+- **Cold spares**: each `inventory` chassis is one serialized spare item in a
+  `<site> — Field depot` pool at its own room, matched to the device by
+  (device type, serial), and never a BOM asset. Asset Lifecycle 0.3.1 spare
+  items reference a type, not a device, so the plugin's *Install* action on that
+  item would create a **second** device: do not click it on the showcase.
+- Vendor end-of-support dates (MX80 2026-06-30, ACX5048 2027-12-31, MX204
+  2032-06-30) are not written: the plugin has no lifecycle-date field. They
+  live in the catalog, the device journals and the showcase's End-of-life
+  hardware saved filter.
 
 Each BOM, PO and delivery walks its permitted status ladder one PATCH at a time
 (`draft → approved → ordered → fulfilled`, `shipped → received`), so the
@@ -281,11 +303,14 @@ individual deletion once their parent left `draft` — deleting the parent
 cascades them. Deleting a module type does **not** cascade to spare
 allocations that name it; they linger with a null item.
 
-For the provider showcase plan the sidecar derives 72 BOMs, 870 assets,
-84 purchase orders and deliveries, and 13 spares pools with 68 allocations.
-The seeder's mechanics, resume and readback were proven on a throwaway tenant
-against a three-device probe estate; no full-estate lifecycle seed has a
-recorded receipt yet.
+For the v0.18 provider showcase plan the sidecar derives 252 BOMs (one on
+order), 1,936 assets, 282 purchase orders and deliveries, and 11 spares pools
+(69 allocations, four Field-depot cold spares). The seeder's mechanics, resume
+and readback were proven on a throwaway tenant against a three-device probe
+estate; the v0.18 paths (status-filtered and `exclude` scope rules, split BOM
+lines, an `ordered` PO with a `received` delivery and no installs, serialized
+device-type spare items) are exercised only against an in-memory fake
+(`tests/test_lifecycle_lived_in.py`) and have **no live receipt yet**.
 
 Receipts bind the selected policy, row bound, payloads, and per-job request settings
 and reject a resume under different settings, including the compiler version: a
@@ -445,7 +470,10 @@ Every policy is derived from the finished graph:
 
 - **Estate baseline** (all devices): addressing, cabling and context hygiene
   the generator's validators already enforce (no duplicate or orphan IPs, VRF
-  consistency, symmetric and traceable cabling, …); enabled ports are cabled;
+  consistency, traceable cabling, …); enabled ports are cabled; cable ends
+  match (`symmetric_cabling`, predicted: the engine compares the two ends'
+  `type` strings, so every port on a patch-panel front port and every PDU
+  100BASE-TX port on a 1000BASE-T switch port fails on both devices);
   devices carry the fields every device in the plan has (`serial`, `tenant`);
   routed-link roles use the masks the plan uses (`/31`, plus `/30` only when
   the plan allocates one) — scoped to roles whose every addressed physical port
@@ -498,16 +526,99 @@ under the **first** rule carrying that check in the policy, with each rule's
 own parameters still applied — so a policy holds one rule per check
 (`build` refuses a repeat), which is why naming is one policy per platform.
 
-The engine evaluates only `active` devices and counts only `active` circuits
-(a site with none gets no result at all); the prediction does the same.
+The engine evaluates only `active` devices and counts only `active` circuits;
+a site with no active in-scope device gets no result. The prediction does the
+same, so relic, staged, planned and inventory equipment is never a subject.
 
-For the final provider showcase plan (`build/showcase-final`) the sidecar
-derives 12 policies and 52 rules predicting 16 failing subjects; seeded on
+Replaying the live v0.17 showcase receipt (151 failing subjects against 17
+predicted; 49 of 55 rules matching) against that same plan pinned three more
+engine behaviours, now modeled — all 51 rules still installed reproduce the
+live failing counts on that plan:
+
+- **Circuits are seen only from a device interface.** A circuit counts for a
+  site only when its termination is cabled straight to an interface of an
+  in-scope device. Every PoP and NOC circuit lands on a demarc patch panel, so
+  the engine read "0 circuit(s)" at all 12 PoPs and the NOC and skipped
+  diversity. Those resilience policies now omit both circuit checks and record
+  the observed reason under the policy's `omitted`; customer premises (circuits
+  on the NID) keep them.
+- **`symmetric_cabling`** compares end types literally (above): 110 of 110
+  subjects predicted.
+- **`cable_single_point_of_failure`** joins a site's devices by data cables
+  only (interface, pass-through and console ports; power cables are not
+  edges), so the management switch's link to the far cabinet's PDU network port
+  is a cut edge — two per two-cabinet PoP, reported under the in-scope end.
+
+The v0.18 showcase plan derives 14 policies and 52 rules predicting 118
+failing subjects (100 `symmetric_cabling`, 12 cut cables at the six core PoPs,
+two single-supply time servers, three uncabled lab `mgmt0` ports and the DC
+management switch's console). Not proven live: whether the graph engine loads
+`staged` devices into its graph (the staged TMS is cabled to the staged MX304s;
+the prediction excludes non-active devices), which end names a cut cable when
+both ends are in scope, and `rack_failure_impact` at the single-cabinet edge
+PoPs — the engine graph does not follow circuits, so it should see no device
+outside the rack and pass. No built-in check measures free port headroom, so
+"PE port headroom = 0 at core PoPs" is not expressible as a finding.
+
+For the earlier provider showcase plan (`build/showcase-final`) the sidecar
+derived 12 policies and 52 rules predicting 16 failing subjects; seeded on
 `crsk8600` (2026-10-02) all 52 rules matched exactly. The findings: 12
 dual-homed customer hubs whose two circuits land on one CE (the CE is the
 remaining single point; that policy scores 50%), the DC management switch's
 uncabled console, and three unracked lab routers whose addressed `mgmt0` has
 no cable. Every other policy scores 99–100%.
+
+### Showcase tour: saved filters, bookmarks and the home dashboard
+
+`just showcase PLAN OUT` derives `showcase.json` from a frozen **carrier**
+plan (other profiles are refused), bound to its canonical SHA-256;
+`just showcase-check PLAN OUT` recomputes and byte-compares it;
+`SHOWCASE_WRITES=1 just seed-showcase OUT TARGET [RECEIPT]` writes it over
+NetBox core REST with a private receipt and exact readback; and
+`SHOWCASE_WRITES=1 just unseed-showcase RECEIPT TARGET` restores the prior
+dashboard and deletes exactly what the receipt created. Seed it last, after
+the estate, geometry, lifecycle and validation; unseed it before
+`teardown-main` (which also retires the saved filters by name).
+
+- **Shared saved filters** (`extras.savedfilter`): Carrier PoPs, Customer
+  premises, Carrier network devices (roles with interfaces and no outlets —
+  no PDUs, panels or cable managers), Backbone & transit circuits, Internet
+  exchanges, Not in service (`status__n=active`), Staged & planned equipment,
+  End-of-life hardware (device types whose catalog `lifecycle` has an
+  end-of-life announcement or last order date on or before `as_of`, or is
+  discontinued: MX80, MX204 under TSB107750, ACX5048, LANTIME M300) and Former
+  customers. Names follow `naming.main_scoped_name`; slugs keep the
+  namespace; `branch.RETIREMENT_LABELS` retires them. Each records how many
+  plan objects it selects, and readback requires the target's list endpoint to
+  return exactly that count.
+- **Bookmarks and the home dashboard of the seeding user** (resolved through
+  `/api/authentication-check/`): the founding PoP (earliest dated journal at a
+  PoP), its first active PE and its IX port; a note with the estate's own
+  numbers; object lists of the PoPs, the equipment not in service and the newest
+  journal entries; and the bookmarks. NetBox exposes only the requesting
+  user's dashboard and creates it on that user's first Home visit, so **open
+  Home once as the token's user before seeding**; a missing dashboard stops the
+  seed with that instruction. A pre-existing bookmark is adopted and never
+  deleted.
+- **Manual steps** (in the artifact's `manual_steps`): `BANNER_TOP` and
+  `DEFAULT_USER_PREFERENCES` (sites and tenants ordered by group, then name)
+  live in config revisions, which have no REST endpoint — set them under
+  Admin → Configuration history. Without them the Carrier PoPs saved filter
+  is the PoP view.
+
+`build` and `check` print the offline first-impression numbers (F1–F5) over
+the plan: the dashboard's note, lists and bookmarks resolve (F1); the carrier's
+13 sites lead `/dcim/sites/` only with group ordering — 0 of the first 13 by
+name, 13 by group, and the filter returns 12 PoPs (F2); every customer
+description names the carrier (F3); the carrier's name appears in seven object
+kinds (F4); and the newest 50 journals (F5). F5 is reported two ways: strictly
+by the design's list (PoP/NOC devices, racks and sites; backbone, dark-fibre,
+transit, IX and NOC circuits) the v0.18 showcase reads **20 of 50 (0.40)**,
+below the 0.5 target; counting the NOC's virtual machines, the PoP console
+out-of-band circuits and carrier-circuit terminations it reads 29 of 50. None
+of the showcase writes has a live receipt yet; the dashboard PATCH, bookmark
+creation and saved-filter count readback are proven only against an
+in-memory fake (`tests/test_showcase_sidecar.py`).
 
 ## Verify without loading
 

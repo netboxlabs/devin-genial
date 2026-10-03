@@ -33,7 +33,7 @@ from .model import canonical, digest
 from .turbobulk import Client, LoadError, _write_receipt
 
 RECEIPT_VERSION = 1
-WRITER_VERSION = "validation-1"
+WRITER_VERSION = "validation-2"
 PLUGIN = "netbox_validation"
 API = "/api/plugins/validation/"
 NAME_LIMIT = 100
@@ -41,6 +41,8 @@ TERMINAL = {"passed", "failed", "error"}
 RUN_TIMEOUT = 1800
 # Interface types the engine accepts uncabled by default (live: "virtual/LAG").
 UNCABLED_TYPES = {"virtual", "lag", "bridge"}
+# Cable ends the graph engine joins devices by (live 1.14.1: power cables do not).
+DATA_ENDS = {"interface", "front_port", "rear_port", "console_port", "console_server_port"}
 # Optional device fields asset_documentation_complete may require; a field is
 # required only when every device in the plan carries it.
 DOCUMENT_FIELDS = (("serial", "attrs"), ("asset_tag", "attrs"), ("platform", "refs"), ("tenant", "refs"))
@@ -60,7 +62,6 @@ ASSUMED = (
     ("lag_min_members", "redundancy", "medium", {"min_members": 2}),
     ("virtual_chassis_member_count", "redundancy", "medium", {"min_members": 2}),
     ("cable_trace_complete", "topology", "high", {}),
-    ("symmetric_cabling", "topology", "high", {}),
     ("mtu_consistency_across_link", "topology", "medium", {}),
     ("rear_port_mapping_complete", "topology", "medium", {}),
     ("no_plaintext_secrets_in_context", "security_intent", "critical", {}),
@@ -128,6 +129,9 @@ class _Graph:
                 self.addresses[ip["refs"]["assigned_object"]].append(ip)
         self.devices = sorted(self.kinds["device"], key=lambda d: d["attrs"]["name"])
         self.devices_by_name = {d["attrs"]["name"]: d for d in self.devices}
+        # The intent engine evaluates active devices only ("an empty scope means
+        # all active devices"; live 1.14.1 result counts equal the active count).
+        self.active = [d for d in self.devices if _active(d)]
 
     def ref(self, obj, name):
         return self.objects.get(obj["refs"].get(name)) if obj["refs"].get(name) else None
@@ -167,6 +171,67 @@ class _Graph:
                 circuits[circuit["key"]] = (circuit, peer.split("/if/")[0] if "/if/" in peer else None)
         return [circuits[key] for key in sorted(circuits)]
 
+    def seen_circuits(self, site_key, scope):
+        """Circuits the engine attributes to a site (live, 1.14.1): only those whose
+        termination is cabled straight to an interface of an in-scope device there.
+        A termination cabled to a patch-panel rear port is not followed, so a PoP
+        whose every circuit lands on a demarc panel reads as having none."""
+        circuits = {}
+        for term in self.kinds["circuit_termination"]:
+            end = self.objects.get(self.peer.get(term["key"]))
+            if not end or end["kind"] != "interface":
+                continue
+            device = end["refs"]["device"]
+            if device in scope and self.objects[device]["refs"]["site"] == site_key:
+                circuit = self.objects[term["refs"]["circuit"]]
+                circuits[circuit["key"]] = (circuit, device)
+        return [circuits[key] for key in sorted(circuits)]
+
+    def bridges(self, devices):
+        """Data cables whose removal disconnects the device graph of ``devices``.
+
+        The graph engine loads every device of the policy's sites and, as observed
+        live on 1.14.1, joins them by interface and pass-through-port cables but
+        not by power cables (a PDU's single network uplink is a cut edge although
+        its outlets feed the devices beside it). Parallel cables are one edge each.
+        """
+        keys = {d["key"] for d in devices}
+        edges, adj = [], defaultdict(list)
+        for cable in self.kinds["cable"]:
+            ends = [self.objects.get(cable["refs"].get(side)) for side in ("a", "b")]
+            if not all(ends) or any(end["kind"] not in DATA_ENDS for end in ends):
+                continue
+            a, b = (end["refs"].get("device") for end in ends)
+            if a in keys and b in keys and a != b:
+                adj[a].append((b, len(edges)))
+                adj[b].append((a, len(edges)))
+                edges.append((cable, a, b))
+        order, low, cut = {}, {}, set()
+        for root in sorted(adj):
+            if root in order:
+                continue
+            order[root] = low[root] = len(order)
+            stack = [(root, -1, iter(adj[root]))]
+            while stack:
+                node, via, pending = stack[-1]
+                for nxt, edge in pending:
+                    if edge == via:
+                        continue
+                    if nxt in order:
+                        low[node] = min(low[node], order[nxt])
+                    else:
+                        order[nxt] = low[nxt] = len(order)
+                        stack.append((nxt, edge, iter(adj[nxt])))
+                        break
+                else:
+                    stack.pop()
+                    if stack:
+                        parent = stack[-1][0]
+                        low[parent] = min(low[parent], low[node])
+                        if low[node] > order[parent]:
+                            cut.add(via)
+        return [edges[i] for i in sorted(cut)]
+
 
 def _shape(name):
     """Generalise one interface name into a regex alternative: digit runs become \\d+."""
@@ -205,6 +270,28 @@ def _uncabled(g, device):
     return sorted(names)
 
 
+def _mismatched(g):
+    """Active devices with an interface whose cable peer carries another ``type``.
+
+    Observed live on 1.14.1 (110 of 110 subjects on the v0.17 showcase): the
+    check compares the two ends' type strings, so a 10GBASE-X port on an LC
+    front port, or a PDU's 100BASE-TX port on a 1000BASE-T switch port, fails on
+    both devices it joins; circuit terminations carry no type and are skipped.
+    """
+    expected = []
+    for device in filter(_active, g.devices):
+        pairs = Counter()
+        for interface in g.children[device["key"]]["interface"]:
+            end = g.objects.get(g.peer.get(interface["key"]))
+            if end and end["kind"] != "circuit_termination" and end["attrs"].get("type") != interface["attrs"].get("type"):
+                pairs[f"{interface['attrs'].get('type')} to {end['attrs'].get('type')}"] += 1
+        if pairs:
+            expected.append({"subject": device["attrs"]["name"],
+                             "cause": "cable ends of different type: "
+                                      + ", ".join(f"{n} × {pair}" for pair, n in sorted(pairs.items()))})
+    return expected
+
+
 def _baseline(g):
     rules = [_rule(check.replace("_", " ").capitalize(), check, category, severity, parameters,
                    derivation="estate-wide hygiene the generator's own validators enforce",
@@ -213,7 +300,7 @@ def _baseline(g):
     # Two hygiene checks read the estate without its design: the engine
     # compares addresses across VRFs and counts a host-route prefix as full.
     # Each runs on the roles the design does not put in that position.
-    all_roles = {d["refs"]["role"] for d in g.devices}
+    all_roles = {d["refs"]["role"] for d in g.active}
     holders = defaultdict(set)
     for ip in g.kinds["ip_address"]:
         owner = g.objects.get(ip["refs"].get("assigned_object") or "")
@@ -229,7 +316,7 @@ def _baseline(g):
     host_sites = {pf["refs"].get("scope_site") for pf in g.kinds["prefix"]
                   if ipaddress.ip_network(pf["attrs"]["prefix"]).prefixlen
                   == ipaddress.ip_network(pf["attrs"]["prefix"]).max_prefixlen}
-    hosted = {d["refs"]["role"] for d in g.devices if d["refs"]["site"] in host_sites}
+    hosted = {d["refs"]["role"] for d in g.active if d["refs"]["site"] in host_sites}
     if all_roles - hosted:
         rules.insert(1, _rule("Site prefixes below 90% utilisation", "ip_prefix_utilization", "addressing",
                               "medium", {"max_utilization_pct": 90}, model="assumed",
@@ -254,8 +341,12 @@ def _baseline(g):
                        roles=[g.slug(r) for r in all_roles - marked] if marked else [],
                        derivation="interfaces the plan leaves enabled without a cable",
                        model="predicted", expected=expected))
+    rules.append(_rule("Cable ends match", "symmetric_cabling", "topology", "high",
+                       derivation="the engine compares the type of a cable's two ends literally: a port cabled "
+                                  "to a patch-panel front port (connector type) or to a slower port fails",
+                       model="predicted", expected=_mismatched(g)))
     fields = [field for field, where in DOCUMENT_FIELDS
-              if g.devices and all(d[where].get(field) for d in g.devices)]
+              if g.active and all(d[where].get(field) for d in g.active)]
     if fields:
         rules.append(_rule("Devices carry their documentation fields", "asset_documentation_complete",
                            "completeness", "low", {"required_fields": fields},
@@ -264,7 +355,7 @@ def _baseline(g):
     # interface is a routed link — the engine reads any addressed physical
     # port (management LANs included) as point-to-point.
     masks, routed, mixed = set(), set(), set()
-    for device in g.devices:
+    for device in g.active:
         for interface in g.children[device["key"]]["interface"]:
             if interface["attrs"].get("type") in UNCABLED_TYPES:
                 continue
@@ -401,28 +492,42 @@ def _circuit_terms(g, sites):
     return single, multi, min(2, providers)
 
 
-def _circuit_rules(g, sites, min_circuits, min_providers, diversity):
-    """Circuit checks as the engine evaluates them: active circuits only, and no
-    result at all for a site without one."""
+def _circuit_rules(g, sites, scoped, min_circuits, min_providers, diversity):
+    """Circuit checks as the engine evaluates them: active circuits it can see
+    from an in-scope device's interface (``seen_circuits``), one result per site
+    holding an active in-scope device. Returns (rules, omitted)."""
+    scope = {d["key"] for d in scoped}
+    held = {d["refs"]["site"] for d in scoped}
+    sites = [site for site in sites if site in held]
+    designed = {site: [c for c, _ in g.site_circuits(site) if _active(c)] for site in sites}
+    seen = {site: [(c, d) for c, d in g.seen_circuits(site, scope) if _active(c)] for site in sites}
+    if not any(designed.values()):
+        return [], []
+    checks = ["site_connectivity_redundancy"] + (["circuit_path_diversity"] if min_circuits >= 2 else [])
+    if not any(seen.values()):
+        # Observed live (1.14.1): every PoP and the NOC read "0 circuit(s)" because
+        # their circuits terminate on demarc patch panels the engine does not follow.
+        reason = (f"all {sum(map(len, designed.values()))} active circuits at these sites terminate on "
+                  "patch-panel rear ports, and the engine counts only circuits cabled straight to a "
+                  "device interface, so every site would read as having none")
+        return [], [{"check_name": check, "reason": reason} for check in checks]
     expected, diverse = [], []
     for site in sites:
-        live = [(c, d) for c, d in g.site_circuits(site) if _active(c)]
-        if not live:
-            continue
+        live = seen[site]
         providers = sorted({g.name(c["refs"]["provider"]) for c, _ in live})
         cids = sorted(c["attrs"]["cid"] for c, _ in live)
         if len(cids) < min_circuits or len(providers) < min_providers:
+            hidden = len(designed[site]) - len(cids)
             expected.append({"subject": g.name(site),
                              "cause": f"{len(cids)} active circuit(s) ({', '.join(cids[:4])}) from "
-                                      f"{len(providers)} provider(s): {', '.join(providers)}"})
+                                      f"{len(providers)} provider(s): {', '.join(providers)}"
+                                      + (f"; {hidden} more terminate on a patch panel" if hidden else "")})
         if len(cids) >= 2:
             ends = {device for _, device in live}
             reasons = (["all circuits from " + providers[0]] if "provider" in diversity and len(providers) < 2
                        else []) + (["all circuits on one device"] if len(ends) < 2 else [])
             if reasons:
                 diverse.append({"subject": g.name(site), "cause": "; ".join(reasons)})
-    if not any(_active(c) for site in sites for c, _ in g.site_circuits(site)):
-        return []
     rules = [_rule(f"{min_circuits} circuit(s) from {min_providers} provider(s) per site",
                    "site_connectivity_redundancy", "infrastructure", "medium",
                    {"min_circuits": min_circuits, "min_providers": min_providers},
@@ -435,11 +540,35 @@ def _circuit_rules(g, sites, min_circuits, min_providers, diversity):
                            "infrastructure", "medium", {"diversity_requirements": diversity},
                            engine="graph", model="predicted", expected=diverse,
                            derivation="providers and terminating devices of each multi-circuit site"))
-    return rules
+    return rules, []
+
+
+def _cut_cables(g, devices):
+    """Cross-rack data cables that are bridges of the sites' device graph.
+
+    The graph engine loads every device of the policy's sites, PDUs included,
+    and reports the cable under the end inside the policy's role scope (live
+    1.14.1: ``mgmt01`` for its link to the other cabinet's PDU network port).
+    """
+    sites = {d["refs"]["site"] for d in devices}
+    scope = {d["key"] for d in devices}
+    expected = []
+    for cable, a, b in g.bridges([d for d in g.active if d["refs"]["site"] in sites]):
+        racks = [g.objects[k]["refs"].get("rack") for k in (a, b)]
+        if None in racks or racks[0] == racks[1]:
+            continue
+        subject = a if a in scope or b not in scope else b
+        other = b if subject == a else a
+        port = g.objects[cable["refs"]["a" if subject == a else "b"]]["attrs"]["name"]
+        expected.append({"subject": g.objects[subject]["attrs"]["name"],
+                         "cause": f"{port} is the only cabled path to {g.objects[other]['attrs']['name']} "
+                                  "in the other cabinet"})
+    return expected
 
 
 def _group_resilience(g, group, devices, circuit_terms):
-    """Graph checks; scoped by policy roles because the graph engine ignores rule roles."""
+    """Graph checks; scoped by policy roles because the graph engine ignores rule roles.
+    Returns (rules, omitted)."""
     rules = []
     feed_devices, paths = defaultdict(list), {}
     # A group whose every device runs on uninventoried power has no power
@@ -464,37 +593,41 @@ def _group_resilience(g, group, devices, circuit_terms):
         rules.append(_rule("No feed is a single point of power", "power_feed_blast_radius", "power", "high",
                            {"max_unprotected_devices": 0}, engine="graph", model="predicted", expected=expected,
                            derivation="devices whose every power path shares one feed"))
-    rules += _circuit_rules(g, sorted({d["refs"]["site"] for d in devices}), *circuit_terms)
+    circuits, omitted = _circuit_rules(g, sorted({d["refs"]["site"] for d in devices}), devices, *circuit_terms)
+    rules += circuits
     if any(d["refs"].get("rack") for d in devices):
         rules.append(_rule("A rack failure stays inside the rack", "rack_failure_impact", "infrastructure",
                            "medium", {"max_external_impact": 5}, engine="graph", model="assumed",
                            derivation="racks hold paired devices on separate lanes"))
     if len({d["refs"].get("rack") for d in devices}) > 1:
         rules.append(_rule("No cross-rack cable is a single point", "cable_single_point_of_failure",
-                           "topology", "medium", {"cross_rack_only": True}, engine="graph", model="assumed",
-                           derivation="paired uplinks between racks"))
-    return rules
+                           "topology", "medium", {"cross_rack_only": True}, engine="graph", model="predicted",
+                           expected=_cut_cables(g, devices),
+                           derivation="data cables between cabinets whose removal splits the site's device graph"))
+    return rules, omitted
 
 
 def create(plan):
     g = _Graph(plan)
     estate = plan["recipe"].get("name") or plan["recipe"]["namespace"]
     by_site_role = defaultdict(set)
-    for d in g.devices:
+    for d in g.active:
         by_site_role[d["refs"]["site"]].add(d["refs"]["role"])
     roles_of = by_site_role.__getitem__
-    consoled = {d["refs"]["role"] for d in g.devices
+    consoled = {d["refs"]["role"] for d in g.active
                 if any(g.peer.get(p["key"]) for p in g.children[d["key"]]["console_port"])}
     policies = [{"name": f"{estate} · Estate baseline", "site_groups": [], "roles": [], "graph": False,
                  "description": "Addressing, cabling, naming and context hygiene across every device",
                  "rules": _baseline(g)}]
     groups = defaultdict(list)
-    for d in g.devices:
+    for d in g.active:
         if g.group(d):
             groups[g.group(d)].append(d)
     for group in sorted(groups, key=g.name):
         devices = groups[group]
-        label = g.name(group)
+        # A site group named for the estate ("Carrier PoPs — <estate>") would
+        # repeat it after the policy's own "<estate> · " prefix.
+        label = g.name(group).removesuffix(f" — {estate}")
         policies.append({"name": f"{estate} · {label} standards", "site_groups": [g.slug(group)], "roles": [],
                          "graph": False, "description": f"Role set, VLAN plan, console and supply "
                                                         f"standards for {label.lower()}",
@@ -510,13 +643,14 @@ def create(plan):
             # satisfy; the sites designed with two circuits get their own policy.
             diversity = ["provider", "device"] if providers >= 2 else ["device"]
             terms = (1, 1, []) if single else (2, providers, diversity)
+            rules, omitted = _group_resilience(g, group, scoped, terms)
             policies.append({"name": f"{estate} · {label} resilience", "site_groups": [g.slug(group)],
                              "roles": [g.slug(r) for r in drawing], "graph": True,
                              "description": f"Power and circuit resilience for {label.lower()} "
                                             "(power-drawing roles; PDUs are the distribution layer)",
-                             "rules": _group_resilience(g, group, scoped, terms)})
+                             "rules": rules, "omitted": omitted})
             if single and multi:
-                rules = _circuit_rules(g, multi, 2, providers, diversity)
+                rules, _ = _circuit_rules(g, multi, scoped, 2, providers, diversity)
                 if rules:
                     policies.append({"name": f"{estate} · {label} dual-homed resilience", "site_groups": [],
                                      "sites": [g.slug(s) for s in multi],
@@ -525,7 +659,7 @@ def create(plan):
                                                     "with two circuits",
                                      "rules": rules})
     platforms = defaultdict(list)
-    for d in g.devices:
+    for d in g.active:
         if d["refs"].get("platform"):
             platforms[d["refs"]["platform"]].append(d)
     for platform in sorted(platforms, key=g.name):
@@ -536,6 +670,7 @@ def create(plan):
     for policy in policies:
         policy.setdefault("platforms", [])
         policy.setdefault("sites", [])
+        policy.setdefault("omitted", [])
         if len(policy["name"]) > NAME_LIMIT:
             raise ValidationError(f"policy name {policy['name']!r} exceeds {NAME_LIMIT} characters")
     return {"artifact": "validation", "plan_sha256": digest(plan), "writer_version": WRITER_VERSION,
@@ -558,6 +693,9 @@ def _intrinsic(artifact):
         if len(set(checks)) != len(checks):
             # The engine attributes all of a check's results to its first rule.
             raise ValidationError(f"a check repeats in {policy['name']!r}")
+        omitted = {o["check_name"] for o in policy.get("omitted", ())}
+        if omitted & set(checks) or not all(o.get("reason") for o in policy.get("omitted", ())):
+            raise ValidationError(f"{policy['name']!r} installs a check it omits, or omits one without a reason")
         for rule in policy["rules"]:
             if rule["check_name"] in excluded:
                 raise ValidationError(f"{rule['check_name']} is both installed and excluded")
@@ -584,7 +722,8 @@ def _summary(artifact):
     return {"policies": len(artifact["policies"]), "rules": len(rules),
             "predicted_failing_rules": sum(1 for r in rules if r["expected"]),
             "predicted_findings": sum(len(r["expected"]) for r in rules),
-            "excluded_checks": len(artifact["excluded"])}
+            "excluded_checks": len(artifact["excluded"]),
+            "omitted_policy_checks": sum(len(p.get("omitted", ())) for p in artifact["policies"])}
 
 
 def build(plan_path, out):
@@ -841,7 +980,8 @@ def main(argv=None):
                       else check(args.directory, args.plan))
             print(f"{result['artifact']}: {result['policies']} policies, {result['rules']} rules, "
                   f"{result['predicted_findings']} predicted failing subjects across "
-                  f"{result['predicted_failing_rules']} rules, {result['excluded_checks']} checks excluded"
+                  f"{result['predicted_failing_rules']} rules, {result['excluded_checks']} checks excluded, "
+                  f"{result['omitted_policy_checks']} omitted by policy"
                   + (f" -> {result['output']}" if args.command == "build" else ""))
         else:
             token = os.environ.get("NETBOX_TOKEN") or parser.error("NETBOX_TOKEN is required")
