@@ -811,13 +811,16 @@ own design pass and touches every provider builder):
   instance-level switch (`NETBOX_FLEET_ENABLED`) besides the org preview flag;
   it is set by NetBox Labs staff, not from this repo. Until it is on, a Device
   discovery job cannot be created, so Jobs/Run history stay empty.
-- **Direct Diode ingest produces no Assurance deviations here.** The drift
-  twin's 12 entities were acknowledged twice by `crsk8600`'s Diode
-  (`genial-showcase` client) yet no deviation appeared and no NetBox row
-  changed. The same path created deviations on `rksd1051` in September, and the
-  Fleet agent's OTLP bridge path did create deviations on `crsk8600` (see
-  next item), so the difference is per-instance Diode/Assurance configuration
-  we cannot read; Cloud exposes no reconciler ingestion logs to tenants.
+- **Direct Diode ingest does produce Assurance deviations here (corrected
+  2026-10-05).** The 2026-10-02 "no deviations" reading was wrong: we looked in
+  the platform console, while NetBox's own **Assurance → Deviations** list
+  (`/plugins/assurance/deviations-all/`) had them all along, behind its default
+  *Last 24 hours* range. Re-ingesting the v0.18 drift twin (`just drift-ingest`,
+  `genial-showcase` client) produced exactly the predicted 2 creates and 6
+  updates within seconds, in review mode (open, nothing applied). Product
+  display quirks seen there: an optic module's deviation is titled
+  `Module None modified` (modules have no name), and nested context records
+  that matched exactly show as `Undefined` rows with status *no changes*.
 - **Accidental real ingest, cleaned up.** The first `discovery-lab-check`
   collided with the running Fleet agent on `127.0.0.1:8072`, so its dry-run
   policy ran on the Fleet agent's backend and ingested ~200 create deviations

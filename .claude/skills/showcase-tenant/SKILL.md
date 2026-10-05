@@ -130,6 +130,11 @@ product skills to read per feature), `visual-review` (the acceptance pass),
   owns port 8072 (fixed in `vm.sh`, but remember the failure mode: it ingests
   for real).
 - Fleet needs the instance-level enablement before devices appear in the
-  credential/job pickers; Diode-direct ingest did not surface deviations on
-  `crsk8600` (COVERAGE.md, "Open on crsk8600").
+  credential/job pickers (COVERAGE.md, "Open on crsk8600").
+- Read deviations in NetBox's own Assurance → Deviations, not the platform
+  console, and widen its date range (`?daterange=30days`): the default *Last
+  24 hours* hid a working drift ingest for three days. After a reseed, Ignore
+  the previous estate's deviations, then re-run `drift-ingest` (inside
+  `devenv --profile diode shell`) with the tenant's Diode env; deviations land
+  in seconds.
 
