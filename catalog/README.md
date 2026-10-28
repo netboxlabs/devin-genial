@@ -999,3 +999,14 @@ Serial formats remain fictional label shapes:
 `tests/test_lived_in_catalog.py` pins every source, date, deviation and port
 contract above. It also proves optic selection on the new hosts on a synthetic
 world. Every check has a failing mutation.
+
+## NetBox Designs schema
+
+`designs/design.schema.json` is an unmodified copy of the published NetBox
+Designs design schema (`https://netboxlabs.com/docs/designs/reference/design.schema.json`,
+SHA-256 `76dc337b20a91981e21772ce6a09ea99368063e97cc2488fd1f5fca56fab35ee`).
+`estates/designs.py` validates every exported design against it and binds the
+digest into each catalogue's `manifest.json`, so a check against a changed
+schema refuses rather than silently re-reading the catalogue. It is reference
+data, not Genial code; refresh it deliberately and expect every saved
+catalogue to need a rebuild. See [docs/designs.md](../docs/designs.md).

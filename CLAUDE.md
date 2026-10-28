@@ -539,6 +539,19 @@ for the separately recorded pinned-target live qualification.
   the plan's SHA, plus the REST seeder that runs them and compares the engine's
   failing checks with the prediction; `just validation`, `validation-check`,
   `seed-validation`, `unseed-validation`. Pinned by `tests/test_validation.py`.
+- `estates/designs.py`: the NetBox Designs catalogue sidecar — the first store
+  of the smallest retail store format, in permanent allocation order, exported
+  as `dtl:`-pinned device designs plus one composed store design with the
+  store's values as `deploy-vars.json`, bound to the plan's SHA; `just designs
+  PLAN OUT` / `designs-check PLAN OUT`. The check validates every design
+  against the published schema copy in `catalog/designs/`, expands the
+  composed design (Genial's own reading of the design reference, never the
+  Designs engine) and proves it matches the plan's objects for that store and
+  every other same-format store; omissions (APs, template-created ports,
+  optics, PSU-inlet power cables, journals, MACs, serials, custom fields)
+  are listed with reasons in `manifest.json`. Offline only: no loader, no
+  recipe key, no version bump. See [docs/designs.md](docs/designs.md); pinned
+  by `tests/test_netbox_designs.py`.
 - `estates/validate.py`: independent assertions; add a failing mutation check when extending them.
 - `estates/diode.py`: bounded wire export and optional SDK qualification.
 - `estates/load.py`: target discovery, transport selection and remote Diode phase checkpoints;
