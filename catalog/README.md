@@ -83,6 +83,33 @@ JSON. Populating both bays is a design choice, not a claim that every sold
 chassis includes two supplies. Electrical load, PoE budgets, and cord connector
 selection are not certified by this inventory.
 
+## Pinned NetBox data model
+
+`netbox-datamodel-4.7.1.json` is a bounded extract of the NetBox 4.7.1
+baseline published by NetBox Labs' private
+[netbox-datamodel-extractor](https://github.com/netboxlabs/netbox-datamodel-extractor)
+(`netbox_data_models/4.7.1/4.7.1.yaml`, schema format 1.18.0), read at one
+commit, never a branch, exactly as NetBox Designs pins it. The file's
+`provenance` block carries the source commit, the baseline's SHA-256, the
+extractor commit that produced it and the license. It keeps, for the 103 core
+models the loader emits, every field's type, `max_length`, `on_delete`,
+`db_only`/`read_only`, default and `supplied_by_netbox` fill, the generic-key
+column pairs, the API-only write fields, the unique constraints with the
+ratified natural key and `on_create_creates`; descriptions, filters,
+validators and acceptance flags stay upstream. `estates/datamodel.py` derives
+it (`just datamodel-pin [COMMIT]`, which needs `gh` read access and downloads
+the 900 KB baseline under ignored `build/datamodel/`) and checks Genial's
+hand-maintained facts against it in `tests/test_datamodel_pin.py`:
+`naming.NAME_LIMITS`, the model/endpoint and reference columns of
+`docs/schema-map.md`, the Diode identities, the save-derived columns
+`turbobulk._save_copies` compiles and the loader's model defaults, plus every
+profile's emitted names and copied rack/device fields. `just datamodel-check
+[PLAN…]` prints the same report. The extractor is licensed under the PolyForm
+Shield License 1.0.0, which permits distributing copies and derived works
+with its terms URL (carried in the file); nothing in it is NetBox source.
+Moving to another NetBox version means a new extract file and a review of the
+two documented gap sets in the test, not a generator rebaseline.
+
 ## Regional-carrier footprint aliases (catalog 0.14, generator 0.17)
 
 Stable aliases the provider footprint builders read. Every entry is pinned to

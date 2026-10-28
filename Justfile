@@ -153,6 +153,18 @@ unseed-showcase receipt target:
 schema-map:
     python3 -m estates.schema_map
 
+# Re-derive catalog/netbox-datamodel-4.7.1.json from the private extractor baseline at one
+# commit (gh read access required; the 900 KB baseline lands under ignored build/datamodel/)
+datamodel-pin commit='d6193772e8597faa27ea2014b21ea5544b8f72fa':
+    mkdir -p build/datamodel/{{commit}}
+    gh api -H 'Accept: application/vnd.github.raw' 'repos/netboxlabs/netbox-datamodel-extractor/contents/netbox_data_models/4.7.1/4.7.1.yaml?ref={{commit}}' > build/datamodel/{{commit}}/4.7.1.yaml
+    python3 -m estates.datamodel derive build/datamodel/{{commit}}/4.7.1.yaml --commit {{commit}}
+
+# Report the hand-maintained NetBox facts (name limits, identities, save-derived columns,
+# defaults) against the pinned data model, optionally over frozen plan.json files
+datamodel-check +plans='':
+    python3 -m estates.datamodel check {{plans}}
+
 # Offline: does this artifact fit the TurboBulk compiler contract? (no target, no token)
 load-check artifact:
     python3 -m estates.load {{quote(artifact)}} --load-check

@@ -442,6 +442,12 @@ for the separately recorded pinned-target live qualification.
 - [docs/schema-map.md](docs/schema-map.md): generated map of every kind to its NetBox
   model, endpoint, references, Diode identity and delivery path, plus the plugin
   sidecars; `just schema-map` regenerates it and a test fails when it is stale.
+- `catalog/netbox-datamodel-4.7.1.json` and `estates/datamodel.py`: the NetBox
+  4.7.1 data model pinned from NetBox Labs' extractor baseline at one commit;
+  `tests/test_datamodel_pin.py` checks `naming.NAME_LIMITS`, the schema map's
+  models, endpoints and reference columns, the Diode identities, the
+  save-derived columns and loader defaults against it, and freezes the
+  documented gaps ([catalog/README.md](catalog/README.md#pinned-netbox-data-model)).
 - [COVERAGE.md](COVERAGE.md): hospital/provider omissions and ranked next work;
   a reviewed backlog, not implemented scope.
 - [catalog/README.md](catalog/README.md): pinned vendor sources, fictional hardware

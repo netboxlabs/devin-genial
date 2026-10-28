@@ -409,6 +409,25 @@ branch over both JSONL and Parquet, against REST-created twins that NetBox
 computed itself (identical values, and REST-created interfaces interleaved in
 natural order with compiled ones).
 
+Every fact in that table, the model/endpoint and reference columns of
+[docs/schema-map.md](schema-map.md), the Diode identities, `naming.NAME_LIMITS`
+and the loader's model defaults were read from NetBox source by hand. They are
+now checked against the pinned 4.7.1 data model in
+[`catalog/netbox-datamodel-4.7.1.json`](../catalog/README.md#pinned-netbox-data-model)
+(`estates/datamodel.py`, `tests/test_datamodel_pin.py`, `just datamodel-check`),
+derived from NetBox Labs' extractor baseline at one commit. The baseline states
+the copied columns (device `airflow`/`cooling_method`/`location`, rack
+`form_factor`/`width` and thirteen more rack-type copies, VM `site`, radio
+frequency/width) as `supplied_by_netbox` fills, and only marks the rest
+(`_name`, `_depth`/`_children`, the scope and component caches,
+`available_power`, `size`, `_abs_*`) `db_only` or `read_only`: it says the API
+never takes them, not how NetBox computes them, so those ports stay verified
+by readback alone. The test also proves, per profile, that every emitted name
+fits its native limit and that every rack and racked device agrees with the
+rack type and rack NetBox's `save()` would copy from, and it freezes two
+documented gaps (name limits NetBox sets below 100 for identity kinds, and
+identities NetBox does not key) for a human decision.
+
 Still left to NetBox or out of scope, all checked against the emitted plans:
 wireless-link `_interface_a/b_device` and `_abs_distance` (8 rows across all
 profiles), cooling `_abs_diameter`/`_abs_max_flow` (ordering only); custom
