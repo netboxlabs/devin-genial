@@ -190,6 +190,10 @@ naming per platform, required roles and context keys per site kind) together
 with a prediction of each finding and its cause; `seed-validation` creates and
 runs them and compares the engine's findings with that prediction — see
 [compliance policies](docs/loading.md#compliance-policies-for-validation).
+For a retail chain, `just designs PLAN OUT` exports the smallest store format
+as a NetBox Designs catalogue (`dtl:`-pinned device designs plus one composed
+store design) and `designs-check` proves it describes exactly the plan's
+objects for that store, offline — see [Designs catalogue](docs/designs.md).
 
 A few behaviors worth knowing before your first load; the
 [loading guide](docs/loading.md) has the full mechanics:
@@ -287,6 +291,7 @@ and [live results](lab/README.md#current-v09-qualification) for scope and limits
 | Run a change or defect demonstration | [Scenarios](docs/scenarios.md) |
 | Choose Diode, TurboBulk or REST | [Transport model](docs/transports.md) · [Loading](docs/loading.md) |
 | Seed environments and verify without loading | [Seeding](docs/seeding.md) |
+| Export a store format as a NetBox Designs catalogue | [Designs catalogue](docs/designs.md) |
 | Check scale, compatibility and historical evidence | [Qualification](docs/qualification.md) · [Community comparison](COMPARISON.md) |
 | Extend the generator | [Development](CLAUDE.md) · [Graph contract](CONTRACT.md) · [Schema map](docs/schema-map.md) · [Hardware catalog](catalog/README.md) |
 | See remaining gaps or prior acceptance criteria | [Coverage](COVERAGE.md) · [Completed goal](GOAL.md) |

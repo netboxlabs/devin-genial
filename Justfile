@@ -86,6 +86,17 @@ geometry plan out:
 geometry-check plan out:
     python3 -m estates.geometry check {{quote(out)}} --plan {{quote(plan)}}
 
+# Export the first store of the smallest retail store format as a NetBox Designs
+# catalogue (dtl:-pinned device designs plus one composed store design), bound
+# to the plan's SHA — offline, no target writes
+designs plan out:
+    python3 -m estates.designs build {{quote(plan)}} --out {{quote(out)}}
+
+# Re-derive a saved Designs catalogue from its bound plan and prove it describes
+# exactly the plan's objects for that store (operands match `designs`)
+designs-check plan out:
+    python3 -m estates.designs check {{quote(out)}} --plan {{quote(plan)}}
+
 # Write the geometry records through the physical-geometry REST API and read
 # them back exactly. Requires GEOMETRY_WRITES=1 and a seeded estate on the target.
 seed-geometry out target receipt='':

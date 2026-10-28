@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://netboxlabs.com/docs/designs/reference/design.schema.json",
+  "title": "NetBox Design",
+  "description": "A NetBox Designs design file. Design structure, in the NetBox Designs docs, is the reference.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "The design's title."
+    },
+    "description": {
+      "type": "string",
+      "description": "What the design builds."
+    },
+    "version": {
+      "type": "string",
+      "description": "A label for this content, such as 1.2.0."
+    },
+    "netbox_versions": {
+      "description": "The NetBox versions the design works with: '*' or a list of PEP 440 specifiers.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "variables": {
+      "type": "object",
+      "description": "The design's inputs and computed values. Each is $USER (required), $USER_OPTIONAL, a default value, or an expression.",
+      "additionalProperties": true
+    },
+    "instance_key": {
+      "type": "string",
+      "description": "Which variable identifies an instance of this design, when a deployment holds it more than once: a rack design's rack_name. Each distinct value is its own instance, with its own variables."
+    },
+    "infra": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      },
+      "description": "The objects it builds."
+    }
+  },
+  "required": [
+    "netbox_versions"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "item": {
+      "type": "object",
+      "description": "An object the design builds (infra_type), a design it includes (design: nbd:<name>), or either repeated (nbd_loop). Other keys are the object's fields, which depend on its type and the NetBox version; a list under a field holds the objects that belong to this one.",
+      "properties": {
+        "infra_type": {
+          "type": "string",
+          "description": "The object type's name, as in Object types."
+        },
+        "design": {
+          "type": "string",
+          "description": "The design to include: nbd:<catalogue name>, or nbd:<catalogue name>@<version or content hash>. The catalogue accepts nothing else; nbd validate also takes a local file path."
+        },
+        "design_template": {
+          "type": "string",
+          "deprecated": true,
+          "description": "The old name for design."
+        },
+        "template_vars": {
+          "type": "object",
+          "description": "The included design's variables, each worked out in this design."
+        },
+        "nbd_loop": {
+          "type": "object",
+          "description": "Repeat the item once per pass. See Expressions and loops.",
+          "properties": {
+            "over": {
+              "description": "{start, end} counts both included; an integer n counts 1 to n; a list is each item.",
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "properties": {
+                    "start": {
+                      "type": "integer"
+                    },
+                    "end": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "array"
+                }
+              ]
+            },
+            "as": {
+              "type": "string",
+              "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+              "default": "i",
+              "description": "The name the pass is known by: loop.<as>."
+            }
+          },
+          "required": [
+            "over"
+          ],
+          "additionalProperties": false
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/item"
+          },
+          "description": "With nbd_loop: a group of items repeated together."
+        }
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "not": {
+              "type": [
+                "array",
+                "object"
+              ]
+            }
+          },
+          {
+            "type": "object",
+            "not": {
+              "required": [
+                "infra_type"
+              ]
+            }
+          },
+          {
+            "type": "object",
+            "$ref": "#/$defs/item"
+          },
+          {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "not": {
+                    "type": "object"
+                  }
+                },
+                {
+                  "type": "object",
+                  "not": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "infra_type"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "design"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "design_template"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "nbd_loop"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "$ref": "#/$defs/item"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "anyOf": [
+        {
+          "required": [
+            "infra_type"
+          ]
+        },
+        {
+          "required": [
+            "design"
+          ]
+        },
+        {
+          "required": [
+            "design_template"
+          ]
+        },
+        {
+          "required": [
+            "nbd_loop",
+            "items"
+          ]
+        }
+      ]
+    }
+  }
+}
