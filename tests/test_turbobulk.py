@@ -958,8 +958,17 @@ class TurboBulkLoaderTests(unittest.TestCase):
                                            sort_keys=True).encode()).hexdigest()
         self.assertEqual(
             (COMPILER_VERSION, golden),
-            ("v02-turbobulk-15",
-             "bad50ffba6104ca04a2d0749371166df4a7e82c7751dafbda211f38881ecc874"))
+            ("v02-turbobulk-16",
+             "ebb7a3afe7adce6cd94ff290c3f1da6bc0eba81d823740d972ba3ebbb118d44e"))
+
+    def test_a_rack_type_starts_at_unit_one(self):
+        # Left out, the raw insert stored starting_unit 0; NetBox copies it onto every rack
+        # made from the type, and full_clean then refuses that rack in a branch merge.
+        rack_type = {"kind": "rack_type", "key": "rt", "attrs": {"model": "AR3104", "u_height": 24},
+                     "refs": {}, "meta": {}}
+        self.assertEqual(_render(rack_type, {"rt": rack_type}, {}, {})["starting_unit"], 1)
+        explicit = {**rack_type, "attrs": {**rack_type["attrs"], "starting_unit": 2}}
+        self.assertEqual(_render(explicit, {"rt": explicit}, {}, {})["starting_unit"], 2)
 
     def test_supersede_refuses_when_rq_reports_the_job_alive(self):
         receipt = {"review_history_preflight": {"branch_id": 5, "object_types": {"dcim.site": 31}},

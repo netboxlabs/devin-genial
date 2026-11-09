@@ -68,7 +68,7 @@ class WorkerDied(JobTimeout):
 
 
 RECEIPT_VERSION = 4
-COMPILER_VERSION = "v02-turbobulk-15"
+COMPILER_VERSION = "v02-turbobulk-16"
 DEFAULT_JOB_ROWS = 2_000
 # TurboBulk's JSONL reader fixes the column set from the first chunk (10,000
 # rows), so a sparse payload spanning chunks can silently drop columns.
@@ -515,6 +515,11 @@ REST_CREATE_KINDS = ({"module_bay_type", "provider_account"}
 # observed as a branching-merge failure on location/power_outlet status).
 RENDER_DEFAULTS = {"location": {"status": "active"}, "power_outlet": {"status": "enabled"},
                    "rack": {"starting_unit": 1},
+                   # RackType.starting_unit (model default 1). Left out, the raw insert
+                   # stores 0, which NetBox's own save keeps but full_clean refuses: a
+                   # rack made from the type copies the 0 on save, and a branch holding
+                   # one cannot merge (golden-demo clinic design, 2026-11-09).
+                   "rack_type": {"starting_unit": 1},
                    # FrontPort.positions (model default 1). The plan carries the
                    # legacy one-position mapping on the front port and positions
                    # only on the rear port; strict readback requires exactly 1.
